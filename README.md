@@ -2,6 +2,8 @@
 
 FinDueEval_MVP 是一个面向金融、法律和医药专业尽调场景的最小可运行评测原型。该项目展示了如何将有限的专业任务转化为结构化数据，并通过 Streamlit 应用呈现“任务 → Gold Answer → 多模型回答 → Rubric 评分 → 错误归因 → 数据优化建议”的闭环。原型使用 5 道样板题和 3 个模拟模型来演示评测流程，不包含完整法规或真实公司数据【60309736512362†L0-L60】。
 
+A domain-specific LLM evaluation MVP for financial due diligence, legal review, and capital markets tasks, with gold answers, rubrics, error labels, and model comparison dashboards.
+
 ## 目录结构
 
 ```
