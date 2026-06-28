@@ -275,3 +275,218 @@ def _get_weakest_domain(domain_scores: pd.DataFrame, model_name: str) -> str | N
     if model_domains.empty:
         return None
     return str(model_domains.sort_values("total_score").iloc[0]["domain"])
+
+# PR-07: error attribution to data improvement actions
+PR07_OPTIMIZATION_COLUMNS = [
+    "action_id",
+    "error_type",
+    "root_cause",
+    "data_action",
+    "sample_format",
+    "priority",
+    "expected_effect",
+    "validation_metric",
+    "status",
+]
+
+PR07_ERROR_DISTRIBUTION_COLUMNS = [
+    "error_type",
+    "count",
+    "severity",
+    "models",
+    "cases",
+]
+
+PR07_ERROR_ACTION_COLUMNS = PR07_ERROR_DISTRIBUTION_COLUMNS + [
+    column for column in PR07_OPTIMIZATION_COLUMNS if column != "error_type"
+]
+
+PR07_PRIORITY_SAMPLE_COLUMNS = [
+    "case_id",
+    "model_name",
+    "error_type",
+    "severity",
+    "error_description",
+    "root_cause",
+    "data_action",
+    "sample_format",
+    "priority",
+    "expected_effect",
+    "validation_metric",
+    "status",
+]
+
+
+def _pr07_empty_frame(columns):
+    import pandas as pd
+
+    return pd.DataFrame(columns=columns)
+
+
+def _pr07_copy_frame(df):
+    import pandas as pd
+
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        return pd.DataFrame()
+    return df.copy()
+
+
+def _pr07_pick_column(df, preferred, legacy=None, default=""):
+    if preferred in df.columns:
+        return df[preferred]
+    if legacy and legacy in df.columns:
+        return df[legacy]
+    return default
+
+
+def _pr07_join_unique(values):
+    cleaned = [str(value) for value in values if str(value) and str(value).lower() != "nan"]
+    return "; ".join(sorted(set(cleaned)))
+
+
+def _pr07_highest_severity(values):
+    severity_order = {"高": 3, "中": 2, "低": 1, "high": 3, "medium": 2, "low": 1}
+    cleaned = [str(value) for value in values if str(value) and str(value).lower() != "nan"]
+    if not cleaned:
+        return ""
+    return sorted(cleaned, key=lambda value: severity_order.get(value, 0), reverse=True)[0]
+
+
+def normalize_optimization_plan(optimization_df):
+    """Normalize legacy and PR-07 optimization plan schemas into one action table."""
+    import pandas as pd
+
+    df = _pr07_copy_frame(optimization_df)
+    if df.empty:
+        return _pr07_empty_frame(PR07_OPTIMIZATION_COLUMNS)
+
+    normalized = pd.DataFrame()
+    normalized["error_type"] = _pr07_pick_column(df, "error_type", "frequent_error", "")
+    normalized["root_cause"] = _pr07_pick_column(df, "root_cause", "likely_cause", "")
+    normalized["data_action"] = _pr07_pick_column(df, "data_action", "optimization_action", "")
+    normalized["sample_format"] = _pr07_pick_column(df, "sample_format", "data_sample_format", "")
+    normalized["priority"] = _pr07_pick_column(df, "priority", default="")
+    normalized["expected_effect"] = _pr07_pick_column(
+        df,
+        "expected_effect",
+        default="补强对应错误类型的训练与评测覆盖。",
+    )
+    normalized["validation_metric"] = _pr07_pick_column(
+        df,
+        "validation_metric",
+        default="相关错误类型出现次数下降，匹配维度评分提升。",
+    )
+    normalized["status"] = _pr07_pick_column(df, "status", default="planned")
+
+    if "action_id" in df.columns:
+        normalized["action_id"] = df["action_id"]
+    else:
+        normalized["action_id"] = [f"ACTION-{index + 1:03d}" for index in range(len(df))]
+
+    normalized = normalized[PR07_OPTIMIZATION_COLUMNS]
+    for column in PR07_OPTIMIZATION_COLUMNS:
+        normalized[column] = normalized[column].fillna("").astype(str)
+    return normalized
+
+
+def get_error_distribution_summary(error_df):
+    """Summarize error frequency with severity, involved models, and cases."""
+    df = _pr07_copy_frame(error_df)
+    required = {"error_type"}
+    if df.empty or not required.issubset(df.columns):
+        return _pr07_empty_frame(PR07_ERROR_DISTRIBUTION_COLUMNS)
+
+    for column in ["severity", "model_name", "case_id"]:
+        if column not in df.columns:
+            df[column] = ""
+
+    summary = (
+        df.groupby("error_type", dropna=False)
+        .agg(
+            count=("error_type", "size"),
+            severity=("severity", _pr07_highest_severity),
+            models=("model_name", _pr07_join_unique),
+            cases=("case_id", _pr07_join_unique),
+        )
+        .reset_index()
+        .sort_values(["count", "error_type"], ascending=[False, True])
+    )
+    return summary[PR07_ERROR_DISTRIBUTION_COLUMNS]
+
+
+def _pr07_error_action_fallbacks(error_df):
+    import pandas as pd
+
+    df = _pr07_copy_frame(error_df)
+    columns = ["error_type", "data_action"]
+    if df.empty or "error_type" not in df.columns or "optimization_action" not in df.columns:
+        return pd.DataFrame(columns=columns)
+
+    fallback = (
+        df[["error_type", "optimization_action"]]
+        .dropna()
+        .rename(columns={"optimization_action": "data_action"})
+    )
+    fallback = fallback[fallback["data_action"].astype(str).str.strip() != ""]
+    if fallback.empty:
+        return pd.DataFrame(columns=columns)
+    return fallback.drop_duplicates("error_type", keep="first")
+
+
+def get_error_attribution_actions(error_df, optimization_df):
+    """Link observed errors to root causes and data improvement actions."""
+    summary = get_error_distribution_summary(error_df)
+    if summary.empty:
+        return _pr07_empty_frame(PR07_ERROR_ACTION_COLUMNS)
+
+    plan = normalize_optimization_plan(optimization_df)
+    actions = summary.merge(plan, on="error_type", how="left")
+
+    fallback = _pr07_error_action_fallbacks(error_df)
+    if not fallback.empty:
+        actions = actions.merge(fallback, on="error_type", how="left", suffixes=("", "_fallback"))
+        if "data_action_fallback" in actions.columns:
+            actions["data_action"] = actions["data_action"].fillna("")
+            actions["data_action"] = actions["data_action"].where(
+                actions["data_action"].astype(str).str.strip() != "",
+                actions["data_action_fallback"].fillna(""),
+            )
+            actions = actions.drop(columns=["data_action_fallback"])
+
+    for column in PR07_OPTIMIZATION_COLUMNS:
+        if column not in actions.columns:
+            actions[column] = ""
+    return actions[PR07_ERROR_ACTION_COLUMNS]
+
+
+def get_priority_error_samples(error_df, optimization_df, limit=20):
+    """Return priority error examples with their matched data improvement action."""
+    df = _pr07_copy_frame(error_df)
+    if df.empty or "error_type" not in df.columns:
+        return _pr07_empty_frame(PR07_PRIORITY_SAMPLE_COLUMNS)
+
+    for column in ["case_id", "model_name", "severity", "error_description"]:
+        if column not in df.columns:
+            df[column] = ""
+
+    plan = normalize_optimization_plan(optimization_df)
+    samples = df.merge(plan, on="error_type", how="left")
+
+    if "optimization_action" in samples.columns:
+        samples["data_action"] = samples.get("data_action", "")
+        samples["data_action"] = samples["data_action"].fillna("")
+        samples["data_action"] = samples["data_action"].where(
+            samples["data_action"].astype(str).str.strip() != "",
+            samples["optimization_action"].fillna(""),
+        )
+
+    for column in PR07_PRIORITY_SAMPLE_COLUMNS:
+        if column not in samples.columns:
+            samples[column] = ""
+
+    severity_rank = {"高": 0, "中": 1, "低": 2, "high": 0, "medium": 1, "low": 2}
+    samples["_severity_rank"] = samples["severity"].map(severity_rank).fillna(9)
+    samples = samples.sort_values(["_severity_rank", "error_type", "case_id", "model_name"])
+    if limit:
+        samples = samples.head(limit)
+    return samples[PR07_PRIORITY_SAMPLE_COLUMNS]

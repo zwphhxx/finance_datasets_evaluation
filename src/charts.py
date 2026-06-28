@@ -90,3 +90,18 @@ def render_model_domain_score_chart(
 
     st.bar_chart(chart_data, x="domain", y="total_score", color="model_name")
     return chart_data
+
+
+def render_error_distribution_summary_chart(error_df, empty_message="暂无错误标签数据，无法展示错误分布。"):
+    """Render PR-07 error distribution by error type from normalized metrics."""
+    import streamlit as st
+
+    from src.metrics import get_error_distribution_summary
+
+    summary = get_error_distribution_summary(error_df)
+    if summary.empty:
+        st.info(empty_message)
+        return
+
+    chart_data = summary.set_index("error_type")[["count"]]
+    st.bar_chart(chart_data)
