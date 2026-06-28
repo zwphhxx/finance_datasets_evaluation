@@ -26,12 +26,12 @@ PAGE_CONFIGS = [
     ),
     PageConfig(
         page_key="tasks",
-        title="专业任务集",
-        subtitle="查看脱敏专业任务样本的覆盖范围和基础分布。",
-        question="本页用于判断任务样本覆盖哪些专业场景，是否足以支撑后续评测观察。",
+        title="任务样本",
+        subtitle="按筛选浏览任务内容、Gold Answer 状态与模型回答覆盖。",
+        question="本页用于看清数据集里有哪些任务，以及每道任务的质量与覆盖状态。",
         boundary="当前任务是脱敏专业任务样本，不是概念题，也不是完整行业题库。",
-        highlights="任务分布、Gold Answer 覆盖、模型回答覆盖和任务表。",
-        nav_summary="样本覆盖与任务分布",
+        highlights="轻量筛选、紧凑任务表、Gold Answer 状态与选中任务详情。",
+        nav_summary="任务内容与覆盖",
     ),
     PageConfig(
         page_key="case_detail",

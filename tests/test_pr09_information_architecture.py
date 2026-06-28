@@ -8,7 +8,7 @@ from src.ui.overview import get_overview_asset_cards
 
 EXPECTED_PAGE_ORDER = [
     "FinDueEval 数据集概览",
-    "专业任务集",
+    "任务样本",
     "样板题深度评测",
     "模型能力诊断",
     "错误归因与数据补强",
