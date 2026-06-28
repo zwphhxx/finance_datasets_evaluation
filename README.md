@@ -74,6 +74,42 @@ streamlit run app.py
 - `app/db/repository.py`：封装基础读写（list/get/insert/update/delete）。
 - `app/services/dataset_service.py`：服务层，向页面提供数据并承载最小 CRUD，屏蔽底层来源。
 
+## SiliconFlow 模型 Provider
+
+为支持后续接入真实文本对话模型评测，项目提供统一的模型适配层（`app/models/`），可通过硅基流动（SiliconFlow）调用不同对话模型。**本能力仅为 provider 层**：可读取模型列表、发起 Chat Completion 调用，**尚未**包含真实评测运行页、Gold Answer 对比或评分——这些留待后续 PR。
+
+适配层结构：
+
+- `app/models/base.py`：统一接口 `ModelProvider`（`list_models` / `generate_response`）与返回结构（`ModelInfo` / `ModelListResult` / `GenerationResult`）。
+- `app/models/siliconflow.py`：硅基流动接入，仅用标准库 `urllib` 发起 HTTP，不引入第三方 SDK。
+- `app/models/mock.py`：无 API Key 时的占位供应商，返回结构一致、`status=mock`，回答明确标注为模拟、不冒充真实模型。
+- `app/models/registry.py`：供应商注册表，页面层只按名称获取 provider，不直接依赖具体实现。
+
+### 配置
+
+按 `st.secrets` → 环境变量 → `.env` 的顺序解析以下配置（参考 `.env.example`）：
+
+| 配置项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `SILICONFLOW_API_KEY` | 硅基流动 API Key（必填，缺失则回退 mock） | 无 |
+| `SILICONFLOW_BASE_URL` | API Base URL | `https://api.siliconflow.cn/v1` |
+| `SILICONFLOW_TIMEOUT_SECONDS` | 请求超时（秒） | `30` |
+
+```bash
+cp .env.example .env   # 填入真实 Key；.env 已被 .gitignore 忽略，请勿提交
+```
+
+接口与官方文档对应：`list_models` 调用 `GET /v1/models`（默认按 `type=text`、`sub_type=chat` 过滤，避免混入图片 / 语音 / 视频模型），`generate_response` 调用 `POST /v1/chat/completions`（认证 `Authorization: Bearer <API_KEY>`，PR-33 默认 `stream=False`）。模型列表不硬编码，全部来自接口实时返回。
+
+### 无 API Key 时的 mock 模式
+
+未配置 `SILICONFLOW_API_KEY` 时，`registry.get_text_provider()` 自动回退 `MockProvider`，应用不会报错崩溃；返回结果 `status=mock`，页面据此可明确标识当前为 mock 模式。mock 回答仅用于打通链路，不代表任何真实模型结果。
+
+### 安全边界
+
+API Key、`Authorization` 请求头与完整请求头不会出现在页面、日志或 `raw_response` 中；4xx/5xx 与超时统一转为结构化错误（如 401/403 提示检查 Key 或权限、429 提示限流、503/504 提示服务繁忙或超时），不向用户抛供应商异常堆栈。
+
+
 ## 数据集管理（最小 CRUD）
 
 「数据集管理」页面提供任务题、Gold Answer、Rubric、错误标签与数据补强动作的最小可用维护：
