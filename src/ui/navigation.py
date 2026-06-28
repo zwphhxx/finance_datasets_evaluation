@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from html import escape
-
 from src.ui.case_detail import render_case_detail_page
 from src.ui.components import render_html
 from src.ui.dataset_quality import render_dataset_quality_page
@@ -56,11 +54,6 @@ def render_sidebar_navigation() -> str:
             args=(config.page_key,),
             type="primary" if is_current else "secondary",
             use_container_width=True,
-        )
-        note_class = "nav-note nav-note-active" if is_current else "nav-note"
-        render_html(
-            f'<div class="{note_class}">{escape(config.nav_summary)}</div>',
-            container=st.sidebar,
         )
 
     return st.session_state.current_page

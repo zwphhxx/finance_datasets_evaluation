@@ -125,7 +125,6 @@ def render_optimization_compare_page(data_bundle: dict) -> None:
 
     if comparison_df.empty:
         render_empty_state("暂无可展示数据")
-        _render_boundary_note()
         return
 
     _render_key_changes(comparison_df)
@@ -137,8 +136,6 @@ def render_optimization_compare_page(data_bundle: dict) -> None:
 
     with tab_changes:
         _render_change_table(comparison_df)
-
-    _render_boundary_note()
 
 
 def _render_key_changes(comparison_df) -> None:
@@ -233,13 +230,4 @@ def _render_change_table(comparison_df) -> None:
         table[["优化版本", "优化类型", "改动说明", "平均总分", "红线错误率", "说明"]],
         width="stretch",
         hide_index=True,
-    )
-
-
-def _render_boundary_note() -> None:
-    render_section_title("适用边界")
-    render_info_panel(
-        "当前结果边界",
-        "当前结果基于 MVP 样例数据和当前评测集观察，用于展示评测闭环与数据建设方法。"
-        "样本量有限，不代表真实生产环境或大规模实验结论。",
     )

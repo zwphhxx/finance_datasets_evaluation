@@ -26,7 +26,6 @@ from src.ui.components import (
     render_context_grid,
     render_empty_state,
     render_html,
-    render_info_panel,
     render_metric_card,
     render_page_shell,
     render_section_title,
@@ -287,12 +286,6 @@ def render_dataset_quality_page(data_bundle: dict) -> None:
     taxonomy = load_label_taxonomy()
 
     render_page_shell(get_page_config("dataset_quality"))
-
-    render_info_panel(
-        "本页回答的问题",
-        "当前数据集是否具备可扩展、可质检、可复用的基础。项目价值不在于五道示例题本身，"
-        "而在于任务覆盖、答案边界、评分一致性、错误可归因与数据可补强的建设方法。",
-    )
 
     _render_overview(data, manifest)
     _render_coverage(data)

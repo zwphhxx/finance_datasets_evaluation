@@ -5,7 +5,6 @@ import streamlit as st
 from src.ui.page_config import get_page_config
 from src.ui.components import (
     render_empty_state,
-    render_info_panel,
     render_context_grid,
     render_loop_rail,
     render_metric_card,
@@ -131,13 +130,6 @@ def render_overview_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
     validation_result = data_bundle["validation_result"]
     render_page_shell(get_page_config("overview"))
-
-    render_info_panel(
-        "本 Demo 展示什么",
-        "一条可运行的评测闭环：专业任务题 → Gold Answer → 多模型回答 → "
-        "Rubric 评分 → 错误归因 → 数据优化建议 → 优化验证。"
-        "重点说明模型哪里不稳定、为什么出错、后续补什么数据。",
-    )
 
     render_section_title("核心洞察", "关键数字均由当前样本动态计算。")
     insight_cards = get_overview_insight_cards(data)

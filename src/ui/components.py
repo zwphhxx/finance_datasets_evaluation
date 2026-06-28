@@ -9,21 +9,27 @@ import streamlit as st
 STYLE_CSS = """
 <style>
 :root {
-    --fde-bg: #f5f7fa;
+    --fde-bg: #f6f7f9;
     --fde-surface: #ffffff;
-    --fde-surface-muted: #eef2f7;
-    --fde-line: #d8dee8;
-    --fde-text: #172033;
-    --fde-muted: #607089;
-    --fde-blue: #12345a;
-    --fde-blue-soft: #e7eef8;
-    --fde-red: #b42318;
-    --fde-red-soft: #fdebea;
-    --fde-orange: #b76e00;
-    --fde-orange-soft: #fff4dd;
-    --fde-green: #247a4b;
-    --fde-green-soft: #e8f5ee;
-    --fde-gray-soft: #f2f4f7;
+    --fde-surface-muted: #eef1f5;
+    --fde-line: #e1e5ec;
+    --fde-text: #1f2733;
+    --fde-muted: #6a7686;
+    --fde-blue: #2b4a6f;
+    --fde-blue-soft: #eaf0f7;
+    --fde-blue-border: #d3deec;
+    /* Low-saturation status palette: error = rose, warning = beige, improve = sage. */
+    --fde-red: #8a3a3a;
+    --fde-red-soft: #f6e9ea;
+    --fde-red-border: #e3cdcd;
+    --fde-orange: #7c5a30;
+    --fde-orange-soft: #f2ecdf;
+    --fde-orange-border: #e0d4ba;
+    --fde-green: #2f5d3f;
+    --fde-green-soft: #e9f0ea;
+    --fde-green-border: #cdddd0;
+    --fde-gray-soft: #f1f3f6;
+    --fde-shadow: 0 1px 2px rgba(31, 39, 51, 0.05);
 }
 .stApp {
     background: var(--fde-bg);
@@ -50,11 +56,10 @@ header,
 }
 .nav-brand {
     border: 1px solid var(--fde-line);
-    border-radius: 16px;
-    background: linear-gradient(135deg, #ffffff 0%, #f4f7fb 100%);
-    padding: 1rem;
+    border-radius: 12px;
+    background: var(--fde-surface);
+    padding: 0.9rem 1rem;
     margin: 0.25rem 0 1rem 0;
-    box-shadow: 0 8px 22px rgba(18, 52, 90, 0.04);
 }
 .nav-brand-title {
     color: var(--fde-blue);
@@ -71,66 +76,73 @@ header,
 [data-testid="stSidebar"] .stButton > button {
     width: 100%;
     justify-content: flex-start;
-    border: 1px solid var(--fde-line);
-    background: #ffffff;
+    border: 1px solid transparent;
+    border-left: 3px solid transparent;
+    background: transparent;
     color: var(--fde-text);
-    border-radius: 13px;
-    padding: 0.78rem 0.85rem;
-    font-weight: 750;
-    box-shadow: 0 6px 16px rgba(18, 52, 90, 0.035);
+    border-radius: 9px;
+    padding: 0.62rem 0.8rem;
+    font-weight: 650;
+    box-shadow: none;
 }
 [data-testid="stSidebar"] .stButton > button[kind="primary"] {
-    background: var(--fde-blue);
-    border-color: var(--fde-blue);
-    color: #ffffff;
+    background: var(--fde-blue-soft);
+    border-color: var(--fde-blue-border);
+    border-left: 3px solid var(--fde-blue);
+    color: var(--fde-blue);
+    font-weight: 750;
 }
 [data-testid="stSidebar"] .stButton > button:hover,
 [data-testid="stSidebar"] .stButton > button:focus {
-    border-color: var(--fde-line);
-    background: var(--fde-blue-soft);
+    background: var(--fde-surface-muted);
     color: var(--fde-blue);
-}
-.nav-note {
-    color: var(--fde-muted);
-    font-size: 0.78rem;
-    line-height: 1.35;
-    border-left: 3px solid transparent;
-    background: #ffffff;
-    border-radius: 0 10px 10px 0;
-    padding: 0.34rem 0.62rem;
-    margin: -0.34rem 0 0.72rem 0.08rem;
-}
-.nav-note-active {
-    background: var(--fde-blue-soft);
-    border-left-color: var(--fde-blue);
-    color: var(--fde-blue);
-    font-weight: 700;
+    border-color: transparent;
+    border-left-color: var(--fde-line);
 }
 .page-header {
     border: 1px solid var(--fde-line);
-    background: linear-gradient(135deg, #ffffff 0%, #f1f5fa 100%);
-    border-radius: 16px;
-    padding: 1.2rem 1.3rem;
-    margin-bottom: 1.1rem;
-    box-shadow: 0 12px 34px rgba(18, 52, 90, 0.06);
+    border-left: 3px solid var(--fde-blue);
+    background: var(--fde-surface);
+    border-radius: 12px;
+    padding: 0.95rem 1.15rem;
+    margin-bottom: 0.7rem;
+    box-shadow: var(--fde-shadow);
 }
 .page-eyebrow {
     color: var(--fde-muted);
-    font-size: 0.78rem;
-    font-weight: 750;
+    font-size: 0.74rem;
+    font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    margin-bottom: 0.35rem;
+    margin-bottom: 0.3rem;
 }
 .page-header h1 {
     color: var(--fde-blue);
-    font-size: 1.85rem;
+    font-size: 1.55rem;
     line-height: 1.2;
-    margin: 0 0 0.45rem 0;
+    margin: 0 0 0.35rem 0;
 }
 .page-header p {
     color: var(--fde-muted);
-    margin: 0.2rem 0;
+    margin: 0.15rem 0;
+    font-size: 0.95rem;
+}
+.boundary-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    align-items: center;
+    margin: 0 0 1rem 0;
+}
+.boundary-chip {
+    display: inline-block;
+    background: var(--fde-surface-muted);
+    color: var(--fde-muted);
+    border: 1px solid var(--fde-line);
+    border-radius: 999px;
+    padding: 0.16rem 0.66rem;
+    font-size: 0.78rem;
+    font-weight: 600;
 }
 .metric-card,
 .fde-card,
@@ -139,11 +151,11 @@ header,
 .empty-state,
 .model-answer-card {
     border: 1px solid var(--fde-line);
-    border-radius: 14px;
+    border-radius: 12px;
     background: var(--fde-surface);
     padding: 1rem;
     margin: 0.45rem 0;
-    box-shadow: 0 8px 22px rgba(18, 52, 90, 0.04);
+    box-shadow: var(--fde-shadow);
 }
 .metric-card .metric-label,
 .metric-help,
@@ -159,8 +171,8 @@ header,
     line-height: 1.25;
 }
 .info-panel {
-    background: #ffffff;
-    border-left: 4px solid var(--fde-blue);
+    background: var(--fde-surface);
+    border-left: 3px solid var(--fde-blue);
 }
 .context-grid {
     display: grid;
@@ -186,8 +198,9 @@ header,
     line-height: 1.55;
 }
 .warning-panel {
-    border-color: #f2c98b;
+    border-color: var(--fde-orange-border);
     background: var(--fde-orange-soft);
+    color: var(--fde-orange);
 }
 .empty-state {
     background: var(--fde-gray-soft);
@@ -215,21 +228,21 @@ header,
 .status-low {
     background: var(--fde-green-soft);
     color: var(--fde-green);
-    border-color: #b8dec8;
+    border-color: var(--fde-green-border);
 }
 .score-mid,
 .status-warning,
 .status-medium {
     background: var(--fde-orange-soft);
     color: var(--fde-orange);
-    border-color: #f0d19c;
+    border-color: var(--fde-orange-border);
 }
 .score-low,
 .status-danger,
 .status-high {
     background: var(--fde-red-soft);
     color: var(--fde-red);
-    border-color: #f3b8b2;
+    border-color: var(--fde-red-border);
 }
 .status-neutral {
     background: var(--fde-gray-soft);
@@ -270,10 +283,10 @@ header,
     padding-top: 0.75rem;
 }
 .answer-boundary-panel {
-    border: 1px solid #b9cbe2;
-    border-left: 4px solid var(--fde-blue);
-    background: #f8fbff;
-    border-radius: 14px;
+    border: 1px solid var(--fde-blue-border);
+    border-left: 3px solid var(--fde-blue);
+    background: var(--fde-blue-soft);
+    border-radius: 12px;
     padding: 1rem;
     margin: 0.65rem 0 1rem 0;
 }
@@ -309,15 +322,15 @@ header,
 }
 .comparison-card {
     border: 1px solid var(--fde-line);
-    border-radius: 14px;
+    border-radius: 12px;
     background: #ffffff;
     padding: 1rem;
 }
 .comparison-card-preferred {
-    border-left: 4px solid var(--fde-green);
+    border-left: 3px solid var(--fde-green);
 }
 .comparison-card-rejected {
-    border-left: 4px solid var(--fde-orange);
+    border-left: 3px solid var(--fde-orange);
 }
 .comparison-label {
     color: var(--fde-muted);
@@ -333,7 +346,7 @@ header,
     overflow-x: auto;
     gap: 0.65rem;
     border: 1px solid var(--fde-line);
-    border-radius: 16px;
+    border-radius: 12px;
     background: #ffffff;
     padding: 0.85rem;
     margin: 0.5rem 0 1rem 0;
@@ -358,11 +371,11 @@ header,
 }
 .task-card {
     border: 1px solid var(--fde-line);
-    border-radius: 14px;
+    border-radius: 12px;
     background: var(--fde-surface);
     padding: 1.05rem 1.15rem;
     margin: 0.55rem 0;
-    box-shadow: 0 8px 22px rgba(18, 52, 90, 0.04);
+    box-shadow: var(--fde-shadow);
 }
 .task-card-head {
     display: flex;
@@ -398,7 +411,7 @@ header,
 .tag-domain {
     background: var(--fde-blue-soft);
     color: var(--fde-blue);
-    border-color: #cdddf0;
+    border-color: var(--fde-blue-border);
 }
 .tag-type {
     background: var(--fde-gray-soft);
@@ -430,11 +443,11 @@ header,
 }
 .fact-card {
     border: 1px solid var(--fde-line);
-    border-radius: 14px;
+    border-radius: 12px;
     background: var(--fde-surface);
     padding: 1rem 1.1rem;
     margin: 0.45rem 0;
-    box-shadow: 0 8px 22px rgba(18, 52, 90, 0.04);
+    box-shadow: var(--fde-shadow);
 }
 .fact-field {
     margin-top: 0.65rem;
@@ -459,20 +472,20 @@ header,
     margin: 0.3rem 0 0.2rem 0;
 }
 .redline-item {
-    border: 1px solid #f3b8b2;
-    border-left: 4px solid var(--fde-red);
+    border: 1px solid var(--fde-red-border);
+    border-left: 3px solid var(--fde-red);
     background: var(--fde-red-soft);
-    color: #7a1812;
+    color: var(--fde-red);
     border-radius: 10px;
     padding: 0.5rem 0.72rem;
     font-size: 0.92rem;
     line-height: 1.5;
 }
 .point-item {
-    border: 1px solid #b8dec8;
-    border-left: 4px solid var(--fde-green);
+    border: 1px solid var(--fde-green-border);
+    border-left: 3px solid var(--fde-green);
     background: var(--fde-green-soft);
-    color: #14532d;
+    color: var(--fde-green);
     border-radius: 10px;
     padding: 0.5rem 0.72rem;
     font-size: 0.92rem;
@@ -518,17 +531,17 @@ header,
 }
 .evidence-card {
     border: 1px solid var(--fde-line);
-    border-radius: 14px;
+    border-radius: 12px;
     background: var(--fde-surface);
     padding: 0.9rem 1.05rem;
     margin: 0.45rem 0;
-    box-shadow: 0 8px 22px rgba(18, 52, 90, 0.04);
+    box-shadow: var(--fde-shadow);
 }
 .evidence-card-clean {
-    border-left: 4px solid var(--fde-green);
+    border-left: 3px solid var(--fde-green);
 }
 .evidence-card-flagged {
-    border-left: 4px solid var(--fde-red);
+    border-left: 3px solid var(--fde-red);
 }
 .evidence-head {
     display: flex;
@@ -661,16 +674,24 @@ def render_page_header(title: str, subtitle: str, boundary_note: str | None = No
     )
 
 
+# Global, qualitative boundary disclaimer shown as a one-line chip strip under
+# every page header. These are project-wide caveats about the demo's data nature
+# (not business metrics, sample counts, model names or scores), so they stay a
+# fixed constant rather than being read per-page.
+GLOBAL_BOUNDARY_CHIPS = ["MVP 样本", "脱敏任务", "模拟模型回答", "仅用于样本内观察"]
+
+
+def render_boundary_bar(chips=None) -> None:
+    """Render the one-line boundary strip that replaces the old 3-card top."""
+    items = chips if chips is not None else GLOBAL_BOUNDARY_CHIPS
+    chip_html = "".join(f'<span class="boundary-chip">{escape(str(chip))}</span>' for chip in items)
+    render_html(f'<div class="boundary-bar">{chip_html}</div>')
+
+
 def render_page_shell(page_config) -> None:
-    """Render the unified page title and context block."""
+    """Render the unified page title and a lightweight boundary bar."""
     render_page_header(page_config.title, page_config.subtitle)
-    render_context_grid(
-        [
-            ("本页回答", page_config.question),
-            ("数据边界", page_config.boundary),
-            ("核心看点", page_config.highlights),
-        ]
-    )
+    render_boundary_bar()
 
 
 def render_card(content: str, class_name: str = "fde-card") -> None:
