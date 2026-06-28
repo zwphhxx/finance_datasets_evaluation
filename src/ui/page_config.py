@@ -52,6 +52,15 @@ PAGE_CONFIGS = [
         nav_summary="能力短板观察",
     ),
     PageConfig(
+        page_key="model_boundary",
+        title="模型边界报告",
+        subtitle="把评分与错误标签归纳为可直接使用、需人工复核与不可直接使用的边界。",
+        question="本页用于判断当前样本下，模型在金融专业任务中哪些可用、哪些必须人工复核、哪些不可直接采用。",
+        boundary="边界结论来自当前评分、错误标签与 Gold Answer 红线，仅用于样本内观察，不代表模型整体能力或采购建议。",
+        highlights="数据边界、三类使用边界、高频风险、数据补强方向和模型维度矩阵。",
+        nav_summary="可用边界与风险",
+    ),
+    PageConfig(
         page_key="error_analysis",
         title="错误归因与数据补强",
         subtitle="把错误表现连接到可能原因、数据补强动作和验证指标。",
