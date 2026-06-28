@@ -72,7 +72,17 @@ streamlit run app.py
 - `app/db/schema.sql`：核心数据表结构（任务题、Gold Answer、Rubric、模型回答、评分、错误标签、数据补强动作、评测批次），含 `status`、`created_at`、`updated_at` 等基础字段。
 - `app/db/init_db.py`：初始化数据库并从 `data/` 导入种子数据。
 - `app/db/repository.py`：封装基础读写（list/get/insert/update/delete）。
-- `app/services/dataset_service.py`：服务层，向页面提供数据，屏蔽底层来源。
+- `app/services/dataset_service.py`：服务层，向页面提供数据并承载最小 CRUD，屏蔽底层来源。
+
+## 数据集管理（最小 CRUD）
+
+「数据集管理」页面提供任务题、Gold Answer 与 Rubric 的最小可用维护：
+
+- 任务题：新增、编辑、停用（停用为 `status=inactive` 软删除，不做物理删除）与查看详情。
+- Gold Answer：编辑核心结论、必须覆盖点、关键依据、边界条件、不可接受错误与人工复核说明，`raw_json` 无损保留其余内容。
+- Rubric：查看评分维度、编辑权重与满分标准、扣分规则，并按 `impacted_dimension` 展示关联错误标签；权重合计异常时提示但不阻断保存。
+
+CRUD 仅写入 SQLite 运行时数据层，**不回写** `data/` 下的 CSV/JSON/YAML——后者仍是初始化 seed 与可审阅的版本化数据资产。维护需先初始化数据库（见上）；数据库不存在时该页回退为 seed 只读展示，并提供一键初始化入口。所有写入统一经由 `app/services/dataset_service.py`，页面层不出现 SQL。
 
 ## 如何扩展数据集
 

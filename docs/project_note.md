@@ -287,3 +287,33 @@ PR-30 在不引入复杂后端的前提下，为项目增加一个可选的 SQLi
 仓储 CRUD、以及读库与读种子的 EvaluationData 一致性。八个页面在「读库」与「读种子」两种
 模式下均渲染无异常，校验脚本输出「通过 19 项 · 警告 0 项 · 错误 0 项」，应用启动正常。
 生成的数据库文件作为构建产物纳入 .gitignore，可随时由种子重新初始化。
+
+## PR-31 任务题 / Gold Answer / Rubric 最小 CRUD
+
+在 PR-30 的 SQLite 数据层之上，新增「数据集管理」页面，把项目从静态展示升级为可维护的
+数据集管理原型。CRUD 只做最小可用，不引入登录、权限、审批流或批量导入导出。
+
+数据源边界（与 PR-30 一致并强化）：
+- CSV/JSON/YAML 继续作为初始化 seed 与版本化、可审阅的样本源；
+- SQLite 为运行时数据层；
+- CRUD 仅写入 SQLite，不回写 seed 文件；
+- 页面优先读取 SQLite，数据库不存在时回退 seed 文件（管理页此时为只读并提供一键初始化）；
+- 生成的 .db 仍不纳入版本控制。
+
+实现：
+- 服务层 `app/services/dataset_service.py` 新增任务题（create/update/set_status，停用即
+  status=inactive 软删除）、Gold Answer（在原始条目上就地编辑、结构化列与 raw_json 同步更新，
+  无损保留未编辑内容）、Rubric（编辑权重、满分标准、扣分规则）的最小 CRUD，及从 seed 初始化
+  的 ensure_seed_database。所有写入统一经由 repository，写入后清空数据缓存，使任务样本页、
+  样板题评测页在下一次 rerun 即读到最新数据。页面层不出现任何 SQL。
+- `app/db/schema.sql` 的 rubrics 表新增 full_mark_standard、deduction_rules 两个质量治理字段，
+  种子导入时留空，不预置任何编造内容。
+- 页面 `src/ui/dataset_admin.py` 以三个分区（任务题 / Gold Answer / Rubric）提供简洁表单，
+  Rubric 区按 label_taxonomy 的 impacted_dimension 展示关联错误标签，权重合计异常仅提示不阻断；
+  顶部固定说明「当前 CRUD 写入 SQLite；CSV/JSON/YAML 仍为初始化 seed 和可审阅数据资产。」
+- 导航与 page_config 新增 dataset_admin 页（标题「数据集管理」）。
+
+新增 `tests/test_pr31_dataset_crud.py` 覆盖任务题增改停（软删除、可重新启用）、新增去重与空
+编号校验、Gold Answer 可见编辑与 raw_json 无损、编辑不回写 seed 文件、Rubric 权重/规则编辑、
+种子质量列为空（不伪造）、页面注册与「读库 / seed 回退」两种模式渲染无异常。全量测试 174 项，
+保持既有的 4 项历史失败、0 项新增回归；校验脚本通过；应用启动正常。

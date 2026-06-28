@@ -23,6 +23,7 @@ import pandas as pd
 import streamlit as st
 
 from app.db import DEFAULT_DB_PATH
+from app.db.init_db import initialize_database
 from app.db.repository import Repository
 from src.data_service import (
     DATA_FILES,
@@ -152,3 +153,227 @@ def _load_from_db(db_path_value: str, _mtime: float) -> EvaluationData:
         preference_pairs=preference_pairs,
         optimization_comparison=optimization_comparison,
     )
+
+
+# --------------------------------------------------------------------------- #
+# 最小 CRUD（PR-31）
+#
+# 仅写入 SQLite，不回写 data/ 下的 seed 文件；写入后清空缓存，使任务样本页、
+# 样板题评测页等读取方在下一次 rerun 立即看到最新数据。所有写入统一经由
+# repository，页面层不出现任何 SQL。
+# --------------------------------------------------------------------------- #
+
+# Gold Answer 中以 JSON 数组存储的要素与标量要素（与 init_db 的导入口径一致）。
+_GOLD_LIST_FIELDS = ("must_have_points", "unacceptable_errors")
+_GOLD_SCALAR_FIELDS = (
+    "core_conclusion",
+    "key_evidence",
+    "analysis",
+    "materials_to_check",
+    "boundary_conditions",
+    "manual_review_notes",
+)
+_GOLD_EDITABLE_FIELDS = (
+    "core_conclusion",
+    "key_evidence",
+    "boundary_conditions",
+    "manual_review_notes",
+    "must_have_points",
+    "unacceptable_errors",
+)
+
+# 任务题可维护字段（与 task_cases 业务列对应；元数据列由数据库维护）。
+TASK_EDITABLE_FIELDS = (
+    "domain",
+    "scenario",
+    "task_type",
+    "difficulty",
+    "question",
+    "context",
+    "expected_capability",
+    "risk_level",
+)
+
+ACTIVE_STATUS = "active"
+INACTIVE_STATUS = "inactive"
+
+
+def _invalidate_caches() -> None:
+    """写入后清空 Streamlit 数据缓存，确保各页面读取到最新数据。"""
+    try:
+        st.cache_data.clear()
+    except Exception:
+        # 在无 Streamlit 运行时上下文（如纯函数测试）下静默跳过。
+        pass
+
+
+def _repository(db_path: Path | None = None) -> Repository:
+    return Repository(db_path or get_db_path())
+
+
+def ensure_seed_database(db_path: Path | None = None, *, force: bool = False) -> dict[str, int]:
+    """从现有 seed 文件初始化 SQLite 数据层，返回各表行数。
+
+    仅读取 data/ 下的 CSV/JSON/YAML 作为初始化来源，不修改它们；初始化后清空缓存。
+    """
+    path = db_path or get_db_path()
+    counts = initialize_database(path, force=force)
+    _invalidate_caches()
+    return counts
+
+
+# -- 任务题 ------------------------------------------------------------------ #
+def list_task_cases(db_path: Path | None = None) -> pd.DataFrame:
+    """返回全部任务题（含停用），用于管理页展示。"""
+    return _repository(db_path).list_df("task_cases")
+
+
+def get_task_case(case_id: str, db_path: Path | None = None) -> dict | None:
+    return _repository(db_path).get("task_cases", case_id)
+
+
+def create_task_case(values: dict, *, db_path: Path | None = None) -> None:
+    """新增任务题。values 以 task_cases 业务列为键，case_id 必填且不可重复。"""
+    case_id = str(values.get("case_id") or "").strip()
+    if not case_id:
+        raise DataLoadError("任务编号（case_id）不能为空。")
+    repository = _repository(db_path)
+    if repository.get("task_cases", case_id) is not None:
+        raise DataLoadError(f"任务编号已存在：{case_id}。")
+    payload = {"case_id": case_id}
+    for field in TASK_EDITABLE_FIELDS:
+        payload[field] = _clean(values.get(field))
+    payload["status"] = str(values.get("status") or ACTIVE_STATUS).strip() or ACTIVE_STATUS
+    repository.insert("task_cases", payload)
+    _invalidate_caches()
+
+
+def update_task_case(case_id: str, changes: dict, *, db_path: Path | None = None) -> None:
+    """编辑任务题的业务字段（不改动 case_id）。"""
+    editable = {field: _clean(changes[field]) for field in TASK_EDITABLE_FIELDS if field in changes}
+    if "status" in changes:
+        editable["status"] = str(changes["status"] or ACTIVE_STATUS).strip() or ACTIVE_STATUS
+    if not editable:
+        return
+    _repository(db_path).update("task_cases", case_id, editable)
+    _invalidate_caches()
+
+
+def set_task_case_status(case_id: str, status: str, *, db_path: Path | None = None) -> None:
+    """变更任务题状态。停用即 status=inactive，不做物理删除。"""
+    _repository(db_path).update("task_cases", case_id, {"status": status})
+    _invalidate_caches()
+
+
+# -- Gold Answer ------------------------------------------------------------- #
+def list_gold_answer_case_ids(db_path: Path | None = None) -> list[str]:
+    """返回已有 Gold Answer 的任务编号列表，供管理页选择编辑。"""
+    frame = _repository(db_path).list_df("gold_answers")
+    if "case_id" not in frame.columns:
+        return []
+    return [str(case_id) for case_id in frame["case_id"].tolist()]
+
+
+def get_gold_answer_record(case_id: str, db_path: Path | None = None) -> dict | None:
+    """返回某题 Gold Answer 的原始条目（以 raw_json 为准），供编辑回显。"""
+    row = _repository(db_path).get("gold_answers", case_id)
+    if row is None:
+        return None
+    raw = row.get("raw_json")
+    if raw:
+        try:
+            entry = json.loads(raw)
+            if isinstance(entry, dict):
+                return entry
+        except (TypeError, json.JSONDecodeError):
+            pass
+    # raw_json 缺失或异常时退回结构化列，保证仍可编辑。
+    return {key: row.get(key) for key in ("case_id", *_GOLD_SCALAR_FIELDS)}
+
+
+def update_gold_answer(case_id: str, fields: dict, *, db_path: Path | None = None) -> None:
+    """编辑 Gold Answer 的核心要素，结构化列与 raw_json 同步更新。
+
+    raw_json 始终作为页面展示的权威来源：在原始条目上就地修改被编辑的键，
+    其余键原样保留，确保无损兼容，不破坏现有展示。
+    """
+    repository = _repository(db_path)
+    row = repository.get("gold_answers", case_id)
+    if row is None:
+        raise DataLoadError(f"未找到 Gold Answer：{case_id}。")
+
+    entry = get_gold_answer_record(case_id, db_path) or {"case_id": case_id}
+    changes: dict[str, object] = {}
+
+    for field in _GOLD_EDITABLE_FIELDS:
+        if field not in fields:
+            continue
+        if field in _GOLD_LIST_FIELDS:
+            items = _as_list(fields[field])
+            entry[field] = items
+            changes[field] = json.dumps(items, ensure_ascii=False) if items else None
+        else:
+            text = _clean(fields[field])
+            entry[field] = text
+            changes[field] = text
+
+    if not changes:
+        return
+    changes["raw_json"] = json.dumps(entry, ensure_ascii=False)
+    repository.update("gold_answers", case_id, changes)
+    _invalidate_caches()
+
+
+# -- Rubric ------------------------------------------------------------------ #
+def list_rubrics(db_path: Path | None = None) -> pd.DataFrame:
+    """返回全部评分维度（含权重、满分标准与扣分规则），用于管理页展示。"""
+    return _repository(db_path).list_df("rubrics")
+
+
+def update_rubric(dimension_field: str, changes: dict, *, db_path: Path | None = None) -> None:
+    """编辑评分维度的权重、满分标准与扣分规则。"""
+    allowed = {"weight", "full_mark", "full_mark_standard", "deduction_rules"}
+    editable: dict[str, object] = {}
+    for key, value in changes.items():
+        if key not in allowed:
+            continue
+        if key in {"weight", "full_mark"}:
+            editable[key] = _as_int(value)
+        else:
+            editable[key] = _clean(value)
+    if not editable:
+        return
+    _repository(db_path).update("rubrics", dimension_field, editable)
+    _invalidate_caches()
+
+
+# -- 小工具 ------------------------------------------------------------------ #
+def _clean(value: object) -> str | None:
+    """空白/缺失统一规整为 None，其余转为去除首尾空白的字符串。"""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "none", "null"}:
+        return None
+    return text
+
+
+def _as_list(value: object) -> list[str]:
+    """将多行文本或列表规整为去空白、去空行的字符串列表。"""
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        items = [str(item).strip() for item in value]
+    else:
+        items = [line.strip() for line in str(value).splitlines()]
+    return [item for item in items if item]
+
+
+def _as_int(value: object) -> int | None:
+    cleaned = _clean(value)
+    if cleaned is None:
+        return None
+    try:
+        return int(float(cleaned))
+    except (TypeError, ValueError):
+        return None

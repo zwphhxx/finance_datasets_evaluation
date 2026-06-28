@@ -87,6 +87,15 @@ PAGE_CONFIGS = [
         highlights="数据集概览、覆盖矩阵、Gold Answer 质检、Rubric 质检、错误标签覆盖和扩展说明。",
         nav_summary="质量门槛与扩展接入",
     ),
+    PageConfig(
+        page_key="dataset_admin",
+        title="数据集管理",
+        subtitle="维护任务题、Gold Answer 与 Rubric，写入 SQLite 运行时数据层。",
+        question="本页用于新增、编辑、停用任务题，编辑 Gold Answer，查看与维护评分维度。",
+        boundary="CRUD 仅写入 SQLite；CSV/JSON/YAML 仍为初始化 seed 与可审阅数据资产，删除统一为停用。",
+        highlights="任务题增改停与详情、Gold Answer 要素编辑、评分维度权重与扣分规则维护。",
+        nav_summary="数据集维护与 CRUD",
+    ),
 ]
 
 PAGE_CONFIG_BY_KEY = {config.page_key: config for config in PAGE_CONFIGS}
