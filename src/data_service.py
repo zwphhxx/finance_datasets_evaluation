@@ -9,6 +9,15 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+try:
+    import yaml
+except ImportError:  # PyYAML is optional; the Demo degrades gracefully without it.
+    yaml = None
+
+
+DATASET_MANIFEST_FILE = "dataset_manifest.yml"
+LABEL_TAXONOMY_FILE = "label_taxonomy.yml"
+
 
 DATA_FILES = {
     "tasks": "tasks.csv",
@@ -155,3 +164,32 @@ def _load_all_data(data_dir_value: str) -> EvaluationData:
             data_dir,
         ),
     )
+
+
+def _read_yaml_file(filename: str, data_dir: Path | None = None) -> dict[str, Any]:
+    """Read a YAML config file, returning {} when absent or unparseable.
+
+    Manifest and taxonomy describe the dataset; they are not required for the
+    Demo to render, so any read failure degrades to an empty mapping rather
+    than raising.
+    """
+    directory = data_dir or get_data_dir()
+    path = directory / filename
+    if yaml is None or not path.exists() or not path.is_file():
+        return {}
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            loaded = yaml.safe_load(handle)
+    except Exception:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+@st.cache_data(show_spinner=False)
+def load_dataset_manifest() -> dict[str, Any]:
+    return _read_yaml_file(DATASET_MANIFEST_FILE)
+
+
+@st.cache_data(show_spinner=False)
+def load_label_taxonomy() -> dict[str, Any]:
+    return _read_yaml_file(LABEL_TAXONOMY_FILE)

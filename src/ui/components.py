@@ -554,6 +554,68 @@ header,
     color: var(--fde-text);
     line-height: 1.6;
 }
+.matrix-table,
+.check-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.4rem 0 0.4rem 0;
+    font-size: 0.9rem;
+}
+.matrix-table th,
+.matrix-table td {
+    border: 1px solid var(--fde-line);
+    padding: 0.5rem 0.6rem;
+    text-align: center;
+}
+.matrix-table thead th {
+    background: var(--fde-surface-muted);
+    color: var(--fde-muted);
+    font-weight: 750;
+}
+.matrix-table tbody th {
+    background: var(--fde-blue-soft);
+    color: var(--fde-blue);
+    font-weight: 750;
+    text-align: left;
+    white-space: nowrap;
+}
+.matrix-table td {
+    color: var(--fde-text);
+}
+.matrix-zero {
+    color: var(--fde-muted);
+}
+.matrix-total {
+    background: var(--fde-gray-soft);
+    font-weight: 750;
+    color: var(--fde-blue);
+}
+.check-table td,
+.check-table th {
+    padding: 0.6rem;
+    border-bottom: 1px solid var(--fde-line);
+    text-align: left;
+    vertical-align: top;
+}
+.check-table thead th {
+    color: var(--fde-muted);
+    font-size: 0.8rem;
+    font-weight: 750;
+}
+.check-table .check-key {
+    color: var(--fde-blue);
+    font-weight: 750;
+    white-space: nowrap;
+}
+.check-table .check-count {
+    font-weight: 800;
+    color: var(--fde-blue);
+    white-space: nowrap;
+}
+.check-table .check-note {
+    color: var(--fde-muted);
+    line-height: 1.55;
+}
 </style>
 """
 

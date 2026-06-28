@@ -69,6 +69,15 @@ PAGE_CONFIGS = [
         highlights="版本变更、平均分、依据可靠性、推理得分、幻觉率和红线错误率。",
         nav_summary="前后指标对比",
     ),
+    PageConfig(
+        page_key="dataset_quality",
+        title="数据集质量与扩展框架",
+        subtitle="说明数据集的质量门槛、任务覆盖、答案边界与可扩展接入方式。",
+        question="本页用于判断当前数据集是否具备可扩展、可质检、可复用的基础。",
+        boundary="当前为 MVP 样本规模，覆盖矩阵用于展示结构而非完整生产数据集。",
+        highlights="数据集概览、覆盖矩阵、Gold Answer 质检、Rubric 质检、错误标签覆盖和扩展说明。",
+        nav_summary="质量门槛与扩展接入",
+    ),
 ]
 
 PAGE_CONFIG_BY_KEY = {config.page_key: config for config in PAGE_CONFIGS}
