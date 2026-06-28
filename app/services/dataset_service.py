@@ -31,6 +31,7 @@ from src.data_service import (
     OPTIMIZATION_COMPARISON_COLUMNS,
     DataLoadError,
     EvaluationData,
+    _read_yaml_file,
     _restrict_to_active,
     build_gold_answer_map,
     get_data_dir,
@@ -227,6 +228,24 @@ def ensure_seed_database(db_path: Path | None = None, *, force: bool = False) ->
 def list_task_cases(db_path: Path | None = None) -> pd.DataFrame:
     """返回全部任务题（含停用），用于管理页展示。"""
     return _repository(db_path).list_df("task_cases")
+
+
+def list_dataset_versions(db_path: Path | None = None) -> list[str]:
+    """返回数据集中出现过的版本号（去重、降序）。
+
+    数据库可用时取自 task_cases.version；否则回退读取 manifest 声明的版本。
+    供「真实模型评测」等页面做数据集版本选择。
+    """
+    path = db_path or get_db_path()
+    if database_ready(path):
+        frame = _repository(path).list_df("task_cases")
+        if "version" in frame.columns:
+            versions = sorted({str(v) for v in frame["version"].dropna().tolist()}, reverse=True)
+            if versions:
+                return versions
+    manifest = _read_yaml_file("dataset_manifest.yml", get_data_dir())
+    version = str(manifest.get("version") or "") if isinstance(manifest, dict) else ""
+    return [version] if version else []
 
 
 def get_task_case(case_id: str, db_path: Path | None = None) -> dict | None:

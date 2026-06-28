@@ -96,6 +96,15 @@ PAGE_CONFIGS = [
         highlights="任务题增改停与详情、Gold Answer 要素编辑、评分维度权重与扣分规则维护。",
         nav_summary="数据集维护与 CRUD",
     ),
+    PageConfig(
+        page_key="live_eval",
+        title="真实模型评测",
+        subtitle="从数据集选择任务与硅基流动模型，生成真实模型回答并查看运行状态。",
+        question="本页用于选择任务与模型，运行一次真实（或 mock）模型生成，查看回答与运行状态。",
+        boundary="本页只负责运行与展示，不做评分、不做模型排名；未配置 API Key 时自动使用 mock 模式。",
+        highlights="数据集版本、任务范围、Provider 与模型选择、生成参数、运行结果表与模型回答查看。",
+        nav_summary="真实模型运行",
+    ),
 ]
 
 PAGE_CONFIG_BY_KEY = {config.page_key: config for config in PAGE_CONFIGS}

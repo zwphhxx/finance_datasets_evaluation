@@ -20,6 +20,7 @@ DROP TABLE IF EXISTS error_annotations;
 DROP TABLE IF EXISTS improvement_actions;
 DROP TABLE IF EXISTS evaluation_runs;
 DROP TABLE IF EXISTS error_taxonomy;
+DROP TABLE IF EXISTS live_run_responses;
 
 -- 任务题：对应 data/tasks.csv。status 复用任务的 active/inactive 标记。
 CREATE TABLE task_cases (
@@ -175,4 +176,32 @@ CREATE TABLE error_taxonomy (
     version               TEXT,
     created_at            TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- 真实模型评测运行结果（PR-34）。本表不来自任何 seed 文件，仅承载「真实模型评测」页
+-- 运行产生的模型回答，与承载评分的 model_responses（seed）分离，避免污染既有分析页。
+-- run_status 为生成业务状态（success/failed/mock）；status 为行生命周期标记（active/inactive）。
+-- 不存储 API Key、Authorization 头或任何认证信息。
+CREATE TABLE live_run_responses (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id        TEXT,
+    case_id       TEXT,
+    task_type     TEXT,
+    provider      TEXT,
+    model_name    TEXT,
+    run_mode      TEXT,
+    run_status    TEXT,
+    answer_text   TEXT,
+    answer_length INTEGER,
+    latency_ms    INTEGER,
+    input_tokens  INTEGER,
+    output_tokens INTEGER,
+    total_tokens  INTEGER,
+    http_status   INTEGER,
+    trace_id      TEXT,
+    error_code    TEXT,
+    error_message TEXT,
+    status        TEXT NOT NULL DEFAULT 'active',
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );

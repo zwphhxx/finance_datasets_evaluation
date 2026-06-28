@@ -212,7 +212,9 @@ class RegistryTests(unittest.TestCase):
         reset_for_testing()
 
     def test_falls_back_to_mock_without_key(self):
-        with mock.patch.object(sf, "is_configured", return_value=False):
+        # registry 在导入时绑定了 siliconflow_configured 引用，需在 registry 命名空间打桩，
+        # 才能与真实环境（含本地 .env Key）无关地验证回退逻辑。
+        with mock.patch("app.models.registry.siliconflow_configured", return_value=False):
             provider = get_text_provider()
         self.assertEqual(provider.name, "mock")
 

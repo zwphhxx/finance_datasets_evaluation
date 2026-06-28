@@ -28,6 +28,7 @@ TABLE_PRIMARY_KEYS: dict[str, str] = {
     "improvement_actions": "id",
     "evaluation_runs": "run_id",
     "error_taxonomy": "error_label",
+    "live_run_responses": "id",
 }
 
 # 写入时由数据库默认值维护、调用方无需显式提供的列。

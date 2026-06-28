@@ -5,6 +5,7 @@ from src.ui.components import render_html
 from src.ui.dataset_admin import render_dataset_admin_page
 from src.ui.dataset_quality import render_dataset_quality_page
 from src.ui.error_analysis import render_error_analysis_page
+from src.ui.live_eval import render_live_eval_page
 from src.ui.model_boundary import render_model_boundary_page
 from src.ui.model_diagnosis import render_model_diagnosis_page
 from src.ui.optimization_compare import render_optimization_compare_page
@@ -23,6 +24,7 @@ PAGES = {
     "optimization_compare": render_optimization_compare_page,
     "dataset_quality": render_dataset_quality_page,
     "dataset_admin": render_dataset_admin_page,
+    "live_eval": render_live_eval_page,
 }
 
 
