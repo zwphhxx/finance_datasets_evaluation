@@ -10,12 +10,11 @@ from src.metrics import (
     get_optimization_change_summary,
     get_optimization_comparison_metrics,
 )
-from src.ui.common import PAGE_CONTEXTS
+from src.ui.page_config import get_page_config
 from src.ui.components import (
-    render_context_summary,
     render_empty_state,
     render_info_panel,
-    render_page_header,
+    render_page_shell,
     render_section_title,
 )
 
@@ -32,10 +31,7 @@ def collect_optimization_compare_tables(data_bundle: dict) -> dict:
 def render_optimization_compare_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
     comparison_df = getattr(data, "optimization_comparison", pd.DataFrame())
-    context = PAGE_CONTEXTS["优化验证"]
-
-    render_page_header("优化验证", context["question"], context["boundary"])
-    render_context_summary(context)
+    render_page_shell(get_page_config("optimization_compare"))
 
     if comparison_df.empty:
         render_empty_state("暂无可展示数据")

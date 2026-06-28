@@ -12,15 +12,14 @@ from src.metrics import (
     merge_case_outputs_with_scores,
 )
 from src.ui.common import has_value, show_model_score, write_list_field, write_text_field
-from src.ui.common import PAGE_CONTEXTS
+from src.ui.page_config import get_page_config
 from src.ui.components import (
     render_answer_boundary_panel,
-    render_context_summary,
     render_empty_state,
     render_model_answer_card,
-    render_page_header,
     render_preference_comparison,
     render_score_badge,
+    render_page_shell,
     render_section_title,
     render_status_badge,
 )
@@ -37,10 +36,7 @@ SCORE_COLUMNS = [
 
 def render_case_detail_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
-    context = PAGE_CONTEXTS["样板题深度评测"]
-
-    render_page_header("样板题深度评测", context["question"], context["boundary"])
-    render_context_summary(context)
+    render_page_shell(get_page_config("case_detail"))
     case_ids = get_case_ids(data.tasks)
     if not case_ids:
         render_empty_state("暂无可展示数据")

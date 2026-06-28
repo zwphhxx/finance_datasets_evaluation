@@ -49,15 +49,41 @@ header,
     background: #ffffff;
     border-right: 1px solid var(--fde-line);
 }
+.nav-brand {
+    border: 1px solid var(--fde-line);
+    border-radius: 16px;
+    background: linear-gradient(135deg, #ffffff 0%, #f4f7fb 100%);
+    padding: 1rem;
+    margin: 0.25rem 0 1rem 0;
+    box-shadow: 0 8px 22px rgba(18, 52, 90, 0.04);
+}
+.nav-brand-title {
+    color: var(--fde-blue);
+    font-size: 1.05rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+}
+.nav-brand-subtitle {
+    color: var(--fde-muted);
+    font-size: 0.82rem;
+    line-height: 1.45;
+    margin-top: 0.28rem;
+}
 [data-testid="stSidebar"] .stButton > button {
     width: 100%;
     justify-content: flex-start;
-    border: 1px solid transparent;
-    background: transparent;
+    border: 1px solid var(--fde-line);
+    background: #ffffff;
     color: var(--fde-text);
-    border-radius: 10px;
-    padding: 0.62rem 0.75rem;
-    font-weight: 600;
+    border-radius: 13px;
+    padding: 0.78rem 0.85rem;
+    font-weight: 750;
+    box-shadow: 0 6px 16px rgba(18, 52, 90, 0.035);
+}
+[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+    background: var(--fde-blue);
+    border-color: var(--fde-blue);
+    color: #ffffff;
 }
 [data-testid="stSidebar"] .stButton > button:hover,
 [data-testid="stSidebar"] .stButton > button:focus {
@@ -69,9 +95,15 @@ header,
     color: var(--fde-muted);
     font-size: 0.78rem;
     line-height: 1.35;
-    margin: -0.25rem 0 0.5rem 0.15rem;
+    border-left: 3px solid transparent;
+    background: #ffffff;
+    border-radius: 0 10px 10px 0;
+    padding: 0.34rem 0.62rem;
+    margin: -0.34rem 0 0.72rem 0.08rem;
 }
 .nav-note-active {
+    background: var(--fde-blue-soft);
+    border-left-color: var(--fde-blue);
     color: var(--fde-blue);
     font-weight: 700;
 }
@@ -357,6 +389,18 @@ def render_page_header(title: str, subtitle: str, boundary_note: str | None = No
             <p>{safe_subtitle}</p>
         </div>
         """
+    )
+
+
+def render_page_shell(page_config) -> None:
+    """Render the unified page title and context block."""
+    render_page_header(page_config.title, page_config.subtitle)
+    render_context_grid(
+        [
+            ("本页回答", page_config.question),
+            ("数据边界", page_config.boundary),
+            ("核心看点", page_config.highlights),
+        ]
     )
 
 

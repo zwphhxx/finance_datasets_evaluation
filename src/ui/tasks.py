@@ -3,12 +3,11 @@ from __future__ import annotations
 import streamlit as st
 
 from src.metrics import filter_tasks_by_domain, get_task_domains
-from src.ui.common import PAGE_CONTEXTS
+from src.ui.page_config import get_page_config
 from src.ui.components import (
-    render_context_summary,
     render_empty_state,
     render_metric_card,
-    render_page_header,
+    render_page_shell,
     render_section_title,
 )
 
@@ -16,10 +15,7 @@ from src.ui.components import (
 def render_tasks_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
     tasks_df = data.tasks
-    context = PAGE_CONTEXTS["专业任务集"]
-
-    render_page_header("专业任务集", context["question"], context["boundary"])
-    render_context_summary(context)
+    render_page_shell(get_page_config("tasks"))
     if tasks_df.empty:
         render_empty_state("暂无可展示数据")
         return

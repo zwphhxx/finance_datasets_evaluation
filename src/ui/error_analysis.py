@@ -10,11 +10,10 @@ from src.metrics import (
     get_priority_error_samples,
     normalize_optimization_plan,
 )
-from src.ui.common import PAGE_CONTEXTS
+from src.ui.page_config import get_page_config
 from src.ui.components import (
-    render_context_summary,
     render_empty_state,
-    render_page_header,
+    render_page_shell,
     render_section_title,
 )
 
@@ -189,9 +188,7 @@ def _show_priority_samples(error_df, optimization_df):
 
 
 def render_error_analysis(data_bundle):
-    context = PAGE_CONTEXTS["错误归因与数据补强"]
-    render_page_header("错误归因与数据补强", context["question"], context["boundary"])
-    render_context_summary(context)
+    render_page_shell(get_page_config("error_analysis"))
 
     data = data_bundle["data"]
     error_df = data.errors

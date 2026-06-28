@@ -15,21 +15,17 @@ from src.metrics import (
     get_model_error_type_counts,
     get_model_total_scores,
 )
-from src.ui.common import PAGE_CONTEXTS
+from src.ui.page_config import get_page_config
 from src.ui.components import (
-    render_context_summary,
     render_empty_state,
-    render_page_header,
+    render_page_shell,
     render_section_title,
 )
 
 
 def render_model_diagnosis_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
-    context = PAGE_CONTEXTS["模型能力诊断"]
-
-    render_page_header("模型能力诊断", context["question"], context["boundary"])
-    render_context_summary(context)
+    render_page_shell(get_page_config("model_diagnosis"))
 
     if data.model_outputs.empty:
         render_empty_state("暂无可展示数据")

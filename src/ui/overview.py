@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import streamlit as st
 
-from src.ui.common import PAGE_CONTEXTS
+from src.ui.page_config import get_page_config
 from src.ui.components import (
-    render_context_summary,
     render_empty_state,
     render_loop_rail,
     render_metric_card,
-    render_page_header,
+    render_page_shell,
     render_section_title,
     render_status_badge,
 )
@@ -60,10 +59,7 @@ def get_evaluation_loop_steps() -> list[str]:
 def render_overview_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
     validation_result = data_bundle["validation_result"]
-    context = PAGE_CONTEXTS["评测项目总览"]
-
-    render_page_header("评测项目总览", context["question"], context["boundary"])
-    render_context_summary(context)
+    render_page_shell(get_page_config("overview"))
 
     render_section_title("项目定位")
     st.write(
