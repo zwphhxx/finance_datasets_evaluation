@@ -155,6 +155,34 @@ STYLE_CSS = """
     font-size: 0.9rem;
     margin-bottom: 0.6rem;
 }
+.loop-rail {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 0.65rem;
+    border: 1px solid var(--fde-line);
+    border-radius: 16px;
+    background: #ffffff;
+    padding: 0.85rem;
+    margin: 0.5rem 0 1rem 0;
+}
+.loop-step {
+    border-left: 3px solid var(--fde-blue);
+    background: var(--fde-blue-soft);
+    border-radius: 10px;
+    padding: 0.7rem 0.75rem;
+    min-height: 4.3rem;
+}
+.loop-step-index {
+    color: var(--fde-muted);
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+.loop-step-label {
+    color: var(--fde-blue);
+    font-weight: 750;
+    margin-top: 0.25rem;
+}
 </style>
 """
 
@@ -244,6 +272,23 @@ def render_section_title(title, caption=None) -> None:
             {caption_html}
         </div>
         """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_loop_rail(steps) -> None:
+    step_html = []
+    for index, step in enumerate(steps, start=1):
+        step_html.append(
+            f"""
+            <div class="loop-step">
+                <div class="loop-step-index">环节 {index:02d}</div>
+                <div class="loop-step-label">{escape(str(step))}</div>
+            </div>
+            """
+        )
+    st.markdown(
+        f'<div class="loop-rail">{"".join(step_html)}</div>',
         unsafe_allow_html=True,
     )
 

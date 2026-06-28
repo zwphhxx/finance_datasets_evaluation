@@ -6,6 +6,7 @@ from src.ui.common import PAGE_CONTEXTS
 from src.ui.components import (
     render_empty_state,
     render_info_panel,
+    render_loop_rail,
     render_metric_card,
     render_page_header,
     render_section_title,
@@ -44,6 +45,18 @@ def get_overview_asset_cards(data) -> list[dict[str, str | int]]:
     ]
 
 
+def get_evaluation_loop_steps() -> list[str]:
+    return [
+        "专业任务",
+        "Gold Answer",
+        "模型回答",
+        "Rubric 评分",
+        "错误归因",
+        "数据补强",
+        "优化验证",
+    ]
+
+
 def render_overview_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
     validation_result = data_bundle["validation_result"]
@@ -64,8 +77,8 @@ def render_overview_page(data_bundle: dict) -> None:
     question_cols[1].write("**为什么出错**\n\n通过 Gold Answer、扣分说明和错误标签还原问题来源。")
     question_cols[2].write("**补什么数据**\n\n将错误归因转化为数据补强动作和后续验证指标。")
 
-    render_section_title("闭环流程")
-    st.write("专业任务 → Gold Answer → 模型回答 → Rubric评分 → 错误归因 → 数据补强 → 优化验证")
+    render_section_title("闭环流程", "从评测样本到优化验证的主线。")
+    render_loop_rail(get_evaluation_loop_steps())
 
     render_section_title("核心数据资产")
     cards = get_overview_asset_cards(data)
