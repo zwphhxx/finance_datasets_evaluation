@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from src.charts import render_error_type_distribution_chart, render_model_average_score_chart
-from src.metrics import get_overview_metrics
-from src.ui.common import has_value
+from src.ui.common import render_page_context
 
 
 def render_data_quality_status(validation_result) -> None:
@@ -20,30 +18,52 @@ def render_data_quality_status(validation_result) -> None:
         st.warning(message)
 
 
+def get_overview_asset_cards(data) -> list[dict[str, str | int]]:
+    task_count = len(data.tasks)
+    output_count = len(data.model_outputs)
+    gold_count = len(data.gold_answer_map)
+    error_count = len(data.errors)
+    preference_count = len(data.preference_pairs)
+    optimization_count = len(data.optimizations)
+
+    return [
+        {"label": "任务样本", "value": task_count, "note": "脱敏专业评测任务。"},
+        {"label": "模型回答", "value": output_count, "note": "用于评分和错误分析的回答记录。"},
+        {"label": "Gold Answer 覆盖", "value": f"{gold_count}/{task_count}", "note": "用于定义优秀回答边界。"},
+        {"label": "错误标签", "value": error_count, "note": "用于定位扣分原因。"},
+        {"label": "Preference Pair", "value": preference_count, "note": "用于记录回答偏好和改进方向。"},
+        {"label": "优化动作", "value": optimization_count, "note": "用于承接数据补强任务。"},
+    ]
+
+
 def render_overview_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
     validation_result = data_bundle["validation_result"]
-    metrics = get_overview_metrics(data_bundle)
 
-    st.header("项目总览")
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("任务数", metrics["task_count"])
-    col2.metric("模型数", metrics["model_count"])
-    average_score = metrics["average_total_score"]
-    col3.metric("平均总分", f"{average_score:.1f}" if has_value(average_score) else "暂无")
-    col4.metric("错误标签数", metrics["error_label_count"])
-    col5.metric("优化建议数", metrics["optimization_count"])
+    st.header("评测项目总览")
+    render_page_context("评测项目总览")
+
+    st.subheader("项目定位")
+    st.write(
+        "FinDueEval 用结构化 MVP 样本展示金融专业场景模型评测与数据优化闭环，"
+        "重点说明模型哪里不稳定、为什么出错、后续补什么数据。"
+    )
+
+    st.subheader("三个核心问题")
+    question_cols = st.columns(3)
+    question_cols[0].write("**模型哪里不稳定**\n\n通过分维度评分、错误类型和领域表现定位能力短板。")
+    question_cols[1].write("**为什么出错**\n\n通过 Gold Answer、扣分说明和错误标签还原问题来源。")
+    question_cols[2].write("**补什么数据**\n\n将错误归因转化为数据补强动作和后续验证指标。")
+
+    st.subheader("闭环流程")
+    st.write("专业任务 → Gold Answer → 模型回答 → Rubric评分 → 错误归因 → 数据补强 → 优化验证")
+
+    st.subheader("核心数据资产")
+    cards = get_overview_asset_cards(data)
+    for row_start in range(0, len(cards), 3):
+        cols = st.columns(3)
+        for col, card in zip(cols, cards[row_start : row_start + 3]):
+            col.metric(card["label"], card["value"])
+            col.caption(card["note"])
 
     render_data_quality_status(validation_result)
-
-    st.subheader("各模型平均得分")
-    render_model_average_score_chart(
-        data.scores,
-        empty_message="暂无评分数据，暂不能展示模型平均得分。",
-    )
-
-    st.subheader("错误类型分布")
-    render_error_type_distribution_chart(
-        data.errors,
-        empty_message="暂无错误标签数据，暂不能展示错误类型分布。",
-    )

@@ -15,16 +15,17 @@ from src.metrics import (
     get_model_error_type_counts,
     get_model_total_scores,
 )
+from src.ui.common import render_page_context
 
 
 def render_model_diagnosis_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
 
     st.header("模型能力诊断")
-    st.caption("模型在该维度样本较少时，结论仅用于当前评测集观察。")
+    render_page_context("模型能力诊断")
 
     if data.model_outputs.empty:
-        st.info("当前暂无模型回答数据，无法形成模型能力诊断。")
+        st.info("当前样本暂无可展示数据。")
         return
 
     tab_total, tab_dimensions, tab_errors, tab_domains, tab_summary = st.tabs(

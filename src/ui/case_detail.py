@@ -12,6 +12,7 @@ from src.metrics import (
     merge_case_outputs_with_scores,
 )
 from src.ui.common import has_value, show_model_score, write_list_field, write_text_field
+from src.ui.common import render_page_context
 
 
 SCORE_COLUMNS = [
@@ -26,13 +27,14 @@ SCORE_COLUMNS = [
 def render_case_detail_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
 
-    st.header("单题详情")
+    st.header("样板题深度评测")
+    render_page_context("样板题深度评测")
     case_ids = get_case_ids(data.tasks)
     if not case_ids:
-        st.info("暂无任务数据，无法展示单题详情。")
+        st.info("当前样本暂无可展示数据。")
         return
 
-    selected_case = st.selectbox("选择案例 ID", case_ids)
+    selected_case = st.selectbox("选择样板题", case_ids)
     task_rows = get_task_by_case_id(data.tasks, selected_case)
     if task_rows.empty:
         st.warning("未找到该案例的任务信息。")

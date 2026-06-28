@@ -46,3 +46,9 @@
 错误分析页已升级为“错误归因与数据优化”页面。页面先按 `error_type` 汇总错误次数、严重程度、涉及模型和题目，再将错误类型关联到 `optimization_plan` 中的可能原因、数据补强动作、样本格式、预期效果、验证指标和状态。
 
 `optimization_plan` 兼容旧字段 `frequent_error`、`likely_cause`、`optimization_action`、`data_sample_format`，也支持 `action_id`、`error_type`、`root_cause`、`data_action`、`sample_format`、`priority`、`expected_effect`、`validation_metric`、`status`。当某类错误暂无匹配优化计划时，页面保留错误样本并显示克制提示，便于后续补充数据建设任务。
+
+## PR-09 信息架构与产品叙事
+
+PR-09 将侧边栏和页面说明调整为“模型评测与数据优化闭环”叙事：评测项目总览、专业任务集、样板题深度评测、模型能力诊断、错误归因与数据补强、优化验证。
+
+每个页面顶部统一说明“本页回答什么问题、当前数据边界、页面核心看点”。首页从单纯指标展示调整为项目定位、三个核心问题、闭环流程和核心数据资产，便于先理解评测集目标，再进入单题、模型诊断、错误归因和优化验证。

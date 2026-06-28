@@ -10,6 +10,7 @@ from src.metrics import (
     get_optimization_change_summary,
     get_optimization_comparison_metrics,
 )
+from src.ui.common import render_page_context
 
 
 def collect_optimization_compare_tables(data_bundle: dict) -> dict:
@@ -25,11 +26,11 @@ def render_optimization_compare_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
     comparison_df = getattr(data, "optimization_comparison", pd.DataFrame())
 
-    st.header("优化前后对比")
-    st.caption("展示 Prompt、RAG 或数据补强版本在当前评测集中的样例指标变化。")
+    st.header("优化验证")
+    render_page_context("优化验证")
 
     if comparison_df.empty:
-        st.info("暂无优化前后对比数据，不影响其他页面使用。")
+        st.info("当前样本暂无可展示数据。")
         _render_boundary_note()
         return
 

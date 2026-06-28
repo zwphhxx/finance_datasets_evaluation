@@ -9,6 +9,7 @@ from src.metrics import (
     get_priority_error_samples,
     normalize_optimization_plan,
 )
+from src.ui.common import render_page_context
 
 
 def _display_table(df, columns, empty_message):
@@ -21,7 +22,7 @@ def _display_table(df, columns, empty_message):
         st.info(empty_message)
         return
 
-    st.dataframe(df[available_columns], use_container_width=True, hide_index=True)
+    st.dataframe(df[available_columns], width="stretch", hide_index=True)
 
 
 def _show_error_distribution(error_df):
@@ -60,12 +61,12 @@ def _show_error_attribution(error_df, optimization_df):
 
 
 def _show_data_actions(error_df, optimization_df):
-    st.subheader("数据优化动作")
+    st.subheader("数据补强动作")
     st.caption("数据补强建议以“补什么数据”为核心，并保留验证指标用于后续复测。")
 
     normalized_plan = normalize_optimization_plan(optimization_df)
     if normalized_plan.empty:
-        st.info("暂无 optimization_plan 数据，无法展示数据补强建议。")
+        st.info("该模块用于展示数据闭环，当前暂无对应记录。")
         return
 
     actions = get_error_attribution_actions(error_df, optimization_df)
@@ -141,8 +142,8 @@ def _show_priority_samples(error_df, optimization_df):
 
 
 def render_error_analysis(data_bundle):
-    st.header("错误归因与数据优化")
-    st.caption("基于当前样本观察，将错误标签转化为数据补强动作和后续验证指标。")
+    st.header("错误归因与数据补强")
+    render_page_context("错误归因与数据补强")
 
     data = data_bundle["data"]
     error_df = data.errors
