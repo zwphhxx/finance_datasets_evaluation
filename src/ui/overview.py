@@ -40,8 +40,8 @@ def get_overview_asset_cards(data) -> list[dict[str, str | int]]:
         {"label": "模型回答", "value": output_count, "note": "用于评分和错误分析的回答记录。"},
         {"label": "Gold Answer 覆盖", "value": f"{gold_count}/{task_count}", "note": "用于定义优秀回答边界。"},
         {"label": "错误标签", "value": error_count, "note": "用于定位扣分原因。"},
-        {"label": "Preference Pair", "value": preference_count, "note": "用于记录回答偏好和改进方向。"},
-        {"label": "优化动作", "value": optimization_count, "note": "用于承接数据补强任务。"},
+        {"label": "偏好样本", "value": preference_count, "note": "用于记录回答偏好和改进方向。"},
+        {"label": "数据补强动作", "value": optimization_count, "note": "用于承接数据补强任务。"},
     ]
 
 
@@ -67,7 +67,7 @@ def render_overview_page(data_bundle: dict) -> None:
 
     render_section_title("项目定位")
     st.write(
-        "Finance Model Evaluation 用结构化 MVP 样本展示金融专业场景模型评测与数据优化闭环，"
+        "FinDueEval 用结构化 MVP 样本展示金融专业场景模型评测与数据优化闭环，"
         "重点说明模型哪里不稳定、为什么出错、后续补什么数据。"
     )
 

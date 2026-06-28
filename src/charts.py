@@ -3,6 +3,8 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from src.ui.components import render_empty_state
+
 from src.metrics import (
     get_error_type_counts,
     get_model_average_scores,
@@ -20,7 +22,7 @@ def render_model_average_score_chart(
 ) -> pd.DataFrame:
     chart_data = get_model_average_scores(scores_df)
     if chart_data.empty:
-        st.info(empty_message)
+        render_empty_state(empty_message)
         return chart_data
 
     st.bar_chart(data=chart_data, x="model_name", y="total_score")
@@ -33,7 +35,7 @@ def render_error_type_distribution_chart(
 ) -> pd.DataFrame:
     chart_data = get_error_type_counts(error_df)
     if chart_data.empty:
-        st.info(empty_message)
+        render_empty_state(empty_message)
         return chart_data
 
     st.bar_chart(chart_data, x="error_type", y="count")
@@ -46,7 +48,7 @@ def render_model_total_score_chart(
 ) -> pd.DataFrame:
     chart_data = get_model_total_scores(scores_df)
     if chart_data.empty:
-        st.info(empty_message)
+        render_empty_state(empty_message)
         return chart_data
 
     st.bar_chart(chart_data, x="model_name", y="total_score")
@@ -59,7 +61,7 @@ def render_model_dimension_score_chart(
 ) -> pd.DataFrame:
     chart_data = get_model_dimension_scores(scores_df)
     if chart_data.empty:
-        st.info(empty_message)
+        render_empty_state(empty_message)
         return chart_data
 
     st.bar_chart(chart_data, x="dimension", y="score", color="model_name")
@@ -72,7 +74,7 @@ def render_model_error_type_chart(
 ) -> pd.DataFrame:
     chart_data = get_model_error_type_counts(error_df)
     if chart_data.empty:
-        st.info(empty_message)
+        render_empty_state(empty_message)
         return chart_data
 
     st.bar_chart(chart_data, x="error_type", y="count", color="model_name")
@@ -86,7 +88,7 @@ def render_model_domain_score_chart(
 ) -> pd.DataFrame:
     chart_data = get_model_domain_scores(scores_df, tasks_df)
     if chart_data.empty:
-        st.info(empty_message)
+        render_empty_state(empty_message)
         return chart_data
 
     st.bar_chart(chart_data, x="domain", y="total_score", color="model_name")
@@ -101,7 +103,7 @@ def render_error_distribution_summary_chart(error_df, empty_message="暂无错�
 
     summary = get_error_distribution_summary(error_df)
     if summary.empty:
-        st.info(empty_message)
+        render_empty_state(empty_message)
         return
 
     chart_data = summary.set_index("error_type")[["count"]]
@@ -114,7 +116,7 @@ def render_optimization_comparison_chart(
 ) -> pd.DataFrame:
     metrics = get_optimization_comparison_metrics(comparison_df)
     if metrics.empty:
-        st.info(empty_message)
+        render_empty_state(empty_message)
         return metrics
 
     score_columns = ["avg_score", "evidence_score", "reasoning_score"]

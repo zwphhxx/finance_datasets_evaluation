@@ -198,7 +198,7 @@ def render_error_analysis(data_bundle):
     optimization_df = data.optimizations
 
     tab_path, tab_distribution, tab_attribution, tab_actions, tab_samples = st.tabs(
-        ["错误到数据动作", "错误分布", "错误归因", "数据补强动作", "重点错误样本"]
+        ["错误到数据补强", "错误分布", "错误归因", "数据补强动作", "重点错误样本"]
     )
 
     with tab_path:

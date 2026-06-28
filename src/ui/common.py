@@ -20,7 +20,7 @@ PAGE_CONTEXTS = {
     "样板题深度评测": {
         "question": "一道专业题如何定义优秀回答，模型回答具体差在哪里。",
         "boundary": "单题结论只服务于样板题拆解，不代表模型整体能力。",
-        "highlights": "Gold Answer、多模型回答、Rubric 评分、错误标签、Preference Pair 和数据补强建议。",
+        "highlights": "Gold Answer、多模型回答、Rubric 评分、错误标签、偏好样本和数据补强建议。",
     },
     "模型能力诊断": {
         "question": "当前样本下模型在哪些能力维度更不稳定。",

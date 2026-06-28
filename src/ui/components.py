@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from html import escape
+from textwrap import dedent
 
 import pandas as pd
 import streamlit as st
@@ -29,8 +30,20 @@ STYLE_CSS = """
     background: var(--fde-bg);
     color: var(--fde-text);
 }
+#MainMenu,
+footer,
+header,
+[data-testid="stDeployButton"],
+[data-testid="stDecoration"],
+[data-testid="stStatusWidget"],
+[data-testid="stToolbar"] {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+}
 .block-container {
     padding-top: 2rem;
+    padding-bottom: 3rem;
 }
 [data-testid="stSidebar"] {
     background: #ffffff;
@@ -68,6 +81,15 @@ STYLE_CSS = """
     border-radius: 16px;
     padding: 1.2rem 1.3rem;
     margin-bottom: 1.1rem;
+    box-shadow: 0 12px 34px rgba(18, 52, 90, 0.06);
+}
+.page-eyebrow {
+    color: var(--fde-muted);
+    font-size: 0.78rem;
+    font-weight: 750;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 0.35rem;
 }
 .page-header h1 {
     color: var(--fde-blue);
@@ -80,6 +102,7 @@ STYLE_CSS = """
     margin: 0.2rem 0;
 }
 .metric-card,
+.fde-card,
 .info-panel,
 .warning-panel,
 .empty-state,
@@ -89,8 +112,10 @@ STYLE_CSS = """
     background: var(--fde-surface);
     padding: 1rem;
     margin: 0.45rem 0;
+    box-shadow: 0 8px 22px rgba(18, 52, 90, 0.04);
 }
 .metric-card .metric-label,
+.metric-help,
 .section-caption,
 .panel-content,
 .empty-state {
@@ -104,6 +129,7 @@ STYLE_CSS = """
 }
 .info-panel {
     background: #ffffff;
+    border-left: 4px solid var(--fde-blue);
 }
 .context-grid {
     display: grid;
@@ -179,14 +205,38 @@ STYLE_CSS = """
     color: var(--fde-muted);
     border-color: var(--fde-line);
 }
+.score-neutral {
+    background: var(--fde-gray-soft);
+    color: var(--fde-muted);
+    border-color: var(--fde-line);
+}
 .model-answer-card h4 {
     margin: 0 0 0.35rem 0;
     color: var(--fde-blue);
+}
+.model-answer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    color: var(--fde-blue);
+    margin-bottom: 0.35rem;
 }
 .model-answer-meta {
     color: var(--fde-muted);
     font-size: 0.9rem;
     margin-bottom: 0.6rem;
+}
+.model-answer-text,
+.comparison-answer,
+.model-answer-note p {
+    color: var(--fde-text);
+    line-height: 1.65;
+}
+.model-answer-note {
+    border-top: 1px solid var(--fde-line);
+    margin-top: 0.85rem;
+    padding-top: 0.75rem;
 }
 .answer-boundary-panel {
     border: 1px solid #b9cbe2;
@@ -232,15 +282,24 @@ STYLE_CSS = """
     background: #ffffff;
     padding: 1rem;
 }
-.comparison-card-accepted {
+.comparison-card-preferred {
     border-left: 4px solid var(--fde-green);
 }
-.comparison-card-reference {
+.comparison-card-rejected {
     border-left: 4px solid var(--fde-orange);
+}
+.comparison-label {
+    color: var(--fde-muted);
+    font-size: 0.78rem;
+    font-weight: 750;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.3rem;
 }
 .loop-rail {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(128px, 1fr);
+    overflow-x: auto;
     gap: 0.65rem;
     border: 1px solid var(--fde-line);
     border-radius: 16px;
@@ -270,58 +329,65 @@ STYLE_CSS = """
 """
 
 
+def render_html(html: str, container=None) -> None:
+    """Render trusted internal HTML without Markdown indentation leaks."""
+    target = container or st
+    target.markdown(dedent(str(html)).strip(), unsafe_allow_html=True)
+
+
 def apply_global_styles() -> None:
-    st.markdown(STYLE_CSS, unsafe_allow_html=True)
+    render_html(STYLE_CSS)
 
 
-def render_page_header(title, subtitle, boundary_note=None) -> None:
-    boundary_html = ""
-    if boundary_note:
-        boundary_html = f"<p><strong>当前数据边界：</strong>{escape(str(boundary_note))}</p>"
-    st.markdown(
+def render_page_header(title: str, subtitle: str, boundary_note: str | None = None) -> None:
+    """Render a consistent page header.
+
+    boundary_note is kept for backward compatibility. The page-level data
+    boundary is shown by render_context_summary to avoid duplicate top notes.
+    """
+    import streamlit as st
+
+    safe_title = escape(str(title or ""))
+    safe_subtitle = escape(str(subtitle or ""))
+    render_html(
         f"""
         <div class="page-header">
-            <h1>{escape(str(title))}</h1>
-            <p>{escape(str(subtitle))}</p>
-            {boundary_html}
+            <div class="page-eyebrow">FinDueEval</div>
+            <h1>{safe_title}</h1>
+            <p>{safe_subtitle}</p>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
+
+
+def render_card(content: str, class_name: str = "fde-card") -> None:
+    render_html(f'<div class="{escape(str(class_name))}">{content}</div>')
 
 
 def render_metric_card(label, value, help_text=None) -> None:
     help_html = f'<div class="metric-help">{escape(str(help_text))}</div>' if help_text else ""
-    st.markdown(
+    render_card(
         f"""
-        <div class="metric-card">
-            <div class="metric-label">{escape(str(label))}</div>
-            <div class="metric-value">{escape(str(value))}</div>
-            {help_html}
-        </div>
+        <div class="metric-label">{escape(str(label))}</div>
+        <div class="metric-value">{escape(str(value))}</div>
+        {help_html}
         """,
-        unsafe_allow_html=True,
+        class_name="metric-card",
     )
 
 
 def render_info_panel(title, content) -> None:
-    st.markdown(
+    render_html(
         f"""
         <div class="info-panel">
             <strong>{escape(str(title))}</strong>
             <div class="panel-content">{escape(str(content))}</div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
-def render_context_summary(context) -> None:
-    items = [
-        ("本页回答什么问题", context.get("question", "")),
-        ("当前数据边界", context.get("boundary", "")),
-        ("页面核心看点", context.get("highlights", "")),
-    ]
+def render_context_grid(items) -> None:
     item_html = []
     for label, copy in items:
         item_html.append(
@@ -332,52 +398,62 @@ def render_context_summary(context) -> None:
             </div>
             """
         )
-    st.markdown(
+    render_html(
         f'<div class="context-grid">{"".join(item_html)}</div>',
-        unsafe_allow_html=True,
+    )
+
+
+def render_context_summary(context) -> None:
+    render_context_grid(
+        [
+            ("本页回答什么问题", context.get("question", "")),
+            ("当前数据边界", context.get("boundary", "")),
+            ("页面核心看点", context.get("highlights", "")),
+        ]
     )
 
 
 def render_warning_panel(content) -> None:
-    st.markdown(
+    render_html(
         f'<div class="warning-panel">{escape(str(content))}</div>',
-        unsafe_allow_html=True,
     )
 
 
 def render_empty_state(message) -> None:
-    st.markdown(
+    render_html(
         f'<div class="empty-state">{escape(str(message))}</div>',
-        unsafe_allow_html=True,
     )
+
+
+def render_badge(text, level: str = "neutral", kind: str = "status") -> None:
+    class_prefix = "score" if kind == "score" else "status"
+    if class_prefix == "score":
+        normalized_level = str(level).strip().lower()
+        if normalized_level not in {"high", "mid", "low", "neutral"}:
+            normalized_level = "neutral"
+    else:
+        normalized_level = _normalize_level(level)
+    render_html(f'<span class="{class_prefix}-badge {class_prefix}-{normalized_level}">{escape(str(text))}</span>')
+
+
+def render_status_badge(text, level) -> None:
+    render_badge(text, str(level), kind="status")
 
 
 def render_score_badge(score) -> None:
     score_text, level = _score_text_and_level(score)
-    st.markdown(
-        f'<span class="score-badge score-{level}">{escape(score_text)}</span>',
-        unsafe_allow_html=True,
-    )
-
-
-def render_status_badge(text, level) -> None:
-    normalized_level = _normalize_level(level)
-    st.markdown(
-        f'<span class="status-badge status-{normalized_level}">{escape(str(text))}</span>',
-        unsafe_allow_html=True,
-    )
+    render_badge(score_text, level, kind="score")
 
 
 def render_section_title(title, caption=None) -> None:
     caption_html = f'<div class="section-caption">{escape(str(caption))}</div>' if caption else ""
-    st.markdown(
+    render_html(
         f"""
         <div class="section-title">
             <h3>{escape(str(title))}</h3>
             {caption_html}
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
@@ -392,39 +468,57 @@ def render_loop_rail(steps) -> None:
             </div>
             """
         )
-    st.markdown(
+    render_html(
         f'<div class="loop-rail">{"".join(step_html)}</div>',
-        unsafe_allow_html=True,
     )
 
 
 def render_model_answer_card(
-    model_name,
-    answer,
-    output_id=None,
-    score=None,
-    review_note=None,
+    model_name: str,
+    answer: object,
+    score: object | None = None,
+    review_note: object | None = None,
+    meta: object | None = None,
 ) -> None:
-    meta_parts = []
-    if output_id is not None and _has_value(output_id):
-        meta_parts.append(f"output_id {output_id}")
-    if score is not None and _has_value(score):
-        meta_parts.append(f"总分 {float(score):.0f}")
-    meta = " · ".join(meta_parts) if meta_parts else "当前样本观察"
-    note_html = ""
-    if review_note is not None and _has_value(review_note):
-        note_html = f'<p><strong>评审说明：</strong>{escape(str(review_note))}</p>'
+    """Render a model answer card while preserving paragraph structure."""
+    import streamlit as st
 
-    st.markdown(
+    def display_value(value: object, fallback: str = "暂无可展示数据") -> str:
+        if value is None:
+            return fallback
+        text_value = str(value).strip()
+        if not text_value or text_value.lower() in {"nan", "none", "null"}:
+            return fallback
+        return text_value
+
+    safe_model = escape(display_value(model_name, "未标注模型"))
+    safe_answer = escape(display_value(answer, "暂无回答内容。"))
+    safe_answer = safe_answer.replace(chr(10), "<br>")
+    score_text = display_value(score, "")
+    meta_text = display_value(meta, "")
+    review_text = display_value(review_note, "")
+    safe_review = escape(review_text).replace(chr(10), "<br>") if review_text else ""
+
+    score_html = f'<span class="score-badge">{escape(score_text)}</span>' if score_text else ""
+    meta_html = f'<div class="model-answer-meta">{escape(meta_text)}</div>' if meta_text else ""
+    review_html = (
+        f'<div class="model-answer-note"><strong>扣分说明</strong><p>{safe_review}</p></div>'
+        if safe_review
+        else ""
+    )
+
+    render_html(
         f"""
         <div class="model-answer-card">
-            <h4>{escape(str(model_name))}</h4>
-            <div class="model-answer-meta">{escape(meta)}</div>
-            <p>{escape(str(answer if _has_value(answer) else "暂无可展示数据"))}</p>
-            {note_html}
+            <div class="model-answer-header">
+                <strong>{safe_model}</strong>
+                {score_html}
+            </div>
+            {meta_html}
+            <div class="model-answer-text" style="white-space: pre-wrap; line-height: 1.65;">{safe_answer}</div>
+            {review_html}
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
@@ -439,45 +533,60 @@ def render_answer_boundary_panel(title, fields) -> None:
             </div>
             """
         )
-    st.markdown(
+    render_html(
         f"""
         <div class="answer-boundary-panel">
             <h4>{escape(str(title))}</h4>
             {"".join(rows)}
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
 def render_preference_comparison(
-    preferred_title,
-    preferred_body,
-    rejected_title,
-    rejected_body,
-    preferred_meta=None,
-    rejected_meta=None,
+    preferred_title: str,
+    preferred_answer: object,
+    rejected_title: str,
+    rejected_answer: object,
+    preferred_meta: object | None = None,
+    rejected_meta: object | None = None,
 ) -> None:
-    preferred_meta_text = preferred_meta if _has_value(preferred_meta) else "偏好侧回答"
-    rejected_meta_text = rejected_meta if _has_value(rejected_meta) else "对照侧回答"
-    st.markdown(
+    """Render preferred and rejected answers with missing-value guardrails."""
+    import streamlit as st
+
+    def display_value(value: object, fallback: str = "未标注") -> str:
+        if value is None:
+            return fallback
+        text_value = str(value).strip()
+        if not text_value or text_value.lower() in {"nan", "none", "null"}:
+            return fallback
+        return text_value
+
+    preferred_answer_html = escape(display_value(preferred_answer, "暂无回答内容。")).replace(chr(10), "<br>")
+    rejected_answer_html = escape(display_value(rejected_answer, "暂无回答内容。")).replace(chr(10), "<br>")
+    preferred_meta_text = display_value(preferred_meta, "")
+    rejected_meta_text = display_value(rejected_meta, "")
+    preferred_meta_html = f'<div class="comparison-meta">{escape(preferred_meta_text)}</div>' if preferred_meta_text else ""
+    rejected_meta_html = f'<div class="comparison-meta">{escape(rejected_meta_text)}</div>' if rejected_meta_text else ""
+
+    render_html(
         f"""
         <div class="comparison-grid">
-            <div class="comparison-card comparison-card-accepted">
-                <h4>{escape(str(preferred_title))}</h4>
-                <div class="comparison-meta">{escape(str(preferred_meta_text))}</div>
-                <div class="comparison-body">{escape(str(preferred_body if _has_value(preferred_body) else "暂无回答内容"))}</div>
+            <div class="comparison-card comparison-card-preferred">
+                <div class="comparison-label">偏好回答</div>
+                <h4>{escape(display_value(preferred_title, "偏好回答"))}</h4>
+                {preferred_meta_html}
+                <div class="comparison-answer" style="white-space: pre-wrap; line-height: 1.65;">{preferred_answer_html}</div>
             </div>
-            <div class="comparison-card comparison-card-reference">
-                <h4>{escape(str(rejected_title))}</h4>
-                <div class="comparison-meta">{escape(str(rejected_meta_text))}</div>
-                <div class="comparison-body">{escape(str(rejected_body if _has_value(rejected_body) else "暂无回答内容"))}</div>
+            <div class="comparison-card comparison-card-rejected">
+                <div class="comparison-label">对比回答</div>
+                <h4>{escape(display_value(rejected_title, "对比回答"))}</h4>
+                {rejected_meta_html}
+                <div class="comparison-answer" style="white-space: pre-wrap; line-height: 1.65;">{rejected_answer_html}</div>
             </div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
-
 
 def _score_text_and_level(score) -> tuple[str, str]:
     if not _has_value(score):

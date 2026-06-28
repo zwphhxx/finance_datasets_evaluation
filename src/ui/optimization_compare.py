@@ -14,6 +14,7 @@ from src.ui.common import PAGE_CONTEXTS
 from src.ui.components import (
     render_context_summary,
     render_empty_state,
+    render_info_panel,
     render_page_header,
     render_section_title,
 )
@@ -97,7 +98,8 @@ def render_optimization_compare_page(data_bundle: dict) -> None:
 
 def _render_boundary_note() -> None:
     render_section_title("适用边界")
-    st.info(
+    render_info_panel(
+        "当前结果边界",
         "当前结果基于 MVP 样例数据和当前评测集观察，用于展示评测闭环与数据建设方法。"
         "样本量有限，不代表真实生产环境或大规模实验结论。"
     )

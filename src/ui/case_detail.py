@@ -53,7 +53,7 @@ def render_case_detail_page(data_bundle: dict) -> None:
         return
 
     task_info = task_rows.iloc[0]
-    tabs = st.tabs(["题目与 Gold Answer", "模型回答与评分", "错误与优化建议", "Preference Pair"])
+    tabs = st.tabs(["题目与 Gold Answer", "模型回答与评分", "错误与数据补强", "偏好样本"])
 
     with tabs[0]:
         render_task_basic_info(task_info)
@@ -100,23 +100,23 @@ def render_gold_answer(gold_answer_map: dict, selected_case: str) -> None:
     if gold_answer.get("must_have_points"):
         write_list_field("要点", gold_answer.get("must_have_points"))
     else:
-        st.info("暂无必须覆盖要点。")
+        render_empty_state("暂无必须覆盖要点。")
 
     st.markdown("**红线错误**")
     if gold_answer.get("red_line_errors"):
         write_list_field("错误", gold_answer.get("red_line_errors"))
     else:
-        st.info("暂无红线错误配置。")
+        render_empty_state("暂无红线错误配置。")
 
     st.markdown("**证据与优化备注**")
     if has_value(gold_answer.get("evidence")):
         write_text_field("证据说明", gold_answer.get("evidence"))
     else:
-        st.info("暂无证据说明。")
+        render_empty_state("暂无证据说明。")
     if has_value(gold_answer.get("optimization_note")):
         write_text_field("优化备注", gold_answer.get("optimization_note"))
     else:
-        st.info("暂无优化备注。")
+        render_empty_state("暂无优化备注。")
 
 
 def render_model_outputs(model_outputs_df, scores_df, selected_case: str) -> None:
@@ -127,14 +127,16 @@ def render_model_outputs(model_outputs_df, scores_df, selected_case: str) -> Non
         return
 
     for _, row in merged.iterrows():
-        title = f"{row.get('model_name', '未知模型')} · output_id {row.get('output_id', '暂无')}"
+        output_label = _display_value(row.get("output_id"), "暂无")
+        model_label = _display_value(row.get("model_name"), "未知模型")
+        title = f"{model_label} · output_id {output_label}"
         with st.expander(title, expanded=True):
             render_model_answer_card(
-                row.get("model_name", "未知模型"),
+                model_label,
                 _answer_text(row),
-                output_id=row.get("output_id"),
                 score=row.get("total_score"),
-                review_note=row.get("review_note"),
+                review_note=None,
+                meta=f"output_id {output_label}",
             )
             st.markdown("**Rubric 评分**")
             show_model_score(row)
@@ -142,13 +144,13 @@ def render_model_outputs(model_outputs_df, scores_df, selected_case: str) -> Non
             if has_value(row.get("review_note")):
                 write_text_field("扣分说明", row.get("review_note"))
             else:
-                st.info("当前模型回答尚无评审说明。")
+                render_empty_state("当前模型回答尚无评审说明。")
 
 
 def render_score_breakdown(row: pd.Series) -> None:
     available_scores = [(column, label) for column, label in SCORE_COLUMNS if has_value(row.get(column))]
     if not available_scores:
-        st.info("当前模型回答尚未配置分项评分。")
+        render_empty_state("当前模型回答尚未配置分项评分。")
         return
 
     cols = st.columns(len(available_scores))
@@ -166,15 +168,17 @@ def render_error_labels(model_outputs_df, error_df, selected_case: str) -> None:
         return
 
     for _, output in outputs.iterrows():
-        output_id = output.get("output_id")
-        model_name = output.get("model_name", "未知模型")
-        errors = get_errors_for_output(error_df, output_id)
-        with st.expander(f"{model_name} · output_id {output_id}", expanded=not errors.empty):
+        raw_output_id = output.get("output_id")
+        output_label = _display_value(raw_output_id, "暂无")
+        model_name = _display_value(output.get("model_name"), "未知模型")
+        errors = get_errors_for_output(error_df, raw_output_id)
+        with st.expander(f"{model_name} · output_id {output_label}", expanded=not errors.empty):
             if errors.empty:
                 render_empty_state("当前回答暂无错误标签。")
                 continue
             for _, error in errors.iterrows():
                 write_text_field("错误类型", error.get("error_type"))
+                st.markdown("**严重程度**")
                 render_status_badge(error.get("severity", "暂无"), error.get("severity", "neutral"))
                 write_text_field("问题描述", error.get("error_description"))
                 write_text_field("纠正方向", error.get("correction"))
@@ -189,23 +193,33 @@ def render_optimization_suggestions(error_df, optimization_df, selected_case: st
         return
 
     for _, suggestion in suggestions.iterrows():
-        title = f"{suggestion.get('frequent_error', '未命名错误')} · 优先级 {suggestion.get('priority', '暂无')}"
+        title = (
+            f"{_display_value(suggestion.get('frequent_error'), '未命名错误')} · "
+            f"优先级 {_display_value(suggestion.get('priority'), '暂无')}"
+        )
         with st.expander(title, expanded=True):
             write_text_field("典型问题", suggestion.get("typical_problem"))
             write_text_field("可能原因", suggestion.get("likely_cause"))
-            write_text_field("优化动作", suggestion.get("optimization_action"))
+            write_text_field("数据补强动作", suggestion.get("optimization_action"))
             write_text_field("样本格式", suggestion.get("data_sample_format"))
 
 
 def render_preference_pairs(preference_pairs_df, model_outputs_df, selected_case: str) -> None:
-    render_section_title("Preference Pair")
+    render_section_title("偏好样本")
     pairs = get_preference_pair_details_for_case(preference_pairs_df, model_outputs_df, selected_case)
     if pairs.empty:
         render_empty_state("该模块用于展示数据闭环，当前暂无对应记录。")
         return
 
     for _, pair in pairs.iterrows():
-        title = f"{pair.get('pair_id', '未命名偏好样本')} · {pair.get('preference_dimension', '未标注维度')}"
+        preferred_output_id = _display_value(pair.get("preferred_output_id"), "暂无")
+        rejected_output_id = _display_value(pair.get("rejected_output_id"), "暂无")
+        preferred_model = _display_value(pair.get("preferred_model_name"), "未标注模型")
+        rejected_model = _display_value(pair.get("rejected_model_name"), "未标注模型")
+        title = (
+            f"{_display_value(pair.get('pair_id'), '未命名偏好样本')} · "
+            f"{_display_value(pair.get('preference_dimension'), '未标注维度')}"
+        )
         with st.expander(title, expanded=True):
             write_text_field("偏好维度", pair.get("preference_dimension"))
             write_text_field("偏好理由", pair.get("preference_reason"))
@@ -218,8 +232,8 @@ def render_preference_pairs(preference_pairs_df, model_outputs_df, selected_case
                 pair.get("preferred_answer_text"),
                 "对照回答",
                 pair.get("rejected_answer_text"),
-                preferred_meta=f"output_id {pair.get('preferred_output_id')} · {pair.get('preferred_model_name')}",
-                rejected_meta=f"output_id {pair.get('rejected_output_id')} · {pair.get('rejected_model_name')}",
+                preferred_meta=f"output_id {preferred_output_id} · {preferred_model}",
+                rejected_meta=f"output_id {rejected_output_id} · {rejected_model}",
             )
 
 
@@ -229,3 +243,9 @@ def _answer_text(row: pd.Series) -> str:
 
 def _plain_value(value, fallback: str) -> str:
     return value if has_value(value) else fallback
+
+
+def _display_value(value, fallback: str) -> str:
+    if not has_value(value):
+        return fallback
+    return str(value)
