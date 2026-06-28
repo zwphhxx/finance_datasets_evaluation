@@ -1,0 +1,74 @@
+# 新增专业任务题模板（New Case Template）
+#
+# 用途：新增一道专业评测任务时，先复制本模板填写，再拆分写入 data/ 下对应文件。
+# 字段取值需与 data/dataset_manifest.yml（范围与 Rubric）和 data/label_taxonomy.yml
+# （错误标签）保持一致。入库前请对照 docs/dataset_quality_standard.md 逐项核对，
+# 并运行 python scripts/validate_dataset.py 确认无错误项。
+#
+# 注意：所有内容必须脱敏，禁止写入真实公司、真实财务数据或个人信息。
+
+case_id: ""            # 唯一编号，沿用「领域前缀-序号」，如 CM-002 / FD-003 / LD-002 / MED-002
+domain: ""             # 取值之一：Capital Markets | Financial | Legal | Medical
+task_type: ""          # 取值之一：Regulatory Analysis | Revenue Verification | Inventory Assessment | Legal Compliance | Clinical Analysis
+difficulty: ""         # 取值之一：Medium | Hard
+source_type: ""        # 任务来源类型：脱敏真实场景 | 公开规则改写 | 专家拟题（均需脱敏）
+
+task_prompt: ""        # 交给模型的任务指令，写入 tasks.csv 的 question 字段
+scenario: ""           # 背景与已知材料说明，写入 tasks.csv 的 context（与 scenario）字段
+
+# Gold Answer：写入 gold_answers.json 同一 case_id 的记录。
+# 四项必须齐备，否则视为不可入库（缺一项即无法支撑评分）。
+gold_answer:
+  core_conclusion: ""          # 核心结论，写入 conclusion 字段
+  key_points:                  # 关键依据与必备要点，写入 must_have_points 字段（建议 3-5 条）
+    - ""
+  boundary_conditions: ""      # 答案边界 / 审慎边界，写入 risk_boundary 字段
+  unacceptable_errors:         # 不可接受错误 / 红线，写入 red_line_errors 字段
+    - ""
+
+# Rubric：维度、名称与权重须与 dataset_manifest.yml 一致，权重合计为 100。
+# deduction_criteria 用于约束「什么情况扣多少」，需可执行、可复核。
+rubric:
+  total: 100
+  dimensions:
+    - field: accuracy_score
+      name: 专业准确性
+      weight: 30
+      deduction_criteria: ""   # 例：结论方向错误或关键比例未测算时扣分
+    - field: reasoning_score
+      name: 推理与场景适配
+      weight: 20
+      deduction_criteria: ""   # 例：缺少分步推理或套用不匹配规则时扣分
+    - field: coverage_score
+      name: 风险覆盖
+      weight: 20
+      deduction_criteria: ""   # 例：遗漏必备风险点或核查事项时扣分
+    - field: evidence_score
+      name: 依据可靠性
+      weight: 15
+      deduction_criteria: ""   # 例：引用依据有误或结论缺乏支撑时扣分
+    - field: expression_score
+      name: 专业表达
+      weight: 15
+      deduction_criteria: ""   # 例：结构混乱或专业术语使用不当时扣分
+
+# 允许使用的错误标签：仅可取自 label_taxonomy.yml 已登记标签。
+# 新增标签前需先在 taxonomy 登记定义、典型表现与数据补强方向。
+allowed_error_labels:
+  - 风险遗漏
+  - 依据错误
+  - 可执行性弱
+  - 推理不足
+  - 场景错配
+  - 表达问题
+
+# 数据补强建议：该任务的常见错误对应的补样动作，写入 optimization_plan.csv。
+# 每条动作须给出验证指标，便于补强后复测是否生效。
+improvement_actions:
+  - error_label: ""            # 取自 allowed_error_labels
+    data_action: ""            # 需要补什么数据，写入 optimization_action / data_action
+    sample_format: ""          # 样本格式，写入 data_sample_format / sample_format
+    validation_metric: ""      # 验证指标，写入 validation_metric
+
+# 入库前质量门槛核对说明：记录脱敏确认、判断标准是否明确、是否通过校验脚本等。
+validation_notes: ""

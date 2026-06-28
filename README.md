@@ -43,6 +43,18 @@ export FINDUEVAL_DATA_DIR=/path/to/data
 streamlit run app.py
 ```
 
+## 如何扩展数据集
+
+当前为 5 道样板题的 MVP，但扩展路径是确定的：复用同一套数据结构与质量门槛，按模板增量加样本。
+
+1. 复制 `templates/new_case_template.yml`，填写任务、Gold Answer、Rubric、错误标签与补强建议。
+2. 按 `docs/dataset_building_guide.md` 的八步流程，将内容拆分写入 `data/` 下对应文件。
+3. 对照 `docs/dataset_quality_standard.md` 逐项核对质量门槛（答案边界、评分一致性、错误可追溯、补强可验证）。
+4. 运行 `python scripts/validate_dataset.py`，确认无错误项后再纳入版本。
+5. 在「数据集质量与扩展框架」页面复核覆盖矩阵与质检结果。
+
+从 MVP 到正式评测集的阶段规划见 `docs/extension_roadmap.md`。
+
 ## Streamlit Community Cloud 部署
 
 1. 将仓库推送到 GitHub。
