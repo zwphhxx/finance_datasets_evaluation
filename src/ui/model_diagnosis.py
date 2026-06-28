@@ -255,15 +255,15 @@ def _render_comparison_table(rows: list[dict]) -> None:
     body = ""
     for row in rows:
         body += (
-            f'<tr><th>{escape(row["model"])}</th>'
-            f'<td>{row["avg_score"]:.1f}</td>'
+            f'<tr><td class="check-key">{escape(row["model"])}</td>'
+            f'<td class="check-count">{row["avg_score"]:.1f}</td>'
             f'<td>{escape(row["strongest_dim"])}</td>'
             f'<td>{escape(row["weakest_dim"])}</td>'
             f'<td>{escape(row["top_error"])}</td>'
             f'<td>{escape(row["boundary"])}</td></tr>'
         )
     render_html(
-        '<table class="matrix-table"><thead><tr>'
+        '<table class="check-table"><thead><tr>'
         f"{header}</tr></thead><tbody>{body}</tbody></table>"
     )
 

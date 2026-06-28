@@ -197,7 +197,7 @@ def render_tasks_page(data_bundle: dict) -> None:
     rows = build_case_overview_rows(data)
     filtered = _render_filters(rows)
 
-    render_section_title("任务样本表", "一行一题，长文本见下方任务详情。")
+    render_section_title("任务清单", "一行一题，长文本见下方任务详情。")
     if not filtered:
         render_empty_state("没有符合当前筛选条件的任务。")
     else:
