@@ -42,6 +42,21 @@ class UIUXAuditFixesTests(unittest.TestCase):
             source = Path(file_path).read_text(encoding="utf-8")
             self.assertIn("render_context_summary", source, file_path)
 
+    def test_sidebar_navigation_has_descriptions_and_active_state_copy(self):
+        from src.ui.navigation import NAV_ITEMS
+        import src.ui.components as components
+
+        for item in NAV_ITEMS:
+            self.assertIn("description", item)
+            self.assertTrue(item["description"].strip())
+
+        self.assertIn(".nav-note", components.STYLE_CSS)
+        self.assertIn(".nav-note-active", components.STYLE_CSS)
+        navigation_source = Path("src/ui/navigation.py").read_text(encoding="utf-8")
+        self.assertIn("current_page", navigation_source)
+        self.assertIn("nav-note-active", navigation_source)
+        self.assertIn("当前页面", navigation_source)
+
 
 if __name__ == "__main__":
     unittest.main()

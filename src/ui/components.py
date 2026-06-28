@@ -52,6 +52,16 @@ STYLE_CSS = """
     background: var(--fde-blue-soft);
     color: var(--fde-blue);
 }
+.nav-note {
+    color: var(--fde-muted);
+    font-size: 0.78rem;
+    line-height: 1.35;
+    margin: -0.25rem 0 0.5rem 0.15rem;
+}
+.nav-note-active {
+    color: var(--fde-blue);
+    font-weight: 700;
+}
 .page-header {
     border: 1px solid var(--fde-line);
     background: linear-gradient(135deg, #ffffff 0%, #f1f5fa 100%);
