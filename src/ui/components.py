@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from html import escape
-from textwrap import dedent
 
 import pandas as pd
 import streamlit as st
@@ -362,9 +361,19 @@ header,
 
 
 def render_html(html: str, container=None) -> None:
-    """Render trusted internal HTML without Markdown indentation leaks."""
+    """Render trusted internal HTML as a single Markdown HTML block.
+
+    Streamlit renders Markdown, which treats a blank line as the end of an
+    HTML block and any line indented four or more spaces as a code block.
+    Multi-line f-string templates leak both: nested fragments keep their
+    source indentation and join with blank lines, so Streamlit shows the raw
+    tags as code. Stripping every line and dropping blanks collapses the
+    template into one uninterrupted HTML block that always renders as markup.
+    """
     target = container or st
-    target.markdown(dedent(str(html)).strip(), unsafe_allow_html=True)
+    lines = [line.strip() for line in str(html).splitlines()]
+    normalized = "\n".join(line for line in lines if line)
+    target.markdown(normalized, unsafe_allow_html=True)
 
 
 def apply_global_styles() -> None:
