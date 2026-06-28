@@ -22,6 +22,7 @@ from src.ui.components import (
     render_html,
     render_info_panel,
     render_page_shell,
+    render_review_caveat,
     render_section_title,
 )
 
@@ -37,6 +38,7 @@ _TIER_BADGE_LEVEL = {
 def render_model_boundary_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
     render_page_shell(get_page_config("model_boundary"))
+    render_review_caveat(data_bundle.get("eval_status"))
 
     if data.tasks.empty or data.scores.empty:
         render_empty_state("暂无可展示数据")

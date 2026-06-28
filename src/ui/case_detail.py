@@ -33,6 +33,7 @@ from src.ui.components import (
     render_info_panel,
     render_preference_comparison,
     render_page_shell,
+    render_review_caveat,
     render_section_title,
 )
 
@@ -224,6 +225,7 @@ def _score_badge_level(score) -> str:
 def render_case_detail_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
     render_page_shell(get_page_config("case_detail"))
+    render_review_caveat(data_bundle.get("eval_status"))
 
     case_ids = get_case_ids(data.tasks)
     if not case_ids:

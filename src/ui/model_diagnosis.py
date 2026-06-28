@@ -21,6 +21,7 @@ from src.ui.components import (
     render_empty_state,
     render_html,
     render_page_shell,
+    render_review_caveat,
     render_section_title,
 )
 
@@ -218,6 +219,7 @@ def build_dimension_matrix(scores_df) -> dict:
 def render_model_diagnosis_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
     render_page_shell(get_page_config("model_diagnosis"))
+    render_review_caveat(data_bundle.get("eval_status"))
 
     if data.model_outputs.empty:
         render_empty_state("暂无可展示数据")
@@ -242,7 +244,7 @@ def _render_boundary_line(data) -> None:
     task_count = len(data.tasks)
     st.caption(
         f"评测边界：当前为 MVP 样本（{task_count} 道任务 · {model_count} 个模型 · "
-        f"{output_count} 条模型回答），回答为模拟生成，结论仅用于当前评测集观察。"
+        f"{output_count} 条模型回答），回答来自首页评测控制台的运行结果，结论仅用于当前评测集观察。"
     )
 
 

@@ -1,11 +1,13 @@
-"""真实多模型评测对比 + LLM-as-judge 评分页（PR-34 / PR-35）。
+"""首页评测控制台 + 会话级数据源解析（PR-36）。
 
-从数据集中选择任务样本与一个或多个硅基流动模型，生成真实（或 mock）模型回答并并排对比；
-可选地由「裁判模型」对照 Gold Answer 与 Rubric 产出**机器建议分**，建议分需人工复核确认后归档。
+把原「真实模型评测」独立页的控制 / 运行 / 评分 / 人工复核逻辑搬到首页（总览）顶部：
+选 Provider / 模型（可多选）/ 任务（默认全部活跃题）/ 裁判 → 运行真实（或 mock）生成 →
+裁判对照 Gold + Rubric 打**建议分** → 人工复核归档。运行结果经 `resolve_active_data`
+组装成 EvaluationData，由 `app.py` 注入各分析页，使其展示真实回答与评分。
 
-页面只通过 registry/provider 接口与 app.services.eval_runner / scorer 编排逻辑工作，本文件不含
-任何模型调用细节、不构造评测 / 评分 prompt（prompt 在服务层构造）。被评测模型绝不会看到 Gold
-Answer；裁判模型可见 Gold（评分必需）。模型调用失败时以结构化错误展示，页面不崩溃，也不输出 API Key。
+边界：被评测模型只看到任务白名单字段，**绝不发送 Gold**（prompt 在 `eval_runner` 构造）；
+裁判可见 Gold（评分必需，链路独立）。模型列表实时获取、不硬编码；未配置 API Key 时
+自动 mock，回答标注模拟、裁判不产生真实分数。本文件不出现任何模型调用细节或 API Key。
 """
 
 from __future__ import annotations
@@ -15,27 +17,26 @@ from html import escape
 import streamlit as st
 
 from app.models import siliconflow as sf
-from app.models.registry import available_providers, get_provider, get_text_provider
+from app.models.registry import available_providers, get_text_provider
 from app.services import dataset_service as ds
 from app.services import eval_runner as er
 from app.services import scorer as sc
+from app.services.live_results import (
+    build_live_evaluation_data,
+    empty_results_evaluation_data,
+)
 from src.ui.components import (
     render_empty_state,
     render_html,
     render_info_panel,
-    render_page_shell,
     render_section_title,
 )
-from src.ui.page_config import get_page_config
 from src.ui.tasks import TASK_TYPE_LABELS, display_label, summarize_text
 
-# 页面固定显示的评测边界提示（不可省略）。
+# 控制台固定显示的评测边界提示（不可省略）。
 BOUNDARY_NOTE = (
-    "模型回答仅用于评测，不构成金融、法律或投资建议；后续评分需结合 Gold Answer 与人工复核。"
+    "模型回答仅用于评测，不构成金融、法律或投资建议；评分为裁判模型建议分，需人工复核确认后归档。"
 )
-
-_RUN_SCOPE_SINGLE = "单题"
-_RUN_SCOPE_BATCH = "批量（多题）"
 
 # 运行状态 → 徽标配色。mock 用中性色而非红色，避免误读为失败。
 _STATUS_BADGE = {
@@ -44,47 +45,102 @@ _STATUS_BADGE = {
     "failed": ("失败", "danger"),
 }
 
+# 会话键：沿用既有命名，便于 app.py 与控制台共享一次运行/评分结果。
+_RUN_KEY = "live_eval_last_run"
+_SCORE_KEY = "live_eval_last_score"
 
-def render_live_eval_page(data_bundle: dict) -> None:
-    render_page_shell(get_page_config("live_eval"))
+
+# --------------------------------------------------------------------------- #
+# 会话级数据源解析（供 app.py 调用）
+# --------------------------------------------------------------------------- #
+def resolve_active_data(base):
+    """根据会话中的运行 / 评分结果，返回 (EvaluationData, eval_status)。
+
+    有运行结果则用真实回答 + 裁判成功评分组装 EvaluationData；否则返回结果类全空的对象，
+    分析页走空状态。eval_status 提供给页面做「建议分 / 待复核」提示。
+    """
+    run = st.session_state.get(_RUN_KEY)
+    if run is None:
+        return empty_results_evaluation_data(base), {
+            "live": False, "scored": 0, "confirmed": 0, "pending": 0, "run_id": None,
+        }
+
+    score_rows = _collect_score_rows(st.session_state.get(_SCORE_KEY))
+    data = build_live_evaluation_data(base, run, score_rows)
+    success_rows = [r for r in score_rows if str(r.get("judge_status")) == "success"]
+    confirmed = sum(1 for r in success_rows if str(r.get("review_status")) == "confirmed")
+    status = {
+        "live": True,
+        "scored": len(success_rows),
+        "confirmed": confirmed,
+        "pending": len(success_rows) - confirmed,
+        "run_id": getattr(run, "run_id", None),
+    }
+    return data, status
+
+
+def _collect_score_rows(score_result) -> list[dict]:
+    """优先取已落库行（反映人工复核值），数据库不可用时回退会话内 ScoreOutcome。"""
+    if score_result is None:
+        return []
+    try:
+        if ds.database_ready():
+            rows = sc.load_score_rows(score_result.score_run_id)
+            if rows:
+                return rows
+    except Exception:
+        pass
+    rows: list[dict] = []
+    for outcome in getattr(score_result, "outcomes", []):
+        record = {
+            "case_id": outcome.case_id,
+            "eval_model": outcome.eval_model,
+            "judge_status": outcome.judge_status,
+            "total_score": outcome.total_score,
+            "review_note": outcome.review_note,
+            "review_status": outcome.review_status,
+        }
+        for key, value in (outcome.scores or {}).items():
+            record[key] = value
+        rows.append(record)
+    return rows
+
+
+# --------------------------------------------------------------------------- #
+# 控制台入口
+# --------------------------------------------------------------------------- #
+def render_eval_console(base) -> None:
+    render_section_title(
+        "评测控制台",
+        "选择模型与任务并运行真实评测；运行后下方各分析页展示真实回答与裁判建议分。",
+    )
     render_info_panel("评测边界", BOUNDARY_NOTE)
 
-    data = data_bundle["data"]
-    tasks_df = data.tasks
+    tasks_df = base.tasks
     if tasks_df is None or tasks_df.empty:
         render_empty_state("当前数据集没有可用任务样本。")
         return
-
     task_records = tasks_df.to_dict("records")
 
-    selected_provider = _render_config_controls()
-    model_ids = _render_model_selector(selected_provider)
-    selected_tasks = _render_task_selector(task_records)
-    temperature, max_tokens = _render_parameters()
+    has_run = st.session_state.get(_RUN_KEY) is not None
+    with st.expander("运行真实评测（选择模型 / 任务 / 裁判）", expanded=not has_run):
+        provider_name = _render_config_controls()
+        model_ids = _render_model_selector(provider_name)
+        selected_tasks = _render_task_selector(task_records)
+        temperature, max_tokens = _render_parameters()
+        _render_run_button(provider_name, model_ids, selected_tasks, temperature, max_tokens)
+        _render_scoring(base, provider_name, task_records)
 
-    _render_run_button(selected_provider, model_ids, selected_tasks, temperature, max_tokens)
     _render_results()
-    _render_scoring(data_bundle, selected_provider, task_records)
 
 
 # --------------------------------------------------------------------------- #
 # 选择区
 # --------------------------------------------------------------------------- #
 def _render_config_controls() -> str:
-    render_section_title("数据集与模型来源", "选择数据集版本与模型供应商；未配置 API Key 时自动使用 mock。")
-
-    versions = ds.list_dataset_versions()
-    col1, col2 = st.columns(2)
-    with col1:
-        if versions:
-            st.selectbox("数据集版本", versions, key="live_eval_version")
-        else:
-            st.caption("数据集版本：当前活跃样本。")
-
     providers = available_providers()
     default_index = providers.index("siliconflow") if (sf.is_configured() and "siliconflow" in providers) else 0
-    with col2:
-        provider_name = st.selectbox("Provider", providers, index=default_index, key="live_eval_provider")
+    provider_name = st.selectbox("Provider", providers, index=default_index, key="live_eval_provider")
 
     effective = get_text_provider(prefer=provider_name)
     if effective.name == "mock":
@@ -98,7 +154,7 @@ def _render_config_controls() -> str:
 
 
 def _render_model_selector(provider_name: str) -> list[str]:
-    render_section_title("模型选择（可多选对比）", "模型列表从 Provider 实时获取，不硬编码；也可手动追加模型 ID。")
+    st.caption("模型列表从 Provider 实时获取，不硬编码；也可手动追加模型 ID。")
     provider = get_text_provider(prefer=provider_name)
     cache_key = f"live_eval_models::{provider.name}"
 
@@ -128,7 +184,6 @@ def _render_model_selector(provider_name: str) -> list[str]:
 
 
 def _render_task_selector(task_records: list[dict]) -> list[dict]:
-    render_section_title("任务范围", "支持单题运行或选择多题批量运行。")
     by_case = {str(r.get("case_id")): r for r in task_records}
 
     def _label(case_id: str) -> str:
@@ -136,21 +191,24 @@ def _render_task_selector(task_records: list[dict]) -> list[dict]:
         task_type = display_label(row.get("task_type"), TASK_TYPE_LABELS)
         return f"{case_id} · {task_type} · {summarize_text(row.get('question'), 24)}"
 
-    scope = st.radio("运行范围", [_RUN_SCOPE_SINGLE, _RUN_SCOPE_BATCH], horizontal=True, key="live_eval_scope")
     case_ids = list(by_case.keys())
-    if scope == _RUN_SCOPE_SINGLE:
-        chosen = st.selectbox("任务", case_ids, format_func=_label, key="live_eval_single_case")
-        return [by_case[chosen]] if chosen else []
-
-    chosen_many = st.multiselect("任务（可多选）", case_ids, format_func=_label, key="live_eval_batch_cases")
-    return [by_case[c] for c in chosen_many]
+    # 默认勾选全部活跃任务；任务越多分析越充实，但调用越多越慢越易超时，可自行取消。
+    chosen = st.multiselect(
+        "任务范围（默认全部活跃任务）",
+        case_ids,
+        default=case_ids,
+        format_func=_label,
+        key="live_eval_cases",
+    )
+    return [by_case[c] for c in chosen]
 
 
 def _render_parameters() -> tuple[float, int]:
-    render_section_title("生成参数", "控制随机性与最大输出长度，其余参数采用 Provider 默认值。")
     col1, col2 = st.columns(2)
     temperature = col1.slider("temperature", 0.0, 2.0, 0.2, 0.1, key="live_eval_temperature")
-    max_tokens = int(col2.number_input("max_tokens", min_value=64, max_value=8192, value=1024, step=64, key="live_eval_max_tokens"))
+    max_tokens = int(
+        col2.number_input("max_tokens", min_value=64, max_value=8192, value=1024, step=64, key="live_eval_max_tokens")
+    )
     return temperature, max_tokens
 
 
@@ -168,34 +226,36 @@ def _render_run_button(provider_name, model_ids, selected_tasks, temperature, ma
                 temperature=temperature, max_tokens=max_tokens,
             )
         persisted = er.persist_compare_result(result)
-        st.session_state["live_eval_last_run"] = result
+        st.session_state[_RUN_KEY] = result
         st.session_state["live_eval_persisted"] = persisted
         # 新一轮运行后清空旧评分，避免对应错乱。
-        st.session_state.pop("live_eval_last_score", None)
+        st.session_state.pop(_SCORE_KEY, None)
+        st.rerun()
 
     if disabled:
         st.caption("请先选择至少一个模型与至少一道任务，再运行评测。")
 
 
 def _render_results() -> None:
-    result = st.session_state.get("live_eval_last_run")
+    result = st.session_state.get(_RUN_KEY)
     if result is None:
         return
 
     render_section_title(
-        "运行结果",
+        "本次运行",
         f"run_id：{result.run_id} · 模式：{result.mode} · 模型 {len(result.model_ids)} 个 · "
         f"成功 {result.success_count}/{len(result.outcomes)}",
     )
     if er.is_mock_result(result):
         st.info("本次为 mock 模式运行，回答为模拟生成，不代表真实模型结果。")
     if st.session_state.get("live_eval_persisted"):
-        st.caption("结果已写入 SQLite（live_run_responses），可供后续评分与对比复用。")
+        st.caption("结果已写入 SQLite（live_run_responses），并已驱动下方各分析页。")
     else:
         st.caption("结果暂存于当前页面会话；初始化 SQLite 数据层后可持久化留存。")
 
-    _render_results_table(result)
-    _render_answer_viewer(result)
+    with st.expander("查看运行明细（回答与调用元信息）", expanded=False):
+        _render_results_table(result)
+        _render_answer_viewer(result)
 
 
 def _render_results_table(result) -> None:
@@ -262,8 +322,8 @@ def _render_answer_viewer(result) -> None:
 # --------------------------------------------------------------------------- #
 # 评分区（LLM-as-judge + 人工复核）
 # --------------------------------------------------------------------------- #
-def _render_scoring(data_bundle: dict, provider_name: str, task_records: list[dict]) -> None:
-    result = st.session_state.get("live_eval_last_run")
+def _render_scoring(base, provider_name: str, task_records: list[dict]) -> None:
+    result = st.session_state.get(_RUN_KEY)
     if result is None or result.success_count == 0:
         return
 
@@ -281,8 +341,7 @@ def _render_scoring(data_bundle: dict, provider_name: str, task_records: list[di
 
     if st.button("运行自动评分（裁判模型）", key="live_eval_score_run"):
         provider = get_text_provider(prefer=provider_name)
-        data = data_bundle["data"]
-        gold_map = getattr(data, "gold_answer_map", {}) or {}
+        gold_map = getattr(base, "gold_answer_map", {}) or {}
         tasks_by_case = {str(r.get("case_id")): r for r in task_records}
         dimensions = ds.get_rubric_dimensions()
         with st.spinner("裁判模型正在评分……"):
@@ -290,15 +349,16 @@ def _render_scoring(data_bundle: dict, provider_name: str, task_records: list[di
                 provider, judge_model, result, gold_map, tasks_by_case, dimensions,
             )
         persisted = sc.persist_score_result(score_result)
-        st.session_state["live_eval_last_score"] = score_result
+        st.session_state[_SCORE_KEY] = score_result
         st.session_state["live_eval_score_persisted"] = persisted
         st.session_state["live_eval_score_dims"] = dimensions
+        st.rerun()
 
     _render_score_results()
 
 
 def _render_score_results() -> None:
-    score_result = st.session_state.get("live_eval_last_score")
+    score_result = st.session_state.get(_SCORE_KEY)
     if score_result is None:
         return
     dimensions = st.session_state.get("live_eval_score_dims") or []
@@ -321,9 +381,7 @@ def _render_score_results() -> None:
 
 def _render_score_compare_table(score_result, dimensions) -> None:
     dim_headers = "".join(f"<th>{escape(d['name'])}</th>" for d in dimensions)
-    header = (
-        "<th>模型</th><th>任务编号</th>" + dim_headers + "<th>总分</th><th>裁判状态</th>"
-    )
+    header = "<th>模型</th><th>任务编号</th>" + dim_headers + "<th>总分</th><th>裁判状态</th>"
 
     # 纯呈现排序：成功的按总分从高到低，mock/失败置后。
     def _sort_key(o):
@@ -378,6 +436,7 @@ def _render_score_review(score_result, dimensions) -> None:
             if st.button("确认并归档（人工复核通过）", key=f"score_confirm::{row_id}"):
                 if sc.confirm_score_review(row_id, edited, note):
                     st.success("已归档为已复核（confirmed）。")
+                    st.rerun()
                 else:
                     st.warning("归档失败：请确认 SQLite 数据层已初始化。")
 

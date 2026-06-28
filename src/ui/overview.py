@@ -4,6 +4,7 @@ import streamlit as st
 
 from src.metrics import get_dimension_gap_ranking
 from src.gold_quality import evaluate_gold_quality
+from src.ui.eval_console import render_eval_console
 from src.ui.page_config import get_page_config
 from src.ui.tasks import DOMAIN_LABELS, display_label
 from src.ui.components import (
@@ -212,6 +213,9 @@ def render_overview_page(data_bundle: dict) -> None:
     validation_result = data_bundle["validation_result"]
     render_page_shell(get_page_config("overview"))
 
+    # 评测控制台：选模型 / 任务 / 裁判并运行真实评测；运行后下方与各分析页展示真实结果。
+    render_eval_console(data_bundle["base"])
+
     render_section_title("数据集核心指标", "关键数字均由当前数据文件动态计算。")
     metric_cards = get_dataset_metric_cards(data)
     metric_columns = st.columns(len(metric_cards))
@@ -221,8 +225,8 @@ def render_overview_page(data_bundle: dict) -> None:
 
     render_info_panel(
         "评测边界",
-        "本页基于 MVP 样本与脱敏任务，模型回答为模拟生成；下列结论仅用于当前样本内观察，"
-        "不代表真实模型采购或业务决策。",
+        "题库与 Gold Answer 为 MVP 脱敏样本；模型回答与评分来自首页控制台的真实评测运行，"
+        "评分为裁判模型建议分、需人工复核。下列结论仅用于当前样本内观察，不代表真实模型采购或业务决策。",
     )
 
     left, right = st.columns([1, 1], gap="large")

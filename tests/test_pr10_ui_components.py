@@ -2,16 +2,18 @@ import inspect
 import unittest
 from pathlib import Path
 
-from src.ui.navigation import NAV_ITEMS, PAGES
+from src.ui.navigation import PAGES
+from src.ui.page_config import PAGE_CONFIGS
 
 
 EXPECTED_PAGE_ORDER = [
-    "评测项目总览",
-    "专业任务集",
-    "样板题深度评测",
-    "模型能力诊断",
-    "错误归因与数据补强",
-    "优化验证",
+    "overview",
+    "tasks",
+    "case_detail",
+    "model_diagnosis",
+    "model_boundary",
+    "dataset_quality",
+    "dataset_admin",
 ]
 
 BANNED_PHRASES = ["AI赋能", "智能洞察", "一键优化", "专家级", "秒级"]
@@ -40,15 +42,15 @@ class UIComponentsTests(unittest.TestCase):
         self.assertIn(".score-badge", components.STYLE_CSS)
         self.assertIn(".status-badge", components.STYLE_CSS)
         self.assertIn(".empty-state", components.STYLE_CSS)
-        self.assertIn("#12345", components.STYLE_CSS)
+        self.assertIn("--fde-blue", components.STYLE_CSS)
 
     def test_navigation_uses_button_items_in_pr09_order(self):
-        self.assertEqual(EXPECTED_PAGE_ORDER, [item["label"] for item in NAV_ITEMS])
+        self.assertEqual(EXPECTED_PAGE_ORDER, [config.page_key for config in PAGE_CONFIGS])
         self.assertEqual(EXPECTED_PAGE_ORDER, list(PAGES.keys()))
-        for item in NAV_ITEMS:
-            self.assertIn("label", item)
-            self.assertIn("render", item)
-            self.assertTrue(callable(item["render"]))
+        for config in PAGE_CONFIGS:
+            self.assertTrue(config.title.strip())
+            self.assertTrue(config.nav_summary.strip())
+            self.assertTrue(callable(PAGES[config.page_key]))
 
     def test_app_routes_through_navigation_without_radio(self):
         app_source = Path("app.py").read_text(encoding="utf-8")

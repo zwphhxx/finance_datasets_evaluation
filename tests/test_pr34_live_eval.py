@@ -141,10 +141,16 @@ class ServiceAndWiringTests(unittest.TestCase):
         self.assertIsInstance(versions, list)
         self.assertTrue(versions)
 
-    def test_page_registered(self):
-        self.assertIn("live_eval", PAGES)
-        self.assertIn("live_eval", PAGE_CONFIG_BY_KEY)
-        self.assertEqual(PAGE_CONFIG_BY_KEY["live_eval"].title, "真实模型评测")
+    def test_live_eval_console_wired(self):
+        # 独立「真实模型评测」页已撤销；评测改由总览页的控制台驱动。
+        self.assertNotIn("live_eval", PAGES)
+        self.assertNotIn("live_eval", PAGE_CONFIG_BY_KEY)
+        from src.ui.eval_console import render_eval_console, resolve_active_data
+
+        self.assertTrue(callable(render_eval_console))
+        self.assertTrue(callable(resolve_active_data))
+        # 运行/评分服务仍可用。
+        self.assertTrue(callable(er.run_evaluation))
 
 
 if __name__ == "__main__":

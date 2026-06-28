@@ -6,17 +6,26 @@ from src.ui.navigation import PAGES
 from src.ui.overview import get_overview_asset_cards
 
 
-EXPECTED_PAGE_ORDER = [
+# 导航页键（PAGES 的英文键，决定路由与顺序）。
+EXPECTED_PAGE_KEYS = [
+    "overview",
+    "tasks",
+    "case_detail",
+    "model_diagnosis",
+    "model_boundary",
+    "dataset_quality",
+    "dataset_admin",
+]
+
+# 每页标题（PAGE_CONTEXTS 的键），与 EXPECTED_PAGE_KEYS 一一对应。
+EXPECTED_PAGE_TITLES = [
     "FinDueEval 数据集概览",
     "任务样本",
     "样板题深度评测",
     "模型能力诊断",
     "模型边界报告",
-    "错误归因与数据补强",
-    "优化验证",
     "数据集质量与扩展框架",
     "数据集管理",
-    "真实模型评测",
 ]
 
 BANNED_PHRASES = ["AI赋能", "智能洞察", "一键优化", "专家级"]
@@ -24,10 +33,10 @@ BANNED_PHRASES = ["AI赋能", "智能洞察", "一键优化", "专家级"]
 
 class InformationArchitectureTests(unittest.TestCase):
     def test_navigation_follows_evaluation_loop_order(self):
-        self.assertEqual(EXPECTED_PAGE_ORDER, list(PAGES.keys()))
+        self.assertEqual(EXPECTED_PAGE_KEYS, list(PAGES.keys()))
 
     def test_each_page_has_standard_context_block_copy(self):
-        self.assertEqual(EXPECTED_PAGE_ORDER, list(PAGE_CONTEXTS.keys()))
+        self.assertEqual(EXPECTED_PAGE_TITLES, list(PAGE_CONTEXTS.keys()))
         for page_name, context in PAGE_CONTEXTS.items():
             self.assertIn("question", context, page_name)
             self.assertIn("boundary", context, page_name)

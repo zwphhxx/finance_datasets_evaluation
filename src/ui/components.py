@@ -678,7 +678,7 @@ def render_page_header(title: str, subtitle: str, boundary_note: str | None = No
 # every page header. These are project-wide caveats about the demo's data nature
 # (not business metrics, sample counts, model names or scores), so they stay a
 # fixed constant rather than being read per-page.
-GLOBAL_BOUNDARY_CHIPS = ["MVP 样本", "脱敏任务", "模拟模型回答", "仅用于样本内观察"]
+GLOBAL_BOUNDARY_CHIPS = ["MVP 样本", "脱敏任务", "裁判建议分待复核", "仅用于样本内观察"]
 
 
 def render_boundary_bar(chips=None) -> None:
@@ -777,6 +777,21 @@ def render_status_badge(text, level) -> None:
 def render_score_badge(score) -> None:
     score_text, level = _score_text_and_level(score)
     render_badge(score_text, level, kind="score")
+
+
+def render_review_caveat(eval_status) -> None:
+    """真实模式下，在展示评分的页面顶部提示：分数为裁判建议分，需人工复核。
+
+    eval_status 为 app.py 注入 data_bundle 的字典；非真实运行时静默跳过。
+    """
+    if not isinstance(eval_status, dict) or not eval_status.get("live"):
+        return
+    scored = int(eval_status.get("scored", 0) or 0)
+    confirmed = int(eval_status.get("confirmed", 0) or 0)
+    render_html(
+        '<div class="warning-panel">当前评分为裁判模型建议分（如未复核，请在总览页确认归档）。'
+        f"已复核 {confirmed}/{scored}。</div>"
+    )
 
 
 def render_section_title(title, caption=None) -> None:
