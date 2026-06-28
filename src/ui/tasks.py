@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from src.metrics import get_task_by_case_id, merge_case_outputs_with_scores
+from src.gold_quality import evaluate_gold_quality, field_text, field_value
 from src.ui.page_config import get_page_config
 from src.ui.components import (
     render_answer_boundary_panel,
@@ -16,6 +17,7 @@ from src.ui.components import (
     render_info_panel,
     render_page_shell,
     render_section_title,
+    render_status_badge,
 )
 
 
@@ -144,7 +146,7 @@ def build_case_overview_rows(data) -> list[dict]:
         case_id = _clean_text(row.get("case_id"))
         difficulty_raw = _clean_text(row.get("difficulty"))
         gold = data.gold_answer_map.get(case_id) or {}
-        has_gold = bool(_clean_text(gold.get("conclusion"), fallback="")) if isinstance(gold, dict) else False
+        has_gold = field_value(gold, "core_conclusion") is not None
         rows.append(
             {
                 "case_id": case_id,
@@ -297,22 +299,20 @@ def _render_selected_task_detail(data, rows) -> None:
 
 
 def _render_gold_summary(gold) -> None:
-    if not isinstance(gold, dict) or not _clean_text(gold.get("conclusion"), fallback=""):
+    if not isinstance(gold, dict) or field_value(gold, "core_conclusion") is None:
         render_empty_state("该任务暂无 Gold Answer 记录。")
         return
 
-    render_info_panel("Gold Answer 摘要", _clean_text(gold.get("conclusion"), fallback="暂无标准结论"))
+    quality = evaluate_gold_quality(gold)
+    status_class = "success" if quality["is_usable"] else "warning"
+    render_status_badge(f"Gold Answer {quality['status']}", status_class)
+    render_info_panel("Gold Answer 摘要", field_text(gold, "core_conclusion", "暂无标准结论"))
 
-    red_lines = gold.get("red_line_errors")
-    if isinstance(red_lines, list):
-        red_line_text = "；".join(str(item) for item in red_lines if _clean_text(item, fallback=""))
-    else:
-        red_line_text = _clean_text(red_lines, fallback="")
     render_answer_boundary_panel(
         "评测边界",
         [
-            ("风险边界", gold.get("risk_boundary")),
-            ("红线错误", red_line_text or "暂无记录"),
+            ("边界条件", field_text(gold, "boundary_conditions", "暂无记录")),
+            ("不可接受错误", field_text(gold, "unacceptable_errors", "暂无记录")),
         ],
     )
 

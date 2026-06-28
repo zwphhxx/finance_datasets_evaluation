@@ -15,6 +15,7 @@ import pandas as pd
 import streamlit as st
 
 from src.data_service import load_dataset_manifest, load_label_taxonomy
+from src.gold_quality import QUALITY_FIELDS, evaluate_gold_quality
 from src.ui.page_config import get_page_config
 from src.ui.tasks import (
     DIFFICULTY_LABELS,
@@ -37,14 +38,8 @@ MVP_MATRIX_NOTE = (
     "样本较少时空白单元仅表示该组合暂未收录，可作为后续扩展的补样方向。"
 )
 
-# Gold Answer 核心要素 → 数据字段映射。supports_scoring 以是否给出评分要点判断。
-GOLD_FIELD_CHECKS = [
-    ("核心结论", "conclusion"),
-    ("关键依据", "basis"),
-    ("答案边界", "risk_boundary"),
-    ("红线错误", "red_line_errors"),
-    ("支持评分", "must_have_points"),
-]
+# Gold Answer 结构化要素 → 中文标签，统一来自 gold_quality 模块的质量字段定义。
+GOLD_FIELD_CHECKS = [(label, canonical) for canonical, label in QUALITY_FIELDS]
 
 
 # --------------------------------------------------------------------------- #
@@ -112,27 +107,40 @@ def build_coverage_matrix(
 
 
 def build_gold_answer_checks(gold_answer_map: dict, tasks_df: pd.DataFrame) -> list[dict]:
-    """Per-task presence of the Gold Answer core elements."""
+    """Per-task Gold Answer completeness, derived via the central evaluator."""
     if "case_id" not in tasks_df.columns:
         return []
 
     rows = []
     for case_id in tasks_df["case_id"].dropna().astype(str):
-        answer = gold_answer_map.get(case_id, {})
-        checks = {label: _has_value(answer.get(field)) for label, field in GOLD_FIELD_CHECKS}
-        rows.append({"case_id": case_id, "checks": checks, "complete": all(checks.values())})
+        quality = evaluate_gold_quality(gold_answer_map.get(case_id, {}))
+        rows.append(
+            {
+                "case_id": case_id,
+                "checks": quality["field_status"],
+                "complete": quality["is_usable"],
+                "status": quality["status"],
+                "missing": quality["missing"],
+            }
+        )
     return rows
 
 
 def summarize_gold_answer_quality(checks: list[dict]) -> dict:
-    """Aggregate how many tasks satisfy each Gold Answer element."""
+    """Aggregate how many tasks satisfy each Gold Answer element and overall status."""
     total = len(checks)
     summary = {label: 0 for label, _ in GOLD_FIELD_CHECKS}
     for row in checks:
         for label, ok in row["checks"].items():
             if ok:
                 summary[label] += 1
-    return {"total": total, "by_element": summary, "complete": sum(1 for r in checks if r["complete"])}
+    complete = sum(1 for r in checks if r["complete"])
+    return {
+        "total": total,
+        "by_element": summary,
+        "complete": complete,
+        "partial": total - complete,
+    }
 
 
 def build_rubric_checks(manifest: dict, scores_df: pd.DataFrame, taxonomy: dict) -> list[dict]:
@@ -366,7 +374,8 @@ def _render_gold_answer_quality(data) -> None:
 
     summary = summarize_gold_answer_quality(checks)
     render_html(
-        f'<div class="check-note">共 {summary["total"]} 道题，其中 {summary["complete"]} 道完整具备全部核心要素。</div>'
+        f'<div class="check-note">共 {summary["total"]} 道题，其中 {summary["complete"]} 道满足评测使用条件，'
+        f'{summary["partial"]} 道部分满足。</div>'
     )
 
     element_labels = [label for label, _ in GOLD_FIELD_CHECKS]
@@ -374,9 +383,12 @@ def _render_gold_answer_quality(data) -> None:
     body = ""
     for row in checks:
         cells = "".join(_wrap_td(_status_cell("pass" if row["checks"][label] else "fail")) for label in element_labels)
-        body += f'<tr><td class="check-key">{escape(row["case_id"])}</td>{cells}</tr>'
+        status_class = "success" if row["complete"] else "warning"
+        status_badge = f'<span class="status-badge status-{status_class}">{escape(row["status"])}</span>'
+        body += f'<tr><td class="check-key">{escape(row["case_id"])}</td>{cells}<td>{status_badge}</td></tr>'
     render_html(
-        f'<table class="check-table"><thead><tr><th>案例编号</th>{header}</tr></thead><tbody>{body}</tbody></table>'
+        f'<table class="check-table"><thead><tr><th>案例编号</th>{header}<th>质量状态</th></tr></thead>'
+        f"<tbody>{body}</tbody></table>"
     )
 
 

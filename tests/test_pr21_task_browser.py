@@ -46,7 +46,7 @@ class TaskBrowserTests(unittest.TestCase):
     def test_gold_status_reflects_gold_answer_map(self):
         for row in self.rows:
             gold = self.data.gold_answer_map.get(row["case_id"]) or {}
-            expected = bool(str(gold.get("conclusion", "")).strip())
+            expected = bool(str(gold.get("core_conclusion", "")).strip())
             self.assertEqual(expected, row["has_gold"], row["case_id"])
 
     def test_filter_by_gold_and_answer(self):

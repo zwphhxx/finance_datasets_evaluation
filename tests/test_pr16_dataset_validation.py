@@ -75,7 +75,7 @@ class DatasetValidatorNegativeTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             data_dir = self._fresh_copy(tmp)
             gold = json.loads((data_dir / "gold_answers.json").read_text(encoding="utf-8"))
-            gold[0]["basis"] = ""  # remove a required core field
+            gold[0]["key_evidence"] = ""  # remove a required core field
             (data_dir / "gold_answers.json").write_text(
                 json.dumps(gold, ensure_ascii=False), encoding="utf-8"
             )

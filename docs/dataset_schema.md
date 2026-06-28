@@ -39,20 +39,24 @@
 | `risk_level` | 任务风险等级 |
 
 ### gold_answers（gold_answers.json）
-列表结构，每条对应一个 `case_id`。
+列表结构，每条对应一个 `case_id`。质量状态（满足 / 部分满足评测使用条件）由字段完整度
+动态推导，不在数据中存储固定结论。
 | 字段 | 含义 |
 | --- | --- |
 | `case_id` | 关联的任务编号 |
-| `conclusion` | 标准结论（必备） |
-| `basis` | 关键判断依据（必备） |
+| `core_conclusion` | 核心结论（必备） |
+| `key_evidence` | 关键依据或判断口径（必备） |
 | `analysis` | 分析过程 |
 | `materials_to_check` | 需核查的材料清单 |
-| `must_have_points` | 必须覆盖的要点 |
-| `risk_boundary` | 风险边界条件 |
-| `red_line_errors` | 不可接受的红线错误 |
+| `boundary_conditions` | 适用边界、待核查事项、不能直接下结论的情形 |
+| `must_have_points` | 模型回答必须覆盖的关键点 |
+| `unacceptable_errors` | 不可接受错误或红线错误 |
+| `manual_review_notes` | 人工复核提示（无法确认处写「需进一步核验 / 待补充依据」，不伪造依据） |
 
-> 质量门槛：`conclusion`、`basis` 为必备字段；`risk_boundary` 与 `red_line_errors`
-> 至少具备其一。该门槛由 `dataset_manifest.yml` 的 `gold_answer` 段声明，由校验脚本核对。
+> 质量门槛：`core_conclusion`、`key_evidence` 为必备字段；`boundary_conditions` 与
+> `unacceptable_errors` 至少具备其一。该门槛由 `dataset_manifest.yml` 的 `gold_answer`
+> 段声明，由校验脚本核对；早期字段名（`conclusion` / `basis` / `risk_boundary` /
+> `red_line_errors`）经 `src/gold_quality.py` 的别名解析仍可识别。
 
 ### rubrics（dataset_manifest.yml → rubric）
 | 字段 | 含义 |
@@ -133,6 +137,7 @@ python scripts/validate_dataset.py
 
 脚本依据 `dataset_manifest.yml` 与 `label_taxonomy.yml` 动态读取数据文件，输出
 通过项、警告项与错误项，可识别 `case_id` 重复、Gold Answer 缺失或要素不全、
+Gold Answer 结构化要素完整度（满足 / 部分满足评测使用条件）、
 Rubric 权重不一致、回答/评分关联缺失、错误标签不合法、影响维度越界、补强动作悬空等问题。
 
 扩展数据集时：先按本 Schema 补齐字段与关联，再在 `dataset_manifest.yml` 同步样本范围与版本，

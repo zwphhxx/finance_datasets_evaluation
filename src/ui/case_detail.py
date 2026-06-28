@@ -15,6 +15,7 @@ from src.metrics import (
     merge_case_outputs_with_scores,
 )
 from src.ui.common import has_value
+from src.gold_quality import evaluate_gold_quality, field_list, field_text
 from src.ui.page_config import get_page_config
 from src.ui.tasks import (
     DIFFICULTY_LABELS,
@@ -356,16 +357,22 @@ def _render_gold_standard(gold: dict | None) -> None:
         render_empty_state("该任务暂无 Gold Answer 记录。")
         return
 
+    quality = evaluate_gold_quality(gold)
+    status_class = "success" if quality["is_usable"] else "warning"
+    render_html(
+        f'<span class="status-badge status-{status_class}">当前 Gold Answer {escape(quality["status"])}</span>'
+    )
+
     render_answer_boundary_panel(
         "评测标准",
         [
-            ("标准结论", gold.get("conclusion")),
-            ("判断依据", gold.get("basis")),
-            ("风险边界", gold.get("risk_boundary")),
+            ("标准结论", field_text(gold, "core_conclusion", "需进一步补充")),
+            ("判断依据", field_text(gold, "key_evidence", "待补充依据")),
+            ("边界条件", field_text(gold, "boundary_conditions", "待补充边界")),
         ],
     )
 
-    must_points = _as_list(gold.get("must_have_points"))
+    must_points = field_list(gold, "must_have_points")
     if must_points:
         render_html(
             '<div class="fact-label">必须覆盖点</div><div class="boundary-list">'
@@ -373,13 +380,17 @@ def _render_gold_standard(gold: dict | None) -> None:
             + "</div>"
         )
 
-    red_lines = _as_list(gold.get("red_line_errors"))
+    red_lines = field_list(gold, "unacceptable_errors")
     if red_lines:
         render_html(
             '<div class="fact-label">不可接受错误（红线）</div><div class="boundary-list">'
             + "".join(f'<div class="redline-item">{escape(str(item))}</div>' for item in red_lines)
             + "</div>"
         )
+
+    review = quality["manual_review"]
+    if review:
+        st.caption(f"人工复核提示：{review}")
 
 
 def _render_model_answer(output_row: pd.Series | None, gold, errors_df) -> None:
@@ -398,7 +409,7 @@ def _render_model_answer(output_row: pd.Series | None, gold, errors_df) -> None:
         with st.expander("查看完整模型回答"):
             st.write(answer)
 
-    must_points = _as_list(gold.get("must_have_points")) if isinstance(gold, dict) else []
+    must_points = field_list(gold, "must_have_points") if isinstance(gold, dict) else []
     if must_points:
         covered, missed = build_point_coverage(must_points, answer)
         st.caption("要点覆盖基于关键词近似匹配，仅供对照参考。")
@@ -510,14 +521,6 @@ def _domain_by_case(tasks_df: pd.DataFrame) -> dict[str, str]:
         str(row.get("case_id")): display_label(row.get("domain"), DOMAIN_LABELS)
         for _, row in tasks_df.iterrows()
     }
-
-
-def _as_list(value) -> list:
-    if isinstance(value, list):
-        return [item for item in value if has_value(item)]
-    if has_value(value):
-        return [value]
-    return []
 
 
 def _text(value, fallback: str = "未标注") -> str:

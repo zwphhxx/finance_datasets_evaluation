@@ -8,6 +8,7 @@
   - case_id 唯一；
   - 每个任务存在 Gold Answer；
   - 每个 Gold Answer 包含核心结论、关键依据，以及答案边界或红线错误；
+  - 每个 Gold Answer 的结构化要素完整度（核心结论 / 关键依据 / 边界条件 / 不可接受错误 / 必须覆盖点）；
   - Rubric 维度权重完整且与评分字段一致；
   - 模型回答可关联到有效 case_id 与声明的模型范围；
   - 评分记录可关联到有效 case_id、模型与全部 Rubric 维度；
@@ -45,6 +46,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA_DIR = PROJECT_ROOT / "data"
 DEFAULT_MANIFEST = DEFAULT_DATA_DIR / "dataset_manifest.yml"
 DEFAULT_TAXONOMY = DEFAULT_DATA_DIR / "label_taxonomy.yml"
+
+# 允许以脚本方式（python scripts/validate_dataset.py）运行时导入 src 包。
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.gold_quality import QUALITY_FIELDS, evaluate_gold_quality, field_value
 
 # 同一字段在不同数据文件中的命名别名，按出现顺序取第一个存在的列。
 ERROR_TYPE_ALIASES = ("error_type", "frequent_error")
@@ -169,6 +176,7 @@ def validate_dataset(
     _check_case_id_unique(tasks, report)
     _check_gold_answer_coverage(tasks, gold_answers, report)
     _check_gold_answer_fields(manifest, gold_answers, report)
+    _check_gold_answer_completeness(gold_answers, report)
     _check_rubric_weights(manifest, scores, report)
     _check_model_output_links(manifest, tasks, model_outputs, report)
     _check_score_links(manifest, tasks, model_outputs, scores, report)
@@ -232,8 +240,8 @@ def _check_gold_answer_fields(manifest: dict[str, Any], gold_answers: Any, repor
             report.fail("gold_answers.json 存在非对象记录。")
             continue
         case_id = str(entry.get("case_id", "未知"))
-        missing = [f for f in required_fields if not str(entry.get(f, "")).strip()]
-        if boundary_any_of and not any(str(entry.get(f, "")).strip() for f in boundary_any_of):
+        missing = [f for f in required_fields if field_value(entry, f) is None]
+        if boundary_any_of and not any(field_value(entry, f) is not None for f in boundary_any_of):
             missing.append("/".join(boundary_any_of))
         if missing:
             incomplete.append(f"{case_id}（缺 {', '.join(missing)}）")
@@ -243,6 +251,36 @@ def _check_gold_answer_fields(manifest: dict[str, Any], gold_answers: Any, repor
     else:
         report.ok(
             "全部 Gold Answer 均包含核心结论、关键依据，以及答案边界或红线错误。"
+        )
+
+
+def _check_gold_answer_completeness(gold_answers: Any, report: Report) -> None:
+    """逐条评估 Gold Answer 结构化要素是否齐备，区分满足 / 部分满足评测使用条件。"""
+    if not isinstance(gold_answers, list) or not gold_answers:
+        return
+
+    partial: list[str] = []
+    usable = 0
+    for entry in gold_answers:
+        if not isinstance(entry, dict):
+            continue
+        quality = evaluate_gold_quality(entry)
+        if quality["is_usable"]:
+            usable += 1
+        else:
+            case_id = str(entry.get("case_id", "未知"))
+            partial.append(f"{case_id}（缺 {'、'.join(quality['missing'])}）")
+
+    element_labels = "、".join(label for _, label in QUALITY_FIELDS)
+    if partial:
+        report.warn(
+            "以下 Gold Answer 仅部分满足评测使用条件，建议补齐结构化要素："
+            + "；".join(partial)
+            + "。"
+        )
+    if usable:
+        report.ok(
+            f"{usable} 个 Gold Answer 满足评测使用条件，结构化要素（{element_labels}）齐备。"
         )
 
 

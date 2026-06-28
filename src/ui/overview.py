@@ -3,6 +3,7 @@ from __future__ import annotations
 import streamlit as st
 
 from src.metrics import get_dimension_gap_ranking
+from src.gold_quality import evaluate_gold_quality
 from src.ui.page_config import get_page_config
 from src.ui.tasks import DOMAIN_LABELS, display_label
 from src.ui.components import (
@@ -154,6 +155,29 @@ def build_model_performance_summary(scores_df, errors_df) -> dict | None:
     }
 
 
+def build_gold_quality_summary(gold_answer_map: dict, tasks_df) -> dict:
+    """Gold Answer 质量摘要：满足 / 部分满足评测使用条件的任务数，全部按数据推导。"""
+    case_ids: list[str] = []
+    if "case_id" in getattr(tasks_df, "columns", []):
+        case_ids = [str(c) for c in tasks_df["case_id"].dropna().tolist()]
+
+    usable = 0
+    partial_cases: list[str] = []
+    for case_id in case_ids:
+        if evaluate_gold_quality(gold_answer_map.get(case_id, {}))["is_usable"]:
+            usable += 1
+        else:
+            partial_cases.append(case_id)
+
+    total = len(case_ids)
+    return {
+        "total": total,
+        "usable": usable,
+        "partial": total - usable,
+        "partial_cases": partial_cases,
+    }
+
+
 def get_evaluation_loop_steps() -> list[str]:
     return [
         "专业任务",
@@ -232,6 +256,22 @@ def render_overview_page(data_bundle: dict) -> None:
                     ),
                     ("高频错误", top_error),
                 ]
+            )
+
+    render_section_title("Gold Answer 质量", "结构化结论、依据、边界与红线的完整度，按数据动态检查。")
+    gold_summary = build_gold_quality_summary(data.gold_answer_map, data.tasks)
+    if gold_summary["total"] == 0:
+        render_empty_state("暂无 Gold Answer 记录。")
+    else:
+        status_level = "success" if gold_summary["partial"] == 0 else "warning"
+        render_status_badge(
+            f"{gold_summary['usable']}/{gold_summary['total']} 满足评测使用条件",
+            status_level,
+        )
+        if gold_summary["partial"] > 0:
+            st.caption(
+                f"部分满足评测使用条件：{gold_summary['partial']} 道"
+                f"（{'、'.join(gold_summary['partial_cases'])}），可在「数据集质量与扩展框架」查看缺失要素。"
             )
 
     st.button("进入样板题评测 →", on_click=_open_case_detail, key="overview_to_case_detail")

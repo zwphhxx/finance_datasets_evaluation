@@ -100,11 +100,11 @@ rubric:
 #   boundary_any_of 表示答案边界与红线错误至少具备其一。
 gold_answer:
   required_fields:
-    - conclusion
-    - basis
+    - core_conclusion
+    - key_evidence
   boundary_any_of:
-    - risk_boundary
-    - red_line_errors
+    - boundary_conditions
+    - unacceptable_errors
 
 # 适用边界：说明数据集规模与结论的有效范围。
 boundary: >-

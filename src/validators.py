@@ -138,7 +138,11 @@ def _validate_gold_answers_schema(gold_answers: Any, errors: list[str]) -> None:
             continue
         if "case_id" not in answer:
             errors.append("gold_answers.json 缺少必填字段：case_id。")
-        if "gold_answer" not in answer and "conclusion" not in answer:
+        if (
+            "gold_answer" not in answer
+            and "conclusion" not in answer
+            and "core_conclusion" not in answer
+        ):
             errors.append("gold_answers.json 缺少必填字段：gold_answer。")
 
 
