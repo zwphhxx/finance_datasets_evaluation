@@ -2,7 +2,7 @@
 
 Finance Model Evaluation  是一个面向金融专业尽调、资本市场规则边界和相关专业问答场景的模型评测与数据优化 MVP。项目使用结构化样例数据展示从任务集、Gold Answer、模型回答、Rubric 评分、错误标签、Preference Pair、模型能力诊断到数据补强动作的评测闭环。
 
-当前仓库不接真实模型 API，不使用数据库，不包含真实公司数据。页面中的优化前后对比为 MVP 样例数据和当前评测集观察，不代表真实大规模实验结论。
+当前仓库不接真实模型 API，不包含真实公司数据。数据默认以 `data/` 下的 CSV/JSON 种子文件提供，并可选初始化一个本地 SQLite 数据层（见「SQLite 数据层」），用于后续 CRUD 与运行记录留存；不引入 PostgreSQL、MySQL 等外部数据库。页面中的优化前后对比为 MVP 样例数据和当前评测集观察，不代表真实大规模实验结论。
 
 ## 项目目标
 
@@ -42,6 +42,37 @@ streamlit run app.py
 export FINDUEVAL_DATA_DIR=/path/to/data
 streamlit run app.py
 ```
+
+## SQLite 数据层
+
+项目默认直接读取 `data/` 种子文件即可运行。如需使用本地 SQLite 数据层（便于后续 CRUD、运行记录与真实评测接入），可从种子数据初始化数据库：
+
+```bash
+# 在 app/db/findueval.db 创建数据库并从 data/ 导入种子数据
+python -m app.db.init_db
+
+# 重新初始化（覆盖已存在的数据库）
+python -m app.db.init_db --force
+
+# 自定义路径与种子目录
+python -m app.db.init_db --db /tmp/findueval.db --data-dir /path/to/data
+```
+
+初始化后，页面通过 `app/services/dataset_service.py` 读取数据：数据库存在时读库，否则自动回退到 `data/` 种子文件，两种方式的展示结果一致。初始化只读取种子文件、不修改它们，导入行数与种子文件一一对应。
+
+如需让应用读取非默认位置的数据库，可设置：
+
+```bash
+export FINDUEVAL_DB_PATH=/path/to/findueval.db
+streamlit run app.py
+```
+
+数据层仅使用标准库 `sqlite3`，不新增第三方依赖：
+
+- `app/db/schema.sql`：核心数据表结构（任务题、Gold Answer、Rubric、模型回答、评分、错误标签、数据补强动作、评测批次），含 `status`、`created_at`、`updated_at` 等基础字段。
+- `app/db/init_db.py`：初始化数据库并从 `data/` 导入种子数据。
+- `app/db/repository.py`：封装基础读写（list/get/insert/update/delete）。
+- `app/services/dataset_service.py`：服务层，向页面提供数据，屏蔽底层来源。
 
 ## 如何扩展数据集
 

@@ -6,3 +6,7 @@ __pycache__/
 .DS_Store
 
 .streamlit/secrets.toml
+
+# SQLite 数据层为构建产物，从 data/ 种子重新初始化，不纳入版本
+app/db/*.db
+*.sqlite3
