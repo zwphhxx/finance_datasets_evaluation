@@ -14,10 +14,12 @@ from src.metrics import (
 from src.ui.common import has_value, show_model_score, write_list_field, write_text_field
 from src.ui.common import PAGE_CONTEXTS
 from src.ui.components import (
+    render_answer_boundary_panel,
     render_context_summary,
     render_empty_state,
     render_model_answer_card,
     render_page_header,
+    render_preference_comparison,
     render_score_badge,
     render_section_title,
     render_status_badge,
@@ -83,12 +85,16 @@ def render_gold_answer(gold_answer_map: dict, selected_case: str) -> None:
         render_empty_state("该模块用于展示数据闭环，当前暂无对应记录。")
         return
 
-    st.markdown("**标准答案**")
-    write_text_field("结论", gold_answer.get("conclusion"))
-    write_text_field("判断依据", gold_answer.get("basis"))
-    write_text_field("分析逻辑", gold_answer.get("analysis"))
-    write_text_field("需核查资料", gold_answer.get("materials_to_check"))
-    write_text_field("风险边界", gold_answer.get("risk_boundary"))
+    render_answer_boundary_panel(
+        "标准答案边界",
+        [
+            ("结论", gold_answer.get("conclusion")),
+            ("判断依据", gold_answer.get("basis")),
+            ("分析逻辑", gold_answer.get("analysis")),
+            ("需核查资料", gold_answer.get("materials_to_check")),
+            ("风险边界", gold_answer.get("risk_boundary")),
+        ],
+    )
 
     st.markdown("**必须覆盖要点**")
     if gold_answer.get("must_have_points"):
@@ -207,17 +213,14 @@ def render_preference_pairs(preference_pairs_df, model_outputs_df, selected_case
             write_text_field("评审人", pair.get("reviewer"))
             write_text_field("评审状态", pair.get("review_status"))
 
-            preferred_col, rejected_col = st.columns(2)
-            with preferred_col:
-                st.markdown("**Preferred**")
-                write_text_field("output_id", pair.get("preferred_output_id"))
-                write_text_field("模型", pair.get("preferred_model_name"))
-                st.write(_plain_value(pair.get("preferred_answer_text"), "暂无回答内容。"))
-            with rejected_col:
-                st.markdown("**Rejected**")
-                write_text_field("output_id", pair.get("rejected_output_id"))
-                write_text_field("模型", pair.get("rejected_model_name"))
-                st.write(_plain_value(pair.get("rejected_answer_text"), "暂无回答内容。"))
+            render_preference_comparison(
+                "偏好回答",
+                pair.get("preferred_answer_text"),
+                "对照回答",
+                pair.get("rejected_answer_text"),
+                preferred_meta=f"output_id {pair.get('preferred_output_id')} · {pair.get('preferred_model_name')}",
+                rejected_meta=f"output_id {pair.get('rejected_output_id')} · {pair.get('rejected_model_name')}",
+            )
 
 
 def _answer_text(row: pd.Series) -> str:

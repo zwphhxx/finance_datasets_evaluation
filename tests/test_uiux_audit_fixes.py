@@ -57,6 +57,20 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn("nav-note-active", navigation_source)
         self.assertIn("当前页面", navigation_source)
 
+    def test_case_detail_uses_review_workbench_components(self):
+        import src.ui.components as components
+
+        self.assertTrue(hasattr(components, "render_answer_boundary_panel"))
+        self.assertTrue(hasattr(components, "render_preference_comparison"))
+        self.assertIn(".answer-boundary-panel", components.STYLE_CSS)
+        self.assertIn(".comparison-grid", components.STYLE_CSS)
+
+        source = Path("src/ui/case_detail.py").read_text(encoding="utf-8")
+        self.assertIn("render_answer_boundary_panel", source)
+        self.assertIn("render_preference_comparison", source)
+        self.assertNotIn("Preferred", source)
+        self.assertNotIn("Rejected", source)
+
 
 if __name__ == "__main__":
     unittest.main()

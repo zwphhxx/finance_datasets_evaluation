@@ -188,6 +188,56 @@ STYLE_CSS = """
     font-size: 0.9rem;
     margin-bottom: 0.6rem;
 }
+.answer-boundary-panel {
+    border: 1px solid #b9cbe2;
+    border-left: 4px solid var(--fde-blue);
+    background: #f8fbff;
+    border-radius: 14px;
+    padding: 1rem;
+    margin: 0.65rem 0 1rem 0;
+}
+.answer-boundary-panel h4,
+.comparison-card h4 {
+    color: var(--fde-blue);
+    margin: 0 0 0.5rem 0;
+}
+.boundary-row {
+    border-top: 1px solid var(--fde-line);
+    padding: 0.55rem 0;
+}
+.boundary-row:first-of-type {
+    border-top: none;
+}
+.boundary-label,
+.comparison-meta {
+    color: var(--fde-muted);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+.boundary-value,
+.comparison-body {
+    color: var(--fde-text);
+    line-height: 1.6;
+    margin-top: 0.18rem;
+}
+.comparison-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 0.85rem;
+    margin-top: 0.7rem;
+}
+.comparison-card {
+    border: 1px solid var(--fde-line);
+    border-radius: 14px;
+    background: #ffffff;
+    padding: 1rem;
+}
+.comparison-card-accepted {
+    border-left: 4px solid var(--fde-green);
+}
+.comparison-card-reference {
+    border-left: 4px solid var(--fde-orange);
+}
 .loop-rail {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -372,6 +422,57 @@ def render_model_answer_card(
             <div class="model-answer-meta">{escape(meta)}</div>
             <p>{escape(str(answer if _has_value(answer) else "暂无可展示数据"))}</p>
             {note_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_answer_boundary_panel(title, fields) -> None:
+    rows = []
+    for label, value in fields:
+        rows.append(
+            f"""
+            <div class="boundary-row">
+                <div class="boundary-label">{escape(str(label))}</div>
+                <div class="boundary-value">{escape(str(value if _has_value(value) else "暂无记录"))}</div>
+            </div>
+            """
+        )
+    st.markdown(
+        f"""
+        <div class="answer-boundary-panel">
+            <h4>{escape(str(title))}</h4>
+            {"".join(rows)}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_preference_comparison(
+    preferred_title,
+    preferred_body,
+    rejected_title,
+    rejected_body,
+    preferred_meta=None,
+    rejected_meta=None,
+) -> None:
+    preferred_meta_text = preferred_meta if _has_value(preferred_meta) else "偏好侧回答"
+    rejected_meta_text = rejected_meta if _has_value(rejected_meta) else "对照侧回答"
+    st.markdown(
+        f"""
+        <div class="comparison-grid">
+            <div class="comparison-card comparison-card-accepted">
+                <h4>{escape(str(preferred_title))}</h4>
+                <div class="comparison-meta">{escape(str(preferred_meta_text))}</div>
+                <div class="comparison-body">{escape(str(preferred_body if _has_value(preferred_body) else "暂无回答内容"))}</div>
+            </div>
+            <div class="comparison-card comparison-card-reference">
+                <h4>{escape(str(rejected_title))}</h4>
+                <div class="comparison-meta">{escape(str(rejected_meta_text))}</div>
+                <div class="comparison-body">{escape(str(rejected_body if _has_value(rejected_body) else "暂无回答内容"))}</div>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
