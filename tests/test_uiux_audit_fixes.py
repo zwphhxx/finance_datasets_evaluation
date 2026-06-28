@@ -71,6 +71,26 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertNotIn("Preferred", source)
         self.assertNotIn("Rejected", source)
 
+    def test_error_analysis_prioritizes_error_to_data_action_path(self):
+        from src.data_service import load_all_data
+        from src.metrics import get_error_attribution_actions
+        from src.ui.error_analysis import build_error_action_path
+
+        data = load_all_data()
+        actions = get_error_attribution_actions(data.errors, data.optimizations)
+        path_df = build_error_action_path(actions)
+
+        self.assertFalse(path_df.empty)
+        self.assertEqual(
+            ["错误表现", "可能原因", "数据补强动作", "验证指标"],
+            list(path_df.columns),
+        )
+
+        source = Path("src/ui/error_analysis.py").read_text(encoding="utf-8")
+        self.assertIn("_show_error_action_path", source)
+        self.assertIn("错误表现 → 可能原因 → 数据补强动作", source)
+        self.assertIn("当前样本观察", source)
+
 
 if __name__ == "__main__":
     unittest.main()

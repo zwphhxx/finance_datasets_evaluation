@@ -1,5 +1,6 @@
 """Error attribution and data improvement workflow page."""
 
+import pandas as pd
 import streamlit as st
 
 from src.charts import render_error_distribution_summary_chart
@@ -16,6 +17,30 @@ from src.ui.components import (
     render_page_header,
     render_section_title,
 )
+
+
+ACTION_PATH_COLUMNS = ["错误表现", "可能原因", "数据补强动作", "验证指标"]
+
+
+def build_error_action_path(actions_df):
+    if actions_df is None or actions_df.empty:
+        return pd.DataFrame(columns=ACTION_PATH_COLUMNS)
+
+    path_df = pd.DataFrame(
+        {
+            "错误表现": actions_df.get("error_type", ""),
+            "可能原因": actions_df.get("root_cause", ""),
+            "数据补强动作": actions_df.get("data_action", ""),
+            "验证指标": actions_df.get("validation_metric", ""),
+        }
+    )
+    for column in ACTION_PATH_COLUMNS:
+        path_df[column] = path_df[column].fillna("")
+        path_df[column] = path_df[column].where(
+            path_df[column].astype(str).str.strip() != "",
+            "暂无对应记录",
+        )
+    return path_df[ACTION_PATH_COLUMNS]
 
 
 def _display_table(df, columns, empty_message):
@@ -36,10 +61,30 @@ def _show_error_distribution(error_df):
     render_error_distribution_summary_chart(error_df)
 
     distribution = get_error_distribution_summary(error_df)
+    if not distribution.empty:
+        top_error = distribution.iloc[0]
+        st.caption(
+            f"当前样本观察：{top_error['error_type']} 出现 {top_error['count']} 次，"
+            "后续应结合错误归因和数据补强动作复核。"
+        )
     _display_table(
         distribution,
         ["error_type", "count", "severity", "models", "cases"],
         "暂无错误标签数据，无法展示错误分布。",
+    )
+
+
+def _show_error_action_path(error_df, optimization_df):
+    render_section_title(
+        "错误表现 → 可能原因 → 数据补强动作",
+        "将错误标签收敛成可执行的数据建设路径。",
+    )
+    actions = get_error_attribution_actions(error_df, optimization_df)
+    path_df = build_error_action_path(actions)
+    _display_table(
+        path_df,
+        ACTION_PATH_COLUMNS,
+        "该模块用于展示数据闭环，当前暂无对应记录。",
     )
 
 
@@ -152,9 +197,12 @@ def render_error_analysis(data_bundle):
     error_df = data.errors
     optimization_df = data.optimizations
 
-    tab_distribution, tab_attribution, tab_actions, tab_samples = st.tabs(
-        ["错误分布", "错误归因", "数据优化动作", "重点错误样本"]
+    tab_path, tab_distribution, tab_attribution, tab_actions, tab_samples = st.tabs(
+        ["错误到数据动作", "错误分布", "错误归因", "数据补强动作", "重点错误样本"]
     )
+
+    with tab_path:
+        _show_error_action_path(error_df, optimization_df)
 
     with tab_distribution:
         _show_error_distribution(error_df)
