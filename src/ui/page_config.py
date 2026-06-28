@@ -17,12 +17,12 @@ class PageConfig:
 PAGE_CONFIGS = [
     PageConfig(
         page_key="overview",
-        title="评测项目总览",
-        subtitle="说明 FinDueEval 的评测对象、数据资产和优化验证路径。",
-        question="本页用于判断当前评测集评什么，以及如何支撑模型评测与数据补强。",
-        boundary="当前结论仅基于 MVP 样本、脱敏任务和模拟模型回答。",
-        highlights="项目定位、关键问题、闭环流程和核心数据资产。",
-        nav_summary="项目目标与数据资产",
+        title="FinDueEval 数据集概览",
+        subtitle="一屏看清数据集内容、样本边界与模型评测的样本内观察。",
+        question="本页用于快速判断数据集里有什么、样本与评测边界是什么、当前样本内模型表现如何。",
+        boundary="当前为 MVP 样本、脱敏任务与模拟模型回答，结论仅用于样本内观察。",
+        highlights="核心指标、任务覆盖、模型表现摘要与样板题评测入口。",
+        nav_summary="数据集与模型边界",
     ),
     PageConfig(
         page_key="tasks",
