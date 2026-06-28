@@ -19,6 +19,7 @@ DROP TABLE IF EXISTS score_records;
 DROP TABLE IF EXISTS error_annotations;
 DROP TABLE IF EXISTS improvement_actions;
 DROP TABLE IF EXISTS evaluation_runs;
+DROP TABLE IF EXISTS error_taxonomy;
 
 -- 任务题：对应 data/tasks.csv。status 复用任务的 active/inactive 标记。
 CREATE TABLE task_cases (
@@ -122,14 +123,21 @@ CREATE TABLE error_annotations (
 );
 
 -- 数据补强动作：对应 data/optimization_plan.csv，原始无单列主键，使用自增 id。
+-- frequent_error 既是原始列，也作为「关联错误标签」(related_error_label) 的取值来源，
+-- 关联到 error_taxonomy.error_label；action_id 为可读业务编号；action_type /
+-- expected_effect / validation_method 为补强动作的治理补充字段，种子导入时留空，不预置编造内容。
 CREATE TABLE improvement_actions (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    action_id           TEXT,
     frequent_error      TEXT,
     typical_problem     TEXT,
     affected_cases      TEXT,
     likely_cause        TEXT,
     optimization_action TEXT,
     data_sample_format  TEXT,
+    action_type         TEXT,
+    expected_effect     TEXT,
+    validation_method   TEXT,
     priority            TEXT,
     status              TEXT NOT NULL DEFAULT 'active',
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
@@ -149,4 +157,22 @@ CREATE TABLE evaluation_runs (
     status          TEXT NOT NULL DEFAULT 'active',
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- 错误标签体系：对应 data/label_taxonomy.yml 的 labels，作为可维护的运行时标签层。
+-- 业务列与 taxonomy 字段对应：error_label←name、definition、typical_symptom←typical_signs、
+-- related_dimension←impacted_dimension、suggested_data_action←data_direction。
+-- severity_level 与 validation_metric 在 seed 中不存在，留空待维护，不预置编造内容。
+CREATE TABLE error_taxonomy (
+    error_label           TEXT PRIMARY KEY,
+    definition            TEXT,
+    typical_symptom       TEXT,
+    severity_level        TEXT,
+    related_dimension     TEXT,
+    suggested_data_action TEXT,
+    validation_metric     TEXT,
+    status                TEXT NOT NULL DEFAULT 'active',
+    version               TEXT,
+    created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
 );

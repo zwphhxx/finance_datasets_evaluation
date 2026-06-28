@@ -40,6 +40,14 @@ _DIFFICULTY_OPTIONS = list(DIFFICULTY_LABELS.keys())
 _RISK_OPTIONS = ["", "高", "中", "低"]
 _STATUS_BADGE = {"active": ("启用中", "success"), "inactive": ("已停用", "neutral")}
 
+# 错误标签默认低饱和呈现：仅显式标为「红线/高」的严重度使用浅玫瑰底（danger），
+# 中等用米色（warning），其余保持中性，避免把全部错误标签渲染成红色。
+_RED_LINE_TOKENS = {"红线", "高", "high", "critical"}
+_MID_TOKENS = {"中", "medium"}
+_PRIORITY_BADGE = {"高": "warning", "中": "neutral", "低": "neutral"}
+# 配置校验问题：error 用浅玫瑰、warning 用米色。
+_ISSUE_BADGE = {"error": "danger", "warning": "warning"}
+
 
 # --------------------------------------------------------------------------- #
 # 入口
@@ -52,13 +60,19 @@ def render_dataset_admin_page(data_bundle: dict) -> None:
         _render_uninitialized(data_bundle)
         return
 
-    tasks_tab, gold_tab, rubric_tab = st.tabs(["任务题管理", "Gold Answer 管理", "Rubric 管理"])
+    tasks_tab, gold_tab, rubric_tab, label_tab, action_tab = st.tabs(
+        ["任务题管理", "Gold Answer 管理", "Rubric 管理", "错误标签管理", "数据补强动作管理"]
+    )
     with tasks_tab:
         _render_task_admin()
     with gold_tab:
         _render_gold_admin()
     with rubric_tab:
         _render_rubric_admin()
+    with label_tab:
+        _render_error_label_admin()
+    with action_tab:
+        _render_action_admin()
 
 
 def _render_uninitialized(data_bundle: dict) -> None:
@@ -425,6 +439,323 @@ def _labels_by_dimension(taxonomy: dict) -> dict[str, list[str]]:
         if dimension and name:
             mapping.setdefault(dimension, []).append(name)
     return mapping
+
+
+# --------------------------------------------------------------------------- #
+# 错误标签管理
+# --------------------------------------------------------------------------- #
+def _severity_level(value: object) -> str:
+    token = _text(value, "").strip().lower()
+    if token in {t.lower() for t in _RED_LINE_TOKENS}:
+        return "danger"
+    if token in {t.lower() for t in _MID_TOKENS}:
+        return "warning"
+    return "neutral"
+
+
+def _render_error_label_admin() -> None:
+    labels = ds.list_error_taxonomy().to_dict(orient="records")
+    render_section_title("错误标签清单", "含启用与停用标签；默认低饱和呈现，仅红线/高严重度使用浅玫瑰底。")
+    if labels:
+        _render_label_table(labels)
+    else:
+        render_empty_state("暂无错误标签记录。")
+
+    _render_label_create_form(labels)
+    _render_label_edit_form(labels)
+    _render_config_check()
+
+
+def _render_label_table(records: list[dict]) -> None:
+    header = "".join(
+        f"<th>{escape(name)}</th>"
+        for name in ["错误标签", "关联维度", "严重度", "建议补强方向", "验证指标", "状态"]
+    )
+    body = ""
+    for row in records:
+        status = str(row.get("status") or "active").strip().lower()
+        s_label, s_level = _STATUS_BADGE.get(status, (status or "未知", "neutral"))
+        severity = _text(row.get("severity_level"), "未标注")
+        sev_badge = f'<span class="status-badge status-{_severity_level(row.get("severity_level"))}">{escape(severity)}</span>'
+        body += (
+            f'<tr><td class="check-key">{escape(_text(row.get("error_label"), ""))}</td>'
+            f'<td>{escape(_text(row.get("related_dimension"), "未标注"))}</td>'
+            f"<td>{sev_badge}</td>"
+            f'<td class="check-note">{escape(_text(row.get("suggested_data_action"), "待补充"))}</td>'
+            f'<td class="check-note">{escape(_text(row.get("validation_metric"), "待补充"))}</td>'
+            f'<td><span class="status-badge status-{s_level}">{escape(s_label)}</span></td></tr>'
+        )
+    render_html(
+        f'<table class="check-table"><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>'
+    )
+
+
+def _dimension_options() -> list[str]:
+    """Rubric 维度名称（动态读取），供错误标签关联维度选择。"""
+    rubrics = ds.list_rubrics()
+    if "name" in rubrics.columns:
+        names = [str(name) for name in rubrics["name"].dropna().tolist()]
+        if names:
+            return [""] + names
+    return [""]
+
+
+def _render_label_create_form(records: list[dict]) -> None:
+    render_section_title("新增错误标签", "登记一类错误标签，写入 SQLite。")
+    dimensions = _dimension_options()
+    with st.form("admin_label_create", clear_on_submit=True):
+        error_label = st.text_input("错误标签 error_label")
+        definition = st.text_area("定义 definition", height=70)
+        symptom = st.text_area("典型表现 typical_symptom", height=70)
+        col1, col2 = st.columns(2)
+        severity = col1.selectbox("严重度 severity_level", ["", "高", "中", "低"], format_func=lambda v: v or "未标注")
+        dimension = col2.selectbox(
+            "关联维度 related_dimension", dimensions, format_func=lambda v: v or "未关联"
+        )
+        suggested = st.text_area("建议补强方向 suggested_data_action", height=70)
+        metric = st.text_input("验证指标 validation_metric")
+        submitted = st.form_submit_button("新增错误标签", type="primary")
+
+    if submitted:
+        try:
+            ds.create_error_label(
+                {
+                    "error_label": error_label,
+                    "definition": definition,
+                    "typical_symptom": symptom,
+                    "severity_level": severity,
+                    "related_dimension": dimension,
+                    "suggested_data_action": suggested,
+                    "validation_metric": metric,
+                }
+            )
+        except Exception as exc:  # noqa: BLE001 - 校验失败如实反馈
+            st.error(str(exc))
+        else:
+            st.success(f"已新增错误标签 {error_label.strip()}。")
+            st.rerun()
+
+
+def _render_label_edit_form(records: list[dict]) -> None:
+    if not records:
+        return
+    render_section_title("编辑 / 停用错误标签", "修改标签字段，或将标签停用（保留历史，不物理删除）。")
+    labels = [str(r.get("error_label")) for r in records]
+    selected = st.selectbox("选择错误标签", labels, key="admin_label_edit_select")
+    row = next((r for r in records if str(r.get("error_label")) == selected), None)
+    if not row:
+        return
+
+    dimensions = _dimension_options()
+    severities = ["", "高", "中", "低"]
+    with st.form("admin_label_edit"):
+        definition = st.text_area("定义 definition", value=_text(row.get("definition"), ""), height=70)
+        symptom = st.text_area("典型表现 typical_symptom", value=_text(row.get("typical_symptom"), ""), height=70)
+        col1, col2 = st.columns(2)
+        severity = col1.selectbox(
+            "严重度 severity_level", severities,
+            index=_index_of(severities, row.get("severity_level")),
+            format_func=lambda v: v or "未标注",
+        )
+        dimension = col2.selectbox(
+            "关联维度 related_dimension", dimensions,
+            index=_index_of(dimensions, row.get("related_dimension")),
+            format_func=lambda v: v or "未关联",
+        )
+        suggested = st.text_area("建议补强方向 suggested_data_action", value=_text(row.get("suggested_data_action"), ""), height=70)
+        metric = st.text_input("验证指标 validation_metric", value=_text(row.get("validation_metric"), ""))
+        save = st.form_submit_button("保存修改", type="primary")
+
+    if save:
+        ds.update_error_label(
+            selected,
+            {
+                "definition": definition,
+                "typical_symptom": symptom,
+                "severity_level": severity,
+                "related_dimension": dimension,
+                "suggested_data_action": suggested,
+                "validation_metric": metric,
+            },
+        )
+        st.success(f"已保存错误标签 {selected}。")
+        st.rerun()
+
+    status = str(row.get("status") or "active").strip().lower()
+    if status == ds.INACTIVE_STATUS:
+        if st.button("启用标签", key="admin_label_activate"):
+            ds.set_error_label_status(selected, ds.ACTIVE_STATUS)
+            st.success(f"已启用错误标签 {selected}。")
+            st.rerun()
+    else:
+        if st.button("停用标签（软删除）", key="admin_label_deactivate"):
+            ds.set_error_label_status(selected, ds.INACTIVE_STATUS)
+            st.success(f"已停用错误标签 {selected}，记录保留为 inactive。")
+            st.rerun()
+
+
+def _render_config_check() -> None:
+    render_section_title("配置校验", "识别无效标签、缺少补强动作的高频错误，以及关联不存在标签的补强动作。")
+    issues = ds.evaluate_error_configuration()
+    if not issues:
+        render_html('<div class="empty-state">当前错误标签与补强动作配置一致，无待处理问题。</div>')
+        return
+    body = ""
+    for issue in issues:
+        level = _ISSUE_BADGE.get(issue.severity, "neutral")
+        label = "错误" if issue.severity == "error" else "提示"
+        body += (
+            f'<tr><td><span class="status-badge status-{level}">{escape(label)}</span></td>'
+            f'<td class="check-key">{escape(str(issue.target))}</td>'
+            f'<td class="check-note">{escape(issue.message)}</td></tr>'
+        )
+    render_html(
+        '<table class="check-table"><thead><tr><th>级别</th><th>对象</th><th>说明</th></tr></thead>'
+        f"<tbody>{body}</tbody></table>"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# 数据补强动作管理
+# --------------------------------------------------------------------------- #
+def _render_action_admin() -> None:
+    actions = ds.list_improvement_actions().to_dict(orient="records")
+    render_section_title("补强动作清单", "每条补强动作关联到一个错误标签，写入即被错误归因页读取。")
+    if actions:
+        _render_action_table(actions)
+    else:
+        render_empty_state("暂无数据补强动作记录。")
+
+    _render_action_create_form()
+    _render_action_edit_form(actions)
+
+
+def _render_action_table(records: list[dict]) -> None:
+    header = "".join(
+        f"<th>{escape(name)}</th>"
+        for name in ["动作编号", "关联错误标签", "动作类型", "动作说明", "优先级", "状态"]
+    )
+    body = ""
+    for row in records:
+        status = str(row.get("status") or "active").strip().lower()
+        s_label, s_level = _STATUS_BADGE.get(status, (status or "未知", "neutral"))
+        priority = _text(row.get("priority"), "未标注")
+        p_badge = f'<span class="status-badge status-{_PRIORITY_BADGE.get(priority, "neutral")}">{escape(priority)}</span>'
+        body += (
+            f'<tr><td class="check-key">{escape(_text(row.get("action_id"), str(row.get("id", ""))))}</td>'
+            f'<td>{escape(_text(row.get("frequent_error"), "未关联"))}</td>'
+            f'<td>{escape(_text(row.get("action_type"), "未标注"))}</td>'
+            f'<td class="check-note">{escape(_text(row.get("optimization_action"), "待补充"))}</td>'
+            f"<td>{p_badge}</td>"
+            f'<td><span class="status-badge status-{s_level}">{escape(s_label)}</span></td></tr>'
+        )
+    render_html(
+        f'<table class="check-table"><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>'
+    )
+
+
+def _render_action_create_form() -> None:
+    render_section_title("新增补强动作", "补强动作必须关联到一个已登记的错误标签。")
+    labels = sorted(ds.active_error_labels())
+    if not labels:
+        render_empty_state("请先在「错误标签管理」中登记错误标签，再新增补强动作。")
+        return
+    with st.form("admin_action_create", clear_on_submit=True):
+        related = st.selectbox("关联错误标签 related_error_label", labels)
+        col1, col2 = st.columns(2)
+        action_type = col1.text_input("动作类型 action_type")
+        priority = col2.selectbox("优先级 priority", ["", "高", "中", "低"], format_func=lambda v: v or "未标注")
+        description = st.text_area("动作说明 action_description", height=80)
+        expected = st.text_area("预期效果 expected_effect", height=70)
+        method = st.text_input("验证方式 validation_method")
+        submitted = st.form_submit_button("新增补强动作", type="primary")
+
+    if submitted:
+        try:
+            ds.create_improvement_action(
+                {
+                    "related_error_label": related,
+                    "action_type": action_type,
+                    "action_description": description,
+                    "expected_effect": expected,
+                    "validation_method": method,
+                    "priority": priority,
+                }
+            )
+        except Exception as exc:  # noqa: BLE001 - 校验失败如实反馈
+            st.error(str(exc))
+        else:
+            st.success(f"已新增补强动作，关联标签 {related}。")
+            st.rerun()
+
+
+def _render_action_edit_form(records: list[dict]) -> None:
+    if not records:
+        return
+    render_section_title("编辑 / 停用补强动作", "修改动作字段、改换关联标签，或将动作停用（软删除）。")
+    labels = sorted(ds.active_error_labels())
+    options = [int(r.get("id")) for r in records if r.get("id") is not None]
+    id_to_row = {int(r.get("id")): r for r in records if r.get("id") is not None}
+    selected = st.selectbox(
+        "选择补强动作", options,
+        format_func=lambda i: f'{_text(id_to_row[i].get("action_id"), str(i))} · {_text(id_to_row[i].get("frequent_error"), "未关联")}',
+        key="admin_action_edit_select",
+    )
+    row = id_to_row.get(selected)
+    if not row:
+        return
+
+    related_options = labels.copy()
+    current_related = _text(row.get("frequent_error"), "")
+    if current_related and current_related not in related_options:
+        related_options = [current_related] + related_options
+    priorities = ["", "高", "中", "低"]
+    with st.form("admin_action_edit"):
+        related = st.selectbox(
+            "关联错误标签 related_error_label", related_options,
+            index=_index_of(related_options, current_related) if current_related in related_options else 0,
+        )
+        col1, col2 = st.columns(2)
+        action_type = col1.text_input("动作类型 action_type", value=_text(row.get("action_type"), ""))
+        priority = col2.selectbox(
+            "优先级 priority", priorities, index=_index_of(priorities, row.get("priority")),
+            format_func=lambda v: v or "未标注",
+        )
+        description = st.text_area("动作说明 action_description", value=_text(row.get("optimization_action"), ""), height=80)
+        expected = st.text_area("预期效果 expected_effect", value=_text(row.get("expected_effect"), ""), height=70)
+        method = st.text_input("验证方式 validation_method", value=_text(row.get("validation_method"), ""))
+        save = st.form_submit_button("保存修改", type="primary")
+
+    if save:
+        try:
+            ds.update_improvement_action(
+                selected,
+                {
+                    "related_error_label": related,
+                    "action_type": action_type,
+                    "action_description": description,
+                    "expected_effect": expected,
+                    "validation_method": method,
+                    "priority": priority,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 - 校验失败如实反馈
+            st.error(str(exc))
+        else:
+            st.success("已保存补强动作。")
+            st.rerun()
+
+    status = str(row.get("status") or "active").strip().lower()
+    if status == ds.INACTIVE_STATUS:
+        if st.button("启用动作", key="admin_action_activate"):
+            ds.set_improvement_action_status(selected, ds.ACTIVE_STATUS)
+            st.success("已启用补强动作。")
+            st.rerun()
+    else:
+        if st.button("停用动作（软删除）", key="admin_action_deactivate"):
+            ds.set_improvement_action_status(selected, ds.INACTIVE_STATUS)
+            st.success("已停用补强动作，记录保留为 inactive。")
+            st.rerun()
 
 
 # --------------------------------------------------------------------------- #

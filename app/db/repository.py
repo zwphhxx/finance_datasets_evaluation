@@ -27,6 +27,7 @@ TABLE_PRIMARY_KEYS: dict[str, str] = {
     "error_annotations": "id",
     "improvement_actions": "id",
     "evaluation_runs": "run_id",
+    "error_taxonomy": "error_label",
 }
 
 # 写入时由数据库默认值维护、调用方无需显式提供的列。

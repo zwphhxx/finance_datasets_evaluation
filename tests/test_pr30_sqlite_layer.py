@@ -42,6 +42,8 @@ def _seed_counts() -> dict[str, int]:
     data_dir = get_data_dir()
     manifest = _read_yaml_file("dataset_manifest.yml", data_dir)
     rubric_dims = len((manifest.get("rubric", {}) or {}).get("dimensions", []) or [])
+    taxonomy = _read_yaml_file("label_taxonomy.yml", data_dir)
+    taxonomy_labels = len((taxonomy.get("labels", []) or []) if isinstance(taxonomy, dict) else [])
     return {
         "task_cases": len(read_csv_file("tasks.csv", data_dir)),
         "gold_answers": len(read_json_file("gold_answers.json", data_dir)),
@@ -51,6 +53,7 @@ def _seed_counts() -> dict[str, int]:
         "error_annotations": len(read_csv_file("error_labels.csv", data_dir)),
         "improvement_actions": len(read_csv_file("optimization_plan.csv", data_dir)),
         "evaluation_runs": len(read_csv_file("evaluation_runs.csv", data_dir)),
+        "error_taxonomy": taxonomy_labels,
     }
 
 

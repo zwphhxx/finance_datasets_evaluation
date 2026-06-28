@@ -135,6 +135,57 @@ def _simple_rows(data_dir: Path, filename: str, columns: list[str]) -> list[dict
     return [{column: _cell(record.get(column)) for column in columns} for record in frame.to_dict(orient="records")]
 
 
+def _error_taxonomy_rows(data_dir: Path) -> list[dict]:
+    """从 label_taxonomy.yml 导入错误标签体系，作为可维护的运行时标签层。
+
+    severity_level 与 validation_metric 在 taxonomy 中不存在，留空待维护，不预置编造内容。
+    """
+    taxonomy = _read_yaml_file("label_taxonomy.yml", data_dir)
+    version = str(taxonomy.get("version") or "0") if isinstance(taxonomy, dict) else "0"
+    rows = []
+    for label in (taxonomy.get("labels", []) or []) if isinstance(taxonomy, dict) else []:
+        if not isinstance(label, dict):
+            continue
+        name = _cell(label.get("name"))
+        if not name:
+            continue
+        rows.append(
+            {
+                "error_label": name,
+                "definition": _cell(label.get("definition")),
+                "typical_symptom": _cell(label.get("typical_signs")),
+                "severity_level": None,
+                "related_dimension": _cell(label.get("impacted_dimension")),
+                "suggested_data_action": _cell(label.get("data_direction")),
+                "validation_metric": None,
+                "version": version,
+            }
+        )
+    return rows
+
+
+def _improvement_rows(data_dir: Path) -> list[dict]:
+    """从 optimization_plan.csv 导入补强动作，并补上可读业务编号 action_id。
+
+    action_type / expected_effect / validation_method 在 seed 中不存在，留空待维护；
+    frequent_error 同时作为「关联错误标签」(related_error_label) 的取值来源。
+    """
+    frame = read_csv_file("optimization_plan.csv", data_dir)
+    columns = [
+        "frequent_error", "typical_problem", "affected_cases", "likely_cause",
+        "optimization_action", "data_sample_format", "priority",
+    ]
+    rows = []
+    for index, record in enumerate(frame.to_dict(orient="records"), start=1):
+        row = {column: _cell(record.get(column)) for column in columns}
+        row["action_id"] = f"DA-{index:03d}"
+        row["action_type"] = None
+        row["expected_effect"] = None
+        row["validation_method"] = None
+        rows.append(row)
+    return rows
+
+
 def _seed(repository: Repository, data_dir: Path, version: str) -> dict[str, int]:
     """导入全部种子数据，返回各表行数。"""
     repository.bulk_insert("task_cases", _task_rows(data_dir, version))
@@ -165,15 +216,8 @@ def _seed(repository: Repository, data_dir: Path, version: str) -> dict[str, int
              "error_description", "correction", "optimization_action"],
         ),
     )
-    repository.bulk_insert(
-        "improvement_actions",
-        _simple_rows(
-            data_dir,
-            "optimization_plan.csv",
-            ["frequent_error", "typical_problem", "affected_cases", "likely_cause",
-             "optimization_action", "data_sample_format", "priority"],
-        ),
-    )
+    repository.bulk_insert("improvement_actions", _improvement_rows(data_dir))
+    repository.bulk_insert("error_taxonomy", _error_taxonomy_rows(data_dir))
     repository.bulk_insert(
         "evaluation_runs",
         _simple_rows(
@@ -185,7 +229,8 @@ def _seed(repository: Repository, data_dir: Path, version: str) -> dict[str, int
     )
     return {table: repository.count(table) for table in [
         "task_cases", "gold_answers", "rubrics", "model_responses",
-        "score_records", "error_annotations", "improvement_actions", "evaluation_runs",
+        "score_records", "error_annotations", "improvement_actions",
+        "evaluation_runs", "error_taxonomy",
     ]}
 
 

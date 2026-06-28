@@ -25,6 +25,7 @@ import streamlit as st
 from app.db import DEFAULT_DB_PATH
 from app.db.init_db import initialize_database
 from app.db.repository import Repository
+from src.error_config import evaluate_error_config
 from src.data_service import (
     DATA_FILES,
     OPTIMIZATION_COMPARISON_COLUMNS,
@@ -345,6 +346,168 @@ def update_rubric(dimension_field: str, changes: dict, *, db_path: Path | None =
         return
     _repository(db_path).update("rubrics", dimension_field, editable)
     _invalidate_caches()
+
+
+# -- 错误标签体系（error taxonomy） ------------------------------------------ #
+ERROR_LABEL_EDITABLE_FIELDS = (
+    "definition",
+    "typical_symptom",
+    "severity_level",
+    "related_dimension",
+    "suggested_data_action",
+    "validation_metric",
+)
+# 补强动作的业务字段 → improvement_actions 列映射（related_error_label 复用 frequent_error）。
+_ACTION_FIELD_TO_COLUMN = {
+    "related_error_label": "frequent_error",
+    "action_type": "action_type",
+    "action_description": "optimization_action",
+    "expected_effect": "expected_effect",
+    "validation_method": "validation_method",
+    "priority": "priority",
+}
+
+
+def list_error_taxonomy(db_path: Path | None = None) -> pd.DataFrame:
+    """返回全部错误标签（含停用），用于管理页展示。"""
+    return _repository(db_path).list_df("error_taxonomy")
+
+
+def get_error_label(error_label: str, db_path: Path | None = None) -> dict | None:
+    return _repository(db_path).get("error_taxonomy", error_label)
+
+
+def active_error_labels(db_path: Path | None = None) -> set[str]:
+    frame = list_error_taxonomy(db_path)
+    if "error_label" not in frame.columns:
+        return set()
+    if "status" in frame.columns:
+        frame = frame[frame["status"].astype(str).str.strip().str.lower() != INACTIVE_STATUS]
+    return {str(label) for label in frame["error_label"].tolist()}
+
+
+def create_error_label(values: dict, *, db_path: Path | None = None) -> None:
+    """新增错误标签。error_label 必填且不可重复。"""
+    error_label = str(values.get("error_label") or "").strip()
+    if not error_label:
+        raise DataLoadError("错误标签（error_label）不能为空。")
+    repository = _repository(db_path)
+    if repository.get("error_taxonomy", error_label) is not None:
+        raise DataLoadError(f"错误标签已存在：{error_label}。")
+    payload = {"error_label": error_label}
+    for field in ERROR_LABEL_EDITABLE_FIELDS:
+        payload[field] = _clean(values.get(field))
+    payload["status"] = str(values.get("status") or ACTIVE_STATUS).strip() or ACTIVE_STATUS
+    repository.insert("error_taxonomy", payload)
+    _invalidate_caches()
+
+
+def update_error_label(error_label: str, changes: dict, *, db_path: Path | None = None) -> None:
+    editable = {f: _clean(changes[f]) for f in ERROR_LABEL_EDITABLE_FIELDS if f in changes}
+    if "status" in changes:
+        editable["status"] = str(changes["status"] or ACTIVE_STATUS).strip() or ACTIVE_STATUS
+    if not editable:
+        return
+    _repository(db_path).update("error_taxonomy", error_label, editable)
+    _invalidate_caches()
+
+
+def set_error_label_status(error_label: str, status: str, *, db_path: Path | None = None) -> None:
+    """停用即 status=inactive，不做物理删除（保留历史标签）。"""
+    _repository(db_path).update("error_taxonomy", error_label, {"status": status})
+    _invalidate_caches()
+
+
+# -- 数据补强动作（improvement actions） ------------------------------------- #
+def list_improvement_actions(db_path: Path | None = None) -> pd.DataFrame:
+    """返回全部补强动作（含停用、含治理补充列），用于管理页展示。"""
+    return _repository(db_path).list_df("improvement_actions", order_by="id")
+
+
+def get_improvement_action(action_db_id: int, db_path: Path | None = None) -> dict | None:
+    return _repository(db_path).get("improvement_actions", action_db_id)
+
+
+def _next_action_id(repository: Repository) -> str:
+    frame = repository.list_df("improvement_actions", order_by="id")
+    max_index = 0
+    for value in frame.get("action_id", []) if "action_id" in frame.columns else []:
+        text = str(value or "").strip()
+        if text.upper().startswith("DA-") and text[3:].isdigit():
+            max_index = max(max_index, int(text[3:]))
+    return f"DA-{max_index + 1:03d}"
+
+
+def create_improvement_action(values: dict, *, db_path: Path | None = None) -> None:
+    """新增补强动作。必须关联到一个已登记的错误标签。"""
+    related = str(values.get("related_error_label") or "").strip()
+    if not related:
+        raise DataLoadError("数据补强动作必须关联错误标签（related_error_label）。")
+    repository = _repository(db_path)
+    if related not in active_error_labels(db_path):
+        raise DataLoadError(f"关联的错误标签不存在或已停用：{related}。")
+    payload = {"action_id": _next_action_id(repository)}
+    for field, column in _ACTION_FIELD_TO_COLUMN.items():
+        payload[column] = _clean(values.get(field))
+    payload["status"] = str(values.get("status") or ACTIVE_STATUS).strip() or ACTIVE_STATUS
+    repository.insert("improvement_actions", payload)
+    _invalidate_caches()
+
+
+def update_improvement_action(action_db_id: int, changes: dict, *, db_path: Path | None = None) -> None:
+    related = changes.get("related_error_label")
+    if related is not None and str(related).strip():
+        if str(related).strip() not in active_error_labels(db_path):
+            raise DataLoadError(f"关联的错误标签不存在或已停用：{str(related).strip()}。")
+    editable = {
+        column: _clean(changes[field])
+        for field, column in _ACTION_FIELD_TO_COLUMN.items()
+        if field in changes
+    }
+    if "status" in changes:
+        editable["status"] = str(changes["status"] or ACTIVE_STATUS).strip() or ACTIVE_STATUS
+    if not editable:
+        return
+    _repository(db_path).update("improvement_actions", action_db_id, editable)
+    _invalidate_caches()
+
+
+def set_improvement_action_status(action_db_id: int, status: str, *, db_path: Path | None = None) -> None:
+    _repository(db_path).update("improvement_actions", action_db_id, {"status": status})
+    _invalidate_caches()
+
+
+# -- 配置一致性校验 ---------------------------------------------------------- #
+def evaluate_error_configuration(db_path: Path | None = None) -> list:
+    """对当前 SQLite 中的错误标签体系与补强动作做配置校验，返回 ConfigIssue 列表。"""
+    repository = _repository(db_path)
+    labels = repository.list_df("error_taxonomy").to_dict(orient="records")
+
+    annotations = repository.list_df("error_annotations", order_by="id")
+    error_counts: dict[str, int] = {}
+    if "error_type" in annotations.columns:
+        error_counts = {
+            str(label): int(count)
+            for label, count in annotations["error_type"].dropna().astype(str).value_counts().items()
+        }
+
+    actions_frame = repository.list_df("improvement_actions", order_by="id")
+    actions = []
+    for record in actions_frame.to_dict(orient="records"):
+        actions.append(
+            {
+                "action_id": record.get("action_id") or record.get("id"),
+                "related_error_label": record.get("frequent_error"),
+                "status": record.get("status"),
+            }
+        )
+
+    rubric_names = []
+    rubrics = repository.list_df("rubrics")
+    if "name" in rubrics.columns:
+        rubric_names = [str(name) for name in rubrics["name"].dropna().tolist()]
+
+    return evaluate_error_config(labels, error_counts, actions, rubric_names)
 
 
 # -- 小工具 ------------------------------------------------------------------ #

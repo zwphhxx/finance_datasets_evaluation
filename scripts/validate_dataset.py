@@ -52,6 +52,7 @@ DEFAULT_TAXONOMY = DEFAULT_DATA_DIR / "label_taxonomy.yml"
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.error_config import SEVERITY_ERROR, evaluate_error_config
 from src.gold_quality import QUALITY_FIELDS, evaluate_gold_quality, field_value
 
 # 同一字段在不同数据文件中的命名别名，按出现顺序取第一个存在的列。
@@ -196,6 +197,7 @@ def validate_dataset(
     _check_error_labels_in_taxonomy(taxonomy, errors, report)
     _check_taxonomy_impacted_dimensions(manifest, taxonomy, report)
     _check_optimizations_link_to_errors(errors, optimizations, report)
+    _check_error_configuration(manifest, taxonomy, errors, optimizations, report)
     _check_scope(manifest, tasks, model_outputs, report)
 
     return report
@@ -535,6 +537,70 @@ def _check_optimizations_link_to_errors(
         report.fail(f"optimization_plan.csv 存在无法关联到错误标签的建议：{', '.join(orphan)}。")
     else:
         report.ok(f"optimization_plan.csv 全部建议（{len(plan_labels)} 类）均关联到已出现的错误标签。")
+
+
+def _check_error_configuration(
+    manifest: dict[str, Any],
+    taxonomy: dict[str, Any],
+    errors: pd.DataFrame,
+    optimizations: pd.DataFrame,
+    report: Report,
+) -> None:
+    """复用 src.error_config 校验标签体系与补强动作的配置一致性。
+
+    与「数据集管理」页面共用同一套规则：无效标签、缺补强动作的高频错误、
+    related_error_label 不存在的补强动作。seed 取自 taxonomy 与 optimization_plan，
+    均视为 active。
+    """
+    labels = [
+        {
+            "error_label": str(label.get("name")).strip(),
+            "definition": label.get("definition"),
+            "related_dimension": label.get("impacted_dimension"),
+            "status": "active",
+        }
+        for label in taxonomy.get("labels", [])
+        if isinstance(label, dict) and label.get("name") is not None
+    ]
+
+    error_column = _first_present_column(errors, ERROR_TYPE_ALIASES)
+    error_counts: dict[str, int] = {}
+    if error_column is not None:
+        error_counts = {
+            str(key).strip(): int(value)
+            for key, value in errors[error_column].dropna().astype(str).str.strip().value_counts().items()
+        }
+
+    opt_column = _first_present_column(optimizations, ERROR_TYPE_ALIASES)
+    actions = []
+    if opt_column is not None:
+        for index, record in enumerate(optimizations.to_dict(orient="records"), start=1):
+            actions.append(
+                {
+                    "related_error_label": str(record.get(opt_column) or "").strip(),
+                    "status": "active",
+                    "action_id": f"DA-{index:03d}",
+                }
+            )
+
+    dimensions = [
+        str(dim.get("name")).strip()
+        for dim in manifest.get("rubric", {}).get("dimensions", [])
+        if dim.get("name") is not None
+    ]
+
+    issues = evaluate_error_config(labels, error_counts, actions, dimensions)
+    for issue in issues:
+        message = f"错误标签配置：{issue.message}"
+        if issue.severity == SEVERITY_ERROR:
+            report.fail(message)
+        else:
+            report.warn(message)
+
+    if not issues:
+        report.ok(
+            f"错误标签与补强动作配置一致：{len(labels)} 个标签、{len(actions)} 条补强动作均可关联。"
+        )
 
 
 def _check_scope(

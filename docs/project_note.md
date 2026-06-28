@@ -317,3 +317,29 @@ PR-30 在不引入复杂后端的前提下，为项目增加一个可选的 SQLi
 编号校验、Gold Answer 可见编辑与 raw_json 无损、编辑不回写 seed 文件、Rubric 权重/规则编辑、
 种子质量列为空（不伪造）、页面注册与「读库 / seed 回退」两种模式渲染无异常。全量测试 174 项，
 保持既有的 4 项历史失败、0 项新增回归；校验脚本通过；应用启动正常。
+
+## PR-32 错误标签体系与数据补强动作 CRUD
+
+PR-32 让错误标签体系与数据补强动作可维护，体现模型错误能够沉淀为数据集优化动作，而非静态展示。
+
+- 数据源边界：`label_taxonomy.yml` 仍是版本化 seed 标签源，`optimization_plan.csv` 仍是补强动作种子；
+  SQLite 为运行时维护层，CRUD 只写 SQLite，不回写 YAML/CSV/JSON；数据库不存在时页面回退 seed。
+- `app/db/schema.sql` 新增 `error_taxonomy` 表（error_label / definition / typical_symptom /
+  severity_level / related_dimension / suggested_data_action / validation_metric / status），并为
+  `improvement_actions` 扩展 action_id、action_type、expected_effect、validation_method 等治理字段；
+  severity_level、validation_metric、action_type 等 seed 无来源的列初始留空，不预置编造内容。
+- `app/db/init_db.py` 从 label_taxonomy 导入错误标签，从 optimization_plan 导入补强动作并补可读业务
+  编号 `DA-NNN`；`related_error_label` 复用 `frequent_error` 列，因此「错误归因与数据优化」页在下一次
+  rerun 即读到最新配置，无需改动该页。
+- `app/services/dataset_service.py` 新增错误标签与补强动作的列表 / 详情 / 新增 / 编辑 / 停用：错误标签按
+  error_label 唯一校验、停用为软删除；补强动作必须关联到一个已登记（active）的错误标签，否则拒绝写入。
+- `src/error_config.py` 为框架无关的纯校验模块，识别三类配置问题：无效错误标签（缺定义 / 影响维度越界 /
+  标注引用未登记标签）、缺少关联补强动作的高频错误（阈值由错误次数均值动态推导）、related_error_label
+  不存在的补强动作。`scripts/validate_dataset.py` 复用同一规则，在 seed 上保持零错误零警告。
+- 页面 `src/ui/dataset_admin.py` 增加「错误标签管理」「数据补强动作管理」两个分区与「配置校验」面板。
+  错误标签默认低饱和呈现，仅红线 / 高严重度使用浅玫瑰底；文案为数据管理口吻，不使用营销化表达。
+
+新增 `tests/test_pr32_error_taxonomy_crud.py` 覆盖标签来源与空值、增改停（软删除）、新增去重 / 空编号、
+补强动作必须关联有效标签、业务编号递增、配置校验在 seed 上无问题且能识别无效标签 / 孤立动作 / 高频无动作、
+页面渲染无异常；并更新 `tests/test_pr30_sqlite_layer.py` 的种子行数预期纳入 error_taxonomy。全量测试
+187 项，保持既有的 4 项历史失败、0 项新增回归；校验脚本通过；应用启动正常。
