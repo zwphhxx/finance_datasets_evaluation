@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import streamlit as st
 
-from src.metrics import get_case_ids, get_errors_for_output, get_task_by_case_id, merge_case_outputs_with_scores
+from src.metrics import (
+    get_case_ids,
+    get_errors_for_output,
+    get_preference_pairs_for_case,
+    get_task_by_case_id,
+    merge_case_outputs_with_scores,
+)
 from src.ui.common import show_model_score, write_list_field, write_text_field
 
 
@@ -46,6 +52,27 @@ def render_model_outputs(model_outputs_df, scores_df, error_df, selected_case: s
             st.write("**错误标签：** 该题暂无错误标签。")
 
 
+def render_preference_pairs(preference_pairs_df, selected_case: str) -> None:
+    st.subheader("Preference Pair")
+    pairs = get_preference_pairs_for_case(preference_pairs_df, selected_case)
+    if pairs.empty:
+        st.info("该题暂无偏好样本。")
+        return
+
+    display_columns = [
+        "pair_id",
+        "preferred_output_id",
+        "rejected_output_id",
+        "preference_dimension",
+        "preference_reason",
+        "improvement_instruction",
+        "reviewer",
+        "review_status",
+    ]
+    available_columns = [column for column in display_columns if column in pairs.columns]
+    st.dataframe(pairs[available_columns], width="stretch")
+
+
 def render_case_detail_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
 
@@ -73,3 +100,4 @@ def render_case_detail_page(data_bundle: dict) -> None:
 
     render_gold_answer(data.gold_answer_map, selected_case)
     render_model_outputs(data.model_outputs, data.scores, data.errors, selected_case)
+    render_preference_pairs(data.preference_pairs, selected_case)

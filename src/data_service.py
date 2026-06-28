@@ -17,6 +17,8 @@ DATA_FILES = {
     "scores": "scores.csv",
     "errors": "error_labels.csv",
     "optimizations": "optimization_plan.csv",
+    "evaluation_runs": "evaluation_runs.csv",
+    "preference_pairs": "preference_pairs.csv",
 }
 
 
@@ -33,6 +35,8 @@ class EvaluationData:
     scores: pd.DataFrame
     errors: pd.DataFrame
     optimizations: pd.DataFrame
+    evaluation_runs: pd.DataFrame
+    preference_pairs: pd.DataFrame
 
 
 def get_project_root() -> Path:
@@ -114,4 +118,6 @@ def _load_all_data(data_dir_value: str) -> EvaluationData:
         scores=read_csv_file(DATA_FILES["scores"], data_dir),
         errors=read_csv_file(DATA_FILES["errors"], data_dir),
         optimizations=read_csv_file(DATA_FILES["optimizations"], data_dir),
+        evaluation_runs=read_csv_file(DATA_FILES["evaluation_runs"], data_dir),
+        preference_pairs=read_csv_file(DATA_FILES["preference_pairs"], data_dir),
     )

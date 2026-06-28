@@ -49,6 +49,27 @@ REQUIRED_COLUMNS = {
         ("root_cause", "likely_cause"),
         ("optimization_action",),
     ],
+    "evaluation_runs.csv": [
+        ("run_id",),
+        ("run_name",),
+        ("model_name",),
+        ("model_version",),
+        ("prompt_version",),
+        ("eval_scope",),
+        ("run_date",),
+        ("note",),
+    ],
+    "preference_pairs.csv": [
+        ("pair_id",),
+        ("case_id",),
+        ("preferred_output_id",),
+        ("rejected_output_id",),
+        ("preference_dimension",),
+        ("preference_reason",),
+        ("improvement_instruction",),
+        ("reviewer",),
+        ("review_status",),
+    ],
 }
 
 SCORE_COLUMNS = [
@@ -72,6 +93,8 @@ def validate_evaluation_data(data: EvaluationData) -> ValidationResult:
             "scores.csv": data.scores,
             "error_labels.csv": data.errors,
             "optimization_plan.csv": data.optimizations,
+            "evaluation_runs.csv": data.evaluation_runs,
+            "preference_pairs.csv": data.preference_pairs,
         },
         errors,
     )
@@ -111,6 +134,8 @@ def _validate_primary_keys(data: EvaluationData, errors: list[str]) -> None:
     _validate_unique(data.tasks, "tasks.csv", "case_id", errors)
     _validate_unique(data.model_outputs, "model_outputs.csv", "output_id", errors)
     _validate_unique(data.scores, "scores.csv", "output_id", errors)
+    _validate_unique(data.evaluation_runs, "evaluation_runs.csv", "run_id", errors)
+    _validate_unique(data.preference_pairs, "preference_pairs.csv", "pair_id", errors)
     if "error_id" in data.errors.columns:
         _validate_unique(data.errors, "error_labels.csv", "error_id", errors)
 
@@ -144,6 +169,8 @@ def _validate_foreign_keys(data: EvaluationData, errors: list[str]) -> None:
         }
         if gold_ids - task_ids:
             errors.append("gold_answers.json 中存在未匹配 tasks.case_id 的记录。")
+
+    _validate_preference_pair_foreign_keys(data, errors)
 
 
 def _validate_scores(scores: pd.DataFrame, errors: list[str], warnings: list[str]) -> None:
@@ -182,6 +209,46 @@ def _validate_optional_coverage(data: EvaluationData, warnings: list[str]) -> No
         }
         if task_ids - gold_ids:
             warnings.append("部分任务暂未配置 Gold Answer，不影响任务和模型回答展示。")
+
+    if data.preference_pairs.empty:
+        warnings.append("preference_pairs.csv 暂无偏好样本，不影响现有评分和错误标签展示。")
+
+
+def _validate_preference_pair_foreign_keys(data: EvaluationData, errors: list[str]) -> None:
+    preference_pairs = data.preference_pairs
+    if preference_pairs.empty:
+        return
+
+    if _has_columns(preference_pairs, ["case_id"]) and _has_columns(data.tasks, ["case_id"]):
+        if _has_orphans(preference_pairs["case_id"], data.tasks["case_id"]):
+            errors.append("preference_pairs.csv 中存在无法匹配 tasks.case_id 的记录。")
+
+    output_columns = ["preferred_output_id", "rejected_output_id"]
+    if not _has_columns(preference_pairs, output_columns) or "output_id" not in data.model_outputs:
+        return
+
+    output_ids = _string_set(data.model_outputs["output_id"])
+    pair_output_ids = set()
+    for column in output_columns:
+        pair_output_ids.update(_string_set(preference_pairs[column]))
+    if pair_output_ids - output_ids:
+        errors.append("preference_pairs.csv 中存在无法匹配 model_outputs.output_id 的记录。")
+
+    if not _has_columns(preference_pairs, ["case_id"]) or not _has_columns(data.model_outputs, ["case_id"]):
+        return
+
+    output_case_map = {
+        str(row["output_id"]): str(row["case_id"])
+        for _, row in data.model_outputs[["output_id", "case_id"]].dropna().iterrows()
+    }
+    for _, row in preference_pairs.iterrows():
+        pair_case_id = str(row["case_id"])
+        for column in output_columns:
+            output_id = str(row[column])
+            output_case_id = output_case_map.get(output_id)
+            if output_case_id is not None and output_case_id != pair_case_id:
+                errors.append("preference_pairs.csv 中存在 output_id 与 case_id 不一致的记录。")
+                return
 
 
 def _has_columns(df: pd.DataFrame, columns: list[str]) -> bool:

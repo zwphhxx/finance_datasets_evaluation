@@ -17,7 +17,9 @@ FinDueEval_MVP/
 │   ├── model_outputs.csv   # 模拟模型回答
 │   ├── scores.csv          # 评分结果
 │   ├── error_labels.csv    # 错误标签
-│   └── optimization_plan.csv # 数据优化建议
+│   ├── optimization_plan.csv # 数据优化建议
+│   ├── evaluation_runs.csv # 评测批次记录
+│   └── preference_pairs.csv # 偏好对比样本
 └── docs/
     └── project_note.md     # 项目笔记
 ```
@@ -46,6 +48,8 @@ streamlit run app.py
 - **scores.csv**：对模型回答的评分，包含 `accuracy_score`、`reasoning_score`、`coverage_score`、`evidence_score`、`expression_score` 和 `total_score` 等维度。
 - **error_labels.csv**：对不理想回答的错误分类，字段包括 `error_type`、`severity`、`error_description`、`correction`、`optimization_action`。
 - **optimization_plan.csv**：根据错误标签汇总出的优化建议，字段包括 `frequent_error`、`typical_problem`、`affected_cases`、`likely_cause`、`optimization_action`、`data_sample_format`、`priority`。
+- **evaluation_runs.csv**：记录一次评测批次的模型、提示词、评测范围和运行日期，字段包括 `run_id`、`run_name`、`model_name`、`model_version`、`prompt_version`、`eval_scope`、`run_date`、`note`。
+- **preference_pairs.csv**：记录同一案例下两个模型回答之间的偏好判断，字段包括 `pair_id`、`case_id`、`preferred_output_id`、`rejected_output_id`、`preference_dimension`、`preference_reason`、`improvement_instruction`、`reviewer`、`review_status`。
 
 ## 后续扩展方向
 

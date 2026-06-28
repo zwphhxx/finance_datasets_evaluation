@@ -81,3 +81,9 @@ def get_errors_for_output(error_df: pd.DataFrame, output_id) -> pd.DataFrame:
     if error_df.empty or "output_id" not in error_df:
         return pd.DataFrame(columns=error_df.columns)
     return error_df[error_df["output_id"] == output_id]
+
+
+def get_preference_pairs_for_case(preference_pairs_df: pd.DataFrame, case_id: str) -> pd.DataFrame:
+    if preference_pairs_df.empty or "case_id" not in preference_pairs_df:
+        return pd.DataFrame(columns=preference_pairs_df.columns)
+    return preference_pairs_df[preference_pairs_df["case_id"] == case_id]
