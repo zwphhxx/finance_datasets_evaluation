@@ -11,8 +11,8 @@ from src.metrics import (
 )
 from src.ui.common import PAGE_CONTEXTS
 from src.ui.components import (
+    render_context_summary,
     render_empty_state,
-    render_info_panel,
     render_page_header,
     render_section_title,
 )
@@ -146,7 +146,7 @@ def _show_priority_samples(error_df, optimization_df):
 def render_error_analysis(data_bundle):
     context = PAGE_CONTEXTS["错误归因与数据补强"]
     render_page_header("错误归因与数据补强", context["question"], context["boundary"])
-    render_info_panel("页面核心看点", context["highlights"])
+    render_context_summary(context)
 
     data = data_bundle["data"]
     error_df = data.errors

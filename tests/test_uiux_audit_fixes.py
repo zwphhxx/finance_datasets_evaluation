@@ -24,6 +24,24 @@ class UIUXAuditFixesTests(unittest.TestCase):
         overview_source = Path("src/ui/overview.py").read_text(encoding="utf-8")
         self.assertIn("render_loop_rail", overview_source)
 
+    def test_pages_use_compact_context_summary(self):
+        import src.ui.components as components
+
+        self.assertTrue(hasattr(components, "render_context_summary"))
+        self.assertIn(".context-grid", components.STYLE_CSS)
+        self.assertIn(".context-item", components.STYLE_CSS)
+
+        for file_path in [
+            "src/ui/overview.py",
+            "src/ui/tasks.py",
+            "src/ui/case_detail.py",
+            "src/ui/model_diagnosis.py",
+            "src/ui/error_analysis.py",
+            "src/ui/optimization_compare.py",
+        ]:
+            source = Path(file_path).read_text(encoding="utf-8")
+            self.assertIn("render_context_summary", source, file_path)
+
 
 if __name__ == "__main__":
     unittest.main()

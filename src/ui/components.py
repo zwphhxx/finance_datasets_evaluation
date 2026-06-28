@@ -95,6 +95,29 @@ STYLE_CSS = """
 .info-panel {
     background: #ffffff;
 }
+.context-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.75rem;
+    margin: 0.65rem 0 1rem 0;
+}
+.context-item {
+    border: 1px solid var(--fde-line);
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 0.85rem 0.95rem;
+}
+.context-label {
+    color: var(--fde-blue);
+    font-size: 0.86rem;
+    font-weight: 750;
+    margin-bottom: 0.35rem;
+}
+.context-copy {
+    color: var(--fde-muted);
+    font-size: 0.94rem;
+    line-height: 1.55;
+}
 .warning-panel {
     border-color: #f2c98b;
     background: var(--fde-orange-soft);
@@ -229,6 +252,28 @@ def render_info_panel(title, content) -> None:
             <div class="panel-content">{escape(str(content))}</div>
         </div>
         """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_context_summary(context) -> None:
+    items = [
+        ("本页回答什么问题", context.get("question", "")),
+        ("当前数据边界", context.get("boundary", "")),
+        ("页面核心看点", context.get("highlights", "")),
+    ]
+    item_html = []
+    for label, copy in items:
+        item_html.append(
+            f"""
+            <div class="context-item">
+                <div class="context-label">{escape(str(label))}</div>
+                <div class="context-copy">{escape(str(copy))}</div>
+            </div>
+            """
+        )
+    st.markdown(
+        f'<div class="context-grid">{"".join(item_html)}</div>',
         unsafe_allow_html=True,
     )
 

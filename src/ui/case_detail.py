@@ -14,8 +14,8 @@ from src.metrics import (
 from src.ui.common import has_value, show_model_score, write_list_field, write_text_field
 from src.ui.common import PAGE_CONTEXTS
 from src.ui.components import (
+    render_context_summary,
     render_empty_state,
-    render_info_panel,
     render_model_answer_card,
     render_page_header,
     render_score_badge,
@@ -38,7 +38,7 @@ def render_case_detail_page(data_bundle: dict) -> None:
     context = PAGE_CONTEXTS["样板题深度评测"]
 
     render_page_header("样板题深度评测", context["question"], context["boundary"])
-    render_info_panel("页面核心看点", context["highlights"])
+    render_context_summary(context)
     case_ids = get_case_ids(data.tasks)
     if not case_ids:
         render_empty_state("暂无可展示数据")

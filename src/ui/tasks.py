@@ -5,8 +5,8 @@ import streamlit as st
 from src.metrics import filter_tasks_by_domain, get_task_domains
 from src.ui.common import PAGE_CONTEXTS
 from src.ui.components import (
+    render_context_summary,
     render_empty_state,
-    render_info_panel,
     render_metric_card,
     render_page_header,
     render_section_title,
@@ -19,7 +19,7 @@ def render_tasks_page(data_bundle: dict) -> None:
     context = PAGE_CONTEXTS["专业任务集"]
 
     render_page_header("专业任务集", context["question"], context["boundary"])
-    render_info_panel("页面核心看点", context["highlights"])
+    render_context_summary(context)
     if tasks_df.empty:
         render_empty_state("暂无可展示数据")
         return
