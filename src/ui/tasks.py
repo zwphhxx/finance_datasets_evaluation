@@ -28,14 +28,22 @@ DOMAIN_LABELS = {
     "Capital Markets": "资本市场",
     "Financial": "财务尽调",
     "Legal": "法律审核",
-    "Medical": "医学评估",
 }
 TASK_TYPE_LABELS = {
     "Regulatory Analysis": "监管合规分析",
     "Revenue Verification": "收入核查",
     "Inventory Assessment": "存货评估",
     "Legal Compliance": "法律合规审查",
-    "Clinical Analysis": "临床分析",
+    "Gross Margin Analysis": "毛利率分析",
+    "Receivables Risk": "应收回款风险",
+    "Cash Flow Analysis": "现金流分析",
+    "Related Party Funds": "关联方资金核查",
+    "Contract Review": "重大合同审阅",
+    "Related Party Compliance": "关联交易合规",
+    "Control Change Review": "控制权变更审查",
+    "Performance Commitment": "业绩承诺与补偿",
+    "IPO Inquiry Review": "IPO 问询回复评估",
+    "M&A Analysis": "并购交易分析",
 }
 DIFFICULTY_LABELS = {"Hard": "高难度", "Medium": "中等难度", "Easy": "低难度"}
 DIFFICULTY_BADGE = {"Hard": "high", "Medium": "medium", "Easy": "low"}

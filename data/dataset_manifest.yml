@@ -6,11 +6,13 @@
 # 再运行 scripts/validate_dataset.py 校验数据一致性。
 
 dataset: FinDueEval-MVP
-version: "0.1.0"
+version: "0.2.0"
 updated: "2026-06-28"
 description: >-
-  金融尽职调查方向的模型评测样例数据集，覆盖任务题、Gold Answer、Rubric、模型回答、
-  评分记录、错误标签与数据补强建议，用于演示评测闭环与数据建设方法。
+  金融尽职调查方向的模型评测样例数据集，active 范围聚焦投行业务、财务尽调与法律合规
+  （含并购交易与资本市场判断），覆盖任务题、Gold Answer、Rubric、模型回答、评分记录、
+  错误标签与数据补强建议，用于演示评测闭环与数据建设方法。非该范围的历史样本以
+  tasks.csv 的 status=inactive 标记，不参与统计与评测。
 
 # 数据资产清单：每类资产对应一个数据文件及其主键（无单列主键时记为 null）。
 assets:
@@ -58,13 +60,21 @@ scope:
     - Capital Markets
     - Financial
     - Legal
-    - Medical
   task_types:
     - Regulatory Analysis
     - Revenue Verification
     - Inventory Assessment
     - Legal Compliance
-    - Clinical Analysis
+    - Gross Margin Analysis
+    - Receivables Risk
+    - Cash Flow Analysis
+    - Related Party Funds
+    - Contract Review
+    - Related Party Compliance
+    - Control Change Review
+    - Performance Commitment
+    - IPO Inquiry Review
+    - M&A Analysis
   difficulties:
     - Medium
     - Hard

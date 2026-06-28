@@ -6,6 +6,7 @@
 
 校验内容：
   - case_id 唯一；
+  - active 样本的 domain 落在 manifest 允许领域范围内（inactive 样本不参与统计与评测）；
   - 每个任务存在 Gold Answer；
   - 每个 Gold Answer 包含核心结论、关键依据，以及答案边界或红线错误；
   - 每个 Gold Answer 的结构化要素完整度（核心结论 / 关键依据 / 边界条件 / 不可接受错误 / 必须覆盖点）；
@@ -173,6 +174,18 @@ def validate_dataset(
     errors = _read_csv(data_dir, "error_labels.csv")
     optimizations = _read_csv(data_dir, "optimization_plan.csv")
 
+    # 仅对 active 样本做一致性校验；inactive 样本（已停用领域）不参与统计与评测。
+    active = _active_case_ids(tasks)
+    _check_active_domains_in_scope(manifest, tasks, active, report)
+    tasks = _restrict_active_tasks(tasks, active)
+    gold_answers = [
+        g for g in gold_answers
+        if isinstance(g, dict) and str(g.get("case_id")) in active
+    ] if isinstance(gold_answers, list) else gold_answers
+    model_outputs = _restrict_active_rows(model_outputs, active)
+    scores = _restrict_active_rows(scores, active)
+    errors = _restrict_active_rows(errors, active)
+
     _check_case_id_unique(tasks, report)
     _check_gold_answer_coverage(tasks, gold_answers, report)
     _check_gold_answer_fields(manifest, gold_answers, report)
@@ -186,6 +199,55 @@ def validate_dataset(
     _check_scope(manifest, tasks, model_outputs, report)
 
     return report
+
+
+def _active_case_ids(tasks: pd.DataFrame) -> set[str]:
+    """status 列非 inactive 的 case_id；无该列时视为全部 active。"""
+    if "case_id" not in tasks.columns:
+        return set()
+    if "status" not in tasks.columns:
+        return set(tasks["case_id"].dropna().astype(str))
+    mask = tasks["status"].astype(str).str.strip().str.lower() != "inactive"
+    return set(tasks.loc[mask, "case_id"].dropna().astype(str))
+
+
+def _restrict_active_tasks(tasks: pd.DataFrame, active: set[str]) -> pd.DataFrame:
+    if "case_id" not in tasks.columns:
+        return tasks
+    return tasks[tasks["case_id"].astype(str).isin(active)].reset_index(drop=True)
+
+
+def _restrict_active_rows(df: pd.DataFrame, active: set[str]) -> pd.DataFrame:
+    if "case_id" not in getattr(df, "columns", []):
+        return df
+    return df[df["case_id"].astype(str).isin(active)].reset_index(drop=True)
+
+
+def _check_active_domains_in_scope(
+    manifest: dict[str, Any],
+    tasks: pd.DataFrame,
+    active: set[str],
+    report: Report,
+) -> None:
+    """active 样本的 domain 必须落在 manifest 声明的允许领域范围内。"""
+    declared = {str(d).strip() for d in manifest.get("scope", {}).get("domains", [])}
+    if "domain" not in tasks.columns or not declared:
+        return
+    active_tasks = tasks[tasks["case_id"].astype(str).isin(active)] if "case_id" in tasks.columns else tasks
+    used = _string_set(active_tasks["domain"])
+    out_of_scope = sorted(used - declared)
+    if out_of_scope:
+        report.fail(
+            "active 样本存在不在允许领域范围内的 domain："
+            + "、".join(out_of_scope)
+            + "。允许范围："
+            + "、".join(sorted(declared))
+            + "。"
+        )
+    else:
+        report.ok(
+            f"全部 {len(active)} 个 active 样本的 domain 均在允许范围内（{'、'.join(sorted(declared))}）。"
+        )
 
 
 def _check_case_id_unique(tasks: pd.DataFrame, report: Report) -> None:
