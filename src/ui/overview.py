@@ -67,7 +67,7 @@ def render_overview_page(data_bundle: dict) -> None:
 
     render_section_title("项目定位")
     st.write(
-        "FinDueEval 用结构化 MVP 样本展示金融专业场景模型评测与数据优化闭环，"
+        "Finance Model Evaluation 用结构化 MVP 样本展示金融专业场景模型评测与数据优化闭环，"
         "重点说明模型哪里不稳定、为什么出错、后续补什么数据。"
     )
 

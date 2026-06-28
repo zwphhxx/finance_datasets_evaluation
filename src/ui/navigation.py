@@ -29,8 +29,8 @@ def render_sidebar_navigation() -> str:
     if "current_page" not in st.session_state:
         st.session_state.current_page = default_page
 
-    st.sidebar.title("FinDueEval")
-    st.sidebar.caption("模型评测与数据优化闭环")
+    st.sidebar.title("模型评测/数据优化")
+    st.sidebar.caption("金融/财务/法律等数据的专业评测与优化")
     for item in NAV_ITEMS:
         label = item["label"]
         is_current = st.session_state.current_page == label

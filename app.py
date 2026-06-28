@@ -6,7 +6,7 @@ from src.ui.navigation import PAGES, render_sidebar_navigation
 from src.validators import ValidationResult, validate_evaluation_data
 
 
-st.set_page_config(page_title="FinDueEval MVP", layout="wide")
+st.set_page_config(page_title="模型评测及数据优化", layout="wide")
 apply_global_styles()
 
 try:

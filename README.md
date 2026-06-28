@@ -1,6 +1,6 @@
-# FinDueEval MVP
+# Finance Model Evaluation MVP
 
-FinDueEval 是一个面向金融专业尽调、资本市场规则边界和相关专业问答场景的模型评测与数据优化 MVP。项目使用结构化样例数据展示从任务集、Gold Answer、模型回答、Rubric 评分、错误标签、Preference Pair、模型能力诊断到数据补强动作的评测闭环。
+Finance Model Evaluation  是一个面向金融专业尽调、资本市场规则边界和相关专业问答场景的模型评测与数据优化 MVP。项目使用结构化样例数据展示从任务集、Gold Answer、模型回答、Rubric 评分、错误标签、Preference Pair、模型能力诊断到数据补强动作的评测闭环。
 
 当前仓库不接真实模型 API，不使用数据库，不包含真实公司数据。页面中的优化前后对比为 MVP 样例数据和当前评测集观察，不代表真实大规模实验结论。
 

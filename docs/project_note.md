@@ -1,6 +1,6 @@
 # 项目笔记
 
-本文件记录 FinDueEval_MVP 开发过程中的关键决策、假设与注意事项。
+本文件记录 Finance Model Evaluation MVP 开发过程中的关键决策、假设与注意事项。
 
 ## 设计原则
 
