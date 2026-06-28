@@ -111,14 +111,24 @@ API Key、`Authorization` 请求头与完整请求头不会出现在页面、日
 
 ## 真实模型评测
 
-「真实模型评测」页面在上述 provider 层之上，支持从数据集选择任务样本与硅基流动模型，生成真实（或 mock）模型回答。本页**只负责运行与展示**：不做评分、不做模型排名、不输出「哪个模型最好」，评分仍需结合 Gold Answer 与人工复核（留待后续 PR）。
+「真实模型评测」页面在上述 provider 层之上，支持从数据集选择任务样本与**一个或多个**硅基流动模型，
+各自生成真实（或 mock）模型回答并并排对比；并可选地由「裁判模型」对照 Gold Answer 与 Rubric 给出
+**机器建议分**，建议分需**人工复核确认后归档**，本页不自动定稿、不替用户下「哪个模型最好」的结论。
 
-页面流程：选择数据集版本 → 任务范围（单题或批量多题）→ Provider → 模型（从接口实时加载，不硬编码，也可手动填写模型 ID）→ 生成参数（temperature、max_tokens）→ 运行 → 运行结果表 → 查看模型回答。每次运行生成 `run_id`。
+页面流程：选择数据集版本 → 任务范围（单题或批量多题）→ Provider → 模型（可多选，从接口实时加载，
+不硬编码，也可手动追加模型 ID）→ 生成参数（temperature、max_tokens）→ 运行 → 多模型对比结果表 →
+查看模型回答 →（可选）运行自动评分 → 评分对比表 → 人工复核归档。每次运行生成 `run_id`，每次评分生成 `score_run_id`。
 
-- 运行编排在 `app/services/eval_runner.py`，页面不含模型调用细节，也不在页面构造 prompt。
-- **Prompt 边界**：被评测模型只看到任务场景、题干与必要背景；**绝不发送 Gold Answer / 必须覆盖点 / 不可接受错误**；不让模型自评，并提示其说明依据与核查边界，不引导输出虚假确定结论。
-- 结果优先写入 SQLite 独立表 `live_run_responses`（与承载评分的 seed `model_responses` 分离，不污染既有分析页），可供后续 Gold Answer 对比复用；数据库未初始化时结果暂存于页面会话，仍可查看。
-- 未配置 API Key 时自动使用 mock 模式，页面明确标注「回答为模拟生成，不代表真实模型结果」。
+- 运行编排在 `app/services/eval_runner.py`（多模型 `run_models` 汇总为 `CompareRunResult`），评分编排在
+  `app/services/scorer.py`（`score_compare`），页面不含模型调用细节，也不在页面构造 prompt。
+- **Prompt 边界**：被评测模型只看到任务场景、题干与必要背景，**绝不发送 Gold Answer / 必须覆盖点 /
+  不可接受错误**；不让模型自评。**裁判模型可见 Gold Answer**（评分必需），这是与被评测模型相互独立的另一条链路。
+- **评分方式**：LLM-as-judge，对照 Gold Answer 与 Rubric 五维度（满分复用 `src/metrics.py` 的方法学配置）
+  打分，分数由各维度求和、并 clamp 到各维满分；裁判输出按 JSON 解析，解析失败即标记为失败而非臆造分数。
+- **人工复核**：建议分写入时 `review_status=pending`，人工可逐条修订各维度分与复核说明并确认归档为 `confirmed`。
+- 运行结果写入独立表 `live_run_responses`，评分写入独立表 `live_run_scores`，均与承载评分的 seed 表
+  （`model_responses` / `score_records`）分离，不污染既有分析页；数据库未初始化时结果暂存于页面会话，仍可查看。
+- 未配置 API Key 时自动使用 mock 模式：回答标注「模拟生成」，mock 裁判**不产生任何真实分数**（各维度留空、状态 mock）。
 - 页面固定显示：「模型回答仅用于评测，不构成金融、法律或投资建议；后续评分需结合 Gold Answer 与人工复核。」请求失败时以结构化错误展示，页面不崩溃。
 
 

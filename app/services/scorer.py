@@ -1,0 +1,472 @@
+"""真实模型评测的 LLM-as-judge 评分编排（PR-35）。
+
+在 eval_runner 生成被评测模型回答之后，由「裁判模型」对照该题 Gold Answer 与 Rubric
+各维度打分，产出**机器建议分**。建议分需经人工复核（review_status: pending → confirmed）
+才计入结果，本模块不自动定稿、不下「哪个模型最好」的结论。
+
+边界（重要）：
+  - 裁判模型可以看到 Gold Answer（评分必需）；这与「被评测模型绝不可见 Gold」是两条独立链路，
+    被评测模型的 prompt 仍由 eval_runner.build_messages 构造，白名单不含 Gold。
+  - 无 API Key（mock provider）时不产生任何真实分数：各维度留空、judge_status=mock。
+  - 评分写入独立表 live_run_scores，与 seed 的 score_records 分离，不污染既有分析页。
+本模块不依赖 Streamlit 运行时，便于单元测试。
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Mapping, Sequence
+
+from app.models.base import ModelProvider, STATUS_FAILED, STATUS_MOCK, STATUS_SUCCESS
+
+_JUDGE_SYSTEM_PROMPT = (
+    "你是金融与专业尽调领域的资深评审。你的任务是依据给定的 Gold Answer 与评分量表（Rubric），"
+    "对「被评测模型的回答」逐维度打分。"
+    "请基于证据与量表客观评分，对照 Gold Answer 的核心结论、必须覆盖点与不可接受错误，"
+    "不要拔高也不要苛责，不要编造 Gold Answer 中没有的标准。"
+    "每个维度给出 0 到该维度满分之间的整数分，并给出一句简短依据。"
+    "你只输出评分，不改写或续写被评测回答，也不替用户下最终结论；分数仅为机器建议，仍需人工复核。"
+)
+
+# 要求裁判严格输出的 JSON 结构说明（仅结构，不含任何示例分数，避免诱导造数）。
+_JUDGE_OUTPUT_INSTRUCTION = (
+    "请只输出一个 JSON 对象，不要包含 Markdown 代码块或额外说明，结构如下："
+    '{{"scores": {{{score_keys}}}, "rationale": {{{rationale_keys}}}, "review_note": "整体复核提示"}}。'
+    "scores 的每个值为该维度的整数得分（0 到满分之间），rationale 为对应维度的简短打分依据。"
+)
+
+
+@dataclass(frozen=True)
+class ScoreOutcome:
+    """单个（被评测模型 × 题）的裁判评分结果。"""
+
+    case_id: str
+    task_type: str
+    eval_model: str
+    judge_provider: str
+    judge_model: str
+    judge_status: str  # success / failed / mock
+    scores: Mapping[str, int | None] = field(default_factory=dict)
+    total_score: int | None = None
+    rationale: Mapping[str, str] = field(default_factory=dict)
+    review_note: str = ""
+    review_status: str = "pending"  # pending / confirmed
+    latency_ms: int | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+    trace_id: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.judge_status == STATUS_SUCCESS
+
+
+@dataclass(frozen=True)
+class ScoreResult:
+    """一次评分运行（可覆盖多模型多题）的汇总。"""
+
+    score_run_id: str
+    run_id: str
+    judge_provider: str
+    judge_model: str
+    mode: str  # live / mock
+    created_at: str
+    outcomes: Sequence[ScoreOutcome] = field(default_factory=tuple)
+
+    @property
+    def scored_count(self) -> int:
+        return sum(1 for o in self.outcomes if o.ok)
+
+
+@dataclass(frozen=True)
+class _JudgeParse:
+    ok: bool
+    scores: dict
+    total: int | None
+    rationale: dict
+    review_note: str
+    error: str = ""
+
+
+def generate_score_run_id() -> str:
+    """生成本次评分运行的 score_run_id：时间戳 + 短随机后缀。"""
+    return f"SCORE-{datetime.now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
+
+
+def build_judge_messages(
+    task: Mapping[str, Any],
+    answer_text: str,
+    gold: Mapping[str, Any],
+    dimensions: Sequence[Mapping[str, Any]],
+) -> list[dict[str, str]]:
+    """构造发送给裁判模型的消息：任务 + 被评测回答 + Gold 参考 + Rubric 维度。"""
+    lines: list[str] = []
+
+    scenario = _clean(task.get("scenario"))
+    if scenario:
+        lines.append(f"【业务场景】{scenario}")
+    question = _clean(task.get("question"))
+    if question:
+        lines.append(f"【任务问题】{question}")
+    context = _clean(task.get("context"))
+    if context:
+        lines.append(f"【背景信息】{context}")
+
+    lines.append("【被评测模型的回答】\n" + (answer_text or "（空）"))
+
+    gold_block = _format_gold(gold)
+    if gold_block:
+        lines.append("【Gold Answer 参考（仅供你评分，请勿照抄）】\n" + gold_block)
+
+    lines.append("【评分量表】\n" + _format_rubric(dimensions))
+
+    score_keys = ", ".join(f'"{d["field"]}": 整数' for d in dimensions)
+    rationale_keys = ", ".join(f'"{d["field"]}": "依据"' for d in dimensions)
+    lines.append(
+        "【输出要求】"
+        + _JUDGE_OUTPUT_INSTRUCTION.format(score_keys=score_keys, rationale_keys=rationale_keys)
+    )
+
+    return [
+        {"role": "system", "content": _JUDGE_SYSTEM_PROMPT},
+        {"role": "user", "content": "\n\n".join(lines)},
+    ]
+
+
+def parse_judge_output(text: str, dimensions: Sequence[Mapping[str, Any]]) -> _JudgeParse:
+    """从裁判输出中稳健解析 JSON，逐维度 clamp 到 [0, 满分]，total 由各维度求和。
+
+    任一维度缺失或非数值即视为解析失败（ok=False），不臆造分数。
+    """
+    payload = _extract_json_object(text)
+    if payload is None:
+        return _JudgeParse(False, {}, None, {}, "", error="未能从裁判输出中解析出 JSON 评分。")
+
+    raw_scores = payload.get("scores")
+    if not isinstance(raw_scores, dict):
+        return _JudgeParse(False, {}, None, {}, "", error="裁判输出缺少 scores 字段。")
+
+    scores: dict[str, int] = {}
+    for dim in dimensions:
+        field_name = dim["field"]
+        full_mark = int(dim.get("full_mark") or 0)
+        value = raw_scores.get(field_name)
+        number = _as_number(value)
+        if number is None:
+            return _JudgeParse(
+                False, {}, None, {}, "", error=f"裁判输出缺少或无法识别维度 {field_name} 的分数。"
+            )
+        scores[field_name] = max(0, min(full_mark, int(round(number))))
+
+    rationale_raw = payload.get("rationale")
+    rationale = {
+        str(k): _clean(v)
+        for k, v in rationale_raw.items()
+        if isinstance(rationale_raw, dict)
+    } if isinstance(rationale_raw, dict) else {}
+
+    total = sum(scores.values())
+    review_note = _clean(payload.get("review_note"))
+    return _JudgeParse(True, scores, total, rationale, review_note)
+
+
+def score_single(
+    provider: ModelProvider,
+    judge_model_id: str,
+    task: Mapping[str, Any],
+    answer_text: str,
+    gold: Mapping[str, Any],
+    dimensions: Sequence[Mapping[str, Any]],
+    *,
+    eval_model: str = "",
+    temperature: float = 0.0,
+    max_tokens: int = 1024,
+    **kwargs: Any,
+) -> ScoreOutcome:
+    """对单条（被评测回答）做一次裁判评分，转为统一 ScoreOutcome（不抛异常给调用方）。"""
+    case_id = str(task.get("case_id", ""))
+    task_type = str(task.get("task_type", ""))
+    base = dict(
+        case_id=case_id,
+        task_type=task_type,
+        eval_model=eval_model,
+        judge_provider=getattr(provider, "name", ""),
+        judge_model=judge_model_id,
+    )
+
+    # mock provider：不发起真实调用、不产生任何真实分数。
+    if getattr(provider, "name", "") == "mock":
+        return ScoreOutcome(
+            **base,
+            judge_status=STATUS_MOCK,
+            scores={d["field"]: None for d in dimensions},
+            total_score=None,
+            review_note="【MOCK 模拟评分】未配置 API Key，未产生真实评分，仅用于打通链路。",
+        )
+
+    messages = build_judge_messages(task, answer_text, gold, dimensions)
+    result = provider.generate_response(
+        judge_model_id, messages, temperature=temperature, max_tokens=max_tokens, **kwargs
+    )
+    common = dict(
+        latency_ms=result.latency_ms,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        total_tokens=result.total_tokens,
+        trace_id=result.trace_id,
+    )
+
+    if not result.ok:
+        return ScoreOutcome(
+            **base, judge_status=STATUS_FAILED,
+            scores={d["field"]: None for d in dimensions}, total_score=None,
+            error_code=result.error_code, error_message=result.error_message, **common,
+        )
+
+    parsed = parse_judge_output(result.response_text, dimensions)
+    if not parsed.ok:
+        return ScoreOutcome(
+            **base, judge_status=STATUS_FAILED,
+            scores={d["field"]: None for d in dimensions}, total_score=None,
+            error_code="judge_parse_error", error_message=parsed.error, **common,
+        )
+
+    return ScoreOutcome(
+        **base, judge_status=STATUS_SUCCESS,
+        scores=parsed.scores, total_score=parsed.total,
+        rationale=parsed.rationale, review_note=parsed.review_note, **common,
+    )
+
+
+def score_compare(
+    provider: ModelProvider,
+    judge_model_id: str,
+    compare_result,
+    gold_map: Mapping[str, Mapping[str, Any]],
+    tasks_by_case: Mapping[str, Mapping[str, Any]],
+    dimensions: Sequence[Mapping[str, Any]],
+    *,
+    temperature: float = 0.0,
+    max_tokens: int = 1024,
+    score_run_id: str | None = None,
+    **kwargs: Any,
+) -> ScoreResult:
+    """对一次多模型对比运行的每条成功回答评分；裁判模型留空则默认用各自被评测模型。"""
+    sid = score_run_id or generate_score_run_id()
+    mode = "mock" if getattr(provider, "name", "") == "mock" else "live"
+    outcomes: list[ScoreOutcome] = []
+    for outcome in compare_result.outcomes:
+        if not outcome.success:
+            continue
+        task = tasks_by_case.get(outcome.case_id) or {
+            "case_id": outcome.case_id,
+            "task_type": outcome.task_type,
+        }
+        gold = gold_map.get(outcome.case_id) or {}
+        judge_model = _clean(judge_model_id) or outcome.model_id
+        outcomes.append(
+            score_single(
+                provider, judge_model, task, outcome.answer_text, gold, dimensions,
+                eval_model=outcome.model_id, temperature=temperature, max_tokens=max_tokens, **kwargs,
+            )
+        )
+
+    return ScoreResult(
+        score_run_id=sid,
+        run_id=getattr(compare_result, "run_id", ""),
+        judge_provider=getattr(provider, "name", ""),
+        judge_model=_clean(judge_model_id),
+        mode=mode,
+        created_at=datetime.now().isoformat(timespec="seconds"),
+        outcomes=tuple(outcomes),
+    )
+
+
+def persist_score_result(result: ScoreResult, db_path: Path | None = None) -> bool:
+    """尽力将评分结果写入 SQLite live_run_scores；数据库不可用时静默跳过，返回是否成功。
+
+    写入独立的 live_run_scores 表，不触碰 seed 的 score_records。任何异常都不向上抛出。
+    """
+    try:
+        from app.services.dataset_service import database_ready, get_db_path
+        from app.db.repository import Repository
+
+        path = db_path or get_db_path()
+        if not database_ready(path):
+            return False
+        rows = []
+        for o in result.outcomes:
+            row = {
+                "score_run_id": result.score_run_id,
+                "run_id": result.run_id,
+                "case_id": o.case_id,
+                "task_type": o.task_type,
+                "eval_model": o.eval_model,
+                "judge_provider": o.judge_provider,
+                "judge_model": o.judge_model,
+                "judge_mode": result.mode,
+                "judge_status": o.judge_status,
+                "total_score": o.total_score,
+                "rationale": json.dumps(dict(o.rationale), ensure_ascii=False) if o.rationale else None,
+                "review_note": o.review_note or None,
+                "review_status": o.review_status,
+                "latency_ms": o.latency_ms,
+                "input_tokens": o.input_tokens,
+                "output_tokens": o.output_tokens,
+                "total_tokens": o.total_tokens,
+                "trace_id": o.trace_id,
+                "error_code": o.error_code,
+                "error_message": o.error_message,
+            }
+            for field_name, value in o.scores.items():
+                row[field_name] = value
+            rows.append(row)
+        if not rows:
+            return False
+        Repository(path).bulk_insert("live_run_scores", rows)
+        return True
+    except Exception:
+        return False
+
+
+def confirm_score_review(
+    row_id: int,
+    edited_scores: Mapping[str, Any],
+    review_note: str = "",
+    *,
+    db_path: Path | None = None,
+) -> bool:
+    """人工复核确认：写入修订后的各维度分与总分，并将 review_status 置为 confirmed。"""
+    try:
+        from app.services.dataset_service import database_ready, get_db_path
+        from app.db.repository import Repository
+
+        path = db_path or get_db_path()
+        if not database_ready(path):
+            return False
+        changes: dict[str, Any] = {"review_status": "confirmed"}
+        total = 0
+        for field_name, value in edited_scores.items():
+            number = _as_number(value)
+            score = 0 if number is None else int(round(number))
+            changes[field_name] = score
+            total += score
+        changes["total_score"] = total
+        if review_note:
+            changes["review_note"] = review_note
+        Repository(path).update("live_run_scores", row_id, changes)
+        return True
+    except Exception:
+        return False
+
+
+def is_mock_score(result: ScoreResult) -> bool:
+    return result.mode == "mock" or any(o.judge_status == STATUS_MOCK for o in result.outcomes)
+
+
+def load_score_rows(score_run_id: str, db_path: Path | None = None) -> list[dict]:
+    """读取某次评分运行已落库的行（含主键 id），供人工复核改分使用；不可用时返回空列表。"""
+    try:
+        from app.services.dataset_service import database_ready, get_db_path
+        from app.db.repository import Repository
+
+        path = db_path or get_db_path()
+        if not database_ready(path):
+            return []
+        frame = Repository(path).list_df("live_run_scores")
+        if frame.empty or "score_run_id" not in frame.columns:
+            return []
+        return frame[frame["score_run_id"] == score_run_id].to_dict("records")
+    except Exception:
+        return []
+
+
+# --------------------------------------------------------------------------- #
+# 内部工具
+# --------------------------------------------------------------------------- #
+_GOLD_TEXT_FIELDS = (
+    ("core_conclusion", "核心结论"),
+    ("key_evidence", "关键依据"),
+    ("analysis", "分析"),
+    ("boundary_conditions", "边界条件"),
+)
+_GOLD_LIST_FIELDS = (
+    ("must_have_points", "必须覆盖点"),
+    ("unacceptable_errors", "不可接受错误"),
+)
+
+
+def _format_gold(gold: Mapping[str, Any]) -> str:
+    if not gold:
+        return ""
+    parts: list[str] = []
+    for key, label in _GOLD_TEXT_FIELDS:
+        text = _clean(gold.get(key))
+        if text:
+            parts.append(f"- {label}：{text}")
+    for key, label in _GOLD_LIST_FIELDS:
+        items = gold.get(key)
+        if isinstance(items, (list, tuple)):
+            cleaned = [_clean(item) for item in items if _clean(item)]
+            if cleaned:
+                parts.append(f"- {label}：" + "；".join(cleaned))
+        else:
+            text = _clean(items)
+            if text:
+                parts.append(f"- {label}：{text}")
+    return "\n".join(parts)
+
+
+def _format_rubric(dimensions: Sequence[Mapping[str, Any]]) -> str:
+    return "\n".join(
+        f"- {d.get('name', d['field'])}（字段 {d['field']}，满分 {d.get('full_mark')}）"
+        for d in dimensions
+    )
+
+
+def _extract_json_object(text: str) -> dict | None:
+    if not text:
+        return None
+    candidate = text.strip()
+    # 去掉可能的 ```json ... ``` 代码块包裹。
+    fence = re.search(r"```(?:json)?\s*(\{.*\})\s*```", candidate, re.DOTALL)
+    if fence:
+        candidate = fence.group(1)
+    else:
+        start = candidate.find("{")
+        end = candidate.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        candidate = candidate[start : end + 1]
+    try:
+        parsed = json.loads(candidate)
+    except (TypeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _as_number(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = _clean(value)
+    if not text:
+        return None
+    match = re.search(r"-?\d+(?:\.\d+)?", text)
+    return float(match.group()) if match else None
+
+
+def _clean(value: Any) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    return "" if text.lower() in {"nan", "none", "null"} else text

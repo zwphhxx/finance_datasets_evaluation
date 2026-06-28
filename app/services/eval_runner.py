@@ -72,6 +72,26 @@ class RunResult:
         return sum(1 for o in self.outcomes if o.success)
 
 
+@dataclass(frozen=True)
+class CompareRunResult:
+    """一次多模型对比运行的汇总：一个 run_id 下，N 个模型各自跑同一组任务。
+
+    outcomes 是 (模型 × 任务) 的扁平列表，每个 RunOutcome 自带 model_id 以区分模型，
+    便于在结果表中按模型分组并排展示。
+    """
+
+    run_id: str
+    provider: str
+    model_ids: Sequence[str]
+    mode: str  # live / mock
+    created_at: str
+    outcomes: Sequence[RunOutcome] = field(default_factory=tuple)
+
+    @property
+    def success_count(self) -> int:
+        return sum(1 for o in self.outcomes if o.success)
+
+
 def generate_run_id() -> str:
     """生成本次运行的 run_id：时间戳 + 短随机后缀，便于人读且基本唯一。"""
     return f"RUN-{datetime.now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
@@ -162,9 +182,44 @@ def run_evaluation(
     )
 
 
-def persist_run_result(result: RunResult, db_path: Path | None = None) -> bool:
+def run_models(
+    provider: ModelProvider,
+    model_ids: Sequence[str],
+    tasks: Sequence[Mapping[str, Any]],
+    *,
+    temperature: float = 0.2,
+    max_tokens: int = 1024,
+    run_id: str | None = None,
+    **kwargs: Any,
+) -> CompareRunResult:
+    """对多个模型各自跑同一组任务，汇总成一个 CompareRunResult（共享 run_id）。
+
+    去重并保序处理 model_ids；对每个模型的每道任务调用 run_single，任一调用失败只影响
+    该 (模型, 任务) 的 RunOutcome，不中断整体。模型列表为空时 outcomes 为空。
+    """
+    unique_models = _dedupe_preserve_order(model_ids)
+    rid = run_id or generate_run_id()
+    mode = "mock" if getattr(provider, "name", "") == "mock" else "live"
+    outcomes = tuple(
+        run_single(provider, model_id, task, temperature=temperature, max_tokens=max_tokens, **kwargs)
+        for model_id in unique_models
+        for task in tasks
+    )
+    return CompareRunResult(
+        run_id=rid,
+        provider=getattr(provider, "name", ""),
+        model_ids=tuple(unique_models),
+        mode=mode,
+        created_at=datetime.now().isoformat(timespec="seconds"),
+        outcomes=outcomes,
+    )
+
+
+def persist_run_result(result, db_path: Path | None = None) -> bool:
     """尽力将运行结果写入 SQLite live_run_responses；数据库不可用时静默跳过。
 
+    接受 RunResult（单模型）或 CompareRunResult（多模型）：两者都带 run_id / mode /
+    outcomes，每行的 model_name 取自 outcome.model_id，故多模型会在同一 run_id 下分行写入。
     写入独立的 live_run_responses 表，不污染承载评分的 model_responses（seed）。
     返回是否成功落库。任何异常都不向上抛出，保证页面不因落库失败而崩溃。
     """
@@ -205,8 +260,25 @@ def persist_run_result(result: RunResult, db_path: Path | None = None) -> bool:
         return False
 
 
-def is_mock_result(result: RunResult) -> bool:
+def persist_compare_result(result: CompareRunResult, db_path: Path | None = None) -> bool:
+    """多模型对比结果落库（与 persist_run_result 同实现，命名上更直观）。"""
+    return persist_run_result(result, db_path=db_path)
+
+
+def is_mock_result(result) -> bool:
     return result.mode == "mock" or any(o.run_status == STATUS_MOCK for o in result.outcomes)
+
+
+def _dedupe_preserve_order(items: Sequence[str]) -> list[str]:
+    """去除空白项并按首次出现顺序去重，避免对同一模型重复评测。"""
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for item in items:
+        value = _clean(item)
+        if value and value not in seen:
+            seen.add(value)
+            ordered.append(value)
+    return ordered
 
 
 def _clean(value: Any) -> str:

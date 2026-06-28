@@ -350,6 +350,34 @@ def list_rubrics(db_path: Path | None = None) -> pd.DataFrame:
     return _repository(db_path).list_df("rubrics")
 
 
+def get_rubric_dimensions(db_path: Path | None = None) -> list[dict]:
+    """返回评分维度 [{field, name, full_mark}]，供裁判评分与对比表统一取用。
+
+    维度顺序与满分以 src.metrics 的方法学配置为准（不硬编码第二份）；当 rubrics 表存在且
+    有对应行时，用表中的 name / full_mark 覆盖，使数据库初始化后维度信息来自数据。
+    """
+    from src.metrics import SCORE_DIMENSIONS, SCORE_DIMENSION_FULL_MARKS
+
+    overrides: dict[str, dict] = {}
+    try:
+        frame = list_rubrics(db_path)
+        if "dimension_field" in frame.columns:
+            for _, row in frame.iterrows():
+                overrides[str(row["dimension_field"])] = row.to_dict()
+    except Exception:
+        overrides = {}
+
+    dimensions: list[dict] = []
+    for field, default_name in SCORE_DIMENSIONS:
+        row = overrides.get(field, {})
+        full_mark = _as_int(row.get("full_mark")) if row.get("full_mark") is not None else None
+        if not full_mark:
+            full_mark = SCORE_DIMENSION_FULL_MARKS.get(field)
+        name = _clean(row.get("name")) or default_name
+        dimensions.append({"field": field, "name": name, "full_mark": full_mark})
+    return dimensions
+
+
 def update_rubric(dimension_field: str, changes: dict, *, db_path: Path | None = None) -> None:
     """编辑评分维度的权重、满分标准与扣分规则。"""
     allowed = {"weight", "full_mark", "full_mark_standard", "deduction_rules"}

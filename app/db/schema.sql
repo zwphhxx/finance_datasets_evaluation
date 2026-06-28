@@ -21,6 +21,7 @@ DROP TABLE IF EXISTS improvement_actions;
 DROP TABLE IF EXISTS evaluation_runs;
 DROP TABLE IF EXISTS error_taxonomy;
 DROP TABLE IF EXISTS live_run_responses;
+DROP TABLE IF EXISTS live_run_scores;
 
 -- 任务题：对应 data/tasks.csv。status 复用任务的 active/inactive 标记。
 CREATE TABLE task_cases (
@@ -204,4 +205,41 @@ CREATE TABLE live_run_responses (
     status        TEXT NOT NULL DEFAULT 'active',
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- 真实模型评测的 LLM-as-judge 评分（PR-35）。本表不来自任何 seed 文件，仅承载「真实模型评测」
+-- 页由裁判模型对照 Gold Answer + Rubric 产出的「机器建议分」，与 seed 的 score_records 分离。
+-- 评分为机器建议，需人工复核：review_status 为 pending（待复核）/ confirmed（已复核归档）。
+-- judge_status 为裁判调用业务状态（success/failed/mock）；mock 模式不产生真实分数（维度列为空）。
+-- eval_model 为被评测模型，judge_model 为裁判模型；不存储任何认证信息。
+CREATE TABLE live_run_scores (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    score_run_id     TEXT,
+    run_id           TEXT,
+    case_id          TEXT,
+    task_type        TEXT,
+    eval_model       TEXT,
+    judge_provider   TEXT,
+    judge_model      TEXT,
+    judge_mode       TEXT,
+    judge_status     TEXT,
+    accuracy_score   INTEGER,
+    reasoning_score  INTEGER,
+    coverage_score   INTEGER,
+    evidence_score   INTEGER,
+    expression_score INTEGER,
+    total_score      INTEGER,
+    rationale        TEXT,
+    review_note      TEXT,
+    review_status    TEXT NOT NULL DEFAULT 'pending',
+    latency_ms       INTEGER,
+    input_tokens     INTEGER,
+    output_tokens    INTEGER,
+    total_tokens     INTEGER,
+    trace_id         TEXT,
+    error_code       TEXT,
+    error_message    TEXT,
+    status           TEXT NOT NULL DEFAULT 'active',
+    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
