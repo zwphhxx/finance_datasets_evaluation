@@ -2,6 +2,7 @@ import pandas as pd
 import streamlit as st
 
 from src.data_service import DataLoadError, load_all_data
+from src.validators import ValidationResult, validate_evaluation_data
 
 
 st.set_page_config(page_title="FinDueEval MVP", layout="wide")
@@ -53,7 +54,20 @@ def show_model_score(row: pd.Series) -> None:
     )
 
 
-def render_overview(tasks_df, model_outputs_df, scores_df, error_df, optimization_df) -> None:
+def render_data_quality_status(validation_result: ValidationResult) -> None:
+    st.subheader("数据质量状态")
+    if validation_result.is_valid:
+        st.success("数据质量检查通过。")
+    else:
+        st.error("数据质量检查发现需处理的问题。")
+
+    for message in validation_result.errors:
+        st.error(message)
+    for message in validation_result.warnings:
+        st.warning(message)
+
+
+def render_overview(tasks_df, model_outputs_df, scores_df, error_df, optimization_df, validation_result) -> None:
     st.header("项目总览")
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("任务数", len(tasks_df))
@@ -65,6 +79,8 @@ def render_overview(tasks_df, model_outputs_df, scores_df, error_df, optimizatio
     col3.metric("平均总分", f"{average_score:.1f}" if has_value(average_score) else "暂无")
     col4.metric("错误标签数", len(error_df))
     col5.metric("优化建议数", len(optimization_df))
+
+    render_data_quality_status(validation_result)
 
     st.subheader("各模型平均得分")
     if not scores_df.empty and has_columns(scores_df, ["model_name", "total_score"]):
@@ -206,6 +222,14 @@ except DataLoadError as exc:
     st.error(str(exc))
     st.stop()
 
+try:
+    validation_result = validate_evaluation_data(data)
+except Exception:
+    validation_result = ValidationResult(
+        errors=["数据质量检查未能完成。请检查数据结构后重试。"],
+        warnings=[],
+    )
+
 tasks_df = data.tasks
 gold_answer_map = data.gold_answer_map
 model_outputs_df = data.model_outputs
@@ -217,7 +241,7 @@ st.sidebar.title("导航")
 page = st.sidebar.radio("选择页面", ("项目总览", "任务列表", "单题详情", "错误归因与优化建议"))
 
 if page == "项目总览":
-    render_overview(tasks_df, model_outputs_df, scores_df, error_df, optimization_df)
+    render_overview(tasks_df, model_outputs_df, scores_df, error_df, optimization_df, validation_result)
 elif page == "任务列表":
     render_task_list(tasks_df)
 elif page == "单题详情":
