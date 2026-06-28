@@ -19,7 +19,21 @@ DATA_FILES = {
     "optimizations": "optimization_plan.csv",
     "evaluation_runs": "evaluation_runs.csv",
     "preference_pairs": "preference_pairs.csv",
+    "optimization_comparison": "optimization_comparison.csv",
 }
+
+OPTIMIZATION_COMPARISON_COLUMNS = [
+    "experiment_id",
+    "version",
+    "change_type",
+    "change_description",
+    "avg_score",
+    "hallucination_rate",
+    "evidence_score",
+    "reasoning_score",
+    "red_line_error_rate",
+    "note",
+]
 
 
 class DataLoadError(RuntimeError):
@@ -37,6 +51,7 @@ class EvaluationData:
     optimizations: pd.DataFrame
     evaluation_runs: pd.DataFrame
     preference_pairs: pd.DataFrame
+    optimization_comparison: pd.DataFrame
 
 
 def get_project_root() -> Path:
@@ -72,6 +87,20 @@ def read_csv_file(filename: str, data_dir: Path | None = None) -> pd.DataFrame:
         raise DataLoadError(f"数据文件编码异常：{filename}。请使用 UTF-8 或兼容编码。") from exc
     except Exception as exc:
         raise DataLoadError(f"数据文件读取失败：{filename}。{exc}") from exc
+
+
+def read_optional_csv_file(
+    filename: str,
+    columns: list[str],
+    data_dir: Path | None = None,
+) -> pd.DataFrame:
+    directory = data_dir or get_data_dir()
+    path = directory / filename
+    if not path.exists():
+        return pd.DataFrame(columns=columns)
+    if not path.is_file():
+        raise DataLoadError(f"数据路径不是文件：{filename}。请检查数据目录配置。")
+    return read_csv_file(filename, data_dir)
 
 
 def read_json_file(filename: str, data_dir: Path | None = None) -> Any:
@@ -120,4 +149,9 @@ def _load_all_data(data_dir_value: str) -> EvaluationData:
         optimizations=read_csv_file(DATA_FILES["optimizations"], data_dir),
         evaluation_runs=read_csv_file(DATA_FILES["evaluation_runs"], data_dir),
         preference_pairs=read_csv_file(DATA_FILES["preference_pairs"], data_dir),
+        optimization_comparison=read_optional_csv_file(
+            DATA_FILES["optimization_comparison"],
+            OPTIMIZATION_COMPARISON_COLUMNS,
+            data_dir,
+        ),
     )

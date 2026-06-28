@@ -163,3 +163,7 @@ def render_error_analysis(data_bundle):
 
     with tab_samples:
         _show_priority_samples(error_df, optimization_df)
+
+
+def render_error_analysis_page(data_bundle):
+    render_error_analysis(data_bundle)

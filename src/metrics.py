@@ -490,3 +490,77 @@ def get_priority_error_samples(error_df, optimization_df, limit=20):
     if limit:
         samples = samples.head(limit)
     return samples[PR07_PRIORITY_SAMPLE_COLUMNS]
+
+
+# PR-08: optimization comparison metrics
+OPTIMIZATION_COMPARISON_COLUMNS = [
+    "experiment_id",
+    "version",
+    "change_type",
+    "change_description",
+    "avg_score",
+    "hallucination_rate",
+    "evidence_score",
+    "reasoning_score",
+    "red_line_error_rate",
+    "note",
+]
+
+OPTIMIZATION_COMPARISON_NUMERIC_COLUMNS = [
+    "avg_score",
+    "hallucination_rate",
+    "evidence_score",
+    "reasoning_score",
+    "red_line_error_rate",
+]
+
+
+def get_optimization_comparison_metrics(comparison_df: pd.DataFrame) -> pd.DataFrame:
+    """Return comparison data with a stable schema and numeric metric columns."""
+    if comparison_df is None or comparison_df.empty:
+        return pd.DataFrame(columns=OPTIMIZATION_COMPARISON_COLUMNS)
+
+    metrics = comparison_df.copy()
+    for column in OPTIMIZATION_COMPARISON_COLUMNS:
+        if column not in metrics.columns:
+            metrics[column] = None
+
+    metrics = metrics[OPTIMIZATION_COMPARISON_COLUMNS]
+    for column in OPTIMIZATION_COMPARISON_NUMERIC_COLUMNS:
+        metrics[column] = pd.to_numeric(metrics[column], errors="coerce")
+    return metrics
+
+
+def get_optimization_change_summary(comparison_df: pd.DataFrame) -> list[str]:
+    """Summarize metric movement between the first and latest comparison versions."""
+    metrics = get_optimization_comparison_metrics(comparison_df)
+    if len(metrics) < 2:
+        return []
+
+    baseline = metrics.iloc[0]
+    latest = metrics.iloc[-1]
+
+    avg_delta = latest["avg_score"] - baseline["avg_score"]
+    evidence_delta = latest["evidence_score"] - baseline["evidence_score"]
+    reasoning_delta = latest["reasoning_score"] - baseline["reasoning_score"]
+    hallucination_delta = latest["hallucination_rate"] - baseline["hallucination_rate"]
+    red_line_delta = latest["red_line_error_rate"] - baseline["red_line_error_rate"]
+
+    return [
+        (
+            f"平均分从 {baseline['avg_score']:.1f} 变化至 {latest['avg_score']:.1f}，"
+            f"差值 {avg_delta:+.1f}。"
+        ),
+        (
+            f"依据可靠性从 {baseline['evidence_score']:.1f} 变化至 {latest['evidence_score']:.1f}，"
+            f"推理与场景适配从 {baseline['reasoning_score']:.1f} 变化至 {latest['reasoning_score']:.1f}。"
+        ),
+        (
+            f"幻觉率从 {baseline['hallucination_rate']:.1%} 变化至 {latest['hallucination_rate']:.1%}，"
+            f"红线错误率从 {baseline['red_line_error_rate']:.1%} 变化至 {latest['red_line_error_rate']:.1%}。"
+        ),
+        (
+            f"最新版本记录为 {latest['change_type']}：{latest['change_description']}。"
+        ),
+        "以上为当前评测集观察，样本量有限，不代表真实大规模实验结论。",
+    ]

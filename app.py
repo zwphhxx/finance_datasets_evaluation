@@ -4,6 +4,7 @@ from src.data_service import DataLoadError, load_all_data
 from src.ui.case_detail import render_case_detail_page
 from src.ui.error_analysis import render_error_analysis_page
 from src.ui.model_diagnosis import render_model_diagnosis_page
+from src.ui.optimization_compare import render_optimization_compare_page
 from src.ui.overview import render_overview_page
 from src.ui.tasks import render_tasks_page
 from src.validators import ValidationResult, validate_evaluation_data
@@ -15,6 +16,7 @@ PAGES = {
     "单题详情": render_case_detail_page,
     "模型能力诊断": render_model_diagnosis_page,
     "错误归因与优化建议": render_error_analysis_page,
+    "优化前后对比": render_optimization_compare_page,
 }
 
 

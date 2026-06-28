@@ -5,7 +5,7 @@ from typing import Any
 
 import pandas as pd
 
-from src.data_service import EvaluationData
+from src.data_service import EvaluationData, OPTIMIZATION_COMPARISON_COLUMNS
 
 
 @dataclass(frozen=True)
@@ -81,6 +81,17 @@ SCORE_COLUMNS = [
     "expression_score",
 ]
 
+OPTIMIZATION_COMPARISON_SCORE_COLUMNS = [
+    "avg_score",
+    "evidence_score",
+    "reasoning_score",
+]
+
+OPTIMIZATION_COMPARISON_RATE_COLUMNS = [
+    "hallucination_rate",
+    "red_line_error_rate",
+]
+
 
 def validate_evaluation_data(data: EvaluationData) -> ValidationResult:
     errors: list[str] = []
@@ -98,6 +109,7 @@ def validate_evaluation_data(data: EvaluationData) -> ValidationResult:
         },
         errors,
     )
+    _validate_optimization_comparison(data.optimization_comparison, errors, warnings)
     _validate_gold_answers_schema(data.gold_answers, errors)
     _validate_primary_keys(data, errors)
     _validate_foreign_keys(data, errors)
@@ -136,6 +148,7 @@ def _validate_primary_keys(data: EvaluationData, errors: list[str]) -> None:
     _validate_unique(data.scores, "scores.csv", "output_id", errors)
     _validate_unique(data.evaluation_runs, "evaluation_runs.csv", "run_id", errors)
     _validate_unique(data.preference_pairs, "preference_pairs.csv", "pair_id", errors)
+    _validate_unique(data.optimization_comparison, "optimization_comparison.csv", "experiment_id", errors)
     if "error_id" in data.errors.columns:
         _validate_unique(data.errors, "error_labels.csv", "error_id", errors)
 
@@ -212,6 +225,38 @@ def _validate_optional_coverage(data: EvaluationData, warnings: list[str]) -> No
 
     if data.preference_pairs.empty:
         warnings.append("preference_pairs.csv 暂无偏好样本，不影响现有评分和错误标签展示。")
+
+
+def _validate_optimization_comparison(
+    comparison_df: pd.DataFrame,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    if comparison_df.empty:
+        warnings.append("optimization_comparison.csv 暂无优化前后对比数据，不影响其他页面展示。")
+        return
+
+    missing_columns = [
+        column for column in OPTIMIZATION_COMPARISON_COLUMNS if column not in comparison_df.columns
+    ]
+    for column in missing_columns:
+        errors.append(f"optimization_comparison.csv 缺少必填字段：{column}。")
+    if missing_columns:
+        return
+
+    for column in OPTIMIZATION_COMPARISON_SCORE_COLUMNS:
+        values = pd.to_numeric(comparison_df[column], errors="coerce")
+        if values.isna().any():
+            errors.append(f"optimization_comparison.csv 中 {column} 存在无法识别的数值。")
+        if ((values < 0) | (values > 100)).any():
+            errors.append(f"optimization_comparison.csv 中 {column} 存在超出 0-100 范围的记录。")
+
+    for column in OPTIMIZATION_COMPARISON_RATE_COLUMNS:
+        values = pd.to_numeric(comparison_df[column], errors="coerce")
+        if values.isna().any():
+            errors.append(f"optimization_comparison.csv 中 {column} 存在无法识别的数值。")
+        if ((values < 0) | (values > 1)).any():
+            errors.append(f"optimization_comparison.csv 中 {column} 存在超出 0-1 范围的记录。")
 
 
 def _validate_preference_pair_foreign_keys(data: EvaluationData, errors: list[str]) -> None:

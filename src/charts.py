@@ -10,6 +10,7 @@ from src.metrics import (
     get_model_domain_scores,
     get_model_error_type_counts,
     get_model_total_scores,
+    get_optimization_comparison_metrics,
 )
 
 
@@ -105,3 +106,33 @@ def render_error_distribution_summary_chart(error_df, empty_message="暂无错�
 
     chart_data = summary.set_index("error_type")[["count"]]
     st.bar_chart(chart_data)
+
+
+def render_optimization_comparison_chart(
+    comparison_df: pd.DataFrame,
+    empty_message: str = "暂无优化前后对比数据，无法展示指标变化。",
+) -> pd.DataFrame:
+    metrics = get_optimization_comparison_metrics(comparison_df)
+    if metrics.empty:
+        st.info(empty_message)
+        return metrics
+
+    score_columns = ["avg_score", "evidence_score", "reasoning_score"]
+    rate_columns = ["hallucination_rate", "red_line_error_rate"]
+
+    st.caption("得分指标")
+    score_chart = metrics[["version"] + score_columns].melt(
+        id_vars="version",
+        var_name="metric",
+        value_name="value",
+    )
+    st.bar_chart(score_chart, x="version", y="value", color="metric")
+
+    st.caption("错误率指标")
+    rate_chart = metrics[["version"] + rate_columns].melt(
+        id_vars="version",
+        var_name="metric",
+        value_name="value",
+    )
+    st.line_chart(rate_chart, x="version", y="value", color="metric")
+    return metrics
