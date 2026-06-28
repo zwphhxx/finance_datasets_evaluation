@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from src.metrics import (
+    ERROR_TYPE_TO_DIMENSION,
     get_case_ids,
     get_errors_for_output,
     get_preference_pair_details_for_case,
@@ -48,19 +49,6 @@ RUBRIC = [
 
 SEVERITY_BADGE = {"高": "danger", "中": "warning", "低": "neutral"}
 PRIORITY_BADGE = {"高": "danger", "中": "warning", "低": "neutral"}
-
-# Presentation grouping: associate each taxonomy error label with the Rubric
-# dimension it most affects, based on the label definitions in
-# data/label_taxonomy.yml. Used only to place data-sourced error labels in the
-# scoring matrix; the labels themselves are read from error_labels.csv.
-ERROR_TYPE_TO_DIMENSION = {
-    "依据错误": "依据可靠性",
-    "风险遗漏": "风险覆盖",
-    "可执行性弱": "风险覆盖",
-    "推理不足": "推理与场景适配",
-    "场景错配": "推理与场景适配",
-    "表达问题": "专业表达",
-}
 
 ANSWER_SUMMARY_LIMIT = 220
 

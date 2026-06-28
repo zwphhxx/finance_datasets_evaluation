@@ -22,6 +22,18 @@ SCORE_DIMENSION_FULL_MARKS = {
     "expression_score": 15,
 }
 
+# Which Rubric dimension each taxonomy error label most affects, based on the
+# label definitions in data/label_taxonomy.yml. Used to place data-sourced error
+# labels under a scoring dimension; the labels themselves come from the data.
+ERROR_TYPE_TO_DIMENSION = {
+    "依据错误": "依据可靠性",
+    "风险遗漏": "风险覆盖",
+    "可执行性弱": "风险覆盖",
+    "推理不足": "推理与场景适配",
+    "场景错配": "推理与场景适配",
+    "表达问题": "专业表达",
+}
+
 
 def has_columns(df: pd.DataFrame, columns: list[str]) -> bool:
     return all(column in df.columns for column in columns)

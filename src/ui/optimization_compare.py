@@ -24,9 +24,9 @@ from src.ui.components import (
 # direction of "improvement": scores should rise, error rates should fall.
 KEY_METRICS = [
     {"key": "avg_score", "label": "平均总分", "kind": "score"},
-    {"key": "red_line_error_rate", "label": "红线错误率", "kind": "rate"},
-    {"key": "hallucination_rate", "label": "幻觉率", "kind": "rate"},
     {"key": "evidence_score", "label": "依据可靠性", "kind": "score"},
+    {"key": "hallucination_rate", "label": "幻觉率", "kind": "rate"},
+    {"key": "red_line_error_rate", "label": "红线错误率", "kind": "rate"},
 ]
 
 
@@ -109,6 +109,37 @@ def build_validation_conclusion(comparison_df) -> dict | None:
     }
 
 
+def build_open_issues(comparison_df, scores_df, errors_df) -> list[str]:
+    """Issues the current evaluation set has not yet resolved, from live data."""
+    issues = []
+
+    metrics = get_optimization_comparison_metrics(comparison_df)
+    if not metrics.empty:
+        latest = metrics.iloc[-1]
+        red_line = latest.get("red_line_error_rate")
+        if pd.notna(red_line) and red_line > 0:
+            issues.append(f"红线错误率仍为 {red_line:.1%}，尚未归零。")
+        hallucination = latest.get("hallucination_rate")
+        if pd.notna(hallucination) and hallucination > 0:
+            issues.append(f"幻觉率仍为 {hallucination:.1%}，需继续补强依据类样本。")
+
+    version_count = len(metrics)
+    model_count = scores_df["model_name"].nunique() if "model_name" in getattr(scores_df, "columns", []) else 0
+    score_count = len(scores_df)
+    issues.append(
+        f"评测样本量较小（{score_count} 条评分 · {model_count} 个模型 · {version_count} 轮对比），"
+        "结论仅供样本内观察。"
+    )
+    issues.append("模型回答为模拟生成，尚未接入真实模型 API。")
+
+    if errors_df is not None and not errors_df.empty and "error_type" in errors_df:
+        counts = errors_df["error_type"].value_counts()
+        scarce = [str(error_type) for error_type, count in counts.items() if count <= 1]
+        if scarce:
+            issues.append(f"部分错误标签样本不足（各仅 1 次）：{'、'.join(scarce)}。")
+    return issues
+
+
 def collect_optimization_compare_tables(data_bundle: dict) -> dict:
     data = data_bundle["data"]
     comparison_df = getattr(data, "optimization_comparison", pd.DataFrame())
@@ -128,14 +159,8 @@ def render_optimization_compare_page(data_bundle: dict) -> None:
         return
 
     _render_key_changes(comparison_df)
-
-    tab_trend, tab_changes = st.tabs(["指标趋势", "变更说明"])
-
-    with tab_trend:
-        _render_metric_trend(comparison_df)
-
-    with tab_changes:
-        _render_change_table(comparison_df)
+    _render_comparison(comparison_df)
+    _render_open_issues(comparison_df, data)
 
 
 def _render_key_changes(comparison_df) -> None:
@@ -174,13 +199,37 @@ def _render_key_changes(comparison_df) -> None:
     render_context_grid(items)
 
 
-def _render_metric_trend(comparison_df) -> None:
+def _render_comparison(comparison_df) -> None:
+    render_section_title("Baseline 与数据补强对比", "逐轮记录改动与关键指标，确认补强是否带来可观察改善。")
     metrics = get_optimization_comparison_metrics(comparison_df)
     if metrics.empty:
         render_empty_state("暂无可展示数据")
         return
 
-    render_section_title("得分指标趋势", "平均总分与依据可靠性逐轮变化，确认改进是否持续。")
+    table = metrics.rename(
+        columns={
+            "version": "优化版本",
+            "change_type": "优化类型",
+            "change_description": "改动说明",
+            "avg_score": "平均总分",
+            "evidence_score": "依据可靠性",
+            "hallucination_rate": "幻觉率",
+            "red_line_error_rate": "红线错误率",
+        }
+    )
+    st.dataframe(
+        table[["优化版本", "优化类型", "改动说明", "平均总分", "依据可靠性", "幻觉率", "红线错误率"]],
+        width="stretch",
+        hide_index=True,
+    )
+    _render_metric_trend(comparison_df)
+
+
+def _render_metric_trend(comparison_df) -> None:
+    metrics = get_optimization_comparison_metrics(comparison_df)
+    if metrics.empty:
+        return
+
     score_long = metrics.melt(
         id_vars="version",
         value_vars=["avg_score", "evidence_score", "reasoning_score"],
@@ -192,7 +241,6 @@ def _render_metric_trend(comparison_df) -> None:
     )
     themed_bar_chart(score_long, "version", "value", "优化版本", "得分", "指标", "指标")
 
-    render_section_title("错误率趋势", "红线错误率与幻觉率应逐轮下降，未归零的维度仍需补强。")
     rate_long = metrics.melt(
         id_vars="version",
         value_vars=["red_line_error_rate", "hallucination_rate"],
@@ -209,25 +257,11 @@ def _render_metric_trend(comparison_df) -> None:
         st.caption(summary[0])
 
 
-def _render_change_table(comparison_df) -> None:
-    render_section_title("各轮变更说明", "记录每一轮优化做了什么改动，便于追溯指标变化来源。")
-    metrics = get_optimization_comparison_metrics(comparison_df)
-    if metrics.empty:
-        render_empty_state("暂无可展示数据")
+def _render_open_issues(comparison_df, data) -> None:
+    render_section_title("仍未解决的问题", "当前评测集尚未覆盖或尚未改善的部分。")
+    issues = build_open_issues(comparison_df, data.scores, data.errors)
+    if not issues:
+        render_empty_state("暂无记录")
         return
-
-    table = metrics.rename(
-        columns={
-            "version": "优化版本",
-            "change_type": "优化类型",
-            "change_description": "改动说明",
-            "avg_score": "平均总分",
-            "red_line_error_rate": "红线错误率",
-            "note": "说明",
-        }
-    )
-    st.dataframe(
-        table[["优化版本", "优化类型", "改动说明", "平均总分", "红线错误率", "说明"]],
-        width="stretch",
-        hide_index=True,
-    )
+    for text in issues:
+        st.markdown(f"- {text}")
