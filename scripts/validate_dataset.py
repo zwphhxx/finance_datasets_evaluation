@@ -12,6 +12,7 @@
   - 模型回答可关联到有效 case_id 与声明的模型范围；
   - 评分记录可关联到有效 case_id、模型与全部 Rubric 维度；
   - 错误标签均来自 label_taxonomy；
+  - 错误标签声明的影响维度落在 Rubric 维度范围内；
   - 数据补强建议可关联到已出现的错误标签；
   - 领域、任务类型、难度、模型取值落在 manifest 声明范围内（超出则告警）。
 
@@ -172,6 +173,7 @@ def validate_dataset(
     _check_model_output_links(manifest, tasks, model_outputs, report)
     _check_score_links(manifest, tasks, model_outputs, scores, report)
     _check_error_labels_in_taxonomy(taxonomy, errors, report)
+    _check_taxonomy_impacted_dimensions(manifest, taxonomy, report)
     _check_optimizations_link_to_errors(errors, optimizations, report)
     _check_scope(manifest, tasks, model_outputs, report)
 
@@ -373,6 +375,46 @@ def _check_error_labels_in_taxonomy(
         report.fail(f"error_labels.csv 存在未在 label_taxonomy 定义的标签：{', '.join(undefined)}。")
     else:
         report.ok(f"error_labels.csv 全部标签（{len(used_labels)} 类）均来自 label_taxonomy。")
+
+
+def _check_taxonomy_impacted_dimensions(
+    manifest: dict[str, Any],
+    taxonomy: dict[str, Any],
+    report: Report,
+) -> None:
+    """每个错误标签声明的影响维度须为 manifest 中已声明的 Rubric 维度。"""
+    dimension_names = {
+        str(dim.get("name")).strip()
+        for dim in manifest.get("rubric", {}).get("dimensions", [])
+        if dim.get("name") is not None
+    }
+    if not dimension_names:
+        report.warn("dataset_manifest.yml 未声明 Rubric 维度名称，跳过影响维度校验。")
+        return
+
+    labels = taxonomy.get("labels", [])
+    missing: list[str] = []
+    invalid: list[str] = []
+    for label in labels:
+        if not isinstance(label, dict):
+            continue
+        name = str(label.get("name", "未知")).strip()
+        dimension = str(label.get("impacted_dimension", "")).strip()
+        if not dimension:
+            missing.append(name)
+        elif dimension not in dimension_names:
+            invalid.append(f"{name}（{dimension}）")
+
+    if invalid:
+        report.fail(
+            "label_taxonomy.yml 中影响维度不在 Rubric 维度范围内：" + "、".join(invalid) + "。"
+        )
+    if missing:
+        report.warn(
+            "label_taxonomy.yml 中以下标签未声明影响维度：" + "、".join(missing) + "。"
+        )
+    if not invalid and not missing:
+        report.ok(f"全部 {len(labels)} 个错误标签均声明了合法的影响维度。")
 
 
 def _check_optimizations_link_to_errors(
