@@ -356,6 +356,68 @@ header,
     font-weight: 750;
     margin-top: 0.25rem;
 }
+.task-card {
+    border: 1px solid var(--fde-line);
+    border-radius: 14px;
+    background: var(--fde-surface);
+    padding: 1.05rem 1.15rem;
+    margin: 0.55rem 0;
+    box-shadow: 0 8px 22px rgba(18, 52, 90, 0.04);
+}
+.task-card-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+.task-card-id {
+    color: var(--fde-blue);
+    font-weight: 800;
+    font-size: 1.02rem;
+    letter-spacing: 0.02em;
+}
+.task-card-badges {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+.task-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0.55rem 0 0.2rem 0;
+}
+.tag {
+    display: inline-block;
+    border-radius: 999px;
+    padding: 0.16rem 0.62rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    border: 1px solid transparent;
+}
+.tag-domain {
+    background: var(--fde-blue-soft);
+    color: var(--fde-blue);
+    border-color: #cdddf0;
+}
+.tag-type {
+    background: var(--fde-gray-soft);
+    color: var(--fde-muted);
+    border-color: var(--fde-line);
+}
+.task-card-field {
+    margin-top: 0.6rem;
+}
+.task-card-label {
+    color: var(--fde-muted);
+    font-size: 0.8rem;
+    font-weight: 700;
+    margin-bottom: 0.15rem;
+}
+.task-card-value {
+    color: var(--fde-text);
+    line-height: 1.6;
+}
 </style>
 """
 
