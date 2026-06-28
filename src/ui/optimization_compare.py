@@ -10,7 +10,13 @@ from src.metrics import (
     get_optimization_change_summary,
     get_optimization_comparison_metrics,
 )
-from src.ui.common import render_page_context
+from src.ui.common import PAGE_CONTEXTS
+from src.ui.components import (
+    render_empty_state,
+    render_info_panel,
+    render_page_header,
+    render_section_title,
+)
 
 
 def collect_optimization_compare_tables(data_bundle: dict) -> dict:
@@ -25,12 +31,13 @@ def collect_optimization_compare_tables(data_bundle: dict) -> dict:
 def render_optimization_compare_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
     comparison_df = getattr(data, "optimization_comparison", pd.DataFrame())
+    context = PAGE_CONTEXTS["优化验证"]
 
-    st.header("优化验证")
-    render_page_context("优化验证")
+    render_page_header("优化验证", context["question"], context["boundary"])
+    render_info_panel("页面核心看点", context["highlights"])
 
     if comparison_df.empty:
-        st.info("当前样本暂无可展示数据。")
+        render_empty_state("暂无可展示数据")
         _render_boundary_note()
         return
 
@@ -39,7 +46,7 @@ def render_optimization_compare_page(data_bundle: dict) -> None:
     )
 
     with tab_metrics:
-        st.subheader("指标变化")
+        render_section_title("指标变化")
         metrics = render_optimization_comparison_chart(comparison_df)
         if not metrics.empty:
             st.dataframe(
@@ -58,10 +65,10 @@ def render_optimization_compare_page(data_bundle: dict) -> None:
             )
 
     with tab_changes:
-        st.subheader("变更类型与说明")
+        render_section_title("变更类型与说明")
         metrics = get_optimization_comparison_metrics(comparison_df)
         if metrics.empty:
-            st.info("暂无可展示的版本变更说明。")
+            render_empty_state("暂无可展示数据")
         else:
             st.dataframe(
                 metrics[
@@ -78,10 +85,10 @@ def render_optimization_compare_page(data_bundle: dict) -> None:
             )
 
     with tab_summary:
-        st.subheader("指标变化摘要")
+        render_section_title("指标变化摘要")
         summary = get_optimization_change_summary(comparison_df)
         if not summary:
-            st.info("至少需要两个版本记录才能形成对比摘要。")
+            render_empty_state("暂无可展示数据")
         else:
             for item in summary:
                 st.write(f"- {item}")
@@ -89,7 +96,7 @@ def render_optimization_compare_page(data_bundle: dict) -> None:
 
 
 def _render_boundary_note() -> None:
-    st.subheader("适用边界")
+    render_section_title("适用边界")
     st.info(
         "当前结果基于 MVP 样例数据和当前评测集观察，用于展示评测闭环与数据建设方法。"
         "样本量有限，不代表真实生产环境或大规模实验结论。"

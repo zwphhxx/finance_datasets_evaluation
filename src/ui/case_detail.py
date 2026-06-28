@@ -12,7 +12,16 @@ from src.metrics import (
     merge_case_outputs_with_scores,
 )
 from src.ui.common import has_value, show_model_score, write_list_field, write_text_field
-from src.ui.common import render_page_context
+from src.ui.common import PAGE_CONTEXTS
+from src.ui.components import (
+    render_empty_state,
+    render_info_panel,
+    render_model_answer_card,
+    render_page_header,
+    render_score_badge,
+    render_section_title,
+    render_status_badge,
+)
 
 
 SCORE_COLUMNS = [
@@ -26,12 +35,13 @@ SCORE_COLUMNS = [
 
 def render_case_detail_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
+    context = PAGE_CONTEXTS["样板题深度评测"]
 
-    st.header("样板题深度评测")
-    render_page_context("样板题深度评测")
+    render_page_header("样板题深度评测", context["question"], context["boundary"])
+    render_info_panel("页面核心看点", context["highlights"])
     case_ids = get_case_ids(data.tasks)
     if not case_ids:
-        st.info("当前样本暂无可展示数据。")
+        render_empty_state("暂无可展示数据")
         return
 
     selected_case = st.selectbox("选择样板题", case_ids)
@@ -56,7 +66,7 @@ def render_case_detail_page(data_bundle: dict) -> None:
 
 
 def render_task_basic_info(task_info: pd.Series) -> None:
-    st.subheader("题目基本信息")
+    render_section_title("题目基本信息")
     write_text_field("案例 ID", task_info.get("case_id"))
     write_text_field("领域", task_info.get("domain"))
     write_text_field("场景", task_info.get("scenario"))
@@ -67,10 +77,10 @@ def render_task_basic_info(task_info: pd.Series) -> None:
 
 
 def render_gold_answer(gold_answer_map: dict, selected_case: str) -> None:
-    st.subheader("Gold Answer")
+    render_section_title("Gold Answer")
     gold_answer = gold_answer_map.get(selected_case)
     if not gold_answer:
-        st.info("该题暂未配置 Gold Answer，不影响查看模型回答，但无法展示标准答案对照。")
+        render_empty_state("该模块用于展示数据闭环，当前暂无对应记录。")
         return
 
     st.markdown("**标准答案**")
@@ -104,17 +114,22 @@ def render_gold_answer(gold_answer_map: dict, selected_case: str) -> None:
 
 
 def render_model_outputs(model_outputs_df, scores_df, selected_case: str) -> None:
-    st.subheader("多模型回答")
+    render_section_title("多模型回答")
     merged = merge_case_outputs_with_scores(model_outputs_df, scores_df, selected_case)
     if merged.empty:
-        st.info("该题暂无模型回答。")
+        render_empty_state("暂无可展示数据")
         return
 
     for _, row in merged.iterrows():
         title = f"{row.get('model_name', '未知模型')} · output_id {row.get('output_id', '暂无')}"
         with st.expander(title, expanded=True):
-            st.markdown("**回答内容**")
-            st.write(_answer_text(row))
+            render_model_answer_card(
+                row.get("model_name", "未知模型"),
+                _answer_text(row),
+                output_id=row.get("output_id"),
+                score=row.get("total_score"),
+                review_note=row.get("review_note"),
+            )
             st.markdown("**Rubric 评分**")
             show_model_score(row)
             render_score_breakdown(row)
@@ -132,14 +147,16 @@ def render_score_breakdown(row: pd.Series) -> None:
 
     cols = st.columns(len(available_scores))
     for col, (column, label) in zip(cols, available_scores):
-        col.metric(label, row.get(column))
+        with col:
+            render_score_badge(row.get(column))
+            st.caption(label)
 
 
 def render_error_labels(model_outputs_df, error_df, selected_case: str) -> None:
-    st.subheader("错误标签")
+    render_section_title("错误标签")
     outputs = model_outputs_df[model_outputs_df["case_id"] == selected_case] if "case_id" in model_outputs_df else pd.DataFrame()
     if outputs.empty:
-        st.info("该题暂无模型回答，无法展示错误标签。")
+        render_empty_state("暂无可展示数据")
         return
 
     for _, output in outputs.iterrows():
@@ -148,21 +165,21 @@ def render_error_labels(model_outputs_df, error_df, selected_case: str) -> None:
         errors = get_errors_for_output(error_df, output_id)
         with st.expander(f"{model_name} · output_id {output_id}", expanded=not errors.empty):
             if errors.empty:
-                st.info("当前回答暂无错误标签。")
+                render_empty_state("当前回答暂无错误标签。")
                 continue
             for _, error in errors.iterrows():
                 write_text_field("错误类型", error.get("error_type"))
-                write_text_field("严重程度", error.get("severity"))
+                render_status_badge(error.get("severity", "暂无"), error.get("severity", "neutral"))
                 write_text_field("问题描述", error.get("error_description"))
                 write_text_field("纠正方向", error.get("correction"))
                 st.divider()
 
 
 def render_optimization_suggestions(error_df, optimization_df, selected_case: str) -> None:
-    st.subheader("数据优化建议")
+    render_section_title("数据补强建议")
     suggestions = get_optimization_suggestions_for_case(error_df, optimization_df, selected_case)
     if suggestions.empty:
-        st.info("暂无对应优化建议。")
+        render_empty_state("该模块用于展示数据闭环，当前暂无对应记录。")
         return
 
     for _, suggestion in suggestions.iterrows():
@@ -175,10 +192,10 @@ def render_optimization_suggestions(error_df, optimization_df, selected_case: st
 
 
 def render_preference_pairs(preference_pairs_df, model_outputs_df, selected_case: str) -> None:
-    st.subheader("Preference Pair")
+    render_section_title("Preference Pair")
     pairs = get_preference_pair_details_for_case(preference_pairs_df, model_outputs_df, selected_case)
     if pairs.empty:
-        st.info("该题暂无偏好样本。")
+        render_empty_state("该模块用于展示数据闭环，当前暂无对应记录。")
         return
 
     for _, pair in pairs.iterrows():

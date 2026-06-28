@@ -1,16 +1,17 @@
 import streamlit as st
 
 from src.data_service import DataLoadError, load_all_data
-from src.ui.navigation import PAGES
+from src.ui.components import apply_global_styles
+from src.ui.navigation import PAGES, render_sidebar_navigation
 from src.validators import ValidationResult, validate_evaluation_data
 
 
 st.set_page_config(page_title="FinDueEval MVP", layout="wide")
+apply_global_styles()
 
 try:
     data = load_all_data()
 except DataLoadError as exc:
-    st.sidebar.title("导航")
     st.error(str(exc))
     st.stop()
 
@@ -27,6 +28,5 @@ data_bundle = {
     "validation_result": validation_result,
 }
 
-st.sidebar.title("导航")
-page = st.sidebar.radio("选择页面", tuple(PAGES.keys()))
+page = render_sidebar_navigation()
 PAGES[page](data_bundle)

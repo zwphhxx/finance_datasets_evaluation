@@ -9,25 +9,30 @@ from src.metrics import (
     get_priority_error_samples,
     normalize_optimization_plan,
 )
-from src.ui.common import render_page_context
+from src.ui.common import PAGE_CONTEXTS
+from src.ui.components import (
+    render_empty_state,
+    render_info_panel,
+    render_page_header,
+    render_section_title,
+)
 
 
 def _display_table(df, columns, empty_message):
     if df is None or df.empty:
-        st.info(empty_message)
+        render_empty_state(empty_message)
         return
 
     available_columns = [column for column in columns if column in df.columns]
     if not available_columns:
-        st.info(empty_message)
+        render_empty_state(empty_message)
         return
 
     st.dataframe(df[available_columns], width="stretch", hide_index=True)
 
 
 def _show_error_distribution(error_df):
-    st.subheader("错误分布")
-    st.caption("按 error_type 汇总错误次数，并展示最高严重程度、涉及模型与题目。")
+    render_section_title("错误分布", "按 error_type 汇总错误次数，并展示最高严重程度、涉及模型与题目。")
     render_error_distribution_summary_chart(error_df)
 
     distribution = get_error_distribution_summary(error_df)
@@ -39,12 +44,11 @@ def _show_error_distribution(error_df):
 
 
 def _show_error_attribution(error_df, optimization_df):
-    st.subheader("错误归因")
-    st.caption("将错误类型关联到可能原因。缺少匹配记录时保留错误类型，并提示暂无归因。")
+    render_section_title("错误归因", "将错误类型关联到可能原因。缺少匹配记录时保留错误类型，并提示暂无归因。")
 
     actions = get_error_attribution_actions(error_df, optimization_df)
     if actions.empty:
-        st.info("暂无错误标签数据，无法展示错误归因。")
+        render_empty_state("暂无可展示数据")
         return
 
     attribution = actions.copy()
@@ -61,12 +65,11 @@ def _show_error_attribution(error_df, optimization_df):
 
 
 def _show_data_actions(error_df, optimization_df):
-    st.subheader("数据补强动作")
-    st.caption("数据补强建议以“补什么数据”为核心，并保留验证指标用于后续复测。")
+    render_section_title("数据补强动作", "数据补强建议以“补什么数据”为核心，并保留验证指标用于后续复测。")
 
     normalized_plan = normalize_optimization_plan(optimization_df)
     if normalized_plan.empty:
-        st.info("该模块用于展示数据闭环，当前暂无对应记录。")
+        render_empty_state("该模块用于展示数据闭环，当前暂无对应记录。")
         return
 
     actions = get_error_attribution_actions(error_df, optimization_df)
@@ -112,12 +115,11 @@ def _show_data_actions(error_df, optimization_df):
 
 
 def _show_priority_samples(error_df, optimization_df):
-    st.subheader("重点错误样本")
-    st.caption("优先展示高严重程度样本，帮助定位需要补强的数据类型。")
+    render_section_title("重点错误样本", "优先展示高严重程度样本，帮助定位需要补强的数据类型。")
 
     samples = get_priority_error_samples(error_df, optimization_df)
     if samples.empty:
-        st.info("暂无错误样本，无法展示重点错误样本。")
+        render_empty_state("暂无可展示数据")
         return
 
     sample_view = samples.copy()
@@ -142,8 +144,9 @@ def _show_priority_samples(error_df, optimization_df):
 
 
 def render_error_analysis(data_bundle):
-    st.header("错误归因与数据补强")
-    render_page_context("错误归因与数据补强")
+    context = PAGE_CONTEXTS["错误归因与数据补强"]
+    render_page_header("错误归因与数据补强", context["question"], context["boundary"])
+    render_info_panel("页面核心看点", context["highlights"])
 
     data = data_bundle["data"]
     error_df = data.errors

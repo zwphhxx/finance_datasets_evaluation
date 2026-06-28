@@ -3,6 +3,8 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from src.ui.components import render_score_badge
+
 
 PAGE_CONTEXTS = {
     "评测项目总览": {
@@ -82,6 +84,7 @@ def show_model_score(row: pd.Series) -> None:
         st.write("**评分：** 当前模型回答尚未评分。")
         return
 
+    render_score_badge(total_score)
     accuracy = row.get("accuracy_score", "暂无")
     reasoning = row.get("reasoning_score", "暂无")
     coverage = row.get("coverage_score", "暂无")

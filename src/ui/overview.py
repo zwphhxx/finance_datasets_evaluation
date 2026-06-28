@@ -2,15 +2,23 @@ from __future__ import annotations
 
 import streamlit as st
 
-from src.ui.common import render_page_context
+from src.ui.common import PAGE_CONTEXTS
+from src.ui.components import (
+    render_empty_state,
+    render_info_panel,
+    render_metric_card,
+    render_page_header,
+    render_section_title,
+    render_status_badge,
+)
 
 
 def render_data_quality_status(validation_result) -> None:
-    st.subheader("数据质量状态")
+    render_section_title("数据质量状态")
     if validation_result.is_valid:
-        st.success("数据质量检查通过。")
+        render_status_badge("通过", "success")
     else:
-        st.error("数据质量检查发现需处理的问题。")
+        render_status_badge("需处理", "danger")
 
     for message in validation_result.errors:
         st.error(message)
@@ -39,31 +47,35 @@ def get_overview_asset_cards(data) -> list[dict[str, str | int]]:
 def render_overview_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
     validation_result = data_bundle["validation_result"]
+    context = PAGE_CONTEXTS["评测项目总览"]
 
-    st.header("评测项目总览")
-    render_page_context("评测项目总览")
+    render_page_header("评测项目总览", context["question"], context["boundary"])
+    render_info_panel("页面核心看点", context["highlights"])
 
-    st.subheader("项目定位")
+    render_section_title("项目定位")
     st.write(
         "FinDueEval 用结构化 MVP 样本展示金融专业场景模型评测与数据优化闭环，"
         "重点说明模型哪里不稳定、为什么出错、后续补什么数据。"
     )
 
-    st.subheader("三个核心问题")
+    render_section_title("三个核心问题")
     question_cols = st.columns(3)
     question_cols[0].write("**模型哪里不稳定**\n\n通过分维度评分、错误类型和领域表现定位能力短板。")
     question_cols[1].write("**为什么出错**\n\n通过 Gold Answer、扣分说明和错误标签还原问题来源。")
     question_cols[2].write("**补什么数据**\n\n将错误归因转化为数据补强动作和后续验证指标。")
 
-    st.subheader("闭环流程")
+    render_section_title("闭环流程")
     st.write("专业任务 → Gold Answer → 模型回答 → Rubric评分 → 错误归因 → 数据补强 → 优化验证")
 
-    st.subheader("核心数据资产")
+    render_section_title("核心数据资产")
     cards = get_overview_asset_cards(data)
+    if not cards:
+        render_empty_state("暂无可展示数据")
+        return
     for row_start in range(0, len(cards), 3):
         cols = st.columns(3)
         for col, card in zip(cols, cards[row_start : row_start + 3]):
-            col.metric(card["label"], card["value"])
-            col.caption(card["note"])
+            with col:
+                render_metric_card(card["label"], card["value"], card["note"])
 
     render_data_quality_status(validation_result)

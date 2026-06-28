@@ -3,17 +3,25 @@ from __future__ import annotations
 import streamlit as st
 
 from src.metrics import filter_tasks_by_domain, get_task_domains
-from src.ui.common import render_page_context
+from src.ui.common import PAGE_CONTEXTS
+from src.ui.components import (
+    render_empty_state,
+    render_info_panel,
+    render_metric_card,
+    render_page_header,
+    render_section_title,
+)
 
 
 def render_tasks_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
     tasks_df = data.tasks
+    context = PAGE_CONTEXTS["专业任务集"]
 
-    st.header("专业任务集")
-    render_page_context("专业任务集")
+    render_page_header("专业任务集", context["question"], context["boundary"])
+    render_info_panel("页面核心看点", context["highlights"])
     if tasks_df.empty:
-        st.info("当前样本暂无可展示数据。")
+        render_empty_state("暂无可展示数据")
         return
 
     _render_task_coverage(data)
@@ -23,7 +31,7 @@ def render_tasks_page(data_bundle: dict) -> None:
     selected_domain = st.selectbox("选择领域", domains)
     filtered_tasks = filter_tasks_by_domain(tasks_df, selected_domain)
     if filtered_tasks.empty:
-        st.info("当前样本暂无可展示数据。")
+        render_empty_state("暂无可展示数据")
     else:
         display_columns = [
             column
@@ -43,18 +51,22 @@ def _render_task_coverage(data) -> None:
         else set()
     )
 
-    st.subheader("样本覆盖")
+    render_section_title("样本覆盖")
     cols = st.columns(4)
-    cols[0].metric("任务样本", len(tasks_df))
-    cols[1].metric("领域数", tasks_df["domain"].nunique() if "domain" in tasks_df else 0)
-    cols[2].metric("Gold Answer 覆盖", f"{len(task_ids & gold_ids)}/{len(task_ids)}")
-    cols[3].metric("模型回答覆盖", f"{len(task_ids & output_case_ids)}/{len(task_ids)}")
+    with cols[0]:
+        render_metric_card("任务样本", len(tasks_df), "脱敏专业任务。")
+    with cols[1]:
+        render_metric_card("领域数", tasks_df["domain"].nunique() if "domain" in tasks_df else 0, "当前样本覆盖。")
+    with cols[2]:
+        render_metric_card("Gold Answer 覆盖", f"{len(task_ids & gold_ids)}/{len(task_ids)}", "标准答案覆盖。")
+    with cols[3]:
+        render_metric_card("模型回答覆盖", f"{len(task_ids & output_case_ids)}/{len(task_ids)}", "回答样本覆盖。")
 
 
 def _render_task_distribution(tasks_df) -> None:
-    st.subheader("样本分布")
+    render_section_title("样本分布")
     if "domain" not in tasks_df:
-        st.info("当前样本暂无可展示数据。")
+        render_empty_state("暂无可展示数据")
         return
 
     distribution = tasks_df["domain"].value_counts().reset_index()
