@@ -11,6 +11,17 @@ SCORE_DIMENSIONS = [
     ("expression_score", "专业表达"),
 ]
 
+# Rubric full marks per dimension (sum to 100, matching total_score). This is
+# evaluation methodology config, not per-case data; used to compare dimensions
+# on a common attainment scale.
+SCORE_DIMENSION_FULL_MARKS = {
+    "accuracy_score": 30,
+    "reasoning_score": 20,
+    "coverage_score": 20,
+    "evidence_score": 15,
+    "expression_score": 15,
+}
+
 
 def has_columns(df: pd.DataFrame, columns: list[str]) -> bool:
     return all(column in df.columns for column in columns)
@@ -68,6 +79,37 @@ def get_model_error_type_counts(error_df: pd.DataFrame) -> pd.DataFrame:
     if error_df.empty or not has_columns(error_df, ["model_name", "error_type"]):
         return pd.DataFrame(columns=columns)
     return error_df.groupby(["model_name", "error_type"]).size().reset_index(name="count")
+
+
+def get_dimension_gap_ranking(scores_df: pd.DataFrame) -> pd.DataFrame:
+    """Average each Rubric dimension across all outputs as a share of full marks.
+
+    Returns columns [dimension, avg_score, full_mark, attainment] sorted from
+    weakest to strongest, so the first row is the shared weak dimension.
+    """
+    columns = ["dimension", "avg_score", "full_mark", "attainment"]
+    if scores_df.empty:
+        return pd.DataFrame(columns=columns)
+
+    rows = []
+    for column, label in SCORE_DIMENSIONS:
+        if column not in scores_df:
+            continue
+        full_mark = SCORE_DIMENSION_FULL_MARKS.get(column)
+        if not full_mark:
+            continue
+        avg_score = float(scores_df[column].mean())
+        rows.append(
+            {
+                "dimension": label,
+                "avg_score": avg_score,
+                "full_mark": full_mark,
+                "attainment": avg_score / full_mark,
+            }
+        )
+    if not rows:
+        return pd.DataFrame(columns=columns)
+    return pd.DataFrame(rows, columns=columns).sort_values("attainment").reset_index(drop=True)
 
 
 def get_model_domain_scores(scores_df: pd.DataFrame, tasks_df: pd.DataFrame) -> pd.DataFrame:

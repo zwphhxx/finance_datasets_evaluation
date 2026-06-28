@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -14,6 +15,56 @@ from src.metrics import (
     get_model_total_scores,
     get_optimization_comparison_metrics,
 )
+
+
+# Unified chart palette so every page shares one visual language instead of the
+# default Streamlit colors. Models map to the first colors in declared order.
+BRAND_BLUE = "#12345a"
+SERIES_PALETTE = ["#12345a", "#3b7dd8", "#9ec3ec", "#c89b3c", "#247a4b"]
+AXIS_LABEL_COLOR = "#607089"
+
+
+def _base_config(chart: alt.Chart) -> alt.Chart:
+    return (
+        chart.configure_view(strokeOpacity=0)
+        .configure_axis(
+            labelColor=AXIS_LABEL_COLOR,
+            titleColor=AXIS_LABEL_COLOR,
+            grid=False,
+            domainColor="#d8dee8",
+            tickColor="#d8dee8",
+        )
+        .configure_legend(labelColor=AXIS_LABEL_COLOR, titleColor=AXIS_LABEL_COLOR)
+    )
+
+
+def themed_bar_chart(
+    data: pd.DataFrame,
+    x: str,
+    y: str,
+    x_title: str,
+    y_title: str,
+    color_field: str | None = None,
+    color_title: str | None = None,
+) -> None:
+    """Render a brand-themed grouped/simple bar chart with Chinese axis titles."""
+    encodings = {
+        "x": alt.X(f"{x}:N", title=x_title, axis=alt.Axis(labelAngle=0)),
+        "y": alt.Y(f"{y}:Q", title=y_title),
+        "tooltip": list(data.columns),
+    }
+    if color_field:
+        encodings["color"] = alt.Color(
+            f"{color_field}:N",
+            title=color_title or color_field,
+            scale=alt.Scale(range=SERIES_PALETTE),
+        )
+        encodings["xOffset"] = alt.XOffset(f"{color_field}:N")
+    else:
+        encodings["color"] = alt.value(BRAND_BLUE)
+
+    chart = alt.Chart(data).mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(**encodings)
+    st.altair_chart(_base_config(chart), use_container_width=True)
 
 
 def render_model_average_score_chart(

@@ -1,24 +1,32 @@
 """Error attribution and data improvement workflow page."""
 
+from __future__ import annotations
+
+from html import escape
+
 import pandas as pd
 import streamlit as st
 
-from src.charts import render_error_distribution_summary_chart
 from src.metrics import (
     get_error_attribution_actions,
-    get_error_distribution_summary,
     get_priority_error_samples,
-    normalize_optimization_plan,
 )
 from src.ui.page_config import get_page_config
 from src.ui.components import (
     render_empty_state,
+    render_html,
     render_page_shell,
     render_section_title,
 )
 
 
 ACTION_PATH_COLUMNS = ["错误表现", "可能原因", "数据补强动作", "验证指标"]
+
+# Compact error-label table, Chinese headers ordered for business reading.
+ERROR_TABLE_COLUMNS = ["错误类型", "影响范围", "对应数据补强动作", "验证方式"]
+
+PRIORITY_RANK = {"高": 0, "中": 1, "低": 2}
+PRIORITY_BADGE = {"高": "danger", "中": "warning", "低": "neutral"}
 
 
 def build_error_action_path(actions_df):
@@ -42,124 +50,131 @@ def build_error_action_path(actions_df):
     return path_df[ACTION_PATH_COLUMNS]
 
 
-def _display_table(df, columns, empty_message):
-    if df is None or df.empty:
-        render_empty_state(empty_message)
-        return
+def build_top_data_actions(actions_df, limit: int = 3) -> list[dict]:
+    """Priority-sorted data actions derived from the error attribution table."""
+    if actions_df is None or actions_df.empty:
+        return []
 
-    available_columns = [column for column in columns if column in df.columns]
-    if not available_columns:
-        render_empty_state(empty_message)
-        return
+    ranked = actions_df.copy()
+    ranked["_priority_rank"] = ranked.get("priority", "").map(PRIORITY_RANK).fillna(9)
+    ranked["_count"] = pd.to_numeric(ranked.get("count", 0), errors="coerce").fillna(0)
+    ranked = ranked.sort_values(["_priority_rank", "_count"], ascending=[True, False])
 
-    st.dataframe(df[available_columns], width="stretch", hide_index=True)
-
-
-def _show_error_distribution(error_df):
-    render_section_title("错误分布", "按 error_type 汇总错误次数，并展示最高严重程度、涉及模型与题目。")
-    render_error_distribution_summary_chart(error_df)
-
-    distribution = get_error_distribution_summary(error_df)
-    if not distribution.empty:
-        top_error = distribution.iloc[0]
-        st.caption(
-            f"当前样本观察：{top_error['error_type']} 出现 {top_error['count']} 次，"
-            "后续应结合错误归因和数据补强动作复核。"
+    records = []
+    for _, row in ranked.head(limit).iterrows():
+        records.append(
+            {
+                "error_type": _text(row.get("error_type"), "未分类错误"),
+                "priority": _text(row.get("priority"), "未标注"),
+                "count": int(row["_count"]),
+                "severity": _text(row.get("severity"), "未标注"),
+                "models": _text(row.get("models"), "未标注"),
+                "data_action": _text(row.get("data_action"), "暂无对应动作"),
+                "sample_format": _text(row.get("sample_format"), "暂无样本格式"),
+                "validation_metric": _text(row.get("validation_metric"), "暂无验证方式"),
+            }
         )
-    _display_table(
-        distribution,
-        ["error_type", "count", "severity", "models", "cases"],
-        "暂无错误标签数据，无法展示错误分布。",
-    )
+    return records
+
+
+def build_error_label_table(actions_df) -> pd.DataFrame:
+    """Compact error-label view: type, impact, data action, validation."""
+    if actions_df is None or actions_df.empty:
+        return pd.DataFrame(columns=ERROR_TABLE_COLUMNS)
+
+    rows = []
+    for _, row in actions_df.iterrows():
+        count = _text(row.get("count"), "0")
+        severity = _text(row.get("severity"), "未标注")
+        models = _text(row.get("models"), "未标注")
+        rows.append(
+            {
+                "错误类型": _text(row.get("error_type"), "未分类错误"),
+                "影响范围": f"{count} 次 · 严重程度 {severity} · {models}",
+                "对应数据补强动作": _text(row.get("data_action"), "暂无对应动作"),
+                "验证方式": _text(row.get("validation_metric"), "暂无验证方式"),
+            }
+        )
+    return pd.DataFrame(rows, columns=ERROR_TABLE_COLUMNS)
+
+
+def render_error_analysis(data_bundle):
+    render_page_shell(get_page_config("error_analysis"))
+
+    data = data_bundle["data"]
+    error_df = data.errors
+    optimization_df = data.optimizations
+
+    actions = get_error_attribution_actions(error_df, optimization_df)
+    if actions.empty:
+        render_empty_state("暂无错误标签数据，无法展示错误归因。")
+        return
+
+    _render_top_actions(actions)
+    _show_error_action_path(error_df, optimization_df)
+    _render_error_label_table(actions)
+    _show_priority_samples(error_df, optimization_df)
+
+
+def _render_top_actions(actions) -> None:
+    render_section_title("Top 数据补强动作", "按优先级与出现频次，从错误标签收敛出的重点数据建设动作。")
+    records = build_top_data_actions(actions)
+    if not records:
+        render_empty_state("该模块用于展示数据闭环，当前暂无对应记录。")
+        return
+
+    st.caption("当前样本观察：以下动作直接对应高频或高严重程度的错误标签。")
+    for record in records:
+        priority_class = PRIORITY_BADGE.get(record["priority"], "neutral")
+        render_html(
+            f"""
+            <div class="evidence-card evidence-card-flagged">
+                <div class="evidence-head">
+                    <span class="status-badge status-neutral">{escape(record["error_type"])}</span>
+                    <span class="status-badge status-{priority_class}">优先级 {escape(record["priority"])}</span>
+                    <span class="evidence-title">影响 {record["count"]} 次 · 严重程度 {escape(record["severity"])}</span>
+                </div>
+                <div class="evidence-field">
+                    <div class="evidence-label">数据补强动作</div>
+                    <div class="evidence-value">{escape(record["data_action"])}</div>
+                </div>
+                <div class="evidence-field">
+                    <div class="evidence-label">样本格式</div>
+                    <div class="evidence-value">{escape(record["sample_format"])}</div>
+                </div>
+                <div class="evidence-field">
+                    <div class="evidence-label">验证方式</div>
+                    <div class="evidence-value">{escape(record["validation_metric"])}</div>
+                </div>
+            </div>
+            """
+        )
 
 
 def _show_error_action_path(error_df, optimization_df):
     render_section_title(
         "错误表现 → 可能原因 → 数据补强动作",
-        "将错误标签收敛成可执行的数据建设路径。",
+        "将错误标签收敛成可执行的数据建设路径，并保留验证指标用于复测。",
     )
     actions = get_error_attribution_actions(error_df, optimization_df)
     path_df = build_error_action_path(actions)
-    _display_table(
-        path_df,
-        ACTION_PATH_COLUMNS,
-        "该模块用于展示数据闭环，当前暂无对应记录。",
-    )
-
-
-def _show_error_attribution(error_df, optimization_df):
-    render_section_title("错误归因", "将错误类型关联到可能原因。缺少匹配记录时保留错误类型，并提示暂无归因。")
-
-    actions = get_error_attribution_actions(error_df, optimization_df)
-    if actions.empty:
-        render_empty_state("暂无可展示数据")
-        return
-
-    attribution = actions.copy()
-    attribution["root_cause"] = attribution["root_cause"].fillna("")
-    attribution["root_cause"] = attribution["root_cause"].where(
-        attribution["root_cause"].astype(str).str.strip() != "",
-        "暂无匹配归因记录。",
-    )
-    _display_table(
-        attribution,
-        ["error_type", "count", "severity", "root_cause", "models", "cases"],
-        "暂无错误归因数据。",
-    )
-
-
-def _show_data_actions(error_df, optimization_df):
-    render_section_title("数据补强动作", "数据补强建议以“补什么数据”为核心，并保留验证指标用于后续复测。")
-
-    normalized_plan = normalize_optimization_plan(optimization_df)
-    if normalized_plan.empty:
+    if path_df.empty:
         render_empty_state("该模块用于展示数据闭环，当前暂无对应记录。")
         return
+    st.dataframe(path_df, width="stretch", hide_index=True)
 
-    actions = get_error_attribution_actions(error_df, optimization_df)
-    if actions.empty:
-        _display_table(
-            normalized_plan,
-            [
-                "action_id",
-                "error_type",
-                "data_action",
-                "sample_format",
-                "priority",
-                "expected_effect",
-                "validation_metric",
-                "status",
-            ],
-            "暂无数据补强建议。",
-        )
+
+def _render_error_label_table(actions) -> None:
+    render_section_title("错误标签明细", "错误类型、影响范围、对应数据补强动作与验证方式。")
+    table = build_error_label_table(actions)
+    if table.empty:
+        render_empty_state("暂无错误标签数据。")
         return
-
-    action_view = actions.copy()
-    for column in ["data_action", "sample_format", "expected_effect", "validation_metric", "status"]:
-        action_view[column] = action_view[column].fillna("")
-        action_view[column] = action_view[column].where(
-            action_view[column].astype(str).str.strip() != "",
-            "暂无匹配优化动作。" if column == "data_action" else "暂无记录。",
-        )
-
-    _display_table(
-        action_view,
-        [
-            "error_type",
-            "count",
-            "data_action",
-            "sample_format",
-            "priority",
-            "expected_effect",
-            "validation_metric",
-            "status",
-        ],
-        "暂无数据补强建议。",
-    )
+    st.dataframe(table, width="stretch", hide_index=True)
 
 
 def _show_priority_samples(error_df, optimization_df):
-    render_section_title("重点错误样本", "优先展示高严重程度样本，帮助定位需要补强的数据类型。")
+    render_section_title("重点错误样本", "优先展示高严重程度样本，定位需要补强的数据类型。")
 
     samples = get_priority_error_samples(error_df, optimization_df)
     if samples.empty:
@@ -170,49 +185,30 @@ def _show_priority_samples(error_df, optimization_df):
     sample_view["data_action"] = sample_view["data_action"].fillna("")
     sample_view["data_action"] = sample_view["data_action"].where(
         sample_view["data_action"].astype(str).str.strip() != "",
-        "暂无匹配优化动作。",
+        "暂无匹配数据补强动作。",
     )
-    _display_table(
-        sample_view,
-        [
-            "case_id",
-            "model_name",
-            "error_type",
-            "severity",
-            "error_description",
-            "data_action",
-            "validation_metric",
-        ],
-        "暂无重点错误样本。",
-    )
-
-
-def render_error_analysis(data_bundle):
-    render_page_shell(get_page_config("error_analysis"))
-
-    data = data_bundle["data"]
-    error_df = data.errors
-    optimization_df = data.optimizations
-
-    tab_path, tab_distribution, tab_attribution, tab_actions, tab_samples = st.tabs(
-        ["错误到数据补强", "错误分布", "错误归因", "数据补强动作", "重点错误样本"]
-    )
-
-    with tab_path:
-        _show_error_action_path(error_df, optimization_df)
-
-    with tab_distribution:
-        _show_error_distribution(error_df)
-
-    with tab_attribution:
-        _show_error_attribution(error_df, optimization_df)
-
-    with tab_actions:
-        _show_data_actions(error_df, optimization_df)
-
-    with tab_samples:
-        _show_priority_samples(error_df, optimization_df)
+    rename = {
+        "case_id": "案例编号",
+        "model_name": "模型",
+        "error_type": "错误类型",
+        "severity": "严重程度",
+        "error_description": "错误说明",
+        "data_action": "数据补强动作",
+        "validation_metric": "验证方式",
+    }
+    available = [column for column in rename if column in sample_view.columns]
+    display = sample_view[available].rename(columns=rename)
+    st.dataframe(display, width="stretch", hide_index=True)
 
 
 def render_error_analysis_page(data_bundle):
     render_error_analysis(data_bundle)
+
+
+def _text(value, fallback: str = "未标注") -> str:
+    if value is None:
+        return fallback
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "none", "null"}:
+        return fallback
+    return text
