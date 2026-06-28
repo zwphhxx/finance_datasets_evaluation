@@ -119,7 +119,7 @@ def _render_model_selector(provider_name: str) -> str:
     manual_id = st.text_input(
         "或手动填写模型 ID（留空则使用上方所选）",
         key="live_eval_model_manual",
-        placeholder="例如 Qwen/Qwen2.5-7B-Instruct",
+        placeholder="例如 THUDM/GLM-4-9B-0414",
     )
     return manual_id.strip() or selected_from_list
 
