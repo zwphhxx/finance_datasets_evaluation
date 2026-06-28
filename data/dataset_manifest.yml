@@ -1,0 +1,112 @@
+# 数据集清单（Dataset Manifest）
+#
+# 用途：描述 FinDueEval 评测数据集的版本、资产结构、样本范围、Rubric 维度与适用边界。
+# 该文件面向数据资产管理与质量校验，不参与 Streamlit Demo 页面渲染。
+# 新增任务题、模型回答、评分或错误标签时，应同步更新本清单的范围与版本，
+# 再运行 scripts/validate_dataset.py 校验数据一致性。
+
+dataset: FinDueEval-MVP
+version: "0.1.0"
+updated: "2026-06-28"
+description: >-
+  金融尽职调查方向的模型评测样例数据集，覆盖任务题、Gold Answer、Rubric、模型回答、
+  评分记录、错误标签与数据补强建议，用于演示评测闭环与数据建设方法。
+
+# 数据资产清单：每类资产对应一个数据文件及其主键（无单列主键时记为 null）。
+assets:
+  tasks:
+    file: tasks.csv
+    primary_key: case_id
+    description: 专业尽调任务题。
+  gold_answers:
+    file: gold_answers.json
+    primary_key: case_id
+    description: 任务参考答案，定义核心结论、关键依据与答案边界。
+  model_outputs:
+    file: model_outputs.csv
+    primary_key: output_id
+    description: 各模型对任务的回答记录。
+  scores:
+    file: scores.csv
+    primary_key: output_id
+    description: 模型回答的 Rubric 维度评分记录。
+  error_labels:
+    file: error_labels.csv
+    primary_key: null
+    description: 模型回答的错误标签，类型取值受 label_taxonomy.yml 约束。
+  optimization_plan:
+    file: optimization_plan.csv
+    primary_key: null
+    description: 由错误标签收敛出的数据补强建议。
+  optimization_comparison:
+    file: optimization_comparison.csv
+    primary_key: experiment_id
+    description: 优化前后指标对比，用于验证数据补强效果。
+  preference_pairs:
+    file: preference_pairs.csv
+    primary_key: pair_id
+    description: 回答偏好对照样本。
+  evaluation_runs:
+    file: evaluation_runs.csv
+    primary_key: run_id
+    description: 评测批次记录。
+
+# 样本范围：声明数据集当前覆盖的领域、任务类型、难度与模型范围。
+# 校验脚本据此核对数据文件中的取值是否落在声明范围内。
+scope:
+  domains:
+    - Capital Markets
+    - Financial
+    - Legal
+    - Medical
+  task_types:
+    - Regulatory Analysis
+    - Revenue Verification
+    - Inventory Assessment
+    - Legal Compliance
+    - Clinical Analysis
+  difficulties:
+    - Medium
+    - Hard
+  models:
+    - Model_A_baseline
+    - Model_B_rag
+    - Model_C_prompt_v2
+
+# Rubric 维度与权重：各维度满分相加应等于 total。
+# scores.csv 须包含全部维度字段，total_score 字段记录维度合计。
+rubric:
+  total: 100
+  total_field: total_score
+  dimensions:
+    - field: accuracy_score
+      name: 专业准确性
+      weight: 30
+    - field: reasoning_score
+      name: 推理与场景适配
+      weight: 20
+    - field: coverage_score
+      name: 风险覆盖
+      weight: 20
+    - field: evidence_score
+      name: 依据可靠性
+      weight: 15
+    - field: expression_score
+      name: 专业表达
+      weight: 15
+
+# Gold Answer 质量门槛：
+#   required_fields 为每条 Gold Answer 必须具备的核心要素；
+#   boundary_any_of 表示答案边界与红线错误至少具备其一。
+gold_answer:
+  required_fields:
+    - conclusion
+    - basis
+  boundary_any_of:
+    - risk_boundary
+    - red_line_errors
+
+# 适用边界：说明数据集规模与结论的有效范围。
+boundary: >-
+  当前数据集为 MVP 样例规模，用于展示数据资产结构、质量门槛、版本管理与可扩展接入方式，
+  样本量有限，不代表真实生产环境或大规模实验结论。
