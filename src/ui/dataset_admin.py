@@ -55,6 +55,7 @@ _ISSUE_BADGE = {"error": "danger", "warning": "warning"}
 def render_dataset_admin_page(data_bundle: dict) -> None:
     render_page_shell(get_page_config("dataset_admin"))
     st.caption(CRUD_NOTE)
+    _render_rerun_prompt()
 
     if not ds.database_ready():
         _render_uninitialized(data_bundle)
@@ -88,6 +89,7 @@ def _render_uninitialized(data_bundle: dict) -> None:
             st.error(f"初始化失败：{exc}")
         else:
             st.success(f"初始化完成，共导入 {sum(counts.values())} 条 seed 记录。")
+            _mark_data_changed()
             st.rerun()
 
     data = data_bundle.get("data")
@@ -226,6 +228,7 @@ def _render_task_create_form(records: list[dict]) -> None:
             st.error(str(exc))
         else:
             st.success(f"已新增任务 {case_id.strip()}。")
+            _mark_data_changed()
             st.rerun()
 
 
@@ -283,6 +286,7 @@ def _render_task_edit_form(records: list[dict]) -> None:
             },
         )
         st.success(f"已保存任务 {selected}。")
+        _mark_data_changed()
         st.rerun()
 
     _render_status_toggle(row, selected)
@@ -294,11 +298,13 @@ def _render_status_toggle(row: dict, case_id: str) -> None:
         if st.button("启用任务", key="admin_task_activate"):
             ds.set_task_case_status(case_id, ds.ACTIVE_STATUS)
             st.success(f"已启用任务 {case_id}。")
+            _mark_data_changed()
             st.rerun()
     else:
         if st.button("停用任务（软删除）", key="admin_task_deactivate"):
             ds.set_task_case_status(case_id, ds.INACTIVE_STATUS)
             st.success(f"已停用任务 {case_id}，记录保留为 inactive。")
+            _mark_data_changed()
             st.rerun()
 
 
@@ -347,6 +353,7 @@ def _render_gold_admin() -> None:
             st.error(str(exc))
         else:
             st.success(f"已保存 {selected} 的 Gold Answer。")
+            _mark_data_changed()
             st.rerun()
 
 
@@ -425,6 +432,7 @@ def _render_rubric_edit_form(records: list[dict]) -> None:
             {"weight": weight, "full_mark": weight, "full_mark_standard": standard, "deduction_rules": rules},
         )
         st.success(f"已保存维度 {name_by_field.get(selected, selected)}。")
+        _mark_data_changed()
         st.rerun()
 
 
@@ -533,6 +541,7 @@ def _render_label_create_form(records: list[dict]) -> None:
             st.error(str(exc))
         else:
             st.success(f"已新增错误标签 {error_label.strip()}。")
+            _mark_data_changed()
             st.rerun()
 
 
@@ -579,6 +588,7 @@ def _render_label_edit_form(records: list[dict]) -> None:
             },
         )
         st.success(f"已保存错误标签 {selected}。")
+        _mark_data_changed()
         st.rerun()
 
     status = str(row.get("status") or "active").strip().lower()
@@ -586,11 +596,13 @@ def _render_label_edit_form(records: list[dict]) -> None:
         if st.button("启用标签", key="admin_label_activate"):
             ds.set_error_label_status(selected, ds.ACTIVE_STATUS)
             st.success(f"已启用错误标签 {selected}。")
+            _mark_data_changed()
             st.rerun()
     else:
         if st.button("停用标签（软删除）", key="admin_label_deactivate"):
             ds.set_error_label_status(selected, ds.INACTIVE_STATUS)
             st.success(f"已停用错误标签 {selected}，记录保留为 inactive。")
+            _mark_data_changed()
             st.rerun()
 
 
@@ -686,6 +698,7 @@ def _render_action_create_form() -> None:
             st.error(str(exc))
         else:
             st.success(f"已新增补强动作，关联标签 {related}。")
+            _mark_data_changed()
             st.rerun()
 
 
@@ -743,6 +756,7 @@ def _render_action_edit_form(records: list[dict]) -> None:
             st.error(str(exc))
         else:
             st.success("已保存补强动作。")
+            _mark_data_changed()
             st.rerun()
 
     status = str(row.get("status") or "active").strip().lower()
@@ -750,11 +764,13 @@ def _render_action_edit_form(records: list[dict]) -> None:
         if st.button("启用动作", key="admin_action_activate"):
             ds.set_improvement_action_status(selected, ds.ACTIVE_STATUS)
             st.success("已启用补强动作。")
+            _mark_data_changed()
             st.rerun()
     else:
         if st.button("停用动作（软删除）", key="admin_action_deactivate"):
             ds.set_improvement_action_status(selected, ds.INACTIVE_STATUS)
             st.success("已停用补强动作，记录保留为 inactive。")
+            _mark_data_changed()
             st.rerun()
 
 
@@ -773,3 +789,27 @@ def _text(value: object, fallback: str = "暂无记录") -> str:
 def _index_of(options: list, value: object) -> int:
     text = "" if value is None else str(value).strip()
     return options.index(text) if text in options else 0
+
+
+
+def _mark_data_changed() -> None:
+    """数据集发生变更后设置标记，提醒用户重新运行评测以查看最新结论。"""
+    import streamlit as st
+
+    st.session_state["admin_data_changed"] = True
+
+
+def _render_rerun_prompt() -> None:
+    """当数据集最近被修改且尚未重新运行时，在页面顶部提示重跑。"""
+    import streamlit as st
+
+    if not st.session_state.get("admin_data_changed"):
+        return
+    render_info_panel(
+        "数据已更新",
+        "当前分析页仍基于上次运行结果；建议重新运行评测以查看最新结论。",
+    )
+    if st.button("重新运行评测 →", key="admin_rerun_eval", type="primary"):
+        st.session_state.current_page = "eval_run"
+        st.session_state.pop("admin_data_changed", None)
+        st.rerun()

@@ -19,6 +19,7 @@ from src.ui.components import (
     render_card,
     render_context_grid,
     render_empty_state,
+    render_empty_state_with_actions,
     render_html,
     render_info_panel,
     render_page_shell,
@@ -37,11 +38,19 @@ _TIER_BADGE_LEVEL = {
 
 def render_model_boundary_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
+    eval_status = data_bundle.get("eval_status") or {}
     render_page_shell(get_page_config("model_boundary"))
-    render_review_caveat(data_bundle.get("eval_status"))
+    render_review_caveat(eval_status)
+
+    if not eval_status.get("live"):
+        render_empty_state_with_actions(
+            "当前暂无真实评测结果。请先发起一次评测，再查看模型可用边界。",
+            [("发起评测", "eval_run"), ("浏览任务样本", "tasks")],
+        )
+        return
 
     if data.tasks.empty or data.scores.empty:
-        render_empty_state("暂无可展示数据")
+        render_empty_state("暂无可展示的评分数据")
         return
 
     manifest = load_dataset_manifest()

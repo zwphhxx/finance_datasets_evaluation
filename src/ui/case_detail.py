@@ -14,6 +14,8 @@ from src.metrics import (
     get_task_by_case_id,
     merge_case_outputs_with_scores,
 )
+from app.services import dataset_service as ds
+from app.services import scorer as sc
 from src.ui.common import has_value
 from src.gold_quality import evaluate_gold_quality, field_list, field_text
 from src.ui.page_config import get_page_config
@@ -29,6 +31,7 @@ from src.ui.components import (
     render_answer_boundary_panel,
     render_card,
     render_empty_state,
+    render_empty_state_with_actions,
     render_html,
     render_info_panel,
     render_preference_comparison,
@@ -38,15 +41,23 @@ from src.ui.components import (
 )
 
 
-# Rubric definition: dimension column, Chinese label, full marks, and the
-# evaluation basis the dimension checks. Full marks sum to 100 and match the
-# stored total_score; this is rubric methodology, not per-case data.
+# 当 Rubric 数据表未维护满分标准时，用作 Gold 要求展示的默认依据文案。
+# 真实来源应为 dataset_service.get_rubric_dimensions() 返回的 full_mark_standard。
+_DEFAULT_DIMENSION_BASIS = {
+    "accuracy_score": "结论与关键计算是否准确，并对照判断依据。",
+    "reasoning_score": "分析逻辑是否完整，是否贴合任务场景。",
+    "coverage_score": "是否覆盖必须关注的风险点与核查事项。",
+    "evidence_score": "是否提供法规、数据等可靠依据支撑结论。",
+    "expression_score": "表达是否清晰、审慎，符合专业报告风格。",
+}
+
+# 保留旧版 RUBRIC 常量以兼容既有测试；页面实际渲染使用 _get_rubric() 从 DB / manifest 读取。
 RUBRIC = [
-    ("accuracy_score", "专业准确性", 30, "结论与关键计算是否准确，并对照判断依据。"),
-    ("reasoning_score", "推理与场景适配", 20, "分析逻辑是否完整，是否贴合任务场景。"),
-    ("coverage_score", "风险覆盖", 20, "是否覆盖必须关注的风险点与核查事项。"),
-    ("evidence_score", "依据可靠性", 15, "是否提供法规、数据等可靠依据支撑结论。"),
-    ("expression_score", "专业表达", 15, "表达是否清晰、审慎，符合专业报告风格。"),
+    ("accuracy_score", "专业准确性", 30, _DEFAULT_DIMENSION_BASIS["accuracy_score"]),
+    ("reasoning_score", "推理与场景适配", 20, _DEFAULT_DIMENSION_BASIS["reasoning_score"]),
+    ("coverage_score", "风险覆盖", 20, _DEFAULT_DIMENSION_BASIS["coverage_score"]),
+    ("evidence_score", "依据可靠性", 15, _DEFAULT_DIMENSION_BASIS["evidence_score"]),
+    ("expression_score", "专业表达", 15, _DEFAULT_DIMENSION_BASIS["expression_score"]),
 ]
 
 SEVERITY_BADGE = {"高": "danger", "中": "warning", "低": "neutral"}
@@ -72,10 +83,18 @@ def get_output_row(merged_outputs: pd.DataFrame, model_name: str) -> pd.Series |
     return rows.iloc[0]
 
 
+def _get_rubric() -> list[dict]:
+    """返回当前生效的 Rubric 维度，优先使用 DB / manifest 维护的值。"""
+    return ds.get_rubric_dimensions()
+
+
 def build_rubric_rows(score_row: pd.Series) -> list[dict]:
     rows = []
-    for column, label, full, basis in RUBRIC:
-        if not has_value(score_row.get(column)):
+    for dim in _get_rubric():
+        column = dim["field"]
+        label = dim["name"]
+        full = int(dim.get("full_mark") or 0)
+        if not full or not has_value(score_row.get(column)):
             continue
         score = float(score_row.get(column))
         ratio = score / full if full else 0.0
@@ -85,8 +104,10 @@ def build_rubric_rows(score_row: pd.Series) -> list[dict]:
             level_text, level_class = "部分达标", "warning"
         else:
             level_text, level_class = "需改进", "danger"
+        basis = dim.get("full_mark_standard") or _DEFAULT_DIMENSION_BASIS.get(column, "")
         rows.append(
             {
+                "field": column,
                 "dimension": label,
                 "score": score,
                 "full": full,
@@ -224,12 +245,23 @@ def _score_badge_level(score) -> str:
 
 def render_case_detail_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
+    eval_status = data_bundle.get("eval_status") or {}
     render_page_shell(get_page_config("case_detail"))
-    render_review_caveat(data_bundle.get("eval_status"))
+    render_review_caveat(eval_status)
 
     case_ids = get_case_ids(data.tasks)
     if not case_ids:
-        render_empty_state("暂无可展示数据")
+        render_empty_state_with_actions(
+            "暂无可展示的任务样本。",
+            [("去数据集管理", "dataset_admin"), ("浏览数据集质量", "dataset_quality")],
+        )
+        return
+
+    if not eval_status.get("live"):
+        render_empty_state_with_actions(
+            "当前暂无真实评测结果。请先发起一次评测，再查看单题深度分析。",
+            [("发起评测", "eval_run"), ("浏览任务样本", "tasks")],
+        )
         return
 
     domain_by_case = _domain_by_case(data.tasks)
@@ -277,6 +309,7 @@ def render_case_detail_page(data_bundle: dict) -> None:
 
     # Screen 3 — single scoring matrix
     _render_scoring_matrix(output_row, data.errors)
+    _render_case_review(output_row, eval_status)
 
     _render_preference_section(data.preference_pairs, data.model_outputs, selected_case)
 
@@ -481,6 +514,47 @@ def _render_scoring_matrix(output_row: pd.Series | None, errors_df) -> None:
     if unmapped:
         extra = "、".join(f"{error_type}（{severity}）" for error_type, severity in unmapped)
         st.caption(f"其他错误标签：{extra}")
+
+
+def _render_case_review(output_row: pd.Series | None, eval_status: dict) -> None:
+    """在当前 (case, model) 评分未复核时，提供就地复核表单。"""
+    if output_row is None:
+        return
+    score_run_id = eval_status.get("score_run_id")
+    if not score_run_id:
+        return
+    case_id = str(output_row.get("case_id") or "")
+    model_name = str(output_row.get("model_name") or "")
+    row = sc.load_score_row_for_case(score_run_id, case_id, model_name)
+    if row is None:
+        return
+    review_status = str(row.get("review_status") or "pending")
+    if review_status == "confirmed":
+        render_info_panel("复核状态", "本条评分已复核归档。")
+        return
+
+    dimensions = ds.get_rubric_dimensions()
+    render_section_title("人工复核", "对照 Gold Answer 与模型回答，确认或修订各维度分。")
+    cols = st.columns(len(dimensions))
+    edited: dict[str, int] = {}
+    for i, dim in enumerate(dimensions):
+        field_name = dim["field"]
+        full_mark = int(dim.get("full_mark") or 0)
+        current = row.get(field_name)
+        value = int(current) if current is not None and str(current) != "nan" else 0
+        edited[field_name] = cols[i].number_input(
+            dim["name"], min_value=0, max_value=full_mark, value=min(value, full_mark),
+            step=1, key=f"case_review_score::{row['id']}::{field_name}",
+        )
+    note = st.text_area(
+        "复核说明", value=str(row.get("review_note") or ""), key=f"case_review_note::{row['id']}"
+    )
+    if st.button("确认并归档（人工复核通过）", key=f"case_review_confirm::{row['id']}"):
+        if sc.confirm_score_review(int(row["id"]), edited, note):
+            st.success("已归档为已复核（confirmed）。")
+            st.rerun()
+        else:
+            st.warning("归档失败：请确认 SQLite 数据层已初始化。")
 
 
 def _render_preference_section(preference_pairs_df, model_outputs_df, selected_case: str) -> None:

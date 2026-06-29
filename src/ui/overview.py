@@ -4,14 +4,13 @@ import streamlit as st
 
 from src.metrics import get_dimension_gap_ranking
 from src.gold_quality import evaluate_gold_quality
-from src.ui.eval_console import render_eval_console
 from src.ui.page_config import get_page_config
 from src.ui.tasks import DOMAIN_LABELS, display_label
 from src.ui.components import (
+    render_card,
     render_context_grid,
     render_empty_state,
     render_info_panel,
-    render_loop_rail,
     render_metric_card,
     render_page_shell,
     render_section_title,
@@ -204,17 +203,22 @@ def render_data_quality_status(validation_result) -> None:
         st.warning(message)
 
 
-def _open_case_detail() -> None:
-    st.session_state.current_page = "case_detail"
+def _open_page(page_key: str) -> None:
+    st.session_state.current_page = page_key
 
 
 def render_overview_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
     validation_result = data_bundle["validation_result"]
+    eval_status = data_bundle.get("eval_status") or {}
+    data_context = data_bundle.get("data_context") or {}
     render_page_shell(get_page_config("overview"))
 
-    # 评测控制台：选模型 / 任务 / 裁判并运行真实评测；运行后下方与各分析页展示真实结果。
-    render_eval_console(data_bundle["base"])
+    render_section_title("当前数据上下文", "当前结论基于以下数据源与运行状态。")
+    _render_data_context(data_context)
+
+    render_section_title("快速入口", "根据当前状态选择下一步操作。")
+    _render_quick_entry_cards(eval_status)
 
     render_section_title("数据集核心指标", "关键数字均由当前数据文件动态计算。")
     metric_cards = get_dataset_metric_cards(data)
@@ -223,11 +227,8 @@ def render_overview_page(data_bundle: dict) -> None:
         with column:
             render_metric_card(card["label"], card["value"], card["note"])
 
-    render_info_panel(
-        "评测边界",
-        "题库与 Gold Answer 为 MVP 脱敏样本；模型回答与评分来自首页控制台的真实评测运行，"
-        "评分为裁判模型建议分、需人工复核。下列结论仅用于当前样本内观察，不代表真实模型采购或业务决策。",
-    )
+    if eval_status.get("live"):
+        _render_recent_run_status(eval_status)
 
     left, right = st.columns([1, 1], gap="large")
     with left:
@@ -278,18 +279,58 @@ def render_overview_page(data_bundle: dict) -> None:
                 f"（{'、'.join(gold_summary['partial_cases'])}），可在「数据集质量与扩展框架」查看缺失要素。"
             )
 
-    st.button("进入样板题评测 →", on_click=_open_case_detail, key="overview_to_case_detail")
-
     render_data_quality_status(validation_result)
 
-    with st.expander("关于本项目：评测定位与数据闭环", expanded=False):
-        st.write(
-            "FinDueEval 用结构化样例数据演示金融尽调场景下的模型评测与数据优化闭环："
-            "专业任务 → Gold Answer → 模型回答 → Rubric 评分 → 错误归因 → 数据补强 → 优化验证。"
-            "当前为 MVP 样本，重点说明数据如何组织、模型在哪里不稳定、后续应补什么数据。"
-        )
-        render_loop_rail(get_evaluation_loop_steps())
-        summary_items = get_overview_summary_items(data)
-        if summary_items:
-            render_section_title("数据资产摘要", "各类资产的关键计数，详情见对应页面。")
-            render_context_grid(summary_items)
+
+def _render_data_context(context: dict) -> None:
+    items = [
+        ("数据源", context.get("data_source", "未知")),
+        ("可用任务", context.get("task_count", "—")),
+        ("当前运行", context.get("run_id", "—")),
+        ("评分状态", context.get("score_status", "—")),
+    ]
+    render_context_grid(items)
+
+
+def _render_quick_entry_cards(eval_status: dict) -> None:
+    live = bool(eval_status.get("live"))
+    cols = st.columns(4)
+    cards = [
+        ("发起评测", "选择模型与任务并运行", "eval_run", True),
+        ("浏览任务", "查看题库与 Gold 覆盖", "tasks", True),
+        ("单题评测", "查看模型回答与评分矩阵", "case_detail", live),
+        ("模型诊断", "多模型能力对比与边界", "model_diagnosis", live),
+    ]
+    for col, (title, desc, page, enabled) in zip(cols, cards):
+        with col:
+            render_card(
+                f'<div style="font-weight:750;color:var(--fde-blue);margin-bottom:0.3rem;">{title}</div>'
+                f'<div style="font-size:0.88rem;color:var(--fde-muted);">{desc}</div>'
+            )
+            st.button(
+                "进入 →",
+                key=f"overview_entry_{page}",
+                on_click=_open_page,
+                args=(page,),
+                disabled=not enabled,
+                use_container_width=True,
+            )
+
+
+def _render_recent_run_status(eval_status: dict) -> None:
+    render_section_title("最近运行状态", "来自当前会话的真实评测运行。")
+    run_id = str(eval_status.get("run_id") or "—")
+    scored = int(eval_status.get("scored", 0) or 0)
+    confirmed = int(eval_status.get("confirmed", 0) or 0)
+    pending = int(eval_status.get("pending", 0) or 0)
+    status_text = (
+        f"run_id：{run_id} · 已评分 {scored} 条 · 已复核 {confirmed} 条 · 待复核 {pending} 条"
+    )
+    if pending > 0:
+        render_info_panel("待复核", status_text)
+    else:
+        render_info_panel("运行完成", status_text)
+
+
+def _open_case_detail() -> None:
+    st.session_state.current_page = "case_detail"

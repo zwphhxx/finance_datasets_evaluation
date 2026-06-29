@@ -9,6 +9,7 @@ from src.ui.page_config import PAGE_CONFIGS
 EXPECTED_PAGE_ORDER = [
     "overview",
     "tasks",
+    "eval_run",
     "case_detail",
     "model_diagnosis",
     "model_boundary",
@@ -62,6 +63,7 @@ class UIComponentsTests(unittest.TestCase):
         page_files = [
             "src/ui/overview.py",
             "src/ui/tasks.py",
+            "src/ui/eval_run_page.py",
             "src/ui/case_detail.py",
             "src/ui/model_diagnosis.py",
             "src/ui/error_analysis.py",

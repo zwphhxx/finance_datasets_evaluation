@@ -1,0 +1,422 @@
+"""发起真实评测页面（从 overview 中拆出的独立页面）。
+
+把原「真实模型评测」控制台从 overview 顶部搬到独立页，按向导式流程组织：
+选 Provider / 模型（可多选）/ 任务 → 运行真实（或 mock）生成 → 裁判对照 Gold + Rubric 打建议分 →
+人工复核归档。运行结果经 data_resolver 组装后注入各分析页。
+
+边界：被评测模型只看到任务白名单字段，绝不发送 Gold；裁判可见 Gold（评分必需，链路独立）。
+"""
+
+from __future__ import annotations
+
+from html import escape
+
+import streamlit as st
+
+from app.models import siliconflow as sf
+from app.models.registry import available_providers, get_text_provider
+from app.services import dataset_service as ds
+from app.services import eval_runner as er
+from app.services import eval_state
+from app.services import scorer as sc
+from app.services.data_resolver import build_data_context_info
+from src.ui.components import (
+    render_empty_state,
+    render_html,
+    render_info_panel,
+    render_page_shell,
+    render_section_title,
+)
+from src.ui.page_config import get_page_config
+from src.ui.tasks import TASK_TYPE_LABELS, display_label, summarize_text
+
+BOUNDARY_NOTE = (
+    "模型回答仅用于评测，不构成金融、法律或投资建议；评分为裁判模型建议分，需人工复核确认后归档。"
+)
+
+_STATUS_BADGE = {
+    "success": ("成功", "success"),
+    "mock": ("mock", "neutral"),
+    "failed": ("失败", "danger"),
+}
+
+
+def _set_page(page_key: str) -> None:
+    st.session_state.current_page = page_key
+
+
+def render_eval_run_page(data_bundle: dict) -> None:
+    base = data_bundle["base"]
+    render_page_shell(get_page_config("eval_run"))
+    render_info_panel("评测边界", BOUNDARY_NOTE)
+
+    tasks_df = base.tasks
+    if tasks_df is None or tasks_df.empty:
+        render_empty_state("当前数据集没有可用任务样本。")
+        return
+    task_records = tasks_df.to_dict("records")
+
+    # 步骤指示器
+    _render_step_rail()
+
+    has_run = eval_state.has_run()
+    with st.expander("步骤 1：选择 Provider、模型与任务", expanded=not has_run):
+        provider_name = _render_config_controls()
+        model_ids = _render_model_selector(provider_name)
+        selected_tasks = _render_task_selector(task_records)
+        temperature, max_tokens = _render_parameters()
+        _render_run_button(provider_name, model_ids, selected_tasks, temperature, max_tokens)
+
+    _render_results()
+
+    with st.expander("步骤 2：裁判自动评分", expanded=False):
+        _render_scoring(base, provider_name, task_records)
+
+    _render_score_results()
+    _render_completion_cta()
+
+
+def _render_step_rail() -> None:
+    steps = ["选择配置", "运行生成", "裁判评分", "人工复核", "查看分析"]
+    current = 0
+    if eval_state.has_run():
+        current = 1
+    if eval_state.get_last_score() is not None:
+        current = 2
+    # 复核状态由数据层决定，页面渲染时不再实时计算
+    if current >= 2:
+        current = min(current, len(steps) - 1)
+    html = '<div class="loop-rail">'
+    for idx, label in enumerate(steps, start=1):
+        active_class = "loop-step" if idx - 1 <= current else "loop-step"
+        muted = "color:var(--fde-muted);" if idx - 1 > current else ""
+        html += (
+            f'<div class="{active_class}" style="{muted}">'
+            f'<div class="loop-step-index">步骤 {idx:02d}</div>'
+            f'<div class="loop-step-label">{escape(label)}</div></div>'
+        )
+    html += "</div>"
+    render_html(html)
+
+
+def _render_config_controls() -> str:
+    providers = available_providers()
+    default_index = providers.index("siliconflow") if (sf.is_configured() and "siliconflow" in providers) else 0
+    provider_name = st.selectbox("Provider", providers, index=default_index, key="live_eval_provider")
+
+    effective = get_text_provider(prefer=provider_name)
+    if effective.name == "mock":
+        if provider_name != "mock":
+            st.warning("未配置 SiliconFlow API Key，已切换为 mock 模式：回答为模拟生成，不代表真实模型结果。")
+        else:
+            st.info("当前为 mock 模式：回答为模拟生成，不代表真实模型结果。")
+    else:
+        st.caption(f"当前为真实调用模式（{effective.name}）。请确认已在 .env 或 secrets 中配置 API Key。")
+    return provider_name
+
+
+def _render_model_selector(provider_name: str) -> list[str]:
+    st.caption("模型列表从 Provider 实时获取，不硬编码；也可手动追加模型 ID。")
+    provider = get_text_provider(prefer=provider_name)
+    cache_key = f"live_eval_models::{provider.name}"
+
+    if st.button("加载 / 刷新模型列表", key="live_eval_load_models"):
+        st.session_state[cache_key] = provider.list_models()
+
+    result = st.session_state.get(cache_key)
+    model_options: list[str] = []
+    if result is not None:
+        if result.ok and result.models:
+            model_options = [m.id for m in result.models]
+            st.caption(f"已获取 {len(model_options)} 个文本对话模型（type=text、sub_type=chat）。")
+        else:
+            st.warning(result.error_message or "模型列表获取失败，可在下方手动追加模型 ID。")
+
+    selected_from_list: list[str] = []
+    if model_options:
+        selected_from_list = st.multiselect("模型（可多选）", model_options, key="live_eval_models_select")
+
+    manual_raw = st.text_input(
+        "手动追加模型 ID（多个用逗号分隔）",
+        key="live_eval_models_manual",
+        placeholder="例如 THUDM/GLM-4-9B-0414, Qwen/Qwen2.5-7B-Instruct",
+    )
+    manual_ids = [item.strip() for item in manual_raw.split(",") if item.strip()]
+    return _dedupe(list(selected_from_list) + manual_ids)
+
+
+def _render_task_selector(task_records: list[dict]) -> list[dict]:
+    by_case = {str(r.get("case_id")): r for r in task_records}
+
+    def _label(case_id: str) -> str:
+        row = by_case.get(case_id, {})
+        task_type = display_label(row.get("task_type"), TASK_TYPE_LABELS)
+        return f"{case_id} · {task_type} · {summarize_text(row.get('question'), 24)}"
+
+    case_ids = list(by_case.keys())
+    chosen = st.multiselect(
+        "任务范围（默认全部活跃任务）",
+        case_ids,
+        default=case_ids,
+        format_func=_label,
+        key="live_eval_cases",
+    )
+    return [by_case[c] for c in chosen]
+
+
+def _render_parameters() -> tuple[float, int]:
+    col1, col2 = st.columns(2)
+    temperature = col1.slider("temperature", 0.0, 2.0, 0.2, 0.1, key="live_eval_temperature")
+    max_tokens = int(
+        col2.number_input("max_tokens", min_value=64, max_value=8192, value=1024, step=64, key="live_eval_max_tokens")
+    )
+    return temperature, max_tokens
+
+
+def _render_run_button(provider_name, model_ids, selected_tasks, temperature, max_tokens) -> None:
+    disabled = not model_ids or not selected_tasks
+    if st.button("运行评测", type="primary", disabled=disabled, key="live_eval_run"):
+        provider = get_text_provider(prefer=provider_name)
+        total = len(model_ids) * len(selected_tasks)
+        with st.spinner(f"正在运行 {len(model_ids)} 个模型 × {len(selected_tasks)} 道任务（共 {total} 次生成）……"):
+            result = er.run_models(
+                provider, model_ids, selected_tasks,
+                temperature=temperature, max_tokens=max_tokens,
+            )
+        er.persist_compare_result(result)
+        eval_state.set_last_run(result)
+        st.session_state["live_eval_persisted"] = er.is_mock_result(result)
+        st.rerun()
+
+    if disabled:
+        st.caption("请先选择至少一个模型与至少一道任务，再运行评测。")
+
+
+def _render_results() -> None:
+    result = eval_state.get_last_run()
+    if result is None:
+        return
+
+    render_section_title(
+        "本次运行",
+        f"run_id：{result.run_id} · 模式：{result.mode} · 模型 {len(result.model_ids)} 个 · "
+        f"成功 {result.success_count}/{len(result.outcomes)}",
+    )
+    if er.is_mock_result(result):
+        st.info("本次为 mock 模式运行，回答为模拟生成，不代表真实模型结果。")
+    st.caption("结果已写入 SQLite（如已初始化），并驱动各分析页展示真实回答。")
+
+    with st.expander("查看运行明细（回答与调用元信息）", expanded=False):
+        _render_results_table(result)
+        _render_answer_viewer(result)
+
+
+def _render_results_table(result) -> None:
+    header = "".join(
+        f"<th>{escape(name)}</th>"
+        for name in ["模型", "任务编号", "任务类型", "状态", "耗时(ms)", "回答长度", "是否成功"]
+    )
+    body = ""
+    for outcome in result.outcomes:
+        label, level = _STATUS_BADGE.get(outcome.run_status, (outcome.run_status, "neutral"))
+        latency = "—" if outcome.latency_ms is None else str(outcome.latency_ms)
+        success_mark = "✓" if outcome.success else "✗"
+        body += (
+            f'<tr><td class="check-key">{escape(outcome.model_id)}</td>'
+            f"<td>{escape(outcome.case_id)}</td>"
+            f"<td>{escape(display_label(outcome.task_type, TASK_TYPE_LABELS))}</td>"
+            f'<td><span class="status-badge status-{level}">{escape(label)}</span></td>'
+            f'<td class="check-count">{escape(latency)}</td>'
+            f'<td class="check-count">{escape(str(outcome.answer_length))}</td>'
+            f"<td>{success_mark}</td></tr>"
+        )
+    render_html(
+        f'<table class="check-table"><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>'
+    )
+
+
+def _render_answer_viewer(result) -> None:
+    render_section_title("查看模型回答", "按「任务 · 模型」查看完整回答与调用元信息。")
+    outcomes = list(result.outcomes)
+    if not outcomes:
+        return
+
+    options = list(range(len(outcomes)))
+
+    def _fmt(idx: int) -> str:
+        o = outcomes[idx]
+        return f"{o.case_id} · {o.model_id}"
+
+    selected = st.selectbox("任务 · 模型", options, format_func=_fmt, key="live_eval_view_outcome")
+    outcome = outcomes[selected]
+
+    label, level = _STATUS_BADGE.get(outcome.run_status, (outcome.run_status, "neutral"))
+    meta = [
+        ("模型", outcome.model_id),
+        ("状态", label),
+        ("耗时", "—" if outcome.latency_ms is None else f"{outcome.latency_ms} ms"),
+        ("Token（输入/输出/合计）", f"{_n(outcome.input_tokens)}/{_n(outcome.output_tokens)}/{_n(outcome.total_tokens)}"),
+    ]
+    if outcome.trace_id:
+        meta.append(("trace_id", outcome.trace_id))
+    meta_html = "".join(
+        f'<div class="fact-field"><div class="fact-label">{escape(k)}</div>'
+        f'<div class="fact-value">{escape(str(v))}</div></div>'
+        for k, v in meta
+    )
+    render_html(f'<div class="fact-grid">{meta_html}</div>')
+
+    if outcome.success and outcome.answer_text:
+        render_html(f'<div class="fde-card"><div class="answer-body">{escape(outcome.answer_text)}</div></div>')
+    else:
+        st.error(outcome.error_message or "本题未获得有效回答。")
+
+
+def _render_scoring(base, provider_name: str, task_records: list[dict]) -> None:
+    result = eval_state.get_last_run()
+    if result is None or result.success_count == 0:
+        st.info("请先完成步骤 1 的运行，且至少有一道成功回答，再进行裁判评分。")
+        return
+
+    render_section_title(
+        "自动评分（裁判模型）",
+        "由裁判模型对照 Gold Answer 与 Rubric 打出建议分；分数为机器建议，需人工复核确认后归档。",
+    )
+    st.caption("裁判模型可见 Gold Answer（评分必需），被评测模型全程不可见 Gold；并列对比不代表最终结论。")
+
+    judge_model = st.text_input(
+        "裁判模型 ID（留空则各自用被评测模型）",
+        key="live_eval_judge_model",
+        placeholder="例如 THUDM/GLM-4-9B-0414",
+    ).strip()
+
+    if st.button("运行自动评分（裁判模型）", type="primary", key="live_eval_score_run"):
+        provider = get_text_provider(prefer=provider_name)
+        gold_map = getattr(base, "gold_answer_map", {}) or {}
+        tasks_by_case = {str(r.get("case_id")): r for r in task_records}
+        dimensions = ds.get_rubric_dimensions()
+        with st.spinner("裁判模型正在评分……"):
+            score_result = sc.score_compare(
+                provider, judge_model, result, gold_map, tasks_by_case, dimensions,
+            )
+        sc.persist_score_result(score_result)
+        eval_state.set_last_score(score_result)
+        st.session_state["live_eval_score_dims"] = dimensions
+        st.rerun()
+
+
+def _render_score_results() -> None:
+    score_result = eval_state.get_last_score()
+    if score_result is None:
+        return
+    dimensions = st.session_state.get("live_eval_score_dims") or ds.get_rubric_dimensions()
+
+    render_section_title(
+        "评分结果（建议分 · 待人工复核）",
+        f"score_run_id：{score_result.score_run_id} · 模式：{score_result.mode} · "
+        f"已评分 {score_result.scored_count}/{len(score_result.outcomes)}",
+    )
+    if sc.is_mock_score(score_result):
+        st.info("本次为 mock 模式：未产生真实评分，各维度留空，仅用于打通链路。")
+
+    _render_score_compare_table(score_result, dimensions)
+
+    if ds.database_ready():
+        _render_score_review(score_result, dimensions)
+    else:
+        st.caption("评分暂存于当前页面会话；初始化 SQLite 数据层后可改分并归档为已复核。")
+
+
+def _render_score_compare_table(score_result, dimensions) -> None:
+    dim_headers = "".join(f"<th>{escape(d['name'])}</th>" for d in dimensions)
+    header = "<th>模型</th><th>任务编号</th>" + dim_headers + "<th>总分</th><th>裁判状态</th>"
+
+    def _sort_key(o):
+        return (0 if o.ok else 1, -(o.total_score or 0))
+
+    body = ""
+    for o in sorted(score_result.outcomes, key=_sort_key):
+        label, level = _STATUS_BADGE.get(o.judge_status, (o.judge_status, "neutral"))
+        dim_cells = "".join(
+            f'<td class="check-count">{_n(o.scores.get(d["field"]))}</td>' for d in dimensions
+        )
+        total = "—" if o.total_score is None else str(o.total_score)
+        body += (
+            f'<tr><td class="check-key">{escape(o.eval_model)}</td>'
+            f"<td>{escape(o.case_id)}</td>"
+            f"{dim_cells}"
+            f'<td class="check-count">{escape(total)}</td>'
+            f'<td><span class="status-badge status-{level}">{escape(label)}</span></td></tr>'
+        )
+    render_html(
+        f'<table class="check-table"><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>'
+    )
+
+
+def _render_score_review(score_result, dimensions) -> None:
+    rows = sc.load_score_rows(score_result.score_run_id)
+    reviewable = [r for r in rows if r.get("judge_status") == "success"]
+    if not reviewable:
+        st.caption("当前无可复核的成功评分（mock / 失败的评分不进入人工复核）。")
+        return
+
+    render_section_title(
+        "人工复核（批量）",
+        "可逐条修订各维度分与复核说明，确认后归档为已复核；更推荐到「单题深度评测」页对照 Gold 复核。",
+    )
+    for row in reviewable:
+        row_id = int(row["id"])
+        status_text = str(row.get("review_status") or "pending")
+        title = f"{row.get('eval_model')} · {row.get('case_id')} · 复核：{status_text}"
+        with st.expander(title, expanded=False):
+            cols = st.columns(len(dimensions))
+            edited: dict[str, int] = {}
+            for i, dim in enumerate(dimensions):
+                field_name = dim["field"]
+                full_mark = int(dim.get("full_mark") or 0)
+                current = row.get(field_name)
+                value = int(current) if current is not None and str(current) != "nan" else 0
+                edited[field_name] = cols[i].number_input(
+                    dim["name"], min_value=0, max_value=full_mark, value=min(value, full_mark),
+                    step=1, key=f"score_edit::{row_id}::{field_name}",
+                )
+            note = st.text_area(
+                "复核说明", value=str(row.get("review_note") or ""), key=f"score_note::{row_id}"
+            )
+            if st.button("确认并归档（人工复核通过）", key=f"score_confirm::{row_id}"):
+                if sc.confirm_score_review(row_id, edited, note):
+                    st.success("已归档为已复核（confirmed）。")
+                    st.rerun()
+                else:
+                    st.warning("归档失败：请确认 SQLite 数据层已初始化。")
+
+
+def _render_completion_cta() -> None:
+    if not eval_state.has_run():
+        return
+    render_section_title("下一步", "运行与评分完成后，可前往分析页查看结论。")
+    c1, c2, c3 = st.columns(3)
+    if c1.button("查看单题深度评测 →", key="eval_run_to_case_detail"):
+        _set_page("case_detail")
+        st.rerun()
+    if c2.button("查看模型能力诊断 →", key="eval_run_to_diagnosis"):
+        _set_page("model_diagnosis")
+        st.rerun()
+    if c3.button("查看模型边界报告 →", key="eval_run_to_boundary"):
+        _set_page("model_boundary")
+        st.rerun()
+
+
+def _dedupe(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for item in items:
+        value = (item or "").strip()
+        if value and value not in seen:
+            seen.add(value)
+            ordered.append(value)
+    return ordered
+
+
+def _n(value) -> str:
+    return "—" if value is None else str(value)

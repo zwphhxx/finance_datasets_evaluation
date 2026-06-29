@@ -1,9 +1,9 @@
 import streamlit as st
 
+from app.services.data_resolver import build_data_context_info, resolve_active_data
 from app.services.dataset_service import load_evaluation_data
 from src.data_service import DataLoadError
 from src.ui.components import apply_global_styles
-from src.ui.eval_console import resolve_active_data
 from src.ui.navigation import PAGES, render_sidebar_navigation
 from src.validators import ValidationResult, validate_evaluation_data
 
@@ -36,7 +36,9 @@ data_bundle = {
     "base": base,
     "validation_result": validation_result,
     "eval_status": eval_status,
+    "data_context": build_data_context_info(base, eval_status),
 }
 
+st.session_state["data_context"] = data_bundle["data_context"]
 page = render_sidebar_navigation()
 PAGES[page](data_bundle)

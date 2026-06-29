@@ -1,10 +1,10 @@
-"""PR-36 tests: live-eval-driven analysis pages + standalone page removal.
+"""PR-36 tests: live-eval-driven analysis pages + eval run page.
 
 The standalone「真实模型评测」page is gone; model selection / run / scoring now
-lives in the overview console, and the existing analysis pages render the live
-results via an EvaluationData adapter. These tests use a temporary SQLite DB and
-the Mock provider only — no test performs a real outbound API call, and no test
-fabricates judge scores beyond what the adapter is explicitly handed.
+lives in the dedicated「发起评测」page, and the existing analysis pages render the
+live results via an EvaluationData adapter. These tests use a temporary SQLite DB
+and the Mock provider only — no test performs a real outbound API call, and no
+test fabricates judge scores beyond what the adapter is explicitly handed.
 """
 
 import tempfile
@@ -146,11 +146,12 @@ class PageRemovalTests(unittest.TestCase):
             self.assertNotIn(page_key, PAGES)
             self.assertNotIn(page_key, PAGE_CONFIG_BY_KEY)
 
-    def test_kept_pages_are_the_seven_loop_pages(self):
+    def test_kept_pages_are_the_evaluation_loop_pages(self):
         self.assertEqual(
             [
                 "overview",
                 "tasks",
+                "eval_run",
                 "case_detail",
                 "model_diagnosis",
                 "model_boundary",
@@ -181,6 +182,7 @@ class AppRenderTests(unittest.TestCase):
     _PAGES = [
         "overview",
         "tasks",
+        "eval_run",
         "case_detail",
         "model_diagnosis",
         "model_boundary",

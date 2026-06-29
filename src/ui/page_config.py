@@ -34,6 +34,15 @@ PAGE_CONFIGS = [
         nav_summary="任务内容与覆盖",
     ),
     PageConfig(
+        page_key="eval_run",
+        title="发起评测",
+        subtitle="选择模型与任务，运行真实评测并由裁判模型自动评分。",
+        question="本页用于运行一次真实模型评测并获取裁判建议分。",
+        boundary="模型回答仅用于评测，评分为裁判模型建议分，需人工复核确认后归档。",
+        highlights="选 Provider / 模型 / 任务、运行生成、裁判评分、人工复核与下一步引导。",
+        nav_summary="运行真实评测",
+    ),
+    PageConfig(
         page_key="case_detail",
         title="样板题深度评测",
         subtitle="从一道题拆解优秀回答、模型差异、错误标签和数据补强方向。",

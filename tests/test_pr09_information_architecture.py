@@ -10,6 +10,7 @@ from src.ui.overview import get_overview_asset_cards
 EXPECTED_PAGE_KEYS = [
     "overview",
     "tasks",
+    "eval_run",
     "case_detail",
     "model_diagnosis",
     "model_boundary",
@@ -21,6 +22,7 @@ EXPECTED_PAGE_KEYS = [
 EXPECTED_PAGE_TITLES = [
     "FinDueEval 数据集概览",
     "任务样本",
+    "发起评测",
     "样板题深度评测",
     "模型能力诊断",
     "模型边界报告",

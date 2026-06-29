@@ -389,6 +389,21 @@ def load_score_rows(score_run_id: str, db_path: Path | None = None) -> list[dict
         return []
 
 
+def load_score_row_for_case(score_run_id: str, case_id: str, eval_model: str, db_path: Path | None = None) -> dict | None:
+    """读取某次评分运行中指定 (case_id, eval_model) 的评分行（含主键 id），无则返回 None。"""
+    rows = load_score_rows(score_run_id, db_path)
+    target_case = str(case_id)
+    target_model = str(eval_model)
+    for row in rows:
+        if (
+            str(row.get("case_id")) == target_case
+            and str(row.get("eval_model")) == target_model
+            and row.get("judge_status") == "success"
+        ):
+            return row
+    return None
+
+
 # --------------------------------------------------------------------------- #
 # 内部工具
 # --------------------------------------------------------------------------- #

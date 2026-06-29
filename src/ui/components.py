@@ -759,6 +759,23 @@ def render_empty_state(message) -> None:
     )
 
 
+def render_empty_state_with_actions(message: str, actions: list[tuple[str, str]]) -> None:
+    """Render an empty state with call-to-action buttons.
+
+    actions: list of (label, page_key) tuples. Each button navigates to the
+    corresponding page when clicked.
+    """
+    import streamlit as st
+
+    render_html(f'<div class="empty-state">{escape(message)}</div>')
+    cols = st.columns(len(actions))
+    for col, (label, page_key) in zip(cols, actions):
+        with col:
+            if st.button(label, key=f"empty_cta_{page_key}", use_container_width=True):
+                st.session_state.current_page = page_key
+                st.rerun()
+
+
 def render_badge(text, level: str = "neutral", kind: str = "status") -> None:
     class_prefix = "score" if kind == "score" else "status"
     if class_prefix == "score":

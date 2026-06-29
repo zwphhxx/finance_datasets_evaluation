@@ -21,41 +21,47 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn(".loop-rail", components.STYLE_CSS)
         self.assertIn(".loop-step", components.STYLE_CSS)
 
+        # 概览页已精简，评测流程向导移到「发起评测」页。
         overview_source = Path("src/ui/overview.py").read_text(encoding="utf-8")
-        self.assertIn("render_loop_rail", overview_source)
+        self.assertNotIn("render_loop_rail", overview_source)
+        eval_run_source = Path("src/ui/eval_run_page.py").read_text(encoding="utf-8")
+        self.assertIn("loop-rail", eval_run_source)
 
-    def test_pages_use_compact_context_summary(self):
+    def test_pages_use_page_shell_and_context_grid(self):
         import src.ui.components as components
 
-        self.assertTrue(hasattr(components, "render_context_summary"))
+        self.assertTrue(hasattr(components, "render_page_shell"))
+        self.assertTrue(hasattr(components, "render_context_grid"))
         self.assertIn(".context-grid", components.STYLE_CSS)
         self.assertIn(".context-item", components.STYLE_CSS)
 
         for file_path in [
             "src/ui/overview.py",
             "src/ui/tasks.py",
+            "src/ui/eval_run_page.py",
             "src/ui/case_detail.py",
             "src/ui/model_diagnosis.py",
             "src/ui/error_analysis.py",
             "src/ui/optimization_compare.py",
         ]:
             source = Path(file_path).read_text(encoding="utf-8")
-            self.assertIn("render_context_summary", source, file_path)
+            self.assertIn("render_page_shell", source, file_path)
 
-    def test_sidebar_navigation_has_descriptions_and_active_state_copy(self):
-        from src.ui.navigation import NAV_ITEMS
+    def test_sidebar_navigation_has_active_state_and_groups(self):
+        from src.ui.navigation import PAGES, _NAV_GROUPS
         import src.ui.components as components
 
-        for item in NAV_ITEMS:
-            self.assertIn("description", item)
-            self.assertTrue(item["description"].strip())
+        self.assertIn("overview", PAGES)
+        self.assertIn("eval_run", PAGES)
+        self.assertIn("dataset_admin", PAGES)
 
-        self.assertIn(".nav-note", components.STYLE_CSS)
-        self.assertIn(".nav-note-active", components.STYLE_CSS)
+        group_keys = [key for _, keys in _NAV_GROUPS for key in keys]
+        self.assertEqual(sorted(group_keys), sorted(PAGES.keys()))
+
+        self.assertIn(".nav-brand", components.STYLE_CSS)
         navigation_source = Path("src/ui/navigation.py").read_text(encoding="utf-8")
         self.assertIn("current_page", navigation_source)
-        self.assertIn("nav-note-active", navigation_source)
-        self.assertIn("当前页面", navigation_source)
+        self.assertIn("_NAV_GROUPS", navigation_source)
 
     def test_case_detail_uses_review_workbench_components(self):
         import src.ui.components as components
