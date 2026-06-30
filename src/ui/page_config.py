@@ -53,12 +53,12 @@ PAGE_CONFIGS = [
     ),
     PageConfig(
         page_key="case_detail",
-        title="样板题深度评测",
-        subtitle="从一道题拆解优秀回答、模型差异、错误标签和数据补强方向。",
-        question="本页用于判断一道专业题如何定义优秀回答，模型回答具体差在哪里。",
-        boundary="单题结论只服务于样板题拆解，不代表模型整体能力。",
-        highlights="Gold Answer、多模型回答、Rubric 评分、错误标签、偏好样本和数据补强建议。",
-        nav_summary="单题评测闭环",
+        title="典型样本拆解",
+        subtitle="用一道真实尽调题，拆解任务考察点、Gold 锚点、模型回答差异、评分依据与红线。",
+        question="本页用于说明这道题为什么能测出模型能力，以及各模型回答具体差在哪里。",
+        boundary="单题拆解只服务于样本内观察，不代表模型整体能力。",
+        highlights="任务背景、Gold Answer、多模型回答对比、多维度评分、人工点评与红线提示。",
+        nav_summary="典型样本拆解",
     ),
     PageConfig(
         page_key="model_diagnosis",

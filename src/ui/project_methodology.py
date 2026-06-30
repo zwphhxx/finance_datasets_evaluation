@@ -91,7 +91,7 @@ def get_redline_triggers() -> list[str]:
 def get_usage_flow_steps() -> list[str]:
     return [
         "先看离线评测结论",
-        "选模型与样板题",
+        "选模型与典型样本",
         "现场发起评测",
         "对照 Gold 与红线",
         "判断可用边界",

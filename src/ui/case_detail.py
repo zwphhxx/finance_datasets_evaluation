@@ -243,17 +243,6 @@ def _errors_by_dimension(errors_df, output_id):
     return by_dimension, unmapped
 
 
-def _score_badge_level(score) -> str:
-    if not has_value(score):
-        return "neutral"
-    value = float(score)
-    if value >= 80:
-        return "success"
-    if value >= 60:
-        return "warning"
-    return "danger"
-
-
 def detect_redline_hits(errors_df, output_id, gold) -> list[str]:
     """Red-line hits for one model output, derived dynamically.
 
@@ -390,15 +379,82 @@ def build_case_verdict(output_row, errors_df, gold, optimization_df, task_info) 
     }
 
 
+def build_case_model_comparison(merged_outputs, errors_df, gold, optimization_df, task_info) -> list[dict]:
+    """同一道题下、每个模型一行的对比结论。
+
+    复用 ``build_case_verdict`` 推导每个模型的使用边界结论、总分、最弱维度与红线
+    命中数，便于并排对照。完全由当前 case 的数据动态生成，无模型 / 分数硬编码；
+    无模型回答时返回空列表。
+    """
+    rows: list[dict] = []
+    for model in get_case_models(merged_outputs):
+        output_row = get_output_row(merged_outputs, model)
+        verdict = build_case_verdict(output_row, errors_df, gold, optimization_df, task_info)
+        total = output_row.get("total_score") if output_row is not None else None
+        rows.append(
+            {
+                "model_name": str(model),
+                "tier": verdict["tier"],
+                "title": verdict["title"],
+                "level": verdict["level"],
+                "score_text": verdict["score_text"],
+                "total": float(total) if has_value(total) else None,
+                "weakest": verdict["weakest"],
+                "redline_count": len(verdict["redline_hits"]),
+                "review_note": _text(output_row.get("review_note"), "") if output_row is not None else "",
+            }
+        )
+    # 有分在前、分高在前，仅为展示稳定性；页面文案明确这是样本内观察而非排行榜。
+    rows.sort(key=lambda row: (row["total"] is None, -(row["total"] or 0.0), row["model_name"]))
+    return rows
+
+
+def build_case_rationale(task_info, gold, comparison: list[dict]) -> dict:
+    """这道题为什么能测出模型能力：考察能力、Gold 锚点数量与模型分差。
+
+    全部由任务与 Gold 数据动态推导：必须覆盖点 / 红线作为评测锚点，模型间总分差
+    用来说明该题是否能区分模型表现。缺任务或缺 Gold 时各字段安全回退。
+    """
+    capability = _text(task_info.get("expected_capability"), "") if task_info is not None else ""
+    domain = display_label(task_info.get("domain"), DOMAIN_LABELS) if task_info is not None else "未标注领域"
+    risk = (
+        RISK_LABELS.get(_text(task_info.get("risk_level")), _text(task_info.get("risk_level"), "未标注"))
+        if task_info is not None
+        else "未标注"
+    )
+    must_points = field_list(gold, "must_have_points") if isinstance(gold, dict) else []
+    red_lines = field_list(gold, "unacceptable_errors") if isinstance(gold, dict) else []
+    totals = [row["total"] for row in comparison if row.get("total") is not None]
+    spread = (max(totals) - min(totals)) if len(totals) >= 2 else None
+    return {
+        "capability": capability,
+        "domain": domain,
+        "risk": risk,
+        "must_count": len(must_points),
+        "redline_count": len(red_lines),
+        "model_count": len(comparison),
+        "score_spread": spread,
+    }
+
+
 # --- rendering ---------------------------------------------------------------
 
 def render_case_detail_page(data_bundle: dict) -> None:
-    data = data_bundle["data"]
+    seed_data = data_bundle.get("base") or data_bundle["data"]
+    live_data = data_bundle["data"]
     eval_status = data_bundle.get("eval_status") or {}
+    live = bool(eval_status.get("live"))
+
     render_page_shell(get_page_config("case_detail"))
     render_review_caveat(eval_status)
+    render_info_panel(
+        "怎么读这一页",
+        "这里用一道真实尽调题做拆解：先看它考察什么、优秀回答的锚点（Gold Answer）是什么，"
+        "再并排对照各模型回答差在哪里。重点是“这道题为什么能测出模型能力”，而不只是分数。",
+    )
 
-    case_ids = get_case_ids(data.tasks)
+    # 始终以 seed 题库决定可选样本，保证未运行真实评测时也能拆解离线评价。
+    case_ids = get_case_ids(seed_data.tasks)
     if not case_ids:
         render_empty_state_with_actions(
             "暂无可展示的任务样本。",
@@ -406,16 +462,12 @@ def render_case_detail_page(data_bundle: dict) -> None:
         )
         return
 
-    if not eval_status.get("live"):
-        render_empty_state_with_actions(
-            "当前暂无真实评测结果。请先发起一次评测，再查看单题深度分析。",
-            [("发起评测", "eval_run"), ("浏览任务样本", "tasks")],
-        )
-        return
+    # 数据来源：默认离线 seed 评价；有真实运行时可切换查看本次结果，但不覆盖离线评价。
+    data = _resolve_source(seed_data, live_data, live)
 
-    domain_by_case = _domain_by_case(data.tasks)
-    select_left, select_right = st.columns(2)
-    selected_case = select_left.selectbox(
+    # 1) 选择样本
+    domain_by_case = _domain_by_case(seed_data.tasks)
+    selected_case = st.selectbox(
         "选择任务",
         case_ids,
         format_func=lambda case_id: f"{case_id} · {domain_by_case.get(case_id, '未标注领域')}",
@@ -426,42 +478,180 @@ def render_case_detail_page(data_bundle: dict) -> None:
         render_empty_state("未找到该任务的记录。")
         return
     task_info = task_rows.iloc[0]
-
-    merged = merge_case_outputs_with_scores(data.model_outputs, data.scores, selected_case)
-    models = get_case_models(merged)
-    if models:
-        selected_model = select_right.selectbox("选择模型", models, key="case_detail_model")
-        output_row = get_output_row(merged, selected_model)
-    else:
-        select_right.selectbox("选择模型", ["暂无模型回答"], disabled=True)
-        output_row = None
-
     gold = data.gold_answer_map.get(selected_case)
+    merged = merge_case_outputs_with_scores(data.model_outputs, data.scores, selected_case)
+    comparison = build_case_model_comparison(merged, data.errors, gold, data.optimizations, task_info)
 
-    # 裁判结论先行：选定 case + model 后立即给出红线裁决卡。
-    verdict = build_case_verdict(output_row, data.errors, gold, data.optimizations, task_info)
-    _render_verdict_card(verdict)
+    # 2) 这道题为什么能测出模型能力（先给框架性结论）
+    _render_why_this_case(task_info, gold, comparison)
+
+    # 3) 任务背景与考察能力
+    render_section_title("任务背景与考察能力", "这道题放在什么尽调场景下、要考察模型哪种专业能力。")
     _render_task_context(task_info)
-
-    # 三栏审判席：左 Gold 标准 / 中 模型回答 / 右 裁判结论。
-    left, mid, right = st.columns(3, gap="large")
-    with left:
-        _render_gold_standard(gold)
-    with mid:
-        _render_model_answer(output_row, gold)
-    with right:
-        _render_judge_column(output_row, data.errors, verdict)
-
-    st.divider()
-
-    # 证据区：任务题全文与评分矩阵下沉，不抢第一屏。
-    render_section_title("评分证据", "任务题与单题评分矩阵，作为上方裁判结论的支撑证据。")
     with st.expander("查看任务题全文", expanded=False):
         _render_task_brief(task_info)
+
+    # 4) Gold Answer（评测锚点）
+    _render_gold_standard(gold)
+
+    # 5) 模型回答对比（并排结论）+ 单模型深拆
+    render_section_title("模型回答对比", "先并排看各模型在本题上的结论，再切换查看单个模型的回答与扣分。")
+    _render_model_comparison(comparison)
+
+    if comparison:
+        selected_model = st.selectbox("选择模型", [row["model_name"] for row in comparison], key="case_detail_model")
+        output_row = get_output_row(merged, selected_model)
+    else:
+        st.selectbox("选择模型", ["暂无模型回答"], disabled=True, key="case_detail_model")
+        output_row = None
+
+    verdict = build_case_verdict(output_row, data.errors, gold, data.optimizations, task_info)
+    _render_verdict_card(verdict)
+    _render_model_answer(output_row, gold)
+
+    # 6) 多维度评分（证据）
     _render_scoring_matrix(output_row, data.errors)
+
+    # 7) 人工点评（动态读取 review_note）
+    _render_human_review_note(output_row)
+
+    # 8) 红线提示（边界）
+    _render_redline_panel(verdict, gold, output_row, data.errors)
+
+    # 9) 人工复核（仅在已初始化 SQLite 的真实运行下可归档，不破坏评分归档）
     _render_case_review(output_row, eval_status)
 
+    # 10) 偏好样本对照
     _render_preference_section(data.preference_pairs, data.model_outputs, selected_case)
+
+
+def _resolve_source(seed_data, live_data, live: bool):
+    """决定本页取数来源：默认离线 seed 评价；真实运行时可切换，但绝不覆盖离线评价。"""
+    if not live:
+        st.caption("当前展示离线 seed 评价（尚未运行真实评测）。运行真实评测后可在此切换查看本次结果。")
+        return seed_data
+    choice = st.radio(
+        "样本来源",
+        ["离线 seed 评价", "本次运行结果"],
+        horizontal=True,
+        help="默认展示离线 seed 评价；本次运行结果仅供对照，不会覆盖离线评价。",
+    )
+    if choice == "本次运行结果":
+        st.caption("正在查看本次真实运行结果；离线 seed 评价不受影响。")
+        return live_data
+    st.caption("正在查看离线 seed 评价（默认）。")
+    return seed_data
+
+
+def _render_why_this_case(task_info: pd.Series, gold, comparison: list[dict]) -> None:
+    render_section_title("这道题为什么能测出模型能力", "先讲清考察点与评测锚点，再用模型分差验证区分度。")
+    rationale = build_case_rationale(task_info, gold, comparison)
+    capability = rationale["capability"] or "暂无明确的考察能力说明"
+    anchor = (
+        f'以 {rationale["must_count"]} 个必须覆盖点与 {rationale["redline_count"]} 条不可接受错误（红线）作为评测锚点'
+        if (rationale["must_count"] or rationale["redline_count"])
+        else "该题尚未配置必须覆盖点与红线锚点"
+    )
+    if rationale["score_spread"] is not None and rationale["model_count"] >= 2:
+        spread = (
+            f'{rationale["model_count"]} 个模型在本题上的总分差约 {rationale["score_spread"]:.0f} 分，'
+            "说明该题能区分模型表现。"
+            if rationale["score_spread"] > 0
+            else f'{rationale["model_count"]} 个模型在本题上总分接近，区分度有限，需结合维度与红线判断。'
+        )
+    else:
+        spread = "当前样本内模型回答不足以比较区分度，运行更多模型后可观察分差。"
+    render_info_panel(
+        "考察点与区分度",
+        f"本题属于 {rationale['domain']} 领域（风险 {rationale['risk']}），考察模型的「{capability}」。"
+        f"评测{anchor}：答得对要对照依据、答得全要覆盖风险、不能踩红线。{spread}",
+    )
+
+
+def _render_model_comparison(comparison: list[dict]) -> None:
+    if not comparison:
+        render_empty_state("该任务暂无模型回答记录，无法并排对比。")
+        return
+    header = "<th>模型</th><th>使用边界结论</th><th>总分</th><th>最弱维度</th><th>红线命中</th>"
+    body = ""
+    for row in comparison:
+        redline = f'{row["redline_count"]} 项' if row["redline_count"] else "未命中"
+        body += (
+            f'<tr><td><span class="rubric-dim">{escape(row["model_name"])}</span></td>'
+            f'<td><span class="status-badge status-{escape(row["level"])}">{escape(row["title"])}</span></td>'
+            f'<td><span class="rubric-score">{escape(row["score_text"])}</span></td>'
+            f'<td><span class="rubric-gap">{escape(row["weakest"])}</span></td>'
+            f'<td><span class="rubric-gap">{escape(redline)}</span></td></tr>'
+        )
+    render_html(
+        '<table class="rubric-table"><thead><tr>'
+        f"{header}</tr></thead><tbody>{body}</tbody></table>"
+    )
+    st.caption("并排结论为样本内观察，不构成模型排行榜；切换下方“选择模型”查看单题回答与扣分依据。")
+
+
+def _render_human_review_note(output_row: pd.Series | None) -> None:
+    render_section_title("人工点评", "复核人对该回答的点评，动态读取自评分记录的 review_note。")
+    if output_row is None:
+        render_empty_state("该任务暂无模型回答记录，暂无人工点评。")
+        return
+    note = _text(output_row.get("review_note"), "")
+    if note:
+        render_info_panel("复核点评", note)
+    else:
+        st.caption("该回答暂无人工点评（review_note 为空）。")
+
+
+def _render_redline_panel(verdict: dict, gold, output_row: pd.Series | None, errors_df) -> None:
+    render_section_title("红线提示", "结合 Gold 不可接受错误、低分维度与错误标签动态生成。")
+
+    blocks: list[str] = []
+
+    hits = verdict.get("redline_hits") or []
+    if hits:
+        blocks.append(
+            '<div class="fact-label">命中红线</div><div class="boundary-list">'
+            + "".join(f'<div class="redline-item">{escape(hit)}</div>' for hit in hits)
+            + "</div>"
+        )
+
+    rubric_rows = build_rubric_rows(output_row) if output_row is not None else []
+    weak_dims = [r for r in rubric_rows if r["full"] and r["score"] / r["full"] < VERDICT_WEAK_RATIO]
+    if weak_dims:
+        blocks.append(
+            '<div class="fact-label">低分维度预警</div><div class="boundary-list">'
+            + "".join(
+                f'<div class="point-item">{escape(r["dimension"])}（{r["score"]:.0f}/{r["full"]}）</div>'
+                for r in weak_dims
+            )
+            + "</div>"
+        )
+
+    errors = (
+        get_errors_for_output(errors_df, output_row.get("output_id"))
+        if output_row is not None
+        else pd.DataFrame()
+    )
+    if not errors.empty:
+        badges = "".join(
+            f'<span class="status-badge status-{SEVERITY_BADGE.get(_text(error.get("severity")), "neutral")}">'
+            f'{escape(_text(error.get("error_type"), "未分类错误"))}</span>'
+            for _, error in errors.iterrows()
+        )
+        blocks.append(f'<div class="fact-label">错误标签</div><div class="task-card-badges">{badges}</div>')
+
+    red_lines = field_list(gold, "unacceptable_errors") if isinstance(gold, dict) else []
+    if red_lines:
+        blocks.append(
+            '<div class="fact-label">本题标定的不可接受错误（Gold 红线）</div><div class="boundary-list">'
+            + "".join(f'<div class="redline-item">{escape(str(item))}</div>' for item in red_lines)
+            + "</div>"
+        )
+
+    if blocks:
+        render_card("".join(blocks), class_name="fact-card")
+    else:
+        render_empty_state("本题未触发红线提示：无高严重度错误、无明显低分维度，且 Gold 未标定红线。")
 
 
 def _render_verdict_card(verdict: dict) -> None:
@@ -504,46 +694,6 @@ def _render_task_context(task_info: pd.Series) -> None:
     st.caption(
         f"{domain} · {task_type} · 难度 {difficulty} · 风险 {risk} ｜ {summarize_text(requirement, 80)}"
     )
-
-
-def _render_judge_column(output_row: pd.Series | None, errors_df, verdict: dict) -> None:
-    render_section_title("裁判结论")
-    if output_row is None:
-        render_empty_state("该任务暂无模型回答记录。")
-        return
-
-    review = _text(output_row.get("review_note"), "暂无扣分说明")
-    triggered = _has_red_line(errors_df, output_row.get("output_id"))
-    red_badge = (
-        '<span class="status-badge status-danger">触发</span>'
-        if triggered
-        else '<span class="status-badge status-success">未触发</span>'
-    )
-    render_html(
-        '<div class="fact-card">'
-        f'<div class="fact-field"><div class="fact-label">结论</div>'
-        f'<div class="fact-value"><span class="status-badge status-{escape(verdict["level"])}">{escape(verdict["title"])}</span></div></div>'
-        f'<div class="fact-field"><div class="fact-label">总分</div>'
-        f'<div class="fact-value"><span class="status-badge status-{_score_badge_level(output_row.get("total_score"))}">{escape(verdict["score_text"])}</span></div></div>'
-        f'<div class="fact-field"><div class="fact-label">最弱维度</div><div class="fact-value">{escape(verdict["weakest"])}</div></div>'
-        f'<div class="fact-field"><div class="fact-label">是否触发红线错误</div><div class="fact-value">{red_badge}</div></div>'
-        f'<div class="fact-field"><div class="fact-label">主要扣分原因</div><div class="fact-value">{escape(summarize_text(review, 140))}</div></div>'
-        "</div>"
-    )
-
-    errors = get_errors_for_output(errors_df, output_row.get("output_id"))
-    if not errors.empty:
-        badges = "".join(
-            f'<span class="status-badge status-{SEVERITY_BADGE.get(_text(error.get("severity")), "neutral")}">'
-            f'{escape(_text(error.get("error_type"), "未分类错误"))}</span>'
-            for _, error in errors.iterrows()
-        )
-        render_html(f'<div class="fact-label">错误标签</div><div class="task-card-badges">{badges}</div>')
-    else:
-        render_html('<div class="fact-label">错误标签</div><div class="fact-value">未触发错误标签。</div>')
-    if len(review) > 140:
-        with st.expander("查看完整扣分说明"):
-            st.write(review)
 
 
 def _render_task_brief(task_info: pd.Series) -> None:
