@@ -16,6 +16,15 @@ class PageConfig:
 
 PAGE_CONFIGS = [
     PageConfig(
+        page_key="project_methodology",
+        title="项目介绍",
+        subtitle="说明这套尽调评测的目的、样本来源、评价框架与使用方式。",
+        question="本页用于说明项目要解决什么问题、样本从哪来、怎么评、以及如何使用评测结果。",
+        boundary="样本为脱敏抽象编写，不含真实公司与敏感数据；本项目是尽调可用边界评测，不是模型排行榜。",
+        highlights="项目背景、样本来源与结构、评价框架、红线机制与使用方式。",
+        nav_summary="项目介绍与方法论",
+    ),
+    PageConfig(
         page_key="overview",
         title="红线评测台",
         subtitle="面向投行 / 财务 / 法律尽调任务，判断模型回答哪些可直接用、哪些必须复核、哪些不可直接用。",

@@ -7,6 +7,7 @@ from src.ui.page_config import PAGE_CONFIGS
 
 
 EXPECTED_PAGE_ORDER = [
+    "project_methodology",
     "overview",
     "tasks",
     "eval_run",

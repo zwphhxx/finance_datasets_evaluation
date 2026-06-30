@@ -8,6 +8,7 @@ from src.ui.overview import get_overview_asset_cards
 
 # 导航页键（PAGES 的英文键，决定路由与顺序）。
 EXPECTED_PAGE_KEYS = [
+    "project_methodology",
     "overview",
     "tasks",
     "eval_run",
@@ -20,6 +21,7 @@ EXPECTED_PAGE_KEYS = [
 
 # 每页标题（PAGE_CONTEXTS 的键），与 EXPECTED_PAGE_KEYS 一一对应。
 EXPECTED_PAGE_TITLES = [
+    "项目介绍",
     "红线评测台",
     "任务样本",
     "发起评测",

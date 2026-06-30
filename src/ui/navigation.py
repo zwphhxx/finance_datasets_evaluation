@@ -11,10 +11,12 @@ from src.ui.model_boundary import render_model_boundary_page
 from src.ui.model_diagnosis import render_model_diagnosis_page
 from src.ui.overview import render_overview_page
 from src.ui.page_config import DEFAULT_PAGE_KEY, PAGE_CONFIGS, PAGE_CONFIG_BY_KEY
+from src.ui.project_methodology import render_project_methodology_page
 from src.ui.tasks import render_tasks_page
 
 
 PAGES = {
+    "project_methodology": render_project_methodology_page,
     "overview": render_overview_page,
     "tasks": render_tasks_page,
     "eval_run": render_eval_run_page,
@@ -27,6 +29,7 @@ PAGES = {
 
 
 _NAV_GROUPS = [
+    ("📌 项目", ["project_methodology"]),
     ("📊 概览", ["overview", "tasks"]),
     ("▶️  运行评测", ["eval_run", "case_detail", "model_diagnosis", "model_boundary"]),
     ("🛠️  数据集管理", ["dataset_quality", "dataset_admin"]),

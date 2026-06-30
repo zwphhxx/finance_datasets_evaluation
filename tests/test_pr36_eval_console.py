@@ -149,6 +149,7 @@ class PageRemovalTests(unittest.TestCase):
     def test_kept_pages_are_the_evaluation_loop_pages(self):
         self.assertEqual(
             [
+                "project_methodology",
                 "overview",
                 "tasks",
                 "eval_run",
@@ -180,6 +181,7 @@ class AppRenderTests(unittest.TestCase):
     """Render each kept page through the full app with / without a live run."""
 
     _PAGES = [
+        "project_methodology",
         "overview",
         "tasks",
         "eval_run",
