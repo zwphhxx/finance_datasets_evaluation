@@ -35,7 +35,7 @@ PAGE_CONFIGS = [
     ),
     PageConfig(
         page_key="tasks",
-        title="任务样本",
+        title="样本库",
         subtitle="按筛选浏览任务内容、Gold Answer 状态与模型回答覆盖。",
         question="本页用于看清数据集里有哪些任务，以及每道任务的质量与覆盖状态。",
         boundary="当前任务是脱敏专业任务样本，不是概念题，也不是完整行业题库。",
@@ -44,7 +44,7 @@ PAGE_CONFIGS = [
     ),
     PageConfig(
         page_key="eval_run",
-        title="发起评测",
+        title="可复现实验",
         subtitle="现场可复现实验：选活跃任务调用模型生成回答，对照 Gold/Rubric 打建议分；现场结果受 API、网络、模型版本影响，离线评测结论才是默认展示依据。",
         question="本页用于现场复现一次模型调用并获取裁判建议分，便于核对而非作为正式结论。",
         boundary="现场运行结果默认进入草稿（待复核），不覆盖离线样本评价；经人工复核确认后才计入正式结论。",
@@ -89,7 +89,7 @@ PAGE_CONFIGS = [
     ),
     PageConfig(
         page_key="dataset_quality",
-        title="数据集质量与扩展框架",
+        title="数据集质量",
         subtitle="说明数据集的质量门槛、任务覆盖、答案边界与可扩展接入方式。",
         question="本页用于判断当前数据集是否具备可扩展、可质检、可复用的基础。",
         boundary="当前为 MVP 样本规模，覆盖矩阵用于展示结构而非完整生产数据集。",

@@ -21,6 +21,7 @@ from src.ui.components import (
     render_info_panel,
     render_page_shell,
     render_redline_verdict,
+    render_section_block,
     render_section_title,
     render_status_badge,
 )
@@ -234,7 +235,11 @@ def render_overview_page(data_bundle: dict) -> None:
     _render_evaluation_loop()
     _render_entries()
 
-    render_section_title("数据资产", "关键数字均由当前数据动态计算。")
+    render_section_block(
+        "04",
+        "数据资产",
+        "关键数字均由当前数据动态计算。",
+    )
     render_context_grid(get_overview_summary_items(data))
 
     render_info_panel(
@@ -255,14 +260,15 @@ _BOUNDARY_HOME_TITLE = {
 
 
 def _render_usage_boundary(data, has_results: bool) -> None:
-    render_section_title(
+    render_section_block(
+        "01",
         "模型可用边界",
         "按风险等级、能力下限与红线错误，把当前任务归入三类使用边界。",
     )
     if not has_results:
         render_empty_state_with_actions(
             "运行一次真实评测后，这里按当前样本生成三类使用边界。",
-            [("发起评测", "eval_run"), ("浏览任务样本", "tasks")],
+            [("发起可复现实验", "eval_run"), ("浏览样本库", "tasks")],
         )
         return
 
@@ -294,7 +300,7 @@ def _render_usage_boundary(data, has_results: bool) -> None:
 
 
 def _render_top_risk(data, summary, eval_status: dict, has_results: bool) -> None:
-    render_section_title("本轮最大风险", "当前样本内最薄弱的能力维度、高频错误与建议补强方向。")
+    render_section_block("02", "本轮最大风险", "当前样本内最薄弱的能力维度、高频错误与建议补强方向。")
     if not has_results:
         render_info_panel(
             "运行评测后生成",
@@ -325,14 +331,14 @@ def _render_top_risk(data, summary, eval_status: dict, has_results: bool) -> Non
 
 
 def _render_evaluation_loop() -> None:
-    render_section_title("评测闭环", "从专业任务到复测验证，问题反向沉淀为数据补强。")
+    render_section_block("03", "评测闭环", "从专业任务到复测验证，问题反向沉淀为数据补强。")
     render_flow_strip(get_evaluation_loop_steps())
 
 
 def _render_entries() -> None:
     cols = st.columns(3)
     entries = [
-        ("发起评测 →", "eval_run"),
+        ("发起可复现实验 →", "eval_run"),
         ("模型边界报告 →", "model_boundary"),
         ("能力诊断 →", "model_diagnosis"),
     ]

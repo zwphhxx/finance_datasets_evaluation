@@ -11,7 +11,7 @@ from src.ui.evaluation_conclusions import render_evaluation_conclusions_page
 from src.ui.model_boundary import render_model_boundary_page
 from src.ui.model_diagnosis import render_model_diagnosis_page
 from src.ui.overview import render_overview_page
-from src.ui.page_config import DEFAULT_PAGE_KEY, PAGE_CONFIGS, PAGE_CONFIG_BY_KEY
+from src.ui.page_config import DEFAULT_PAGE_KEY, PAGE_CONFIG_BY_KEY
 from src.ui.project_methodology import render_project_methodology_page
 from src.ui.tasks import render_tasks_page
 
@@ -30,11 +30,14 @@ PAGES = {
 }
 
 
+# 作品集目录：按叙事顺序分区——项目 → 评测 → 深度分析 → 可复现实验 → 数据集。
+# 数据集分区排在最后，保留后台维护属性，不抢主叙事。组内顺序按列表顺序渲染。
 _NAV_GROUPS = [
-    ("📌 项目", ["project_methodology"]),
-    ("📊 概览", ["overview", "tasks"]),
-    ("▶️  运行评测", ["eval_run", "case_detail", "model_diagnosis", "model_boundary", "evaluation_conclusions"]),
-    ("🛠️  数据集管理", ["dataset_quality", "dataset_admin"]),
+    ("01 项目", ["project_methodology"]),
+    ("02 评测", ["overview", "tasks", "evaluation_conclusions"]),
+    ("03 深度分析", ["case_detail", "model_diagnosis", "model_boundary"]),
+    ("04 可复现实验", ["eval_run"]),
+    ("05 数据集", ["dataset_quality", "dataset_admin"]),
 ]
 
 
@@ -51,7 +54,7 @@ def render_sidebar_navigation() -> str:
         """
         <div class="nav-brand">
             <div class="nav-brand-title">FinDueEval</div>
-            <div class="nav-brand-subtitle">模型评测与数据优化 Demo</div>
+            <div class="nav-brand-subtitle">尽调模型评测 · 项目作品集目录</div>
         </div>
         """,
         container=st.sidebar,
@@ -62,8 +65,9 @@ def render_sidebar_navigation() -> str:
             f'<div style="margin:0.9rem 0 0.35rem 0;color:var(--fde-muted);font-size:0.75rem;font-weight:750;letter-spacing:0.04em;">{group_title}</div>',
             container=st.sidebar,
         )
-        for config in PAGE_CONFIGS:
-            if config.page_key not in keys:
+        for key in keys:
+            config = PAGE_CONFIG_BY_KEY.get(key)
+            if config is None:
                 continue
             is_current = st.session_state.current_page == config.page_key
             st.sidebar.button(
@@ -73,6 +77,11 @@ def render_sidebar_navigation() -> str:
                 args=(config.page_key,),
                 type="primary" if is_current else "secondary",
                 use_container_width=True,
+            )
+        if keys == _NAV_GROUPS[-1][1]:
+            render_html(
+                '<div style="margin:0.25rem 0 0 0;color:var(--fde-muted);font-size:0.72rem;line-height:1.45;">数据集为后台维护入口，不影响主叙事。</div>',
+                container=st.sidebar,
             )
 
     _render_data_context_bar()

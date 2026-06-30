@@ -16,7 +16,7 @@ class NavigationWiringTests(unittest.TestCase):
         self.assertIn("dataset_quality", PAGES)
         self.assertIn("dataset_quality", PAGE_CONFIG_BY_KEY)
         config = PAGE_CONFIG_BY_KEY["dataset_quality"]
-        self.assertEqual(config.title, "数据集质量与扩展框架")
+        self.assertEqual(config.title, "数据集质量")
 
 
 class DatasetQualityBuilderTests(unittest.TestCase):

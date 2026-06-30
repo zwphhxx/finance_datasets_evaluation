@@ -4,13 +4,14 @@ import streamlit as st
 
 from src.metrics import SCORE_DIMENSIONS
 from src.model_boundary import BOUNDARY_AWARENESS_LABEL
-from src.ui.page_config import get_page_config
 from src.ui.components import (
     render_context_grid,
+    render_cta_group,
+    render_feature_card,
     render_flow_strip,
+    render_hero,
     render_info_panel,
-    render_page_shell,
-    render_section_title,
+    render_section_block,
 )
 
 
@@ -34,6 +35,19 @@ def build_dataset_summary_items(data) -> list[tuple[str, str]]:
         ("任务类型", f"{task_type_count} 类专业任务"),
         ("Gold Answer", f"{gold_count}/{task_count} 道已配参考答案"),
         ("评价维度", f"{dimension_count} 个 Rubric 维度 + {BOUNDARY_AWARENESS_LABEL}"),
+    ]
+
+
+def build_hero_stats(data) -> list[tuple[str, str]]:
+    """首屏 Hero 右侧的动态数字：题量、领域数、评分维度数，全部按当前数据 / Rubric 计算，
+    不写死任何数量；空数据时各项自然回退为 0，Hero 仍可渲染。"""
+    task_count = len(tasks) if (tasks := getattr(data, "tasks", None)) is not None else 0
+    domain_count = _distinct_count(tasks, "domain")
+    dimension_count = len(SCORE_DIMENSIONS)
+    return [
+        (str(task_count), "尽调任务样本"),
+        (str(domain_count), "专业领域"),
+        (str(dimension_count), "Rubric 评分维度"),
     ]
 
 
@@ -92,27 +106,40 @@ def get_usage_flow_steps() -> list[str]:
     return [
         "先看离线评测结论",
         "选模型与典型样本",
-        "现场发起评测",
+        "现场复现实验",
         "对照 Gold 与红线",
         "判断可用边界",
     ]
 
 
-def _open_page(page_key: str) -> None:
-    st.session_state.current_page = page_key
-
-
 def render_project_methodology_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
-    render_page_shell(get_page_config("project_methodology"))
 
-    render_info_panel(
-        "项目定位",
-        "这不是一个模型排行榜，而是一套针对专业尽调任务的可用边界评测：判断模型的回答"
-        "哪些能直接用、哪些必须人工复核、哪些不能用。",
+    render_hero(
+        eyebrow="项目作品集 · 尽调模型评测",
+        title="FinDueEval",
+        subtitle="基于投行 / 财务 / 法律尽调经验沉淀的模型评测样本库",
+        value_line=(
+            "不是模型排行榜，而是专业尽调场景下的可用边界评测：判断模型的回答"
+            "哪些能直接用、哪些必须人工复核、哪些不能用。"
+        ),
+        stats=build_hero_stats(data),
+    )
+    render_cta_group(
+        [
+            ("查看评测结论 →", "evaluation_conclusions"),
+            ("进入红线评测台 →", "overview"),
+            ("发起可复现实验 →", "eval_run"),
+        ],
+        note="建议先看评测结论里的样本内可用边界，再到红线评测台与可复现实验自行验证。",
+        key_prefix="methodology_hero",
     )
 
-    render_section_title("项目背景")
+    render_section_block(
+        "01",
+        "项目背景",
+        "尽调回答常“写得像对，却漏掉关键风险”，这类问题最难发现、也最危险。",
+    )
     st.markdown(
         "在投行、财务和法律尽调里，模型的回答经常“写得像对，但漏掉关键风险”——"
         "结论读起来通顺、专业，却没有提示真正致命的问题，或者给出无依据的确定性判断。"
@@ -121,24 +148,40 @@ def render_project_methodology_page(data_bundle: dict) -> None:
         "在哪些地方必须人工兜底。"
     )
 
-    render_section_title("样本来源")
+    render_section_block(
+        "02",
+        "样本来源",
+        "来自真实尽调经验，脱敏抽象后重写，不含任何真实公司与敏感数据。",
+    )
     st.markdown(
         "样本来自我过往在投行、财务尽调、法律核查与并购项目中的经验，经过脱敏与抽象后"
         "重新编写。题目保留了真实尽调中的判断结构与风险点，但**不包含任何真实公司、"
         "真实交易或敏感数据**，只作为评测用途。"
     )
 
-    render_section_title("样本结构", "每道题按统一结构组织，便于按能力与风险归类分析。")
-    render_context_grid(get_sample_structure_items())
+    render_section_block(
+        "03",
+        "样本体系",
+        "每道题按统一结构组织，便于按能力与风险归类分析。",
+    )
+    render_feature_card(get_sample_structure_items())
 
-    render_section_title("评价框架", "把“一份好的尽调回答”拆成可评分的维度。")
+    render_section_block(
+        "04",
+        "评价框架",
+        "把“一份好的尽调回答”拆成可评分的维度。",
+    )
     st.markdown(
         "我先用历史尽调资料人工梳理了“优秀回答应该长什么样”，把它落成下面这套评分维度，"
         "由裁判模型对照 Gold Answer 给出建议分，再人工复核。"
     )
-    render_context_grid(get_rubric_framework_items())
+    render_feature_card(get_rubric_framework_items())
 
-    render_section_title("红线机制", "触碰红线的回答，再高分也不能直接使用。")
+    render_section_block(
+        "05",
+        "红线机制",
+        "触碰红线的回答，再高分也不能直接使用。",
+    )
     st.markdown(
         "评分之外还有一层红线判定。当回答触发下列任一红线时，这道题不计入“可直接使用”，"
         "必须人工复核或判为不可用："
@@ -146,15 +189,23 @@ def render_project_methodology_page(data_bundle: dict) -> None:
     for trigger in get_redline_triggers():
         st.markdown(f"- {trigger}")
 
-    render_section_title("使用方式", "先看结论，再上手验证。")
+    render_section_block(
+        "06",
+        "评测结论与使用方式",
+        "先看离线得出的结论，再上手现场验证。",
+    )
     render_flow_strip(get_usage_flow_steps())
     st.markdown(
-        "建议先在「模型边界报告」「模型能力指纹」等页看离线评测得出的结论——"
-        "各模型在当前样本下的强弱项、高频风险与可用边界；再到「发起评测」用项目样本"
+        "建议先在「模型边界报告」「模型能力指纹」「评测结论」等页看离线评测得出的结论——"
+        "各模型在当前样本下的强弱项、高频风险与可用边界；再到「可复现实验」用项目样本"
         "现场测试感兴趣的模型，对照 Gold Answer 与红线看它在专业题上的真实表现。"
     )
 
-    render_section_title("数据集规模", "下列数字均由当前题库与评分维度动态计算。")
+    render_section_block(
+        "07",
+        "数据集规模",
+        "下列数字均由当前题库与评分维度动态计算。",
+    )
     render_context_grid(build_dataset_summary_items(data))
     scored = scored_case_count(getattr(data, "scores", None))
     if scored > 0:
@@ -162,18 +213,16 @@ def render_project_methodology_page(data_bundle: dict) -> None:
     else:
         st.caption("当前尚无评测评分；运行一次真实评测后，各分析页会基于真实结果生成样本内观察。")
 
-    cols = st.columns(3)
-    entries = [
-        ("查看红线评测台 →", "overview"),
-        ("浏览任务样本 →", "tasks"),
-        ("发起评测 →", "eval_run"),
-    ]
-    for col, (label, page) in zip(cols, entries):
-        with col:
-            st.button(
-                label,
-                key=f"methodology_entry_{page}",
-                on_click=_open_page,
-                args=(page,),
-                use_container_width=True,
-            )
+    render_info_panel(
+        "口径与边界",
+        "题库与 Gold 为 MVP 脱敏样本；裁判给出的是建议分，需人工复核确认后归档；"
+        "所有结论均为当前样本内观察，不构成模型采购或业务决策建议。",
+    )
+    render_cta_group(
+        [
+            ("进入红线评测台 →", "overview"),
+            ("浏览样本库 →", "tasks"),
+            ("发起可复现实验 →", "eval_run"),
+        ],
+        key_prefix="methodology_foot",
+    )

@@ -45,7 +45,7 @@ def render_model_boundary_page(data_bundle: dict) -> None:
     if not eval_status.get("live"):
         render_empty_state_with_actions(
             "当前暂无真实评测结果。请先发起一次评测，再查看模型可用边界。",
-            [("发起评测", "eval_run"), ("浏览任务样本", "tasks")],
+            [("发起可复现实验", "eval_run"), ("浏览样本库", "tasks")],
         )
         return
 

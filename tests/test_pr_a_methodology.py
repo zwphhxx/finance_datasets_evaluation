@@ -46,7 +46,8 @@ class RegistrationTests(unittest.TestCase):
     def test_source_has_no_banned_phrases_and_uses_shared_components(self):
         source = Path("src/ui/project_methodology.py").read_text(encoding="utf-8")
         self.assertIn("src.ui.components", source)
-        self.assertIn("render_page_shell", source)
+        # 首屏改为作品集 Hero：方法论页以 render_hero 作为共享页头组件。
+        self.assertIn("render_hero", source)
         for phrase in BANNED_PHRASES:
             self.assertNotIn(phrase, source)
 

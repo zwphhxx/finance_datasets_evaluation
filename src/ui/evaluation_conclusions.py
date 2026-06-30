@@ -176,7 +176,7 @@ def _render_draft_row(row: dict, can_confirm: bool) -> None:
         if can_confirm and row.get("row_id") is not None:
             _render_inline_confirm(row)
         else:
-            st.caption("如需复核归档，请在已初始化 SQLite 的环境下，从“发起评测”或“典型样本拆解”页确认。")
+            st.caption("如需复核归档，请在已初始化 SQLite 的环境下，从“可复现实验”或“典型样本拆解”页确认。")
 
 
 def _render_inline_confirm(row: dict) -> None:
@@ -207,7 +207,7 @@ def _render_draft_entries() -> None:
     if cols[0].button("去典型样本拆解复核 →", key="conc_to_case_detail", use_container_width=True):
         _set_page("case_detail")
         st.rerun()
-    if cols[1].button("去发起评测 / 批量复核 →", key="conc_to_eval_run", use_container_width=True):
+    if cols[1].button("去可复现实验 / 批量复核 →", key="conc_to_eval_run", use_container_width=True):
         _set_page("eval_run")
         st.rerun()
 

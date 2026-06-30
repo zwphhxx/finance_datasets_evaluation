@@ -30,6 +30,12 @@ STYLE_CSS = """
     --fde-green-border: #cdddd0;
     --fde-gray-soft: #f1f3f6;
     --fde-shadow: 0 1px 2px rgba(31, 39, 51, 0.05);
+    /* Portfolio aliases: a single accent + shared radius/spacing scale so the
+       case-study layer stays consistent with the existing design system. */
+    --fde-accent: #2b4a6f;
+    --fde-radius: 12px;
+    --fde-radius-lg: 18px;
+    --fde-space: 1rem;
 }
 .stApp {
     background: var(--fde-bg);
@@ -903,6 +909,206 @@ header,
     border-top: 1px dashed var(--fde-blue-border);
     padding-top: 0.5rem;
 }
+/* -------------------------------------------------------------------------- */
+/* Portfolio case-study layer: hero, numbered sections, feature / case cards.  */
+/* Adds visual language (big title, wide whitespace, sectioned narrative) on    */
+/* top of the existing component palette without replacing any class above.     */
+/* -------------------------------------------------------------------------- */
+.fde-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: center;
+    border: 1px solid var(--fde-line);
+    border-radius: var(--fde-radius-lg);
+    background: radial-gradient(125% 145% at 0% 0%, var(--fde-blue-soft) 0%, var(--fde-surface) 58%);
+    padding: 2.1rem 2.2rem;
+    margin: 0.2rem 0 1.4rem 0;
+    box-shadow: var(--fde-shadow);
+}
+.fde-hero-eyebrow {
+    color: var(--fde-muted);
+    font-size: 0.76rem;
+    font-weight: 750;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 0.7rem;
+}
+.fde-hero-title {
+    color: var(--fde-blue);
+    font-size: 2.6rem;
+    font-weight: 800;
+    line-height: 1.08;
+    letter-spacing: -0.01em;
+    margin: 0 0 0.55rem 0;
+}
+.fde-hero-subtitle {
+    color: var(--fde-text);
+    font-size: 1.12rem;
+    line-height: 1.55;
+    font-weight: 650;
+    margin: 0 0 0.65rem 0;
+}
+.fde-hero-value {
+    color: var(--fde-muted);
+    font-size: 0.98rem;
+    line-height: 1.62;
+    margin: 0;
+}
+.fde-hero-aside {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+    gap: 0.7rem;
+}
+.fde-hero-stat {
+    border: 1px solid var(--fde-line);
+    border-left: 3px solid var(--fde-blue);
+    background: var(--fde-surface);
+    border-radius: var(--fde-radius);
+    padding: 0.85rem 0.9rem;
+}
+.fde-hero-stat-value {
+    color: var(--fde-blue);
+    font-size: 1.75rem;
+    font-weight: 800;
+    line-height: 1.05;
+}
+.fde-hero-stat-label {
+    color: var(--fde-muted);
+    font-size: 0.82rem;
+    margin-top: 0.25rem;
+    line-height: 1.4;
+}
+@media (max-width: 820px) {
+    .fde-hero { grid-template-columns: 1fr; padding: 1.5rem 1.4rem; }
+    .fde-hero-title { font-size: 2.05rem; }
+}
+.section-block {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.85rem;
+    margin: 1.7rem 0 0.6rem 0;
+}
+.section-block-index {
+    flex: 0 0 auto;
+    color: var(--fde-blue);
+    font-size: 0.98rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    border: 1px solid var(--fde-blue-border);
+    background: var(--fde-blue-soft);
+    border-radius: 9px;
+    padding: 0.16rem 0.5rem;
+    line-height: 1.4;
+}
+.section-block-body { flex: 1 1 auto; min-width: 0; }
+.section-block-title {
+    color: var(--fde-blue);
+    font-size: 1.22rem;
+    font-weight: 800;
+    line-height: 1.25;
+    margin: 0;
+}
+.section-block-desc {
+    color: var(--fde-muted);
+    font-size: 0.92rem;
+    line-height: 1.5;
+    margin-top: 0.2rem;
+}
+.feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(228px, 1fr));
+    gap: 0.8rem;
+    margin: 0.6rem 0 1rem 0;
+}
+.feature-card {
+    border: 1px solid var(--fde-line);
+    border-top: 3px solid var(--fde-blue);
+    background: var(--fde-surface);
+    border-radius: var(--fde-radius);
+    padding: 1rem 1.05rem;
+    box-shadow: var(--fde-shadow);
+}
+.feature-card-title {
+    color: var(--fde-blue);
+    font-weight: 800;
+    font-size: 0.98rem;
+    margin-bottom: 0.35rem;
+}
+.feature-card-body {
+    color: var(--fde-muted);
+    font-size: 0.93rem;
+    line-height: 1.58;
+}
+.case-study-card {
+    border: 1px solid var(--fde-line);
+    border-left: 4px solid var(--fde-blue);
+    background: var(--fde-surface);
+    border-radius: 14px;
+    padding: 1.15rem 1.25rem;
+    margin: 0.55rem 0 1rem 0;
+    box-shadow: var(--fde-shadow);
+}
+.case-study-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+.case-study-title {
+    color: var(--fde-blue);
+    font-weight: 800;
+    font-size: 1.08rem;
+}
+.case-study-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+.case-study-summary {
+    color: var(--fde-text);
+    line-height: 1.62;
+    margin-top: 0.55rem;
+}
+.case-study-metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+    gap: 0.65rem;
+    margin-top: 0.8rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--fde-line);
+}
+.case-study-metric-value {
+    color: var(--fde-blue);
+    font-weight: 800;
+    font-size: 1.25rem;
+    line-height: 1.1;
+}
+.case-study-metric-label {
+    color: var(--fde-muted);
+    font-size: 0.8rem;
+    margin-top: 0.2rem;
+}
+.status-pill {
+    display: inline-block;
+    border-radius: 999px;
+    padding: 0.16rem 0.62rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    border: 1px solid transparent;
+}
+.status-pill-neutral { background: var(--fde-gray-soft); color: var(--fde-muted); border-color: var(--fde-line); }
+.status-pill-success { background: var(--fde-green-soft); color: var(--fde-green); border-color: var(--fde-green-border); }
+.status-pill-warning { background: var(--fde-orange-soft); color: var(--fde-orange); border-color: var(--fde-orange-border); }
+.status-pill-danger { background: var(--fde-red-soft); color: var(--fde-red); border-color: var(--fde-red-border); }
+.status-pill-accent { background: var(--fde-blue-soft); color: var(--fde-blue); border-color: var(--fde-blue-border); }
+.cta-note {
+    color: var(--fde-muted);
+    font-size: 0.84rem;
+    line-height: 1.5;
+    margin: 0.15rem 0 0.4rem 0;
+}
 </style>
 """
 
@@ -1340,3 +1546,138 @@ def _has_value(value) -> bool:
         return not pd.isna(value)
     except TypeError:
         return True
+
+
+# --------------------------------------------------------------------------- #
+# Portfolio case-study components (PR-UI)
+# --------------------------------------------------------------------------- #
+def render_hero(eyebrow, title, subtitle, value_line, stats=None) -> None:
+    """Render the portfolio hero: large title, subtitle, value line and a set
+    of dynamic stat cards on the right.
+
+    `stats` is a list of (value, label) tuples — every value should be derived
+    from live data, never hardcoded. When `stats` is empty the right column is
+    omitted, so the hero degrades gracefully with no data.
+    """
+    stat_html = "".join(
+        f'<div class="fde-hero-stat">'
+        f'<div class="fde-hero-stat-value">{escape(str(value))}</div>'
+        f'<div class="fde-hero-stat-label">{escape(str(label))}</div>'
+        f"</div>"
+        for value, label in (stats or [])
+    )
+    aside_html = f'<div class="fde-hero-aside">{stat_html}</div>' if stat_html else ""
+    eyebrow_html = f'<div class="fde-hero-eyebrow">{escape(str(eyebrow))}</div>' if eyebrow else ""
+    value_html = f'<p class="fde-hero-value">{escape(str(value_line))}</p>' if value_line else ""
+    render_html(
+        f"""
+        <div class="fde-hero">
+            <div class="fde-hero-main">
+                {eyebrow_html}
+                <h1 class="fde-hero-title">{escape(str(title))}</h1>
+                <p class="fde-hero-subtitle">{escape(str(subtitle))}</p>
+                {value_html}
+            </div>
+            {aside_html}
+        </div>
+        """
+    )
+
+
+def render_section_block(index, title, description=None) -> None:
+    """Numbered section header (01 / 02 / 03 …) for the case-study narrative."""
+    desc_html = (
+        f'<div class="section-block-desc">{escape(str(description))}</div>' if description else ""
+    )
+    render_html(
+        f"""
+        <div class="section-block">
+            <div class="section-block-index">{escape(str(index))}</div>
+            <div class="section-block-body">
+                <div class="section-block-title">{escape(str(title))}</div>
+                {desc_html}
+            </div>
+        </div>
+        """
+    )
+
+
+def render_feature_card(items) -> None:
+    """Render a responsive, auto-wrapping grid of feature cards.
+
+    `items` is a list of (title, body) tuples.
+    """
+    cards = "".join(
+        f'<div class="feature-card">'
+        f'<div class="feature-card-title">{escape(str(title))}</div>'
+        f'<div class="feature-card-body">{escape(str(body))}</div>'
+        f"</div>"
+        for title, body in items
+    )
+    render_html(f'<div class="feature-grid">{cards}</div>')
+
+
+def render_case_study_card(title, summary, tags=None, metrics=None) -> None:
+    """Render a single case-study card with optional tags and metric footer.
+
+    `tags` is a list of strings; `metrics` is a list of (label, value) tuples.
+    """
+    tag_html = "".join(
+        f'<span class="status-pill status-pill-accent">{escape(str(tag))}</span>'
+        for tag in (tags or [])
+    )
+    tags_block = f'<div class="case-study-tags">{tag_html}</div>' if tag_html else ""
+    metric_html = "".join(
+        f'<div><div class="case-study-metric-value">{escape(str(value))}</div>'
+        f'<div class="case-study-metric-label">{escape(str(label))}</div></div>'
+        for label, value in (metrics or [])
+    )
+    metrics_block = f'<div class="case-study-metrics">{metric_html}</div>' if metric_html else ""
+    render_html(
+        f"""
+        <div class="case-study-card">
+            <div class="case-study-head">
+                <span class="case-study-title">{escape(str(title))}</span>
+                {tags_block}
+            </div>
+            <div class="case-study-summary">{escape(str(summary))}</div>
+            {metrics_block}
+        </div>
+        """
+    )
+
+
+# Pill level → CSS modifier. Accepts the shared status vocabulary plus a few
+# convenience aliases so callers can pass natural labels.
+_PILL_LEVELS = {
+    "success": "success", "通过": "success", "ok": "success",
+    "warning": "warning", "warn": "warning", "中": "warning",
+    "danger": "danger", "error": "danger", "高": "danger",
+    "accent": "accent", "info": "accent",
+    "neutral": "neutral",
+}
+
+
+def render_status_pill(text, level: str = "neutral") -> None:
+    cls = _PILL_LEVELS.get(str(level).strip().lower(), "neutral")
+    render_html(f'<span class="status-pill status-pill-{cls}">{escape(str(text))}</span>')
+
+
+def render_cta_group(actions, note=None, key_prefix: str = "cta") -> None:
+    """Render a row of call-to-action buttons that navigate to pages.
+
+    `actions` is a list of (label, page_key) tuples. `key_prefix` keeps button
+    keys unique when more than one CTA group lives on the same page.
+    """
+    import streamlit as st
+
+    if not actions:
+        return
+    cols = st.columns(len(actions))
+    for col, (label, page_key) in zip(cols, actions):
+        with col:
+            if st.button(label, key=f"{key_prefix}_{page_key}", use_container_width=True):
+                st.session_state.current_page = page_key
+                st.rerun()
+    if note:
+        render_html(f'<div class="cta-note">{escape(str(note))}</div>')
