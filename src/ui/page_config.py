@@ -79,6 +79,15 @@ PAGE_CONFIGS = [
         nav_summary="可用边界与风险",
     ),
     PageConfig(
+        page_key="evaluation_conclusions",
+        title="评测结论",
+        subtitle="汇总已有结论、现场草稿与已复核归档，区分哪些已计入正式结论。",
+        question="本页用于查看当前样本内的正式评测结论，并把现场新增评测经人工复核后归档计入。",
+        boundary="正式结论只含 seed 已有结论与已复核归档结论；现场草稿未计入；这是样本内可用边界观察，不是模型排行榜。",
+        highlights="正式结论多维度汇总、人工点评摘要、高频问题归纳、草稿待复核与复核归档流程。",
+        nav_summary="正式结论与复核归档",
+    ),
+    PageConfig(
         page_key="dataset_quality",
         title="数据集质量与扩展框架",
         subtitle="说明数据集的质量门槛、任务覆盖、答案边界与可扩展接入方式。",

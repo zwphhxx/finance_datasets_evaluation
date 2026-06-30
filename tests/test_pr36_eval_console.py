@@ -156,6 +156,7 @@ class PageRemovalTests(unittest.TestCase):
                 "case_detail",
                 "model_diagnosis",
                 "model_boundary",
+                "evaluation_conclusions",
                 "dataset_quality",
                 "dataset_admin",
             ],
@@ -188,6 +189,7 @@ class AppRenderTests(unittest.TestCase):
         "case_detail",
         "model_diagnosis",
         "model_boundary",
+        "evaluation_conclusions",
         "dataset_quality",
     ]
 

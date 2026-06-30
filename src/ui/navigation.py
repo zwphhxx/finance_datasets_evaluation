@@ -7,6 +7,7 @@ from src.ui.components import render_html
 from src.ui.dataset_admin import render_dataset_admin_page
 from src.ui.dataset_quality import render_dataset_quality_page
 from src.ui.eval_run_page import render_eval_run_page
+from src.ui.evaluation_conclusions import render_evaluation_conclusions_page
 from src.ui.model_boundary import render_model_boundary_page
 from src.ui.model_diagnosis import render_model_diagnosis_page
 from src.ui.overview import render_overview_page
@@ -23,6 +24,7 @@ PAGES = {
     "case_detail": render_case_detail_page,
     "model_diagnosis": render_model_diagnosis_page,
     "model_boundary": render_model_boundary_page,
+    "evaluation_conclusions": render_evaluation_conclusions_page,
     "dataset_quality": render_dataset_quality_page,
     "dataset_admin": render_dataset_admin_page,
 }
@@ -31,7 +33,7 @@ PAGES = {
 _NAV_GROUPS = [
     ("📌 项目", ["project_methodology"]),
     ("📊 概览", ["overview", "tasks"]),
-    ("▶️  运行评测", ["eval_run", "case_detail", "model_diagnosis", "model_boundary"]),
+    ("▶️  运行评测", ["eval_run", "case_detail", "model_diagnosis", "model_boundary", "evaluation_conclusions"]),
     ("🛠️  数据集管理", ["dataset_quality", "dataset_admin"]),
 ]
 

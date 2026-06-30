@@ -15,6 +15,7 @@ EXPECTED_PAGE_KEYS = [
     "case_detail",
     "model_diagnosis",
     "model_boundary",
+    "evaluation_conclusions",
     "dataset_quality",
     "dataset_admin",
 ]
@@ -28,6 +29,7 @@ EXPECTED_PAGE_TITLES = [
     "样板题深度评测",
     "模型能力指纹",
     "模型边界报告",
+    "评测结论",
     "数据集质量与扩展框架",
     "数据集管理",
 ]

@@ -14,6 +14,7 @@ EXPECTED_PAGE_ORDER = [
     "case_detail",
     "model_diagnosis",
     "model_boundary",
+    "evaluation_conclusions",
     "dataset_quality",
     "dataset_admin",
 ]
