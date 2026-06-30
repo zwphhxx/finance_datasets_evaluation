@@ -53,12 +53,12 @@ PAGE_CONFIGS = [
     ),
     PageConfig(
         page_key="model_diagnosis",
-        title="模型能力诊断",
-        subtitle="基于当前样本观察模型在专业能力维度上的不稳定点。",
-        question="本页用于判断当前样本下模型在哪些能力维度更不稳定。",
-        boundary="本页不作为模型整体能力结论，也不提供采购建议或性价比判断。",
-        highlights="综合得分、分维度得分、错误类型分布、领域场景表现和能力诊断摘要。",
-        nav_summary="能力短板观察",
+        title="模型能力指纹",
+        subtitle="为每个模型生成一张能力指纹卡，呈现在当前样本中的强项、短板、红线风险与适用边界。",
+        question="本页用于判断当前样本下各模型的强项、短板与红线风险分别集中在哪里。",
+        boundary="本页不作为模型整体能力结论，也不提供绝对排名、采购建议或性价比判断。",
+        highlights="模型能力指纹卡、横向对比、维度达成矩阵、错误类型分布与领域场景表现。",
+        nav_summary="能力指纹与短板",
     ),
     PageConfig(
         page_key="model_boundary",

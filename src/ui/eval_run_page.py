@@ -399,7 +399,7 @@ def _render_completion_cta() -> None:
     if c1.button("查看单题深度评测 →", key="eval_run_to_case_detail"):
         _set_page("case_detail")
         st.rerun()
-    if c2.button("查看模型能力诊断 →", key="eval_run_to_diagnosis"):
+    if c2.button("查看模型能力指纹 →", key="eval_run_to_diagnosis"):
         _set_page("model_diagnosis")
         st.rerun()
     if c3.button("查看模型边界报告 →", key="eval_run_to_boundary"):

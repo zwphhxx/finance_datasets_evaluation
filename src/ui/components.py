@@ -822,6 +822,87 @@ header,
     color: var(--fde-text);
     line-height: 1.55;
 }
+.fingerprint-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(248px, 1fr));
+    gap: 0.85rem;
+    margin: 0.4rem 0 0.3rem;
+}
+.fingerprint-card {
+    background: var(--fde-surface);
+    border: 1px solid var(--fde-blue-border);
+    border-top: 3px solid var(--fde-muted);
+    border-radius: 10px;
+    padding: 0.95rem 1rem 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+.fingerprint-card-success { border-top-color: var(--fde-green); }
+.fingerprint-card-warning { border-top-color: var(--fde-orange); }
+.fingerprint-card-danger { border-top-color: var(--fde-red); }
+.fingerprint-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+.fingerprint-model {
+    font-weight: 800;
+    color: var(--fde-blue);
+    font-size: 1rem;
+    word-break: break-all;
+}
+.fingerprint-score {
+    font-weight: 800;
+    font-size: 1.45rem;
+    color: var(--fde-text);
+    line-height: 1;
+    white-space: nowrap;
+}
+.fingerprint-score small {
+    display: block;
+    font-size: 0.68rem;
+    font-weight: 650;
+    color: var(--fde-muted);
+    text-align: right;
+    margin-top: 0.15rem;
+}
+.fingerprint-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.32rem;
+}
+.fingerprint-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.6rem;
+    font-size: 0.86rem;
+    line-height: 1.45;
+}
+.fingerprint-list li span {
+    color: var(--fde-muted);
+    flex: 0 0 auto;
+}
+.fingerprint-list li b {
+    color: var(--fde-text);
+    font-weight: 700;
+    text-align: right;
+}
+.fingerprint-list li.fingerprint-redline b {
+    color: var(--fde-red);
+}
+.fingerprint-note {
+    margin: 0;
+    color: var(--fde-muted);
+    font-size: 0.78rem;
+    line-height: 1.5;
+    border-top: 1px dashed var(--fde-blue-border);
+    padding-top: 0.5rem;
+}
 </style>
 """
 
@@ -1065,6 +1146,45 @@ def render_flow_strip(steps) -> None:
             """
         )
     render_html(f'<div class="flow-strip">{"".join(parts)}</div>')
+
+
+def render_fingerprint_cards(cards) -> None:
+    """Render one capability-fingerprint card per model.
+
+    Each card expects the keys produced by ``build_model_fingerprints``: model,
+    avg_score, strongest_dim, weakest_dim, top_error, redline_count, tendency,
+    tendency_level, tendency_note. Levels reuse the shared status palette so the
+    cards stay visually consistent with the rest of the design system.
+    """
+    blocks: list[str] = []
+    for card in cards:
+        level = str(card.get("tendency_level", "neutral"))
+        rows = [
+            ("最强维度", str(card.get("strongest_dim", "暂无")), False),
+            ("最弱维度", str(card.get("weakest_dim", "暂无")), False),
+            ("高频错误", str(card.get("top_error", "无")), False),
+            ("红线错误", f'{int(card.get("redline_count", 0))} 次', True),
+        ]
+        items = "".join(
+            f'<li class="fingerprint-redline"><span>{escape(label)}</span><b>{escape(value)}</b></li>'
+            if is_redline
+            else f'<li><span>{escape(label)}</span><b>{escape(value)}</b></li>'
+            for label, value, is_redline in rows
+        )
+        blocks.append(
+            f"""
+            <div class="fingerprint-card fingerprint-card-{escape(level)}">
+                <div class="fingerprint-head">
+                    <span class="fingerprint-model">{escape(str(card.get("model", "")))}</span>
+                    <span class="fingerprint-score">{float(card.get("avg_score", 0.0)):.1f}<small>平均总分</small></span>
+                </div>
+                <span class="status-badge status-{escape(level)}">{escape(str(card.get("tendency", "")))}</span>
+                <ul class="fingerprint-list">{items}</ul>
+                <p class="fingerprint-note">{escape(str(card.get("tendency_note", "")))}</p>
+            </div>
+            """
+        )
+    render_html(f'<div class="fingerprint-grid">{"".join(blocks)}</div>')
 
 
 def render_model_answer_card(

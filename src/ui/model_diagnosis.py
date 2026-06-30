@@ -20,6 +20,7 @@ from src.ui.tasks import DOMAIN_LABELS, display_label
 from src.ui.components import (
     render_empty_state,
     render_empty_state_with_actions,
+    render_fingerprint_cards,
     render_html,
     render_page_shell,
     render_review_caveat,
@@ -31,6 +32,19 @@ _DIMENSION_FULL_BY_LABEL = {
     label: SCORE_DIMENSION_FULL_MARKS[column] for column, label in SCORE_DIMENSIONS
 }
 _DIMENSION_ORDER = [label for _, label in SCORE_DIMENSIONS]
+
+# Capability-fingerprint thresholds (evaluation methodology config, aligned with
+# the case-detail verdict): a model only *tends toward* direct use when its
+# sample average clears the upper floor with no weak dimension; below the pass
+# floor — or with any red-line error — it tends toward not-directly-usable.
+FINGERPRINT_DIRECT_FLOOR = 85.0
+FINGERPRINT_PASS_FLOOR = 60.0
+FINGERPRINT_WEAK_RATIO = 0.6
+
+# Severity values that count as a red-line hit. Derived purely from the error
+# label's severity column, so no specific error *type* is hardcoded here; this
+# tolerates new high-risk error types appearing in the data.
+HIGH_SEVERITY_VALUES = {"高", "high"}
 
 
 def _attainment_level(attainment: float) -> str:
@@ -121,21 +135,112 @@ def _top_error_for_model(error_counts, model_name: str) -> str:
     return f"{top['error_type']}（{int(top['count'])} 次）"
 
 
-def _model_dimension_extremes(dimension_scores, model_name: str) -> tuple[str, str]:
+def _model_attainments(dimension_scores, model_name: str) -> list[tuple[str, float]]:
+    """Per-dimension attainment (score / full mark) for one model, weakest first.
+
+    Dimensions without a known full mark are skipped, so the result reflects only
+    dimensions actually present in the current score schema.
+    """
     if dimension_scores.empty:
-        return "暂无", "暂无"
+        return []
     subset = dimension_scores[dimension_scores["model_name"].astype(str) == model_name]
-    attainments = []
+    attainments: list[tuple[str, float]] = []
     for _, row in subset.iterrows():
         full = _DIMENSION_FULL_BY_LABEL.get(str(row["dimension"]))
         if not full:
             continue
         attainments.append((str(row["dimension"]), float(row["score"]) / full))
+    attainments.sort(key=lambda item: item[1])
+    return attainments
+
+
+def _model_dimension_extremes(dimension_scores, model_name: str) -> tuple[str, str]:
+    attainments = _model_attainments(dimension_scores, model_name)
     if not attainments:
         return "暂无", "暂无"
-    attainments.sort(key=lambda item: item[1])
     weakest, strongest = attainments[0], attainments[-1]
     return f"{strongest[0]}（{strongest[1]:.0%}）", f"{weakest[0]}（{weakest[1]:.0%}）"
+
+
+def count_model_redline_errors(error_df, model_name: str) -> int:
+    """Count this model's red-line errors, derived from the severity column.
+
+    A red-line hit is any error labelled high severity. Counting from severity
+    (not a fixed list of error types) keeps the metric robust to new high-risk
+    labels in the data and avoids hardcoding error types.
+    """
+    if (
+        error_df is None
+        or error_df.empty
+        or "model_name" not in error_df
+        or "severity" not in error_df
+    ):
+        return 0
+    subset = error_df[error_df["model_name"].astype(str) == str(model_name)]
+    if subset.empty:
+        return 0
+    severity = subset["severity"].astype(str).str.strip().str.lower()
+    return int(severity.isin(HIGH_SEVERITY_VALUES).sum())
+
+
+def _boundary_tendency(avg_score: float, weakest_attainment, redline_count: int) -> tuple[str, str, str]:
+    """Map an average, weakest-dimension attainment and red-line count to a
+    usage-boundary tendency. Returns (tendency, level, sample-scoped note)."""
+    if redline_count > 0:
+        return "倾向不可直接用", "danger", "当前样本内观察到红线错误，须人工与合规终审。"
+    if avg_score < FINGERPRINT_PASS_FLOOR:
+        return "倾向不可直接用", "danger", "当前样本内平均总分低于及格线，不建议直接采用。"
+    weak = weakest_attainment is not None and weakest_attainment < FINGERPRINT_WEAK_RATIO
+    if avg_score >= FINGERPRINT_DIRECT_FLOOR and not weak:
+        return "倾向可直接用", "success", "当前样本内表现稳健，仍建议人工确认最终结论。"
+    return "倾向需复核", "warning", "当前样本内存在维度短板，需人工复核后使用。"
+
+
+def build_model_fingerprints(scores_df, error_df, tasks_df) -> list[dict]:
+    """One capability-fingerprint card per model, derived from current data.
+
+    Each card carries the model's sample average, strongest/weakest dimension,
+    frequent error, red-line error count and a usage-boundary *tendency* — never
+    an absolute ranking claim. All figures are scoped to the current evaluation
+    sample. ``tasks_df`` is accepted for signature parity with the other builders
+    and future domain-aware extensions; the current derivation needs only scores
+    and error labels.
+    """
+    totals = get_model_total_scores(scores_df)
+    if totals.empty:
+        return []
+
+    dimension_scores = get_model_dimension_scores(scores_df)
+    error_counts = get_model_error_type_counts(error_df)
+
+    cards = []
+    for _, total in totals.sort_values("total_score", ascending=False).iterrows():
+        model = str(total["model_name"])
+        avg = float(total["total_score"])
+        attainments = _model_attainments(dimension_scores, model)
+        if attainments:
+            strongest = f"{attainments[-1][0]}（{attainments[-1][1]:.0%}）"
+            weakest = f"{attainments[0][0]}（{attainments[0][1]:.0%}）"
+            weakest_attainment = attainments[0][1]
+        else:
+            strongest = weakest = "暂无分项评分"
+            weakest_attainment = None
+        redline_count = count_model_redline_errors(error_df, model)
+        tendency, level, note = _boundary_tendency(avg, weakest_attainment, redline_count)
+        cards.append(
+            {
+                "model": model,
+                "avg_score": avg,
+                "strongest_dim": strongest,
+                "weakest_dim": weakest,
+                "top_error": _top_error_for_model(error_counts, model),
+                "redline_count": redline_count,
+                "tendency": tendency,
+                "tendency_level": level,
+                "tendency_note": note,
+            }
+        )
+    return cards
 
 
 def _model_boundary(domain_scores, model_name: str) -> str:
@@ -225,7 +330,7 @@ def render_model_diagnosis_page(data_bundle: dict) -> None:
 
     if not eval_status.get("live"):
         render_empty_state_with_actions(
-            "当前暂无真实评测结果。请先发起一次评测，再查看模型能力诊断。",
+            "当前暂无真实评测结果。请先发起一次评测，再查看模型能力指纹。",
             [("发起评测", "eval_run"), ("浏览任务样本", "tasks")],
         )
         return
@@ -240,9 +345,32 @@ def render_model_diagnosis_page(data_bundle: dict) -> None:
         return
 
     _render_boundary_line(data)
+    _render_fingerprint_section(data)
+
+    st.divider()
+    render_section_title(
+        "评分证据",
+        "以下为指纹卡结论的支撑数据：横向对比、维度达成矩阵与分项图表，均按当前评测集计算。",
+    )
     _render_comparison_table(rows)
     _render_dimension_matrix(data.scores)
     _render_evidence_charts(data)
+
+
+def _render_fingerprint_section(data) -> None:
+    render_section_title(
+        "模型能力指纹",
+        "每个模型一张指纹卡，呈现强项、短板、红线风险与适用边界倾向。",
+    )
+    cards = build_model_fingerprints(data.scores, data.errors, data.tasks)
+    if not cards:
+        render_empty_state("当前暂无可展示的评分数据。")
+        return
+    render_fingerprint_cards(cards)
+    st.caption(
+        "上述均为当前评测样本内观察，样本量有限，仅反映模型在本批尽调任务上的相对表现，"
+        "不构成绝对排名，也不代表模型整体能力或采购建议。"
+    )
 
 
 def _render_boundary_line(data) -> None:
@@ -258,7 +386,7 @@ def _render_boundary_line(data) -> None:
 
 
 def _render_comparison_table(rows: list[dict]) -> None:
-    render_section_title("模型对比", "平均分、维度强弱、高频错误与适用边界，均按当前评测集计算。")
+    render_section_title("模型横向对比", "平均分、维度强弱、高频错误与适用边界，均按当前评测集计算。")
     header = (
         "<th>模型</th><th>平均分</th><th>最强维度</th>"
         "<th>最弱维度</th><th>高频错误</th><th>适用边界</th>"
@@ -280,7 +408,7 @@ def _render_comparison_table(rows: list[dict]) -> None:
 
 
 def _render_dimension_matrix(scores_df) -> None:
-    render_section_title("维度得分矩阵", "行为模型、列为评分维度，颜色越浅玫瑰表示达成率越低。")
+    render_section_title("维度达成矩阵", "行为模型、列为评分维度，颜色越浅玫瑰表示达成率越低。")
     matrix = build_dimension_matrix(scores_df)
     if not matrix["rows"]:
         render_empty_state("当前暂无分维度评分数据。")
@@ -307,13 +435,15 @@ def _render_dimension_matrix(scores_df) -> None:
 
 
 def _render_evidence_charts(data) -> None:
-    render_section_title("分项证据", "用于核对对比表与矩阵中的结论。")
+    render_section_title("分项表现图表", "用于核对指纹卡与对比表中的结论。")
     tab_total, tab_errors, tab_domains = st.tabs(["综合得分", "错误类型", "领域表现"])
 
     with tab_total:
-        themed_bar_chart(
-            get_model_total_scores(data.scores), "model_name", "total_score", "模型", "平均总分"
-        )
+        total_scores = get_model_total_scores(data.scores)
+        if total_scores.empty:
+            render_empty_state("当前暂无可展示的综合得分数据。")
+        else:
+            themed_bar_chart(total_scores, "model_name", "total_score", "模型", "平均总分")
 
     with tab_errors:
         error_counts = get_model_error_type_counts(data.errors)
