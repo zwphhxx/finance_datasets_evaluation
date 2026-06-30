@@ -65,6 +65,19 @@ PRIORITY_BADGE = {"高": "danger", "中": "warning", "低": "neutral"}
 
 ANSWER_SUMMARY_LIMIT = 220
 
+# 裁判结论阈值（评测方法学配置，非针对具体模型 / 案例的结论）。满分按 100 计。
+VERDICT_DIRECT_FLOOR = 85.0  # 总分达到此线且无显著维度短板，方可作为「可直接使用」候选
+VERDICT_PASS_FLOOR = 60.0    # 及格线，低于此线不可直接使用
+VERDICT_WEAK_RATIO = 0.6     # 分项达成率低于此值视为维度短板
+
+# 三类使用边界的展示标题与状态色（低饱和：绿 / 米 / 玫瑰）。
+_VERDICT_TIERS = {
+    "direct": ("可直接使用", "success"),
+    "review": ("必须人工复核", "warning"),
+    "not_direct": ("不可直接使用", "danger"),
+    "none": ("暂无裁判结论", "neutral"),
+}
+
 
 # --- data derivation (pure, dynamic on case + model) --------------------------
 
@@ -241,6 +254,142 @@ def _score_badge_level(score) -> str:
     return "danger"
 
 
+def detect_redline_hits(errors_df, output_id, gold) -> list[str]:
+    """Red-line hits for one model output, derived dynamically.
+
+    Two sources, both from data: high-severity error labels on this output, and
+    this output's error text approximately matching the case's Gold
+    `unacceptable_errors`. Nothing is hardcoded; returns [] when no signal.
+    """
+    errors = get_errors_for_output(errors_df, output_id)
+    hits: list[str] = []
+    if not errors.empty:
+        for _, error in errors.iterrows():
+            if _text(error.get("severity")) == "高":
+                hits.append(f'高严重度错误：{_text(error.get("error_type"), "未分类错误")}')
+
+        unacceptable = field_list(gold, "unacceptable_errors") if isinstance(gold, dict) else []
+        if unacceptable:
+            blob = _normalize_text(
+                " ".join(
+                    f'{_text(e.get("error_type"), "")}{_text(e.get("error_description"), "")}'
+                    for _, e in errors.iterrows()
+                )
+            )
+            for item in unacceptable:
+                text = str(item).strip()
+                if not text:
+                    continue
+                keywords = [token for token in re.split(r"[，。、；：（）()/\s,.;:]+", text) if len(token) >= 3]
+                matched = (
+                    any(_normalize_text(token) in blob for token in keywords)
+                    if keywords
+                    else _normalize_text(text) in blob
+                )
+                if matched:
+                    hits.append(f"疑似触及红线：{summarize_text(text, 40)}")
+
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for hit in hits:
+        if hit not in seen:
+            seen.add(hit)
+            ordered.append(hit)
+    return ordered
+
+
+def _suggested_data_action(errors_df, optimization_df, output_id) -> str:
+    """Pick a data-improvement action for this output, dynamically.
+
+    Prefers an action linked through the optimization plan / error labels; when
+    errors exist but no mapping is available, asks for the missing label mapping
+    rather than inventing a fix; when there is no error at all, says so plainly.
+    """
+    actions = build_data_fix_actions(errors_df, optimization_df, output_id)
+    for action in actions:
+        if action["action"] and action["action"] != "暂无对应动作":
+            return f'{action["error_type"]} → {action["action"]}'
+    if actions:
+        return "待补充标签映射"
+    return "未触发错误标签，暂无补强动作"
+
+
+def _weakest_rubric(rubric_rows: list[dict]) -> tuple[str, bool]:
+    """Return (weakest dimension text, has a below-threshold weak dimension)."""
+    if not rubric_rows:
+        return "暂无分项评分", False
+    weakest = min(rubric_rows, key=lambda row: (row["score"] / row["full"] if row["full"] else 0.0))
+    weak_text = f'{weakest["dimension"]}（{weakest["score"]:.0f}/{weakest["full"]}）'
+    has_weak = any(
+        (row["full"] and row["score"] / row["full"] < VERDICT_WEAK_RATIO) for row in rubric_rows
+    )
+    return weak_text, has_weak
+
+
+def build_case_verdict(output_row, errors_df, gold, optimization_df, task_info) -> dict:
+    """Derive the redline verdict for one (case, model) from its data.
+
+    Tier order of precedence: a red-line hit overrides everything; otherwise a
+    high-risk task stays human-only; otherwise the total score and dimension
+    shortfalls decide direct / review / not-direct. Fully dynamic and robust to
+    missing output, scores, errors or Gold.
+    """
+    if output_row is None:
+        title, level = _VERDICT_TIERS["none"]
+        return {
+            "tier": "none",
+            "title": title,
+            "level": level,
+            "reason": "该任务暂无模型回答记录，运行评测后生成裁判结论。",
+            "redline_hits": [],
+            "weakest": "暂无分项评分",
+            "score_text": "未评分",
+            "suggested_action": "未触发错误标签，暂无补强动作",
+        }
+
+    output_id = output_row.get("output_id")
+    total = output_row.get("total_score")
+    score_text = f"{float(total):.0f}" if has_value(total) else "未评分"
+    weakest, has_weak = _weakest_rubric(build_rubric_rows(output_row))
+    redline_hits = detect_redline_hits(errors_df, output_id, gold)
+    risk = _text(task_info.get("risk_level"), "") if task_info is not None else ""
+
+    reasons: list[str] = []
+    if redline_hits:
+        tier = "not_direct"
+        reasons.append(f"命中红线 {len(redline_hits)} 项，红线错误一票否决")
+    elif risk == "高":
+        tier = "not_direct"
+        reasons.append("高风险任务，结论须人工与合规终审")
+    elif not has_value(total):
+        tier = "review"
+        reasons.append("尚未产生评分，需人工评测复核")
+    elif float(total) >= VERDICT_DIRECT_FLOOR and not has_weak:
+        tier = "direct"
+        reasons.append(f"总分 {score_text} 且无显著维度短板")
+    elif float(total) >= VERDICT_PASS_FLOOR:
+        tier = "review"
+        reasons.append(f"总分 {score_text}，存在维度短板，需人工复核")
+    else:
+        tier = "not_direct"
+        reasons.append(f"总分 {score_text} 低于及格线")
+
+    if has_weak and tier != "direct" and weakest != "暂无分项评分":
+        reasons.append(f"最弱维度 {weakest}")
+
+    title, level = _VERDICT_TIERS[tier]
+    return {
+        "tier": tier,
+        "title": title,
+        "level": level,
+        "reason": "；".join(reasons) + "。",
+        "redline_hits": redline_hits,
+        "weakest": weakest,
+        "score_text": score_text,
+        "suggested_action": _suggested_data_action(errors_df, optimization_df, output_id),
+    }
+
+
 # --- rendering ---------------------------------------------------------------
 
 def render_case_detail_page(data_bundle: dict) -> None:
@@ -289,29 +438,112 @@ def render_case_detail_page(data_bundle: dict) -> None:
 
     gold = data.gold_answer_map.get(selected_case)
 
-    # Screen 1 — task brief vs model performance
-    left, right = st.columns(2, gap="large")
-    with left:
-        _render_task_brief(task_info)
-    with right:
-        _render_model_performance(output_row, data.errors)
+    # 裁判结论先行：选定 case + model 后立即给出红线裁决卡。
+    verdict = build_case_verdict(output_row, data.errors, gold, data.optimizations, task_info)
+    _render_verdict_card(verdict)
+    _render_task_context(task_info)
 
-    st.divider()
-
-    # Screen 2 — evaluation standard vs model answer
-    left, right = st.columns(2, gap="large")
+    # 三栏审判席：左 Gold 标准 / 中 模型回答 / 右 裁判结论。
+    left, mid, right = st.columns(3, gap="large")
     with left:
         _render_gold_standard(gold)
+    with mid:
+        _render_model_answer(output_row, gold)
     with right:
-        _render_model_answer(output_row, gold, data.errors)
+        _render_judge_column(output_row, data.errors, verdict)
 
     st.divider()
 
-    # Screen 3 — single scoring matrix
+    # 证据区：任务题全文与评分矩阵下沉，不抢第一屏。
+    render_section_title("评分证据", "任务题与单题评分矩阵，作为上方裁判结论的支撑证据。")
+    with st.expander("查看任务题全文", expanded=False):
+        _render_task_brief(task_info)
     _render_scoring_matrix(output_row, data.errors)
     _render_case_review(output_row, eval_status)
 
     _render_preference_section(data.preference_pairs, data.model_outputs, selected_case)
+
+
+def _render_verdict_card(verdict: dict) -> None:
+    if verdict["redline_hits"]:
+        redline_html = '<div class="boundary-list">' + "".join(
+            f'<div class="redline-item">{escape(hit)}</div>' for hit in verdict["redline_hits"]
+        ) + "</div>"
+    else:
+        redline_html = '<div class="verdict-field-value">未观察到</div>'
+
+    render_html(
+        f"""
+        <div class="verdict-card verdict-card-{escape(verdict["tier"])}">
+            <div class="verdict-head">
+                <span class="status-badge status-{escape(verdict["level"])}">{escape(verdict["title"])}</span>
+                <span class="verdict-score">总分 {escape(verdict["score_text"])}</span>
+            </div>
+            <div class="verdict-reason">{escape(verdict["reason"])}</div>
+            <div class="verdict-grid">
+                <div class="verdict-field">
+                    <div class="verdict-field-label">红线命中</div>
+                    {redline_html}
+                </div>
+                <div class="verdict-field">
+                    <div class="verdict-field-label">建议动作</div>
+                    <div class="verdict-field-value">{escape(verdict["suggested_action"])}</div>
+                </div>
+            </div>
+        </div>
+        """
+    )
+
+
+def _render_task_context(task_info: pd.Series) -> None:
+    domain = display_label(task_info.get("domain"), DOMAIN_LABELS)
+    task_type = display_label(task_info.get("task_type"), TASK_TYPE_LABELS)
+    difficulty = DIFFICULTY_LABELS.get(_text(task_info.get("difficulty")), _text(task_info.get("difficulty")))
+    risk = RISK_LABELS.get(_text(task_info.get("risk_level")), _text(task_info.get("risk_level")))
+    requirement = _text(task_info.get("question"), _text(task_info.get("scenario"), "暂无任务要求"))
+    st.caption(
+        f"{domain} · {task_type} · 难度 {difficulty} · 风险 {risk} ｜ {summarize_text(requirement, 80)}"
+    )
+
+
+def _render_judge_column(output_row: pd.Series | None, errors_df, verdict: dict) -> None:
+    render_section_title("裁判结论")
+    if output_row is None:
+        render_empty_state("该任务暂无模型回答记录。")
+        return
+
+    review = _text(output_row.get("review_note"), "暂无扣分说明")
+    triggered = _has_red_line(errors_df, output_row.get("output_id"))
+    red_badge = (
+        '<span class="status-badge status-danger">触发</span>'
+        if triggered
+        else '<span class="status-badge status-success">未触发</span>'
+    )
+    render_html(
+        '<div class="fact-card">'
+        f'<div class="fact-field"><div class="fact-label">结论</div>'
+        f'<div class="fact-value"><span class="status-badge status-{escape(verdict["level"])}">{escape(verdict["title"])}</span></div></div>'
+        f'<div class="fact-field"><div class="fact-label">总分</div>'
+        f'<div class="fact-value"><span class="status-badge status-{_score_badge_level(output_row.get("total_score"))}">{escape(verdict["score_text"])}</span></div></div>'
+        f'<div class="fact-field"><div class="fact-label">最弱维度</div><div class="fact-value">{escape(verdict["weakest"])}</div></div>'
+        f'<div class="fact-field"><div class="fact-label">是否触发红线错误</div><div class="fact-value">{red_badge}</div></div>'
+        f'<div class="fact-field"><div class="fact-label">主要扣分原因</div><div class="fact-value">{escape(summarize_text(review, 140))}</div></div>'
+        "</div>"
+    )
+
+    errors = get_errors_for_output(errors_df, output_row.get("output_id"))
+    if not errors.empty:
+        badges = "".join(
+            f'<span class="status-badge status-{SEVERITY_BADGE.get(_text(error.get("severity")), "neutral")}">'
+            f'{escape(_text(error.get("error_type"), "未分类错误"))}</span>'
+            for _, error in errors.iterrows()
+        )
+        render_html(f'<div class="fact-label">错误标签</div><div class="task-card-badges">{badges}</div>')
+    else:
+        render_html('<div class="fact-label">错误标签</div><div class="fact-value">未触发错误标签。</div>')
+    if len(review) > 140:
+        with st.expander("查看完整扣分说明"):
+            st.write(review)
 
 
 def _render_task_brief(task_info: pd.Series) -> None:
@@ -346,44 +578,6 @@ def _render_task_brief(task_info: pd.Series) -> None:
             if background and background != "暂无背景材料":
                 st.markdown("**任务背景**")
                 st.write(background)
-
-
-def _render_model_performance(output_row: pd.Series | None, errors_df) -> None:
-    render_section_title("模型表现")
-    if output_row is None:
-        render_empty_state("该任务暂无模型回答记录。")
-        return
-
-    rubric_rows = build_rubric_rows(output_row)
-    total = output_row.get("total_score")
-    total_text = f"{float(total):.0f}" if has_value(total) else "未评分"
-    score_badge = f'<span class="status-badge status-{_score_badge_level(total)}">{escape(total_text)}</span>'
-
-    if rubric_rows:
-        weakest = min(rubric_rows, key=lambda row: (row["score"] / row["full"] if row["full"] else 0.0))
-        weak_text = f'{weakest["dimension"]}（{weakest["score"]:.0f}/{weakest["full"]}）'
-    else:
-        weak_text = "暂无分项评分"
-
-    review = _text(output_row.get("review_note"), "暂无扣分说明")
-    triggered = _has_red_line(errors_df, output_row.get("output_id"))
-    red_badge = (
-        '<span class="status-badge status-danger">触发</span>'
-        if triggered
-        else '<span class="status-badge status-success">未触发</span>'
-    )
-
-    render_html(
-        '<div class="fact-card">'
-        f'<div class="fact-field"><div class="fact-label">总分</div><div class="fact-value">{score_badge}</div></div>'
-        f'<div class="fact-field"><div class="fact-label">维度短板</div><div class="fact-value">{escape(weak_text)}</div></div>'
-        f'<div class="fact-field"><div class="fact-label">主要扣分原因</div><div class="fact-value">{escape(summarize_text(review, 160))}</div></div>'
-        f'<div class="fact-field"><div class="fact-label">是否触发红线错误</div><div class="fact-value">{red_badge}</div></div>'
-        "</div>"
-    )
-    if len(review) > 160:
-        with st.expander("查看完整扣分说明"):
-            st.write(review)
 
 
 def _render_gold_standard(gold: dict | None) -> None:
@@ -428,7 +622,7 @@ def _render_gold_standard(gold: dict | None) -> None:
         st.caption(f"人工复核提示：{review}")
 
 
-def _render_model_answer(output_row: pd.Series | None, gold, errors_df) -> None:
+def _render_model_answer(output_row: pd.Series | None, gold) -> None:
     render_section_title("模型回答")
     if output_row is None:
         render_empty_state("该任务暂无模型回答记录。")
@@ -460,17 +654,6 @@ def _render_model_answer(output_row: pd.Series | None, gold, errors_df) -> None:
                 + "".join(f'<div class="redline-item">{escape(point)}</div>' for point in missed)
                 + "</div>"
             )
-
-    errors = get_errors_for_output(errors_df, output_row.get("output_id"))
-    if not errors.empty:
-        badges = "".join(
-            f'<span class="status-badge status-{SEVERITY_BADGE.get(_text(error.get("severity")), "neutral")}">'
-            f'{escape(_text(error.get("error_type"), "未分类错误"))}</span>'
-            for _, error in errors.iterrows()
-        )
-        render_html(f'<div class="fact-label">错误标签</div><div class="task-card-badges">{badges}</div>')
-    else:
-        render_html('<div class="fact-label">错误标签</div><div class="fact-value">未触发错误标签。</div>')
 
 
 def _render_scoring_matrix(output_row: pd.Series | None, errors_df) -> None:

@@ -766,6 +766,62 @@ header,
     color: var(--fde-muted);
     font-weight: 700;
 }
+/* Redline verdict card: the headline judgement on a single case + model. */
+.verdict-card {
+    border: 1px solid var(--fde-line);
+    border-left: 4px solid var(--fde-line);
+    border-radius: 12px;
+    background: var(--fde-surface);
+    padding: 1rem 1.15rem;
+    margin: 0.4rem 0 0.9rem 0;
+    box-shadow: var(--fde-shadow);
+}
+.verdict-card-direct {
+    border-left-color: var(--fde-green);
+}
+.verdict-card-review {
+    border-left-color: var(--fde-orange);
+}
+.verdict-card-not_direct {
+    border-left-color: var(--fde-red);
+}
+.verdict-card-none {
+    border-left-color: var(--fde-line);
+}
+.verdict-head {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    margin-bottom: 0.5rem;
+}
+.verdict-score {
+    color: var(--fde-muted);
+    font-weight: 700;
+    font-size: 0.9rem;
+}
+.verdict-reason {
+    color: var(--fde-text);
+    line-height: 1.6;
+    font-weight: 650;
+}
+.verdict-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 0.7rem;
+    margin-top: 0.7rem;
+    padding-top: 0.7rem;
+    border-top: 1px solid var(--fde-line);
+}
+.verdict-field-label {
+    color: var(--fde-muted);
+    font-size: 0.8rem;
+    font-weight: 750;
+    margin-bottom: 0.25rem;
+}
+.verdict-field-value {
+    color: var(--fde-text);
+    line-height: 1.55;
+}
 </style>
 """
 
