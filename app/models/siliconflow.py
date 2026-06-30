@@ -25,12 +25,14 @@ from typing import Any, Mapping, Sequence
 
 from app.models.base import (
     ConnectivityResult,
+    ERROR_EMPTY_RESPONSE,
     GenerationResult,
     ModelInfo,
     ModelListResult,
     ModelProvider,
     STATUS_FAILED,
     STATUS_SUCCESS,
+    extract_answer_text,
     normalize_messages,
 )
 
@@ -263,18 +265,33 @@ class SiliconFlowProvider(ModelProvider):
             )
 
         usage = body.get("usage") or {}
-        return GenerationResult(
-            provider=self.name,
-            model_id=model_id,
-            status=STATUS_SUCCESS,
-            response_text=self._extract_text(body),
-            raw_response=body,
+        answer_text = extract_answer_text(body)
+        common = dict(
             latency_ms=latency_ms,
             input_tokens=_as_int(usage.get("prompt_tokens")),
             output_tokens=_as_int(usage.get("completion_tokens")),
             total_tokens=_as_int(usage.get("total_tokens")),
             http_status=response.status,
             trace_id=trace_id,
+        )
+        # HTTP 成功但未提取到任何回答文本：判为「空回答」失败，绝不当成成功。
+        if not answer_text.strip():
+            return GenerationResult(
+                provider=self.name,
+                model_id=model_id,
+                status=STATUS_FAILED,
+                raw_response=body,
+                error_code=ERROR_EMPTY_RESPONSE,
+                error_message="模型返回成功但回答为空（content / reasoning_content / text 均为空）。",
+                **common,
+            )
+        return GenerationResult(
+            provider=self.name,
+            model_id=model_id,
+            status=STATUS_SUCCESS,
+            response_text=answer_text,
+            raw_response=body,
+            **common,
         )
 
     def check_connectivity(self) -> ConnectivityResult:
@@ -297,16 +314,6 @@ class SiliconFlowProvider(ModelProvider):
             raw=dict(item),
             metadata=metadata,
         )
-
-    @staticmethod
-    def _extract_text(body: Mapping[str, Any]) -> str:
-        choices = body.get("choices") or []
-        if not choices:
-            return ""
-        message = choices[0].get("message") if isinstance(choices[0], Mapping) else None
-        if isinstance(message, Mapping):
-            return str(message.get("content") or "")
-        return ""
 
     @staticmethod
     def _describe_http_error(status: int | None, _body: str) -> tuple[str, str]:

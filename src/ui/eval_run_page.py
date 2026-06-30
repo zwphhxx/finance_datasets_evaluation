@@ -112,7 +112,37 @@ def _render_config_controls() -> str:
             st.info("当前为 mock 模式：回答为模拟生成，不代表真实模型结果。")
     else:
         st.caption(f"当前为真实调用模式（{effective.name}）。请确认已在 .env 或 secrets 中配置 API Key。")
+
+    _render_connectivity_check(provider_name)
     return provider_name
+
+
+def _render_connectivity_check(provider_name: str) -> None:
+    """连通性检查：核对 API Key 是否配置、list_models 是否成功，回显 provider / mode /
+    错误码 / 错误信息；全程不回显或泄露 API Key 本身。"""
+    if st.button("连通性检查", key="live_eval_connectivity"):
+        provider = get_text_provider(prefer=provider_name)
+        key_configured = sf.is_configured() if provider_name == "siliconflow" else (provider.name == "mock")
+        listing = provider.list_models()
+        mode = "mock" if provider.name == "mock" else "live"
+        lines = [
+            f"Provider：{provider.name}",
+            f"模式：{mode}",
+            f"API Key：{'已配置' if key_configured else '未配置'}",
+            f"list_models：{'成功' if listing.ok else '失败'}",
+        ]
+        if listing.ok and listing.models:
+            lines.append(f"可用模型数：{len(listing.models)}")
+        if listing.error_code:
+            lines.append(f"错误码：{listing.error_code}")
+        if listing.error_message:
+            lines.append(f"错误信息：{listing.error_message}")
+        report = " ｜ ".join(lines)
+        if listing.ok:
+            st.success(report)
+        else:
+            st.error(report)
+        st.caption("连通性检查仅核对配置与可达性，不回显 API Key。")
 
 
 def _render_model_selector(provider_name: str) -> list[str]:
@@ -154,12 +184,17 @@ def _render_task_selector(task_records: list[dict]) -> list[dict]:
         return f"{case_id} · {task_type} · {summarize_text(row.get('question'), 24)}"
 
     case_ids = list(by_case.keys())
+    default_cases = [str(r.get("case_id")) for r in er.default_task_selection(task_records)]
     chosen = st.multiselect(
-        "任务范围（默认全部活跃任务）",
+        "任务范围（默认仅首个任务，可手动多选）",
         case_ids,
-        default=case_ids,
+        default=default_cases,
         format_func=_label,
         key="live_eval_cases",
+    )
+    st.caption(
+        "默认只跑首个任务以快速看到结果；如需更多请手动多选。"
+        "注意：实际生成次数 = 模型数 × 任务数，选得越多耗时越长。"
     )
     return [by_case[c] for c in chosen]
 
@@ -178,14 +213,30 @@ def _render_run_button(provider_name, model_ids, selected_tasks, temperature, ma
     if st.button("运行评测", type="primary", disabled=disabled, key="live_eval_run"):
         provider = get_text_provider(prefer=provider_name)
         total = len(model_ids) * len(selected_tasks)
-        with st.spinner(f"正在运行 {len(model_ids)} 个模型 × {len(selected_tasks)} 道任务（共 {total} 次生成）……"):
-            result = er.run_models(
-                provider, model_ids, selected_tasks,
-                temperature=temperature, max_tokens=max_tokens,
-            )
-        er.persist_compare_result(result)
+        progress = st.progress(0.0)
+        status = st.empty()
+
+        def _on_progress(done: int, total_count: int, model_id: str, case_id: str) -> None:
+            ratio = (done / total_count) if total_count else 1.0
+            progress.progress(min(1.0, ratio))
+            if model_id:
+                status.caption(
+                    f"已完成 {done}/{total_count} · 正在生成：模型 {model_id} · 任务 {case_id}"
+                )
+            else:
+                status.caption(f"已完成 {done}/{total_count} · 正在汇总结果……")
+
+        result = er.run_models(
+            provider, model_ids, selected_tasks,
+            temperature=temperature, max_tokens=max_tokens,
+            progress_callback=_on_progress,
+        )
+        progress.empty()
+        status.empty()
+        persisted = er.persist_compare_result(result)
         eval_state.set_last_run(result)
-        st.session_state["live_eval_persisted"] = er.is_mock_result(result)
+        # 修复：记录落库的真实返回值，而非是否为 mock。
+        st.session_state["live_eval_persisted"] = persisted
         st.rerun()
 
     if disabled:
@@ -202,33 +253,60 @@ def _render_results() -> None:
         f"run_id：{result.run_id} · 模式：{result.mode} · 模型 {len(result.model_ids)} 个 · "
         f"成功 {result.success_count}/{len(result.outcomes)}",
     )
+    _render_run_summary(result)
     if er.is_mock_result(result):
         st.info("本次为 mock 模式运行，回答为模拟生成，不代表真实模型结果。")
-    st.caption("结果已写入 SQLite（如已初始化），并驱动各分析页展示真实回答。")
+    persisted = st.session_state.get("live_eval_persisted")
+    if persisted:
+        st.caption("结果已写入 SQLite（live_run_responses），并驱动各分析页展示真实回答。")
+    else:
+        st.caption("结果暂存于当前页面会话（未落库 / SQLite 未初始化），仍可驱动各分析页展示。")
 
-    with st.expander("查看运行明细（回答与调用元信息）", expanded=False):
+    with st.expander("查看运行明细（回答与调用元信息）", expanded=result.success_count == 0):
         _render_results_table(result)
         _render_answer_viewer(result)
+
+
+def _render_run_summary(result) -> None:
+    summary = er.summarize_outcomes(result.outcomes)
+    cards = [
+        ("成功", summary.success, "success"),
+        ("空回答", summary.empty_response, "warning" if summary.empty_response else "neutral"),
+        ("超时", summary.timeout, "danger" if summary.timeout else "neutral"),
+        ("鉴权/权限失败", summary.auth, "danger" if summary.auth else "neutral"),
+        ("其他失败", summary.other, "danger" if summary.other else "neutral"),
+    ]
+    cells = "".join(
+        f'<div class="context-item"><div class="context-label">{escape(label)}</div>'
+        f'<div class="context-copy"><span class="status-badge status-{level}">{count}</span></div></div>'
+        for label, count, level in cards
+    )
+    render_html(f'<div class="context-grid">{cells}</div>')
+    if summary.total and summary.success == 0:
+        st.warning("本次运行没有任何成功回答；请查看下方明细中的错误码与错误信息，或先做连通性检查。")
 
 
 def _render_results_table(result) -> None:
     header = "".join(
         f"<th>{escape(name)}</th>"
-        for name in ["模型", "任务编号", "任务类型", "状态", "耗时(ms)", "回答长度", "是否成功"]
+        for name in [
+            "模型", "任务编号", "状态", "HTTP状态", "错误码", "错误信息",
+            "trace_id", "耗时(ms)", "回答长度",
+        ]
     )
     body = ""
     for outcome in result.outcomes:
         label, level = _STATUS_BADGE.get(outcome.run_status, (outcome.run_status, "neutral"))
-        latency = "—" if outcome.latency_ms is None else str(outcome.latency_ms)
-        success_mark = "✓" if outcome.success else "✗"
         body += (
             f'<tr><td class="check-key">{escape(outcome.model_id)}</td>'
             f"<td>{escape(outcome.case_id)}</td>"
-            f"<td>{escape(display_label(outcome.task_type, TASK_TYPE_LABELS))}</td>"
             f'<td><span class="status-badge status-{level}">{escape(label)}</span></td>'
-            f'<td class="check-count">{escape(latency)}</td>'
-            f'<td class="check-count">{escape(str(outcome.answer_length))}</td>'
-            f"<td>{success_mark}</td></tr>"
+            f'<td class="check-count">{escape(_n(outcome.http_status))}</td>'
+            f"<td>{escape(_dash(outcome.error_code))}</td>"
+            f"<td>{escape(_short(outcome.error_message))}</td>"
+            f"<td>{escape(_dash(outcome.trace_id))}</td>"
+            f'<td class="check-count">{escape(_n(outcome.latency_ms))}</td>'
+            f'<td class="check-count">{escape(str(outcome.answer_length))}</td></tr>'
         )
     render_html(
         f'<table class="check-table"><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>'
@@ -274,8 +352,8 @@ def _render_answer_viewer(result) -> None:
 
 def _render_scoring(base, provider_name: str, task_records: list[dict]) -> None:
     result = eval_state.get_last_run()
-    if result is None or result.success_count == 0:
-        st.info("请先完成步骤 1 的运行，且至少有一道成功回答，再进行裁判评分。")
+    if result is None:
+        st.info("请先完成步骤 1 的运行，再进行裁判评分。")
         return
 
     render_section_title(
@@ -290,7 +368,13 @@ def _render_scoring(base, provider_name: str, task_records: list[dict]) -> None:
         placeholder="例如 THUDM/GLM-4-9B-0414",
     ).strip()
 
-    if st.button("运行自动评分（裁判模型）", type="primary", key="live_eval_score_run"):
+    no_success = result.success_count == 0
+    if no_success:
+        st.warning("本次运行没有成功回答，无法评分。请先在步骤 1 获得至少一条成功回答（可先做连通性检查排查失败原因）。")
+
+    if st.button(
+        "运行自动评分（裁判模型）", type="primary", disabled=no_success, key="live_eval_score_run"
+    ):
         provider = get_text_provider(prefer=provider_name)
         gold_map = getattr(base, "gold_answer_map", {}) or {}
         tasks_by_case = {str(r.get("case_id")): r for r in task_records}
@@ -329,7 +413,10 @@ def _render_score_results() -> None:
 
 def _render_score_compare_table(score_result, dimensions) -> None:
     dim_headers = "".join(f"<th>{escape(d['name'])}</th>" for d in dimensions)
-    header = "<th>模型</th><th>任务编号</th>" + dim_headers + "<th>总分</th><th>裁判状态</th>"
+    header = (
+        "<th>模型</th><th>任务编号</th>" + dim_headers
+        + "<th>总分</th><th>裁判状态</th><th>错误码</th><th>错误信息</th>"
+    )
 
     def _sort_key(o):
         return (0 if o.ok else 1, -(o.total_score or 0))
@@ -346,11 +433,14 @@ def _render_score_compare_table(score_result, dimensions) -> None:
             f"<td>{escape(o.case_id)}</td>"
             f"{dim_cells}"
             f'<td class="check-count">{escape(total)}</td>'
-            f'<td><span class="status-badge status-{level}">{escape(label)}</span></td></tr>'
+            f'<td><span class="status-badge status-{level}">{escape(label)}</span></td>'
+            f"<td>{escape(_dash(o.error_code))}</td>"
+            f"<td>{escape(_short(o.error_message))}</td></tr>"
         )
     render_html(
         f'<table class="check-table"><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>'
     )
+    st.caption("裁判状态为 failed 且错误码为 judge_parse_error 时，表示裁判输出无法解析为有效 JSON 评分。")
 
 
 def _render_score_review(score_result, dimensions) -> None:
@@ -420,3 +510,15 @@ def _dedupe(items: list[str]) -> list[str]:
 
 def _n(value) -> str:
     return "—" if value is None else str(value)
+
+
+def _dash(value) -> str:
+    text = "" if value is None else str(value).strip()
+    return text or "—"
+
+
+def _short(value, limit: int = 40) -> str:
+    text = "" if value is None else str(value).strip()
+    if not text:
+        return "—"
+    return text if len(text) <= limit else text[:limit] + "…"

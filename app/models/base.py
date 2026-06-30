@@ -18,6 +18,10 @@ STATUS_SUCCESS = "success"
 STATUS_FAILED = "failed"
 STATUS_MOCK = "mock"
 
+# HTTP 成功但供应商返回的回答为空时使用的错误码（区别于鉴权/超时等失败，
+# 便于运行汇总单独统计「空回答」条数）。
+ERROR_EMPTY_RESPONSE = "empty_response"
+
 
 @dataclass(frozen=True)
 class ModelInfo:
@@ -138,3 +142,65 @@ def normalize_messages(messages: Sequence[Mapping[str, Any]]) -> list[dict[str, 
             raise ValueError("每条 message 需包含 role 与 content 字段。")
         normalized.append({"role": str(item["role"]), "content": item["content"]})
     return normalized
+
+
+def _coerce_content(content: Any) -> str:
+    """将单个 content 值归一化为纯文本。
+
+    兼容三种 OpenAI 兼容形态：纯字符串；分块列表（[{type,text}|{text}|str, …]，
+    多模态 / parts 风格）；其他类型一律转字符串。不假设具体供应商字段名。
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, Sequence) and not isinstance(content, (str, bytes)):
+        parts: list[str] = []
+        for part in content:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, Mapping):
+                # 常见键：text / content；优先 text。
+                value = part.get("text")
+                if value is None:
+                    value = part.get("content")
+                if isinstance(value, (list, tuple)):
+                    value = _coerce_content(value)
+                if value:
+                    parts.append(str(value))
+        return "".join(parts)
+    return str(content)
+
+
+def extract_answer_text(body: Mapping[str, Any]) -> str:
+    """从 OpenAI 兼容的对话/补全响应体中稳健提取回答文本。
+
+    依次尝试（任一非空即返回，trim 后判断）：
+      1) choices[0].message.content（字符串或分块列表）；
+      2) choices[0].message.reasoning_content（推理型模型在 content 为空时的回退）；
+      3) choices[0].text（旧式 completion 形态）。
+    不假设具体供应商私有字段；无法提取时返回空串，由调用方判定为空回答。
+    """
+    if not isinstance(body, Mapping):
+        return ""
+    choices = body.get("choices") or []
+    if not isinstance(choices, Sequence) or isinstance(choices, (str, bytes)) or not choices:
+        return ""
+    first = choices[0]
+    if not isinstance(first, Mapping):
+        return ""
+
+    message = first.get("message")
+    if isinstance(message, Mapping):
+        content = _coerce_content(message.get("content"))
+        if content.strip():
+            return content
+        reasoning = _coerce_content(message.get("reasoning_content"))
+        if reasoning.strip():
+            return reasoning
+
+    legacy = first.get("text")
+    if isinstance(legacy, str) and legacy.strip():
+        return legacy
+
+    return ""

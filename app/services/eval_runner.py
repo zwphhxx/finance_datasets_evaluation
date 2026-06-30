@@ -16,9 +16,9 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
-from app.models.base import ModelProvider, STATUS_MOCK
+from app.models.base import ERROR_EMPTY_RESPONSE, ModelProvider, STATUS_FAILED, STATUS_MOCK
 
 # 被评测模型可见的任务字段（白名单）。Gold Answer 相关字段一律不在其中。
 _VISIBLE_TASK_FIELDS = ("scenario", "question", "context")
@@ -91,6 +91,36 @@ class CompareRunResult:
     def success_count(self) -> int:
         return sum(1 for o in self.outcomes if o.success)
 
+    def summary_counts(self) -> dict[str, int]:
+        """返回五档计数：成功、空回答、超时、鉴权/权限、其他失败。"""
+        counts = {"success": 0, "empty_response": 0, "timeout": 0, "auth": 0, "other": 0}
+        for o in self.outcomes:
+            if o.success:
+                counts["success"] += 1
+                continue
+            code = o.error_code or ""
+            if code == ERROR_EMPTY_RESPONSE:
+                counts["empty_response"] += 1
+            elif code == "timeout":
+                counts["timeout"] += 1
+            elif code in {"unauthorized", "forbidden", "missing_api_key"}:
+                counts["auth"] += 1
+            else:
+                counts["other"] += 1
+        return counts
+
+
+@dataclass(frozen=True)
+class OutcomeSummary:
+    """一次运行的运行侧汇总，便于页面直接展示。"""
+
+    total: int
+    success: int
+    empty_response: int
+    timeout: int
+    auth: int
+    other: int
+
 
 def generate_run_id() -> str:
     """生成本次运行的 run_id：时间戳 + 短随机后缀，便于人读且基本唯一。"""
@@ -131,13 +161,26 @@ def run_single(
         model_id, messages, temperature=temperature, max_tokens=max_tokens, **kwargs
     )
     answer = result.response_text or ""
+
+    # 兜底：即便某个 provider 把「HTTP 成功但空回答」标成功，运行侧也不当成功。
+    # mock 始终有占位内容，不受影响。
+    run_status = result.status
+    success = result.ok
+    error_code = result.error_code
+    error_message = result.error_message
+    if success and result.status != STATUS_MOCK and not answer.strip():
+        run_status = STATUS_FAILED
+        success = False
+        error_code = error_code or ERROR_EMPTY_RESPONSE
+        error_message = error_message or "模型返回成功但回答为空。"
+
     return RunOutcome(
         case_id=str(task.get("case_id", "")),
         task_type=str(task.get("task_type", "")),
         provider=result.provider,
         model_id=model_id,
-        run_status=result.status,
-        success=result.ok,
+        run_status=run_status,
+        success=success,
         answer_text=answer,
         answer_length=len(answer),
         latency_ms=result.latency_ms,
@@ -146,8 +189,8 @@ def run_single(
         total_tokens=result.total_tokens,
         http_status=result.http_status,
         trace_id=result.trace_id,
-        error_code=result.error_code,
-        error_message=result.error_message,
+        error_code=error_code,
+        error_message=error_message,
     )
 
 
@@ -190,29 +233,78 @@ def run_models(
     temperature: float = 0.2,
     max_tokens: int = 1024,
     run_id: str | None = None,
+    progress_callback: Callable[[int, int, str, str], None] | None = None,
     **kwargs: Any,
 ) -> CompareRunResult:
     """对多个模型各自跑同一组任务，汇总成一个 CompareRunResult（共享 run_id）。
 
     去重并保序处理 model_ids；对每个模型的每道任务调用 run_single，任一调用失败只影响
     该 (模型, 任务) 的 RunOutcome，不中断整体。模型列表为空时 outcomes 为空。
+
+    progress_callback（可选）在每道生成开始前回调 (已完成数, 总数, 当前模型, 当前任务)，
+    供页面做逐条进度反馈；不传则行为不变。回调异常被吞掉，不影响运行。
     """
     unique_models = _dedupe_preserve_order(model_ids)
     rid = run_id or generate_run_id()
     mode = "mock" if getattr(provider, "name", "") == "mock" else "live"
-    outcomes = tuple(
-        run_single(provider, model_id, task, temperature=temperature, max_tokens=max_tokens, **kwargs)
-        for model_id in unique_models
-        for task in tasks
-    )
+    pairs = [(model_id, task) for model_id in unique_models for task in tasks]
+    total = len(pairs)
+    outcomes: list[RunOutcome] = []
+    for index, (model_id, task) in enumerate(pairs):
+        if progress_callback is not None:
+            _safe_progress(progress_callback, index, total, model_id, str(task.get("case_id", "")))
+        outcomes.append(
+            run_single(provider, model_id, task, temperature=temperature, max_tokens=max_tokens, **kwargs)
+        )
+    if progress_callback is not None and total:
+        _safe_progress(progress_callback, total, total, "", "")
     return CompareRunResult(
         run_id=rid,
         provider=getattr(provider, "name", ""),
         model_ids=tuple(unique_models),
         mode=mode,
         created_at=datetime.now().isoformat(timespec="seconds"),
-        outcomes=outcomes,
+        outcomes=tuple(outcomes),
     )
+
+
+def summarize_outcomes(outcomes: Sequence[RunOutcome]) -> OutcomeSummary:
+    """把 outcomes 聚合为五档计数（成功 / 空回答 / 超时 / 鉴权 / 其他）。"""
+    counts = {"success": 0, "empty_response": 0, "timeout": 0, "auth": 0, "other": 0}
+    for o in outcomes:
+        if o.success:
+            counts["success"] += 1
+            continue
+        code = o.error_code or ""
+        if code == ERROR_EMPTY_RESPONSE:
+            counts["empty_response"] += 1
+        elif code == "timeout":
+            counts["timeout"] += 1
+        elif code in {"unauthorized", "forbidden", "missing_api_key"}:
+            counts["auth"] += 1
+        else:
+            counts["other"] += 1
+    return OutcomeSummary(
+        total=len(outcomes),
+        success=counts["success"],
+        empty_response=counts["empty_response"],
+        timeout=counts["timeout"],
+        auth=counts["auth"],
+        other=counts["other"],
+    )
+
+
+def default_task_selection(tasks: Sequence[Any]) -> list[Any]:
+    """默认只选首个任务，避免「模型数 × 任务数」一次跑满导致长时间无反馈。"""
+    items = list(tasks or [])
+    return items[:1]
+
+
+def _safe_progress(callback, done: int, total: int, model_id: str, case_id: str) -> None:
+    try:
+        callback(done, total, model_id, case_id)
+    except Exception:
+        pass
 
 
 def persist_run_result(result, db_path: Path | None = None) -> bool:
