@@ -7,11 +7,8 @@ from src.gold_quality import evaluate_gold_quality
 from src.ui.page_config import get_page_config
 from src.ui.tasks import DOMAIN_LABELS, display_label
 from src.ui.components import (
-    render_card,
     render_context_grid,
-    render_empty_state,
     render_info_panel,
-    render_metric_card,
     render_page_shell,
     render_section_title,
     render_status_badge,
@@ -211,126 +208,113 @@ def render_overview_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
     validation_result = data_bundle["validation_result"]
     eval_status = data_bundle.get("eval_status") or {}
-    data_context = data_bundle.get("data_context") or {}
     render_page_shell(get_page_config("overview"))
 
-    render_section_title("当前数据上下文", "当前结论基于以下数据源与运行状态。")
-    _render_data_context(data_context)
+    _render_project_purpose()
+    _render_preliminary_analysis(data, eval_status)
+    _render_how_to_use()
 
-    render_section_title("快速入口", "根据当前状态选择下一步操作。")
-    _render_quick_entry_cards(eval_status)
+    render_section_title("数据资产", "关键数字均由当前数据动态计算。")
+    render_context_grid(get_overview_summary_items(data))
 
-    render_section_title("数据集核心指标", "关键数字均由当前数据文件动态计算。")
-    metric_cards = get_dataset_metric_cards(data)
-    metric_columns = st.columns(len(metric_cards))
-    for column, card in zip(metric_columns, metric_cards):
-        with column:
-            render_metric_card(card["label"], card["value"], card["note"])
+    render_info_panel(
+        "边界与说明",
+        "题库与 Gold Answer 为 MVP 脱敏样本；模型回答来自评测控制台的真实运行；"
+        "裁判给出的是建议分，需人工复核确认后归档；所有结论均为样本内观察，"
+        "不构成模型采购或业务决策建议。",
+    )
+    if not validation_result.is_valid:
+        render_data_quality_status(validation_result)
 
-    if eval_status.get("live"):
-        _render_recent_run_status(eval_status)
 
-    left, right = st.columns([1, 1], gap="large")
-    with left:
-        render_section_title("任务覆盖", "按专业领域统计的样本分布。")
-        coverage_items = get_domain_coverage_items(data.tasks)
-        if coverage_items:
-            render_context_grid(coverage_items)
-            task_type_count = _distinct_count(data.tasks, "task_type")
-            st.caption(f"覆盖 {task_type_count} 类任务类型，详情见「数据集质量与扩展框架」。")
-        else:
-            render_empty_state("暂无任务样本。")
+def _render_project_purpose() -> None:
+    render_section_title("这是什么", "一句话讲清项目目的。")
+    st.markdown(
+        "**FinDueEval** 面向投行、财务与法律尽职调查场景，评估大模型在专业尽调任务上的回答质量，"
+        "并把评测中暴露的问题反向沉淀为数据补强。核心只回答一个问题：在尽调这种高风险、强合规的工作里，"
+        "模型的回答**哪些能直接用、哪些必须人工复核、哪些不能用**。"
+    )
 
-    with right:
-        render_section_title("模型表现摘要", "基于当前样本动态计算，仅作样本内观察。")
-        summary = build_model_performance_summary(data.scores, data.errors)
-        if summary is None:
-            render_empty_state("当前暂无可展示的评分数据。")
-        else:
-            top_error = (
-                f"{summary['top_error_type']}（{summary['top_error_count']} 次）"
-                if summary["top_error_count"] > 0
-                else "暂无错误标签"
-            )
-            render_context_grid(
-                [
-                    ("平均总分", f"{summary['avg_score']:.1f} 分"),
-                    (
-                        "最弱维度",
-                        f"{summary['weakest_dimension']}（达成率约 {summary['weakest_attainment']:.0%}）",
-                    ),
-                    ("高频错误", top_error),
-                ]
-            )
 
-    render_section_title("Gold Answer 质量", "结构化结论、依据、边界与红线的完整度，按数据动态检查。")
-    gold_summary = build_gold_quality_summary(data.gold_answer_map, data.tasks)
-    if gold_summary["total"] == 0:
-        render_empty_state("暂无 Gold Answer 记录。")
-    else:
-        status_level = "success" if gold_summary["partial"] == 0 else "warning"
-        render_status_badge(
-            f"{gold_summary['usable']}/{gold_summary['total']} 满足评测使用条件",
-            status_level,
+def _render_preliminary_analysis(data, eval_status: dict) -> None:
+    render_section_title(
+        "初步模型分析（基于投行/财务/法律尽调资料）",
+        "先讲基于历史资料的先验判断，再用样本内数据验证。",
+    )
+    st.markdown(
+        "我先用投行、财务、法律的历史尽调资料做了一轮人工分析，把“一份好的尽调回答应该长什么样”"
+        "拆成可评测的标准：\n\n"
+        "- 优秀回答的 5 个要素 → **Rubric 五个评分维度**（事实依据、推理完整性、风险识别、专业表达、边界意识）；\n"
+        "- 不可触碰的红线 → 每道题的 **Gold Answer**（结论 / 依据 / 边界 / 红线）；\n"
+        "- 反复出现的失误 → **错误标签体系**（如风险遗漏、依据错误、合规误判）。\n\n"
+        "基于这套先验，我的**初步判断**是：模型在“事实复述、专业表达”上通常较稳，真正的风险集中在"
+        "“**风险识别**”与“**边界意识**”——该提示的风险没提示、不确定的地方不标注。"
+        "下面的样本内数据用来验证或修正这个判断。"
+    )
+
+    summary = build_model_performance_summary(data.scores, data.errors)
+    if summary is not None:
+        top_error = (
+            f"{summary['top_error_type']}（{summary['top_error_count']} 次）"
+            if summary["top_error_count"] > 0
+            else "暂无错误标签"
         )
-        if gold_summary["partial"] > 0:
-            st.caption(
-                f"部分满足评测使用条件：{gold_summary['partial']} 道"
-                f"（{'、'.join(gold_summary['partial_cases'])}），可在「数据集质量与扩展框架」查看缺失要素。"
-            )
+        render_context_grid(
+            [
+                ("平均总分", f"{summary['avg_score']:.1f} 分"),
+                (
+                    "最弱维度",
+                    f"{summary['weakest_dimension']}（达成率约 {summary['weakest_attainment']:.0%}）",
+                ),
+                ("高频错误", top_error),
+            ]
+        )
+        run_id = str(eval_status.get("run_id") or "—")
+        st.caption(
+            f"以上为当前评测样本内观察（run_id：{run_id}），样本量有限，"
+            "仅用于验证上述先验，不代表模型整体能力。"
+        )
+    else:
+        render_info_panel(
+            "还没有样本内数据",
+            "上面的判断目前只是基于历史资料的先验。运行一次真实评测后，这里会显示当前样本的"
+            "平均分、最弱维度与高频错误，下面三个分析页也会基于真实结果生成。",
+        )
 
-    render_data_quality_status(validation_result)
-
-
-def _render_data_context(context: dict) -> None:
-    items = [
-        ("数据源", context.get("data_source", "未知")),
-        ("可用任务", context.get("task_count", "—")),
-        ("当前运行", context.get("run_id", "—")),
-        ("评分状态", context.get("score_status", "—")),
+    st.markdown("**想看完整的初步模型分析结果，进入：**")
+    cols = st.columns(3)
+    entries = [
+        ("模型能力诊断 →", "model_diagnosis"),
+        ("模型边界报告 →", "model_boundary"),
+        ("样板题深度评测 →", "case_detail"),
     ]
-    render_context_grid(items)
-
-
-def _render_quick_entry_cards(eval_status: dict) -> None:
-    live = bool(eval_status.get("live"))
-    cols = st.columns(4)
-    cards = [
-        ("发起评测", "选择模型与任务并运行", "eval_run", True),
-        ("浏览任务", "查看题库与 Gold 覆盖", "tasks", True),
-        ("单题评测", "查看模型回答与评分矩阵", "case_detail", live),
-        ("模型诊断", "多模型能力对比与边界", "model_diagnosis", live),
-    ]
-    for col, (title, desc, page, enabled) in zip(cols, cards):
+    for col, (label, page) in zip(cols, entries):
         with col:
-            render_card(
-                f'<div style="font-weight:750;color:var(--fde-blue);margin-bottom:0.3rem;">{title}</div>'
-                f'<div style="font-size:0.88rem;color:var(--fde-muted);">{desc}</div>'
-            )
             st.button(
-                "进入 →",
-                key=f"overview_entry_{page}",
+                label,
+                key=f"overview_analysis_{page}",
                 on_click=_open_page,
                 args=(page,),
-                disabled=not enabled,
                 use_container_width=True,
             )
+    st.caption("这三页基于真实评测结果生成；若尚未运行评测，进入后会引导你先发起一次评测。")
 
 
-def _render_recent_run_status(eval_status: dict) -> None:
-    render_section_title("最近运行状态", "来自当前会话的真实评测运行。")
-    run_id = str(eval_status.get("run_id") or "—")
-    scored = int(eval_status.get("scored", 0) or 0)
-    confirmed = int(eval_status.get("confirmed", 0) or 0)
-    pending = int(eval_status.get("pending", 0) or 0)
-    status_text = (
-        f"run_id：{run_id} · 已评分 {scored} 条 · 已复核 {confirmed} 条 · 待复核 {pending} 条"
+def _render_how_to_use() -> None:
+    render_section_title("怎么用", "三步走完“评测 → 看结论 → 数据补强”闭环。")
+    st.markdown(
+        "1. **发起评测**：选 Provider / 模型 / 任务运行真实评测，裁判模型对照 Gold + Rubric 打建议分；\n"
+        "2. **看结论**：在“模型能力诊断 / 模型边界报告 / 样板题深度评测”看分维度表现、可用边界与单题拆解；\n"
+        "3. **数据补强**：把高频错误带到“数据集管理”，按错误标签补强样本并回到第 1 步验证。"
     )
-    if pending > 0:
-        render_info_panel("待复核", status_text)
-    else:
-        render_info_panel("运行完成", status_text)
-
-
-def _open_case_detail() -> None:
-    st.session_state.current_page = "case_detail"
+    cols = st.columns(2)
+    actions = [("发起评测 →", "eval_run"), ("浏览任务样本 →", "tasks")]
+    for col, (label, page) in zip(cols, actions):
+        with col:
+            st.button(
+                label,
+                key=f"overview_howto_{page}",
+                on_click=_open_page,
+                args=(page,),
+                use_container_width=True,
+            )
