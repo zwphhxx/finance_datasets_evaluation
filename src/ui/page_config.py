@@ -17,12 +17,12 @@ class PageConfig:
 PAGE_CONFIGS = [
     PageConfig(
         page_key="overview",
-        title="FinDueEval 数据集概览",
-        subtitle="一屏看清数据集内容、样本边界与模型评测的样本内观察。",
-        question="本页用于快速判断数据集里有什么、样本与评测边界是什么、当前样本内模型表现如何。",
-        boundary="题库与 Gold 为 MVP 脱敏样本；模型回答与评分来自首页控制台的真实评测运行，结论仅用于样本内观察。",
-        highlights="核心指标、任务覆盖、模型表现摘要与样板题评测入口。",
-        nav_summary="数据集与模型边界",
+        title="红线评测台",
+        subtitle="面向投行 / 财务 / 法律尽调任务，判断模型回答哪些可直接用、哪些必须复核、哪些不可直接用。",
+        question="本页用于一屏判断当前样本下，模型回答的可用边界、本轮最大风险与数据补强方向。",
+        boundary="题库与 Gold 为 MVP 脱敏样本；可用边界与风险均为当前样本内观察，红线错误一票否决。",
+        highlights="三类使用边界、本轮最大风险与评测闭环入口。",
+        nav_summary="红线评测台",
     ),
     PageConfig(
         page_key="tasks",

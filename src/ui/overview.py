@@ -1,15 +1,26 @@
 from __future__ import annotations
 
+from html import escape
+
 import streamlit as st
 
 from src.metrics import get_dimension_gap_ranking
 from src.gold_quality import evaluate_gold_quality
+from src.model_boundary import (
+    build_data_actions,
+    build_frequent_risks,
+    summarize_usage_tiers,
+)
 from src.ui.page_config import get_page_config
-from src.ui.tasks import DOMAIN_LABELS, display_label
+from src.ui.tasks import DOMAIN_LABELS, TASK_TYPE_LABELS, display_label
 from src.ui.components import (
     render_context_grid,
+    render_empty_state_with_actions,
+    render_flow_strip,
+    render_html,
     render_info_panel,
     render_page_shell,
+    render_redline_verdict,
     render_section_title,
     render_status_badge,
 )
@@ -183,7 +194,7 @@ def get_evaluation_loop_steps() -> list[str]:
         "Rubric 评分",
         "错误归因",
         "数据补强",
-        "优化验证",
+        "复测验证",
     ]
 
 
@@ -210,110 +221,126 @@ def render_overview_page(data_bundle: dict) -> None:
     eval_status = data_bundle.get("eval_status") or {}
     render_page_shell(get_page_config("overview"))
 
-    _render_project_purpose()
-    _render_preliminary_analysis(data, eval_status)
-    _render_how_to_use()
+    render_redline_verdict(
+        "高分不代表可直接使用，[[红线错误一票否决]]。"
+    )
+
+    # 样本内评分是否存在，决定边界与风险用真实结论还是空状态引导。
+    summary = build_model_performance_summary(data.scores, data.errors)
+    has_results = summary is not None
+
+    _render_usage_boundary(data, has_results)
+    _render_top_risk(data, summary, eval_status, has_results)
+    _render_evaluation_loop()
+    _render_entries()
 
     render_section_title("数据资产", "关键数字均由当前数据动态计算。")
     render_context_grid(get_overview_summary_items(data))
 
     render_info_panel(
-        "边界与说明",
-        "题库与 Gold Answer 为 MVP 脱敏样本；模型回答来自评测控制台的真实运行；"
-        "裁判给出的是建议分，需人工复核确认后归档；所有结论均为样本内观察，"
-        "不构成模型采购或业务决策建议。",
+        "口径与边界",
+        "题库与 Gold Answer 为 MVP 脱敏样本；裁判给出的是建议分，需人工复核确认后归档；"
+        "可用边界与风险均为当前样本内观察，不构成模型采购或业务决策建议。",
     )
     if not validation_result.is_valid:
         render_data_quality_status(validation_result)
 
 
-def _render_project_purpose() -> None:
-    render_section_title("这是什么", "一句话讲清项目目的。")
-    st.markdown(
-        "**FinDueEval** 面向投行、财务与法律尽职调查场景，评估大模型在专业尽调任务上的回答质量，"
-        "并把评测中暴露的问题反向沉淀为数据补强。核心只回答一个问题：在尽调这种高风险、强合规的工作里，"
-        "模型的回答**哪些能直接用、哪些必须人工复核、哪些不能用**。"
-    )
+# 三类使用边界在首页用的简短标题（页内详版见「模型边界报告」）。
+_BOUNDARY_HOME_TITLE = {
+    "direct": "可直接使用",
+    "review": "必须人工复核",
+    "not_direct": "不可直接使用",
+}
 
 
-def _render_preliminary_analysis(data, eval_status: dict) -> None:
+def _render_usage_boundary(data, has_results: bool) -> None:
     render_section_title(
-        "初步模型分析（基于投行/财务/法律尽调资料）",
-        "先讲基于历史资料的先验判断，再用样本内数据验证。",
+        "模型可用边界",
+        "按风险等级、能力下限与红线错误，把当前任务归入三类使用边界。",
     )
-    st.markdown(
-        "我先用投行、财务、法律的历史尽调资料做了一轮人工分析，把“一份好的尽调回答应该长什么样”"
-        "拆成可评测的标准：\n\n"
-        "- 优秀回答的 5 个要素 → **Rubric 五个评分维度**（事实依据、推理完整性、风险识别、专业表达、边界意识）；\n"
-        "- 不可触碰的红线 → 每道题的 **Gold Answer**（结论 / 依据 / 边界 / 红线）；\n"
-        "- 反复出现的失误 → **错误标签体系**（如风险遗漏、依据错误、合规误判）。\n\n"
-        "基于这套先验，我的**初步判断**是：模型在“事实复述、专业表达”上通常较稳，真正的风险集中在"
-        "“**风险识别**”与“**边界意识**”——该提示的风险没提示、不确定的地方不标注。"
-        "下面的样本内数据用来验证或修正这个判断。"
-    )
+    if not has_results:
+        render_empty_state_with_actions(
+            "运行一次真实评测后，这里按当前样本生成三类使用边界。",
+            [("发起评测", "eval_run"), ("浏览任务样本", "tasks")],
+        )
+        return
 
-    summary = build_model_performance_summary(data.scores, data.errors)
-    if summary is not None:
-        top_error = (
-            f"{summary['top_error_type']}（{summary['top_error_count']} 次）"
-            if summary["top_error_count"] > 0
-            else "暂无错误标签"
+    summaries = summarize_usage_tiers(data)
+    cards = []
+    for summary in summaries:
+        key = summary["key"]
+        title = _BOUNDARY_HOME_TITLE.get(key, summary["title"])
+        if summary["redline_hits"] > 0:
+            meta = f"其中 {summary['redline_hits']} 道触发高严重度红线错误"
+        elif summary["task_types"]:
+            labels = [display_label(t, TASK_TYPE_LABELS) for t in summary["task_types"][:3]]
+            meta = "任务类型：" + "、".join(labels)
+        else:
+            meta = "当前样本中暂无归入此类的任务"
+        cards.append(
+            f"""
+            <div class="boundary-card boundary-card-{escape(key)}">
+                <div class="boundary-card-title">{escape(title)}</div>
+                <div><span class="boundary-card-count">{summary['count']}</span>
+                <span class="boundary-card-unit">道任务</span></div>
+                <div class="boundary-card-desc">{escape(summary['definition'])}</div>
+                <div class="boundary-card-meta">{escape(meta)}</div>
+            </div>
+            """
         )
-        render_context_grid(
-            [
-                ("平均总分", f"{summary['avg_score']:.1f} 分"),
-                (
-                    "最弱维度",
-                    f"{summary['weakest_dimension']}（达成率约 {summary['weakest_attainment']:.0%}）",
-                ),
-                ("高频错误", top_error),
-            ]
-        )
-        run_id = str(eval_status.get("run_id") or "—")
-        st.caption(
-            f"以上为当前评测样本内观察（run_id：{run_id}），样本量有限，"
-            "仅用于验证上述先验，不代表模型整体能力。"
-        )
-    else:
+    render_html(f'<div class="boundary-cards">{"".join(cards)}</div>')
+    st.caption("红线错误一票否决：触发高严重度红线错误的任务不计入「可直接使用」。")
+
+
+def _render_top_risk(data, summary, eval_status: dict, has_results: bool) -> None:
+    render_section_title("本轮最大风险", "当前样本内最薄弱的能力维度、高频错误与建议补强方向。")
+    if not has_results:
         render_info_panel(
-            "还没有样本内数据",
-            "上面的判断目前只是基于历史资料的先验。运行一次真实评测后，这里会显示当前样本的"
-            "平均分、最弱维度与高频错误，下面三个分析页也会基于真实结果生成。",
+            "运行评测后生成",
+            "尚无评分与错误标签。发起一次真实评测后，这里给出最弱维度、高频错误与对应的数据补强方向。",
         )
+        return
 
-    st.markdown("**想看完整的初步模型分析结果，进入：**")
+    risks = build_frequent_risks(data)
+    actions = build_data_actions(data)
+
+    weakest = f"{summary['weakest_dimension']}（达成率约 {summary['weakest_attainment']:.0%}）"
+    if risks:
+        top = risks[0]
+        top_error = f"{top['error_type']} · {top['count']} 次 · 影响{top['dimension']}"
+    else:
+        top_error = "暂无错误标签"
+    action = actions[0]["data_action"] if actions else "暂无关联补强动作"
+
+    render_context_grid(
+        [
+            ("最弱能力维度", weakest),
+            ("高频错误", top_error),
+            ("建议补强方向", action),
+        ]
+    )
+    run_id = str(eval_status.get("run_id") or "—")
+    st.caption(f"基于当前评测样本（run_id：{run_id}），样本量有限，仅用于样本内观察。")
+
+
+def _render_evaluation_loop() -> None:
+    render_section_title("评测闭环", "从专业任务到复测验证，问题反向沉淀为数据补强。")
+    render_flow_strip(get_evaluation_loop_steps())
+
+
+def _render_entries() -> None:
     cols = st.columns(3)
     entries = [
-        ("模型能力诊断 →", "model_diagnosis"),
+        ("发起评测 →", "eval_run"),
         ("模型边界报告 →", "model_boundary"),
-        ("样板题深度评测 →", "case_detail"),
+        ("能力诊断 →", "model_diagnosis"),
     ]
     for col, (label, page) in zip(cols, entries):
         with col:
             st.button(
                 label,
-                key=f"overview_analysis_{page}",
-                on_click=_open_page,
-                args=(page,),
-                use_container_width=True,
-            )
-    st.caption("这三页基于真实评测结果生成；若尚未运行评测，进入后会引导你先发起一次评测。")
-
-
-def _render_how_to_use() -> None:
-    render_section_title("怎么用", "三步走完“评测 → 看结论 → 数据补强”闭环。")
-    st.markdown(
-        "1. **发起评测**：选 Provider / 模型 / 任务运行真实评测，裁判模型对照 Gold + Rubric 打建议分；\n"
-        "2. **看结论**：在“模型能力诊断 / 模型边界报告 / 样板题深度评测”看分维度表现、可用边界与单题拆解；\n"
-        "3. **数据补强**：把高频错误带到“数据集管理”，按错误标签补强样本并回到第 1 步验证。"
-    )
-    cols = st.columns(2)
-    actions = [("发起评测 →", "eval_run"), ("浏览任务样本 →", "tasks")]
-    for col, (label, page) in zip(cols, actions):
-        with col:
-            st.button(
-                label,
-                key=f"overview_howto_{page}",
+                key=f"overview_entry_{page}",
                 on_click=_open_page,
                 args=(page,),
                 use_container_width=True,

@@ -14,16 +14,17 @@ class UIUXAuditFixesTests(unittest.TestCase):
             "Rubric 评分",
             "错误归因",
             "数据补强",
-            "优化验证",
+            "复测验证",
         ]
         self.assertEqual(expected, get_evaluation_loop_steps())
         self.assertTrue(hasattr(components, "render_loop_rail"))
         self.assertIn(".loop-rail", components.STYLE_CSS)
         self.assertIn(".loop-step", components.STYLE_CSS)
 
-        # 概览页已精简，评测流程向导移到「发起评测」页。
+        # 概览页用横向流程（flow-strip）呈现评测闭环；分步向导（loop-rail）仍在「发起评测」页。
         overview_source = Path("src/ui/overview.py").read_text(encoding="utf-8")
         self.assertNotIn("render_loop_rail", overview_source)
+        self.assertIn("render_flow_strip", overview_source)
         eval_run_source = Path("src/ui/eval_run_page.py").read_text(encoding="utf-8")
         self.assertIn("loop-rail", eval_run_source)
 

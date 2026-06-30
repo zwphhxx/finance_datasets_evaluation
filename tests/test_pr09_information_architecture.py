@@ -20,7 +20,7 @@ EXPECTED_PAGE_KEYS = [
 
 # 每页标题（PAGE_CONTEXTS 的键），与 EXPECTED_PAGE_KEYS 一一对应。
 EXPECTED_PAGE_TITLES = [
-    "FinDueEval 数据集概览",
+    "红线评测台",
     "任务样本",
     "发起评测",
     "样板题深度评测",

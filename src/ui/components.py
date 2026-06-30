@@ -629,6 +629,143 @@ header,
     color: var(--fde-muted);
     line-height: 1.55;
 }
+/* Redline verdict banner: a single low-saturation statement strip. */
+.redline-verdict {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    border: 1px solid var(--fde-blue-border);
+    border-left: 3px solid var(--fde-blue);
+    background: var(--fde-blue-soft);
+    border-radius: 12px;
+    padding: 0.8rem 1.1rem;
+    margin: 0.15rem 0 1.1rem 0;
+    box-shadow: var(--fde-shadow);
+}
+.redline-verdict-badge {
+    flex: 0 0 auto;
+    background: var(--fde-red-soft);
+    color: var(--fde-red);
+    border: 1px solid var(--fde-red-border);
+    border-radius: 999px;
+    padding: 0.2rem 0.66rem;
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+.redline-verdict-text {
+    color: var(--fde-text);
+    font-weight: 700;
+    font-size: 1rem;
+    line-height: 1.5;
+}
+.redline-verdict-text .accent {
+    color: var(--fde-red);
+}
+/* Boundary cards: three usage tiers, count-first, low-saturation top accent. */
+.boundary-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 0.8rem;
+    margin: 0.5rem 0 1rem 0;
+}
+.boundary-card {
+    border: 1px solid var(--fde-line);
+    border-top: 3px solid var(--fde-line);
+    border-radius: 12px;
+    background: var(--fde-surface);
+    padding: 1rem 1.05rem;
+    box-shadow: var(--fde-shadow);
+}
+.boundary-card-direct {
+    border-top-color: var(--fde-green);
+}
+.boundary-card-review {
+    border-top-color: var(--fde-orange);
+}
+.boundary-card-not_direct {
+    border-top-color: var(--fde-red);
+}
+.boundary-card-title {
+    color: var(--fde-blue);
+    font-weight: 750;
+    font-size: 0.95rem;
+    margin-bottom: 0.4rem;
+}
+.boundary-card-count {
+    font-size: 1.9rem;
+    font-weight: 800;
+    line-height: 1.1;
+    color: var(--fde-blue);
+}
+.boundary-card-direct .boundary-card-count {
+    color: var(--fde-green);
+}
+.boundary-card-review .boundary-card-count {
+    color: var(--fde-orange);
+}
+.boundary-card-not_direct .boundary-card-count {
+    color: var(--fde-red);
+}
+.boundary-card-unit {
+    font-size: 0.85rem;
+    color: var(--fde-muted);
+    font-weight: 650;
+    margin-left: 0.3rem;
+}
+.boundary-card-desc {
+    color: var(--fde-muted);
+    font-size: 0.86rem;
+    line-height: 1.55;
+    margin-top: 0.45rem;
+}
+.boundary-card-meta {
+    color: var(--fde-text);
+    font-size: 0.82rem;
+    line-height: 1.5;
+    margin-top: 0.45rem;
+    padding-top: 0.45rem;
+    border-top: 1px solid var(--fde-line);
+}
+/* Horizontal evaluation-loop flow with arrows between nodes. */
+.flow-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 0.35rem;
+    border: 1px solid var(--fde-line);
+    border-radius: 12px;
+    background: #ffffff;
+    padding: 0.85rem;
+    margin: 0.5rem 0 1rem 0;
+    box-shadow: var(--fde-shadow);
+}
+.flow-node {
+    flex: 1 1 auto;
+    min-width: 92px;
+    border-left: 3px solid var(--fde-blue);
+    background: var(--fde-blue-soft);
+    border-radius: 9px;
+    padding: 0.55rem 0.6rem;
+}
+.flow-node-index {
+    color: var(--fde-muted);
+    font-size: 0.7rem;
+    font-weight: 750;
+    letter-spacing: 0.04em;
+}
+.flow-node-label {
+    color: var(--fde-blue);
+    font-weight: 750;
+    font-size: 0.9rem;
+    margin-top: 0.2rem;
+}
+.flow-arrow {
+    align-self: center;
+    color: var(--fde-muted);
+    font-weight: 700;
+}
 </style>
 """
 
@@ -837,6 +974,41 @@ def render_loop_rail(steps) -> None:
     render_html(
         f'<div class="loop-rail">{"".join(step_html)}</div>',
     )
+
+
+def render_redline_verdict(text: str, badge: str = "红线优先") -> None:
+    """Render the single-statement verdict banner for the cockpit home.
+
+    `text` may contain a `[[...]]` span which is highlighted in the accent color;
+    everything else is escaped as plain text.
+    """
+    safe = escape(str(text))
+    safe = safe.replace("[[", '<span class="accent">').replace("]]", "</span>")
+    render_html(
+        f"""
+        <div class="redline-verdict">
+            <span class="redline-verdict-badge">{escape(str(badge))}</span>
+            <span class="redline-verdict-text">{safe}</span>
+        </div>
+        """
+    )
+
+
+def render_flow_strip(steps) -> None:
+    """Render an emphasized horizontal flow with arrows between nodes."""
+    parts: list[str] = []
+    for index, step in enumerate(steps, start=1):
+        if index > 1:
+            parts.append('<span class="flow-arrow">→</span>')
+        parts.append(
+            f"""
+            <div class="flow-node">
+                <div class="flow-node-index">{index:02d}</div>
+                <div class="flow-node-label">{escape(str(step))}</div>
+            </div>
+            """
+        )
+    render_html(f'<div class="flow-strip">{"".join(parts)}</div>')
 
 
 def render_model_answer_card(

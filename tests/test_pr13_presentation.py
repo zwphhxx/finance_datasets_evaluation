@@ -32,7 +32,7 @@ class OverviewPresentationTests(unittest.TestCase):
 
     def test_loop_steps_unchanged(self):
         self.assertEqual(
-            ["专业任务", "Gold Answer", "模型回答", "Rubric 评分", "错误归因", "数据补强", "优化验证"],
+            ["专业任务", "Gold Answer", "模型回答", "Rubric 评分", "错误归因", "数据补强", "复测验证"],
             overview.get_evaluation_loop_steps(),
         )
 
