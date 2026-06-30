@@ -34,6 +34,13 @@ BOUNDARY_NOTE = (
     "模型回答仅用于评测，不构成金融、法律或投资建议；评分为裁判模型建议分，需人工复核确认后归档。"
 )
 
+# 现场实验是面试官可选功能，不作为项目主线；离线样本评价才是默认展示依据。
+REPRODUCIBILITY_NOTE = (
+    "本页是面试官可选的现场可复现实验，不是项目主线。这里的“本次现场运行”受 API Key、网络、"
+    "模型版本与限流影响，结果可能波动；它默认进入草稿（待复核），不会覆盖各分析页默认展示的"
+    "“离线样本评价”。只有经人工复核确认后，现场结果才计入正式评测结论。"
+)
+
 _STATUS_BADGE = {
     "success": ("成功", "success"),
     "mock": ("mock", "neutral"),
@@ -48,6 +55,7 @@ def _set_page(page_key: str) -> None:
 def render_eval_run_page(data_bundle: dict) -> None:
     base = data_bundle["base"]
     render_page_shell(get_page_config("eval_run"))
+    render_info_panel("离线样本评价 vs 本次现场运行", REPRODUCIBILITY_NOTE)
     render_info_panel("评测边界", BOUNDARY_NOTE)
 
     tasks_df = base.tasks
@@ -186,14 +194,14 @@ def _render_task_selector(task_records: list[dict]) -> list[dict]:
     case_ids = list(by_case.keys())
     default_cases = [str(r.get("case_id")) for r in er.default_task_selection(task_records)]
     chosen = st.multiselect(
-        "任务范围（默认仅首个任务，可手动多选）",
+        "任务范围（默认仅 1 道活跃任务，可手动多选）",
         case_ids,
         default=default_cases,
         format_func=_label,
         key="live_eval_cases",
     )
     st.caption(
-        "默认只跑首个任务以快速看到结果；如需更多请手动多选。"
+        "默认只跑 1 道活跃任务以快速看到结果、避免长时间无反馈；如需更多请手动多选。"
         "注意：实际生成次数 = 模型数 × 任务数，选得越多耗时越长。"
     )
     return [by_case[c] for c in chosen]

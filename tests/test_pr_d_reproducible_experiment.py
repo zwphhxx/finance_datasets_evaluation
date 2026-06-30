@@ -1,0 +1,127 @@
+"""PR-D tests: 「发起评测」重构为可复现实验 + 模型调用可见性。
+
+本文件聚焦 PR-D 的页面框架与默认选择变更；底层调用链（空回答 / 超时 / 401 / 429 /
+回答抽取 / 进度回调 / persist flag）已由 tests/test_pr13_5_live_results.py 覆盖，这里只补齐：
+
+  - 默认只选 1 道「活跃」任务（active 优先，缺 status 时回退首条）；
+  - 页面副标题强调现场结果受 API/网络/模型版本影响、离线评测才是默认展示依据；
+  - 页面显式区分「离线样本评价」与「本次现场运行」；
+  - 结果主表展示状态/HTTP/耗时/回答长度/错误码/错误信息/trace_id；
+  - 现场结果默认进入草稿（pending），不进正式结论；仅 confirmed 计入。
+
+不执行任何真实外呼；不回写 data/ 下 seed 文件。
+"""
+
+import unittest
+from pathlib import Path
+
+import pandas as pd
+
+from app.services import conclusions as cc
+from app.services import eval_runner as er
+from app.services import scorer as sc
+from src.ui.page_config import PAGE_CONFIG_BY_KEY
+
+
+_PAGE_SOURCE = Path("src/ui/eval_run_page.py").read_text(encoding="utf-8")
+
+
+class DefaultActiveTaskSelectionTests(unittest.TestCase):
+    def test_prefers_first_active_task(self):
+        tasks = [
+            {"case_id": "A", "status": "draft"},
+            {"case_id": "B", "status": "active"},
+            {"case_id": "C", "status": "active"},
+        ]
+        self.assertEqual([{"case_id": "B", "status": "active"}], er.default_task_selection(tasks))
+
+    def test_single_task_only(self):
+        tasks = [{"case_id": "B", "status": "active"}, {"case_id": "C", "status": "active"}]
+        self.assertEqual(1, len(er.default_task_selection(tasks)))
+
+    def test_falls_back_to_first_when_no_status(self):
+        tasks = [{"case_id": "A"}, {"case_id": "B"}]
+        self.assertEqual([{"case_id": "A"}], er.default_task_selection(tasks))
+
+    def test_falls_back_to_first_when_none_active(self):
+        tasks = [{"case_id": "A", "status": "archived"}, {"case_id": "B", "status": "draft"}]
+        self.assertEqual([{"case_id": "A", "status": "archived"}], er.default_task_selection(tasks))
+
+    def test_empty_yields_empty(self):
+        self.assertEqual([], er.default_task_selection([]))
+
+
+class PageFramingTests(unittest.TestCase):
+    def test_subtitle_emphasizes_reproducibility_and_offline_default(self):
+        config = PAGE_CONFIG_BY_KEY["eval_run"]
+        subtitle = config.subtitle
+        # 现场结果受 API / 网络 / 模型版本影响。
+        for token in ("API", "网络", "模型版本"):
+            self.assertIn(token, subtitle)
+        # 离线评测才是默认展示依据。
+        self.assertIn("离线", subtitle)
+        self.assertIn("默认", subtitle)
+
+    def test_boundary_marks_drafts_not_overwriting_offline(self):
+        config = PAGE_CONFIG_BY_KEY["eval_run"]
+        self.assertIn("草稿", config.boundary)
+        self.assertIn("不覆盖", config.boundary)
+
+    def test_page_distinguishes_offline_vs_live(self):
+        # 页面显式渲染「离线样本评价 vs 本次现场运行」的区分面板。
+        self.assertIn("离线样本评价 vs 本次现场运行", _PAGE_SOURCE)
+        self.assertIn("REPRODUCIBILITY_NOTE", _PAGE_SOURCE)
+        self.assertIn("不会覆盖", _PAGE_SOURCE)
+
+
+class ResultsTableColumnsTests(unittest.TestCase):
+    def test_results_table_shows_required_call_metadata(self):
+        # 结果主表必须展示状态、HTTP 状态、耗时、回答长度、错误码、错误信息、trace_id。
+        for column in ("状态", "HTTP状态", "耗时(ms)", "回答长度", "错误码", "错误信息", "trace_id"):
+            self.assertIn(column, _PAGE_SOURCE)
+
+
+class DraftPendingInvariantTests(unittest.TestCase):
+    """现场运行 + 裁判评分默认 pending，不进正式结论；仅 confirmed 计入。"""
+
+    def test_score_outcome_defaults_to_pending(self):
+        # 裁判评分默认 review_status=pending（建议分，待人工复核）。
+        outcome = sc.ScoreOutcome(
+            case_id="C1", task_type="analysis", eval_model="m",
+            judge_provider="mock", judge_model="judge", judge_status="success",
+            scores={}, total_score=70,
+        )
+        self.assertEqual("pending", outcome.review_status)
+
+    def test_pending_live_excluded_confirmed_included_in_formal(self):
+        seed = pd.DataFrame(
+            [{"model_name": "seed_m", "case_id": "C1", "total_score": 80, "accuracy_score": 24,
+              "reasoning_score": 16, "coverage_score": 16, "evidence_score": 12,
+              "expression_score": 12, "review_note": ""}]
+        )
+        live = pd.DataFrame([
+            {"id": 1, "run_id": "R", "case_id": "C1", "eval_model": "live_m", "judge_status": "success",
+             "review_status": "pending", "status": "active", "total_score": 30,
+             "accuracy_score": 9, "reasoning_score": 6, "coverage_score": 6,
+             "evidence_score": 4, "expression_score": 5, "review_note": ""},
+            {"id": 2, "run_id": "R", "case_id": "C2", "eval_model": "live_m", "judge_status": "success",
+             "review_status": "confirmed", "status": "active", "total_score": 88,
+             "accuracy_score": 26, "reasoning_score": 18, "coverage_score": 18,
+             "evidence_score": 13, "expression_score": 13, "review_note": ""},
+        ])
+        confirmed, pending = cc.split_live_scores(live)
+        self.assertEqual(1, len(pending))
+        self.assertEqual(1, len(confirmed))
+
+        formal = cc.build_formal_conclusions(seed, confirmed)
+        models = {item["model_name"] for item in formal}
+        # 确认归档的现场模型进入正式结论；待复核草稿不进入。
+        self.assertIn("live_m", models)
+        summary = cc.summarize_formal(seed, confirmed)
+        self.assertEqual(1, summary["confirmed_rows"])
+        # pending 那条没有被计入任何正式行。
+        self.assertEqual(len(seed) + 1, summary["total_rows"])
+
+
+if __name__ == "__main__":
+    unittest.main()

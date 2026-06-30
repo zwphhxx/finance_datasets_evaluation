@@ -45,11 +45,11 @@ PAGE_CONFIGS = [
     PageConfig(
         page_key="eval_run",
         title="发起评测",
-        subtitle="选择模型与任务，运行真实评测并由裁判模型自动评分。",
-        question="本页用于运行一次真实模型评测并获取裁判建议分。",
-        boundary="模型回答仅用于评测，评分为裁判模型建议分，需人工复核确认后归档。",
-        highlights="选 Provider / 模型 / 任务、运行生成、裁判评分、人工复核与下一步引导。",
-        nav_summary="运行真实评测",
+        subtitle="现场可复现实验：选活跃任务调用模型生成回答，对照 Gold/Rubric 打建议分；现场结果受 API、网络、模型版本影响，离线评测结论才是默认展示依据。",
+        question="本页用于现场复现一次模型调用并获取裁判建议分，便于核对而非作为正式结论。",
+        boundary="现场运行结果默认进入草稿（待复核），不覆盖离线样本评价；经人工复核确认后才计入正式结论。",
+        highlights="连通性检查、默认单任务、逐条进度、调用元信息（HTTP/耗时/错误码/trace_id）、裁判评分与人工复核。",
+        nav_summary="可复现实验",
     ),
     PageConfig(
         page_key="case_detail",

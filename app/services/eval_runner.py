@@ -295,9 +295,24 @@ def summarize_outcomes(outcomes: Sequence[RunOutcome]) -> OutcomeSummary:
 
 
 def default_task_selection(tasks: Sequence[Any]) -> list[Any]:
-    """默认只选首个任务，避免「模型数 × 任务数」一次跑满导致长时间无反馈。"""
+    """默认只选 1 道活跃任务，避免「模型数 × 任务数」一次跑满导致长时间无反馈。
+
+    优先选第一条 status=active 的任务；没有任何 status 字段或无活跃任务时，回退到首条，
+    保证页面始终有一个可运行的默认项。
+    """
     items = list(tasks or [])
+    if not items:
+        return []
+    for item in items:
+        if _task_status(item) == "active":
+            return [item]
     return items[:1]
+
+
+def _task_status(task: Any) -> str:
+    getter = getattr(task, "get", None)
+    raw = getter("status") if callable(getter) else getattr(task, "status", None)
+    return _clean(raw).lower()
 
 
 def _safe_progress(callback, done: int, total: int, model_id: str, case_id: str) -> None:
