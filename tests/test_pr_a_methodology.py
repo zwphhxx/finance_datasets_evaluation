@@ -41,7 +41,7 @@ class RegistrationTests(unittest.TestCase):
         self.assertIn("project_methodology", first_group_keys)
 
     def test_page_context_is_complete_and_clean(self):
-        context = PAGE_CONTEXTS["项目介绍"]
+        context = PAGE_CONTEXTS["Case Study"]
         for key in ("question", "boundary", "highlights"):
             self.assertTrue(context[key].strip(), key)
         combined = " ".join(context.values())

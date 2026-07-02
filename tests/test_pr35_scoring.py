@@ -169,7 +169,7 @@ class ScoreCompareTests(unittest.TestCase):
     def test_fake_judge_scores_each_outcome_pending(self):
         compare = self._compare()
         tasks_by_case = {str(r["case_id"]): r for r in _sample_tasks(1)}
-        result = sc.score_compare(_FakeJudge(), "judge/x", compare, {}, tasks_by_case, _DIMENSIONS)
+        result = sc.score_compare(_FakeJudge(), compare, {}, tasks_by_case, _DIMENSIONS, judge_model_id="judge/x")
         self.assertEqual(len(result.outcomes), 2)  # both models' answers scored
         for o in result.outcomes:
             self.assertEqual(o.judge_status, STATUS_SUCCESS)
@@ -180,7 +180,7 @@ class ScoreCompareTests(unittest.TestCase):
 
     def test_garbage_judge_marks_failed_no_fabrication(self):
         compare = self._compare()
-        result = sc.score_compare(_GarbageJudge(), "judge/x", compare, {}, {}, _DIMENSIONS)
+        result = sc.score_compare(_GarbageJudge(), compare, {}, {}, _DIMENSIONS, judge_model_id="judge/x")
         for o in result.outcomes:
             self.assertEqual(o.judge_status, "failed")
             self.assertIsNone(o.total_score)
@@ -188,7 +188,7 @@ class ScoreCompareTests(unittest.TestCase):
 
     def test_mock_judge_fabricates_nothing(self):
         compare = self._compare()
-        result = sc.score_compare(get_provider("mock"), "", compare, {}, {}, _DIMENSIONS)
+        result = sc.score_compare(get_provider("mock"), compare, {}, {}, _DIMENSIONS)
         self.assertTrue(sc.is_mock_score(result))
         for o in result.outcomes:
             self.assertEqual(o.judge_status, "mock")
@@ -201,7 +201,7 @@ class ScorePersistenceTests(unittest.TestCase):
         provider = get_provider("mock")
         compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(1))
         tasks_by_case = {str(r["case_id"]): r for r in _sample_tasks(1)}
-        result = sc.score_compare(_FakeJudge(), "judge/x", compare, {}, tasks_by_case, _DIMENSIONS)
+        result = sc.score_compare(_FakeJudge(), compare, {}, tasks_by_case, _DIMENSIONS, judge_model_id="judge/x")
 
         self.assertTrue(sc.persist_score_result(result, db_path=_DB_PATH))
         rows = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)
@@ -222,7 +222,7 @@ class ScorePersistenceTests(unittest.TestCase):
     def test_persist_returns_false_without_database(self):
         provider = get_provider("mock")
         compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(1))
-        result = sc.score_compare(_FakeJudge(), "judge/x", compare, {}, {}, _DIMENSIONS)
+        result = sc.score_compare(_FakeJudge(), compare, {}, {}, _DIMENSIONS, judge_model_id="judge/x")
         missing = Path(_TMP.name) / "nope.db"
         self.assertFalse(sc.persist_score_result(result, db_path=missing))
 
@@ -231,7 +231,7 @@ class ScorePersistenceTests(unittest.TestCase):
         provider = get_provider("mock")
         compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(2))
         tasks_by_case = {str(r["case_id"]): r for r in _sample_tasks(2)}
-        result = sc.score_compare(_FakeJudge(), "judge/x", compare, {}, tasks_by_case, _DIMENSIONS)
+        result = sc.score_compare(_FakeJudge(), compare, {}, tasks_by_case, _DIMENSIONS, judge_model_id="judge/x")
         sc.persist_score_result(result, db_path=_DB_PATH)
         after = Repository(_DB_PATH).count("score_records")
         self.assertEqual(before, after)

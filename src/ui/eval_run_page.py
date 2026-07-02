@@ -81,7 +81,7 @@ def render_eval_run_page(data_bundle: dict) -> None:
     with st.expander("展开配置", expanded=not has_run):
         provider_name = _render_config_controls()
         model_ids = _render_model_selector(provider_name)
-        selected_tasks = _render_task_selector(task_records)
+        selected_tasks = _render_task_selector(task_records, getattr(base, "gold_answer_map", {}) or {})
         temperature, max_tokens = _render_parameters()
         _render_run_button(provider_name, model_ids, selected_tasks, temperature, max_tokens)
 
@@ -195,7 +195,7 @@ def _render_model_selector(provider_name: str) -> list[str]:
     return _dedupe(list(selected_from_list) + manual_ids)
 
 
-def _render_task_selector(task_records: list[dict]) -> list[dict]:
+def _render_task_selector(task_records: list[dict], gold_map: dict) -> list[dict]:
     by_case = {str(r.get("case_id")): r for r in task_records}
 
     def _label(case_id: str) -> str:
@@ -203,11 +203,26 @@ def _render_task_selector(task_records: list[dict]) -> list[dict]:
         task_type = display_label(row.get("task_type"), TASK_TYPE_LABELS)
         return f"{case_id} · {task_type} · {summarize_text(row.get('question'), 24)}"
 
-    case_ids = list(by_case.keys())
-    default_cases = [str(r.get("case_id")) for r in er.default_task_selection(task_records)]
+    # Only allow tasks with complete judgment criteria (non-draft) into testing
+    eligible = []
+    for case_id, row in by_case.items():
+        gold = gold_map.get(case_id) or {}
+        if ds.can_enter_formal_testing(row, gold):
+            eligible.append(case_id)
+
+    if not eligible:
+        st.warning("当前没有具备完整评判标准的样本可测。请到「样本库」或「数据集管理」补充 Gold Answer 的必须覆盖点与不可接受错误。")
+        return []
+
+    default_cases = [str(r.get("case_id")) for r in er.default_task_selection(task_records) if str(r.get("case_id")) in by_case]
+    # Filter default to eligible
+    default_cases = [c for c in default_cases if c in eligible]
+    if not default_cases and eligible:
+        default_cases = eligible[:1]
+
     chosen = st.multiselect(
-        "任务范围（默认仅 1 道活跃任务，可手动多选）",
-        case_ids,
+        "任务范围（默认仅 1 道活跃任务，可手动多选；仅显示评判标准完整的样本）",
+        eligible,
         default=default_cases,
         format_func=_label,
         key="live_eval_cases",
@@ -215,6 +230,7 @@ def _render_task_selector(task_records: list[dict]) -> list[dict]:
     st.caption(
         "默认只跑 1 道活跃任务以快速看到结果、避免长时间无反馈；如需更多请手动多选。"
         "注意：实际生成次数 = 模型数 × 任务数，选得越多耗时越长。"
+        "仅评判标准完整（具备 Gold Answer、必须覆盖点、不可接受错误）的样本可进入测试。"
     )
     return [by_case[c] for c in chosen]
 
@@ -381,13 +397,7 @@ def _render_scoring(base, provider_name: str, task_records: list[dict]) -> None:
         "自动评分（裁判模型）",
         "由裁判模型对照 Gold Answer 与 Rubric 打出建议分；分数为机器建议，需人工复核确认后归档。",
     )
-    st.caption("裁判模型可见 Gold Answer（评分必需），被评测模型全程不可见 Gold；并列对比不代表最终结论。")
-
-    judge_model = st.text_input(
-        "裁判模型 ID（留空则各自用被评测模型）",
-        key="live_eval_judge_model",
-        placeholder="例如 THUDM/GLM-4-9B-0414",
-    ).strip()
+    st.caption(f"评分模型：{sc.DEFAULT_JUDGE_MODEL}（系统默认）。被评测模型全程不可见 Gold；并列对比不代表最终结论。")
 
     no_success = result.success_count == 0
     if no_success:
@@ -402,7 +412,7 @@ def _render_scoring(base, provider_name: str, task_records: list[dict]) -> None:
         dimensions = ds.get_rubric_dimensions()
         with st.spinner("裁判模型正在评分……"):
             score_result = sc.score_compare(
-                provider, judge_model, result, gold_map, tasks_by_case, dimensions,
+                provider, result, gold_map, tasks_by_case, dimensions,
             )
         sc.persist_score_result(score_result)
         eval_state.set_last_score(score_result)
@@ -507,9 +517,8 @@ def _render_completion_cta() -> None:
     if not eval_state.has_run():
         return
     render_action_cards([
-        ("查看单题深度评测 →", "case_detail"),
-        ("查看模型能力指纹 →", "model_diagnosis"),
-        ("查看模型边界报告 →", "model_boundary"),
+        ("查看评测复核 →", "case_detail"),
+        ("查看评测结论 →", "evaluation_conclusions"),
     ], key_prefix="eval_run")
 
 

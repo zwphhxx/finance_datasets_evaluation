@@ -143,7 +143,8 @@ def _truncate(value, limit: int = 40) -> str:
 
 def build_case_overview_rows(data) -> list[dict]:
     """One compact row per task, with Gold Answer / model-answer / error-label
-    status derived from the linked data files. No values are hardcoded."""
+    status derived from the linked data files. No values are hardcoded.
+    Includes judgment criteria completeness (draft vs active)."""
     tasks_df = data.tasks
     if tasks_df.empty or "case_id" not in tasks_df.columns:
         return []
@@ -161,6 +162,12 @@ def build_case_overview_rows(data) -> list[dict]:
         difficulty_raw = _clean_text(row.get("difficulty"))
         gold = data.gold_answer_map.get(case_id) or {}
         has_gold = field_value(gold, "core_conclusion") is not None
+        # Judgment criteria completeness
+        has_criteria = bool(
+            has_gold
+            and field_value(gold, "must_have_points")
+            and field_value(gold, "unacceptable_errors")
+        )
         rows.append(
             {
                 "case_id": case_id,
@@ -170,6 +177,7 @@ def build_case_overview_rows(data) -> list[dict]:
                 "difficulty_badge": DIFFICULTY_BADGE.get(difficulty_raw, "neutral"),
                 "capability": _truncate(row.get("expected_capability")),
                 "has_gold": has_gold,
+                "has_criteria": has_criteria,
                 "model_answer_count": int(answer_counts.get(case_id, 0)),
                 "error_label_count": int(error_counts.get(case_id, 0)),
             }
@@ -207,11 +215,13 @@ def _build_sample_coverage_summary(rows) -> list[tuple[str, str]]:
     """Sample coverage summary derived from the case rows."""
     total = len(rows)
     with_gold = sum(1 for r in rows if r["has_gold"])
+    with_criteria = sum(1 for r in rows if r["has_criteria"])
     with_answer = sum(1 for r in rows if r["model_answer_count"] > 0)
     with_error = sum(1 for r in rows if r["error_label_count"] > 0)
     return [
         ("任务总数", f"{total} 道"),
         ("Gold Answer 覆盖", f"{with_gold}/{total}"),
+        ("评判标准完整", f"{with_criteria}/{total}"),
         ("已有模型回答", f"{with_answer} 道"),
         ("已触发错误标签", f"{with_error} 道"),
     ]
@@ -292,7 +302,8 @@ def _render_overview_table(rows) -> None:
             "任务类型",
             "难度",
             "考察能力",
-            "Gold Answer 状态",
+            "Gold Answer",
+            "评判标准",
             "模型回答数",
             "错误标签数",
         ]
@@ -304,6 +315,10 @@ def _render_overview_table(rows) -> None:
             gold_badge = '<span class="status-badge status-success">具备</span>'
         else:
             gold_badge = '<span class="status-badge status-neutral">缺失</span>'
+        if row["has_criteria"]:
+            criteria_badge = '<span class="status-badge status-success">完整</span>'
+        else:
+            criteria_badge = '<span class="status-badge status-warning">草稿</span>'
         body += (
             f'<tr><td class="check-key">{escape(row["case_id"])}</td>'
             f"<td>{escape(row['domain_label'])}</td>"
@@ -311,6 +326,7 @@ def _render_overview_table(rows) -> None:
             f"<td>{diff_badge}</td>"
             f'<td class="check-note">{escape(row["capability"])}</td>'
             f"<td>{gold_badge}</td>"
+            f"<td>{criteria_badge}</td>"
             f'<td class="check-count">{row["model_answer_count"]}</td>'
             f'<td class="check-count">{row["error_label_count"]}</td></tr>'
         )

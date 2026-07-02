@@ -24,6 +24,9 @@ from typing import Any, Mapping, Sequence
 
 from app.models.base import ModelProvider, STATUS_FAILED, STATUS_MOCK, STATUS_SUCCESS
 
+# Fixed judge model for scoring (PR-LOGIC1)
+DEFAULT_JUDGE_MODEL = "deepseek-ai/DeepSeek-V4-Pro"
+
 _JUDGE_SYSTEM_PROMPT = (
     "你是金融与专业尽调领域的资深评审。你的任务是依据给定的 Gold Answer 与评分量表（Rubric），"
     "对「被评测模型的回答」逐维度打分。"
@@ -248,20 +251,22 @@ def score_single(
 
 def score_compare(
     provider: ModelProvider,
-    judge_model_id: str,
     compare_result,
     gold_map: Mapping[str, Mapping[str, Any]],
     tasks_by_case: Mapping[str, Mapping[str, Any]],
     dimensions: Sequence[Mapping[str, Any]],
     *,
+    judge_model_id: str | None = None,
     temperature: float = 0.0,
     max_tokens: int = 1024,
     score_run_id: str | None = None,
     **kwargs: Any,
 ) -> ScoreResult:
-    """对一次多模型对比运行的每条成功回答评分；裁判模型留空则默认用各自被评测模型。"""
+    """对一次多模型对比运行的每条成功回答评分；裁判模型固定为 DEFAULT_JUDGE_MODEL。"""
     sid = score_run_id or generate_score_run_id()
     mode = "mock" if getattr(provider, "name", "") == "mock" else "live"
+    # 固定裁判模型，用户不可配置
+    judge_model = _clean(judge_model_id) or DEFAULT_JUDGE_MODEL
     outcomes: list[ScoreOutcome] = []
     for outcome in compare_result.outcomes:
         if not outcome.success:
@@ -271,7 +276,6 @@ def score_compare(
             "task_type": outcome.task_type,
         }
         gold = gold_map.get(outcome.case_id) or {}
-        judge_model = _clean(judge_model_id) or outcome.model_id
         outcomes.append(
             score_single(
                 provider, judge_model, task, outcome.answer_text, gold, dimensions,
@@ -283,7 +287,7 @@ def score_compare(
         score_run_id=sid,
         run_id=getattr(compare_result, "run_id", ""),
         judge_provider=getattr(provider, "name", ""),
-        judge_model=_clean(judge_model_id),
+        judge_model=judge_model,
         mode=mode,
         created_at=datetime.now().isoformat(timespec="seconds"),
         outcomes=tuple(outcomes),

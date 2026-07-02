@@ -319,15 +319,15 @@ class PortfolioNavTests(unittest.TestCase):
 
     def test_renamed_titles(self):
         self.assertEqual("样本库", PAGE_CONFIG_BY_KEY["tasks"].title)
-        self.assertEqual("可复现实验", PAGE_CONFIG_BY_KEY["eval_run"].title)
+        self.assertEqual("发起测试", PAGE_CONFIG_BY_KEY["eval_run"].title)
         self.assertEqual("数据集质量", PAGE_CONFIG_BY_KEY["dataset_quality"].title)
 
     def test_top_nav_has_five_items(self):
-        """Top nav must have exactly 5 items: Case Study, Samples, Evaluation, Experiment, Admin."""
+        """Top nav must have exactly 5 items: Case Study, 样本库, 发起测试, 评测复核, 评测结论."""
         self.assertEqual(5, len(_TOP_NAV_ITEMS))
         labels = [label for label, _ in _TOP_NAV_ITEMS]
         self.assertEqual(
-            ["Case Study", "Samples", "Evaluation", "Experiment", "Admin"],
+            ["Case Study", "样本库", "发起测试", "评测复核", "评测结论"],
             labels,
         )
 

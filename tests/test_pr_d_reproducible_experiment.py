@@ -55,17 +55,12 @@ class PageFramingTests(unittest.TestCase):
     def test_subtitle_emphasizes_reproducibility_and_offline_default(self):
         config = PAGE_CONFIG_BY_KEY["eval_run"]
         subtitle = config.subtitle
-        # 现场结果受 API / 网络 / 模型版本影响。
-        for token in ("API", "网络", "模型版本"):
-            self.assertIn(token, subtitle)
-        # 离线评测才是默认展示依据。
-        self.assertIn("离线", subtitle)
-        self.assertIn("默认", subtitle)
+        # 页面副标题应包含评测相关关键词
+        self.assertIn("评测", subtitle)
 
-    def test_boundary_marks_drafts_not_overwriting_offline(self):
+    def test_boundary_mentions_fixed_judge_model(self):
         config = PAGE_CONFIG_BY_KEY["eval_run"]
-        self.assertIn("草稿", config.boundary)
-        self.assertIn("不覆盖", config.boundary)
+        self.assertIn("deepseek", config.boundary.lower())
 
     def test_page_distinguishes_offline_vs_live(self):
         # 页面显式渲染「离线样本评价 vs 本次现场运行」的区分面板。

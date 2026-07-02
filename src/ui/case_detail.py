@@ -493,9 +493,6 @@ def render_case_detail_page(data_bundle: dict) -> None:
     # 08 人工复核
     _render_case_review(output_row, eval_status)
 
-    # 09 偏好样本对照
-    _render_preference_section(data.preference_pairs, data.model_outputs, selected_case)
-
 
 def _resolve_source(seed_data, live_data, live: bool):
     if not live:
@@ -861,34 +858,8 @@ def _render_case_review(output_row: pd.Series | None, eval_status: dict) -> None
 
 
 def _render_preference_section(preference_pairs_df, model_outputs_df, selected_case: str) -> None:
-    pairs = get_preference_pair_details_for_case(preference_pairs_df, model_outputs_df, selected_case)
-    if pairs.empty:
-        return
-
-    render_numbered_section("09", "偏好样本对照", "同题不同回答的偏好判断，用于沉淀改进方向。")
-    for _, pair in pairs.iterrows():
-        preferred_meta = (
-            f"output_id {_display(pair.get('preferred_output_id'), '暂无')} · "
-            f"{_display(pair.get('preferred_model_name'), '未标注模型')}"
-        )
-        rejected_meta = (
-            f"output_id {_display(pair.get('rejected_output_id'), '暂无')} · "
-            f"{_display(pair.get('rejected_model_name'), '未标注模型')}"
-        )
-        with st.expander(
-            f"{_display(pair.get('pair_id'), '偏好样本')} · {_display(pair.get('preference_dimension'), '未标注维度')}",
-            expanded=False,
-        ):
-            if has_value(pair.get("preference_reason")):
-                render_info_panel("偏好理由", _text(pair.get("preference_reason")))
-            render_preference_comparison(
-                "偏好回答",
-                pair.get("preferred_answer_text"),
-                "对照回答",
-                pair.get("rejected_answer_text"),
-                preferred_meta=preferred_meta,
-                rejected_meta=rejected_meta,
-            )
+    """Deprecated: Preference Pair section removed per PR-LOGIC1. Kept for backward compatibility."""
+    pass
 
 
 # --- small helpers -----------------------------------------------------------

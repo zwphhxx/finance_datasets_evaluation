@@ -66,8 +66,9 @@ def render_dataset_admin_page(data_bundle: dict) -> None:
         return
 
     # Admin pages keep tab navigation but apply unified section styling within tabs
-    tasks_tab, gold_tab, rubric_tab, label_tab, action_tab = st.tabs(
-        ["任务题管理", "Gold Answer 管理", "Rubric 管理", "错误标签管理", "数据补强动作管理"]
+    # PR-LOGIC1: Weaken error labels and improvement actions; core focus is task + Gold Answer + Rubric
+    tasks_tab, gold_tab, rubric_tab = st.tabs(
+        ["任务题管理", "Gold Answer 管理", "Rubric 管理"]
     )
     with tasks_tab:
         _render_task_admin()
@@ -75,9 +76,9 @@ def render_dataset_admin_page(data_bundle: dict) -> None:
         _render_gold_admin()
     with rubric_tab:
         _render_rubric_admin()
-    with label_tab:
+    # Error labels and improvement actions are kept but hidden in expanders for backward compatibility
+    with st.expander("错误标签与补强动作（高级）", expanded=False):
         _render_error_label_admin()
-    with action_tab:
         _render_action_admin()
 
 
@@ -189,7 +190,7 @@ def _render_task_detail(records: list[dict]) -> None:
 
 
 def _render_task_create_form(records: list[dict]) -> None:
-    render_numbered_section("03", "新增任务", "新建一道任务题，写入 SQLite。")
+    render_numbered_section("03", "新增任务", "新建一道任务题，写入 SQLite。评判标准（Gold Answer）可在创建后通过「Gold Answer 管理」补充。")
     with st.form("admin_task_create", clear_on_submit=True):
         case_id = st.text_input("任务编号 case_id", help="唯一编号，例如 CM-016。")
         col1, col2 = st.columns(2)
@@ -212,6 +213,7 @@ def _render_task_create_form(records: list[dict]) -> None:
         )
         scenario = st.text_area("任务场景 scenario", height=80)
         task_prompt = st.text_area("任务题干 task_prompt", height=110)
+        context = st.text_area("背景材料 context", height=80)
         expected = st.text_area("考察能力 expected_capabilities", height=80)
         submitted = st.form_submit_button("新增任务", type="primary")
 
@@ -226,6 +228,7 @@ def _render_task_create_form(records: list[dict]) -> None:
                     "risk_level": risk_level,
                     "scenario": scenario,
                     "question": task_prompt,
+                    "context": context,
                     "expected_capability": expected,
                     "status": ds.ACTIVE_STATUS,
                 }
@@ -233,7 +236,7 @@ def _render_task_create_form(records: list[dict]) -> None:
         except Exception as exc:  # noqa: BLE001 - 校验失败如实反馈
             st.error(str(exc))
         else:
-            st.success(f"已新增任务 {case_id.strip()}。")
+            st.success(f"已新增任务 {case_id.strip()}。请到「Gold Answer 管理」补充评判标准，否则该样本为草稿状态，不可进入测试。")
             _mark_data_changed()
             st.rerun()
 

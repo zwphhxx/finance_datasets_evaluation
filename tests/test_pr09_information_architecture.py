@@ -22,11 +22,11 @@ EXPECTED_PAGE_KEYS = [
 
 # 每页标题（PAGE_CONTEXTS 的键），与 EXPECTED_PAGE_KEYS 一一对应。
 EXPECTED_PAGE_TITLES = [
-    "项目介绍",
+    "Case Study",
     "红线评测台",
     "样本库",
-    "可复现实验",
-    "典型样本拆解",
+    "发起测试",
+    "评测复核",
     "模型能力指纹",
     "模型边界报告",
     "评测结论",

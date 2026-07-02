@@ -8,6 +8,8 @@
 
 本页定位是「当前专业样本内的可用边界观察」，不是模型排行榜。seed 已有结论默认只读，
 新增与复核仅写入 SQLite 运行时数据层；SQLite 不可用时仍可展示 seed 已有结论。
+
+PR-LOGIC1: 合并 红线评测台、模型能力指纹、模型边界报告 的内容到本页。
 """
 
 from __future__ import annotations
@@ -57,6 +59,8 @@ def render_evaluation_conclusions_page(data_bundle: dict) -> None:
     )
 
     _render_formal_conclusions(seed_scores, confirmed_live, seed_errors)
+    _render_model_boundaries(seed_scores, confirmed_live, seed_errors)
+    _render_model_capability_fingerprint(seed_scores, confirmed_live, seed_errors)
     _render_drafts(pending_live, responses, db_ready)
     _render_archive_explainer(db_ready)
 
@@ -111,11 +115,107 @@ def _render_formal_conclusions(seed_scores, confirmed_live, seed_errors) -> None
 
 
 # --------------------------------------------------------------------------- #
-# 02 草稿评测（待复核）
+# 02 模型使用边界（合并自 红线评测台 + 模型边界报告）
+# --------------------------------------------------------------------------- #
+def _render_model_boundaries(seed_scores, confirmed_live, seed_errors) -> None:
+    render_numbered_section(
+        "02",
+        "模型使用边界",
+        "按风险等级、能力下限与红线错误，将模型归入三类使用边界。",
+    )
+
+    combined = cc.combine_formal_scores(seed_scores, confirmed_live)
+    if combined.empty or "total_score" not in combined.columns:
+        render_info_panel(
+            "暂无边界数据",
+            "运行评测并经人工复核后，此处按当前样本生成三类使用边界。",
+        )
+        return
+
+    # Three-tier boundary classification
+    direct_count = 0
+    review_count = 0
+    not_direct_count = 0
+    direct_models = []
+    review_models = []
+    not_direct_models = []
+
+    for model_name, group in combined.groupby("model_name"):
+        avg = float(group["total_score"].mean())
+        if avg >= 85:
+            direct_count += 1
+            direct_models.append((model_name, avg))
+        elif avg >= 60:
+            review_count += 1
+            review_models.append((model_name, avg))
+        else:
+            not_direct_count += 1
+            not_direct_models.append((model_name, avg))
+
+    boundaries = [
+        ("可直接使用", "success", direct_count, direct_models, "总分 ≥85，当前样本内表现稳健，仍建议人工确认最终结论。"),
+        ("必须人工复核", "warning", review_count, review_models, "总分 60–85，存在维度短板，需人工复核后使用。"),
+        ("不可直接使用", "danger", not_direct_count, not_direct_models, "总分 <60 或触发红线，不建议直接采用。"),
+    ]
+
+    for title, level, count, models, desc in boundaries:
+        if count == 0:
+            detail = "当前样本中暂无归入此类的模型。"
+        else:
+            model_list = "、".join(f"{m}（{a:.1f}）" for m, a in models[:3])
+            detail = f"{model_list} 等 {count} 个模型。{desc}"
+        render_info_panel(f"{title} ({count})", detail)
+
+    st.caption("红线错误一票否决：触发高严重度红线错误的模型不计入「可直接使用」。边界结论来自当前样本内观察，不代表模型整体能力。")
+
+
+# --------------------------------------------------------------------------- #
+# 03 模型能力指纹（合并自 模型能力指纹）
+# --------------------------------------------------------------------------- #
+def _render_model_capability_fingerprint(seed_scores, confirmed_live, seed_errors) -> None:
+    render_numbered_section(
+        "03",
+        "模型能力指纹",
+        "各模型在当前样本内的强项、短板与频繁弱点。",
+    )
+
+    combined = cc.combine_formal_scores(seed_scores, confirmed_live)
+    if combined.empty or "model_name" not in combined.columns:
+        render_info_panel(
+            "暂无指纹数据",
+            "运行评测并经人工复核后，此处生成各模型能力指纹。",
+        )
+        return
+
+    from src.metrics import get_dimension_gap_ranking, get_model_dimension_scores
+
+    dimension_scores = get_model_dimension_scores(combined)
+    if not dimension_scores.empty:
+        st.caption("各维度达成率（按模型分组）")
+        for model_name, group in dimension_scores.groupby("model_name"):
+            with st.expander(f"{model_name} 维度详情", expanded=False):
+                for _, row in group.iterrows():
+                    dim = str(row["dimension"])
+                    score = float(row["score"])
+                    st.markdown(f"- {dim}：{score:.1f}")
+
+    # Weakness summary
+    gap_ranking = get_dimension_gap_ranking(combined)
+    if not gap_ranking.empty:
+        weakest = gap_ranking.iloc[0]
+        st.caption(
+            f"当前样本内最弱维度：{weakest['dimension']}（达成率约 {float(weakest['attainment']):.0%}）"
+        )
+
+    st.caption("上述均为当前评测样本内观察，样本量有限，不构成绝对排名或采购建议。")
+
+
+# --------------------------------------------------------------------------- #
+# 04 草稿评测（待复核）
 # --------------------------------------------------------------------------- #
 def _render_drafts(pending_live, responses, db_ready: bool) -> None:
     render_numbered_section(
-        "02",
+        "04",
         "草稿评测（待复核）",
         "现场新增评测先进入草稿，未进入正式结论；经人工复核确认后才会归档计入。",
     )
@@ -167,7 +267,7 @@ def _render_draft_row(row: dict, can_confirm: bool) -> None:
         if can_confirm and row.get("row_id") is not None:
             _render_inline_confirm(row)
         else:
-            st.caption("如需复核归档，请在已初始化 SQLite 的环境下，从“可复现实验”或“典型样本拆解”页确认。")
+            st.caption("如需复核归档，请在已初始化 SQLite 的环境下，从「评测复核」页确认。")
 
 
 def _render_inline_confirm(row: dict) -> None:
@@ -195,19 +295,19 @@ def _render_inline_confirm(row: dict) -> None:
 
 def _render_draft_entries() -> None:
     render_action_cards([
-        ("去典型样本拆解复核 →", "case_detail"),
-        ("去可复现实验 / 批量复核 →", "eval_run"),
+        ("去评测复核 →", "case_detail"),
+        ("去发起测试 / 批量复核 →", "eval_run"),
     ], key_prefix="conc")
 
 
 # --------------------------------------------------------------------------- #
-# 03 人工复核后归档
+# 05 人工复核后归档
 # --------------------------------------------------------------------------- #
 def _render_archive_explainer(db_ready: bool) -> None:
-    render_numbered_section("03", "人工复核后归档", "把现场草稿转为正式结论的处理方式。")
+    render_numbered_section("05", "人工复核后归档", "把现场草稿转为正式结论的处理方式。")
     render_info_panel(
         "复核与归档流程",
-        "人工可在草稿条目中修改各维度分数与复核说明；点击“确认并归档”后，该条 review_status "
+        "人工可在草稿条目中修改各维度分数与复核说明；点击「确认并归档」后，该条 review_status "
         "变为 confirmed，下次进入正式评测结论汇总。seed 已有结论默认只读，新增与复核结果只写入 "
         "SQLite 运行时数据层，不回写 data/ 下的 seed 文件。",
     )

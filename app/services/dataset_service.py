@@ -196,8 +196,43 @@ TASK_EDITABLE_FIELDS = (
     "risk_level",
 )
 
+# 样本评判标准字段（Gold Answer 核心要素）
+JUDGMENT_CRITERIA_FIELDS = (
+    "core_conclusion",
+    "must_have_points",
+    "unacceptable_errors",
+)
+
 ACTIVE_STATUS = "active"
 INACTIVE_STATUS = "inactive"
+DRAFT_STATUS = "draft"
+
+
+def has_judgment_criteria(gold_record: dict | None) -> bool:
+    """检查样本是否具备完整的评判标准（Gold Answer 核心要素）。"""
+    if not isinstance(gold_record, dict):
+        return False
+    # 必须同时存在核心结论、必须覆盖点、不可接受错误
+    core = _clean(gold_record.get("core_conclusion"))
+    must = _as_list(gold_record.get("must_have_points"))
+    unacc = _as_list(gold_record.get("unacceptable_errors"))
+    return bool(core) and bool(must) and bool(unacc)
+
+
+def get_sample_status(task_record: dict | None, gold_record: dict | None) -> str:
+    """返回样本状态：具备完整评判标准则为 active，否则为 draft。"""
+    task_status = str((task_record or {}).get("status") or ACTIVE_STATUS).strip().lower()
+    if task_status == INACTIVE_STATUS:
+        return INACTIVE_STATUS
+    if not has_judgment_criteria(gold_record):
+        return DRAFT_STATUS
+    return ACTIVE_STATUS
+
+
+def can_enter_formal_testing(task_record: dict | None, gold_record: dict | None) -> bool:
+    """样本是否允许进入正式测试（必须非 draft、非 inactive）。"""
+    status = get_sample_status(task_record, gold_record)
+    return status not in {DRAFT_STATUS, INACTIVE_STATUS}
 
 
 def _invalidate_caches() -> None:

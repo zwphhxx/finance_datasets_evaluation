@@ -30,15 +30,18 @@ PAGES = {
 }
 
 
-# Top nav: 5 main items matching the portfolio template spec.
+# Top nav: exactly 5 main items matching the core evaluation workflow.
 # Maps display label -> page_key for the top nav bar.
 _TOP_NAV_ITEMS = [
     ("Case Study", "project_methodology"),
-    ("Samples", "tasks"),
-    ("Evaluation", "evaluation_conclusions"),
-    ("Experiment", "eval_run"),
-    ("Admin", "dataset_admin"),
+    ("样本库", "tasks"),
+    ("发起测试", "eval_run"),
+    ("评测复核", "case_detail"),
+    ("评测结论", "evaluation_conclusions"),
 ]
+
+# Hidden pages kept for backward compatibility (tests may depend on routing keys).
+_HIDDEN_PAGES = {"overview", "model_diagnosis", "model_boundary", "dataset_quality", "dataset_admin"}
 
 # Sidebar groups kept for compatibility/debug.
 _NAV_GROUPS = [
@@ -139,3 +142,8 @@ def _render_data_context_bar() -> None:
         )
     html += "</div></div>"
     render_html(html, container=st.sidebar)
+
+
+def get_primary_nav_items() -> list[tuple[str, str]]:
+    """Return the primary navigation items (label, page_key)."""
+    return _TOP_NAV_ITEMS[:]
