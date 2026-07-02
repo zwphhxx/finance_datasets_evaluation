@@ -22,6 +22,8 @@ from src.ui.components import (
     render_section_title,
     render_status_badge,
     render_status_summary,
+    render_tag_cloud,
+    render_story_section,
 )
 
 
@@ -220,11 +222,6 @@ def render_tasks_page(data_bundle: dict) -> None:
     config = get_page_config("tasks")
 
     # Portfolio compact hero
-    hero_stats = [
-        (str(len(data.tasks)), "尽调任务样本"),
-        (str(len({r.get("domain") for _, r in data.tasks.iterrows() if r.get("domain")}) if not data.tasks.empty else "0"), "专业领域"),
-    ]
-    # Fix: compute domain count properly
     domain_count = 0
     if not data.tasks.empty and "domain" in data.tasks.columns:
         domain_count = data.tasks["domain"].dropna().nunique()
@@ -244,6 +241,10 @@ def render_tasks_page(data_bundle: dict) -> None:
         return
 
     rows = build_case_overview_rows(data)
+
+    # Portfolio sub-page: intro + inline tags
+    domains = sorted({row["domain_label"] for row in rows})
+    render_tag_cloud(domains)
 
     # 01 Sample coverage summary
     render_numbered_section("01", "样本覆盖摘要", "当前数据集的 Gold Answer、模型回答与错误标签覆盖情况。")

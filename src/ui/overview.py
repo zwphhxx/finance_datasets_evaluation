@@ -22,6 +22,7 @@ from src.ui.components import (
     render_html,
     render_info_panel,
     render_numbered_section,
+    render_pull_quote,
     render_redline_verdict,
     render_status_summary,
 )
@@ -44,55 +45,6 @@ def _rubric_dimension_count(scores_df) -> int:
         for column in columns
         if column.endswith("_score") and column != _RUBRIC_TOTAL_COLUMN
     )
-
-
-def get_dataset_metric_cards(data) -> list[dict]:
-    """Four headline metric cards derived from data."""
-    return [
-        {"label": "任务样本", "value": len(data.tasks)},
-        {"label": "覆盖领域", "value": _distinct_count(data.tasks, "domain")},
-        {"label": "模型回答", "value": len(data.model_outputs)},
-        {"label": "错误标签", "value": len(data.errors)},
-    ]
-
-
-def get_domain_coverage_items(tasks_df) -> list[tuple[str, str]]:
-    """Domain coverage as (label, count) pairs, derived from tasks."""
-    if "domain" not in getattr(tasks_df, "columns", []):
-        return []
-    counts = tasks_df["domain"].dropna().astype(str).value_counts()
-    return [(display_label(domain, DOMAIN_LABELS), f"{count} 道") for domain, count in counts.items()]
-
-
-def get_overview_insight_cards(data) -> list[dict]:
-    """Three insight cards with counts derived from data."""
-    task_count = len(data.tasks)
-    domain_count = _distinct_count(data.tasks, "domain")
-    model_count = _distinct_count(data.model_outputs, "model_name")
-    optimization_count = len(data.optimizations)
-    return [
-        {"label": "样本资产", "value": task_count, "note": f"覆盖 {domain_count} 个专业领域"},
-        {"label": "评测机制", "value": model_count, "note": "参与评测的模型数量"},
-        {"label": "数据优化价值", "value": optimization_count, "note": "已记录的数据补强动作"},
-    ]
-
-
-def get_overview_asset_cards(data) -> list[dict]:
-    """Return six asset cards with labels and counts derived from data."""
-    task_count = len(data.tasks)
-    gold_count = len(data.gold_answer_map)
-    output_count = len(data.model_outputs)
-    error_type_count = _distinct_count(data.errors, "error_type")
-    error_rows = len(data.errors)
-    optimization_count = len(data.optimizations)
-    return [
-        {"label": "任务样本", "value": str(task_count), "note": "尽调任务样本"},
-        {"label": "模型回答", "value": str(output_count), "note": "模型回答记录"},
-        {"label": "Gold Answer 覆盖", "value": f"{gold_count}/{task_count}", "note": "Gold Answer 覆盖"},
-        {"label": "错误标签", "value": f"{error_type_count} 类 · {error_rows} 条", "note": "错误标签"},
-        {"label": "Preference Pair", "value": "0", "note": "Preference Pair"},
-        {"label": "优化动作", "value": str(optimization_count), "note": "数据补强优化动作"},
-    ]
 
 
 def get_overview_summary_items(data) -> list[tuple[str, str]]:
@@ -145,29 +97,6 @@ def build_model_performance_summary(scores_df, errors_df) -> dict | None:
         "weakest_attainment": weakest_attainment,
         "top_error_type": top_error_type,
         "top_error_count": top_error_count,
-    }
-
-
-def build_gold_quality_summary(gold_answer_map: dict, tasks_df) -> dict:
-    """Gold Answer 质量摘要：满足 / 部分满足评测使用条件的任务数，全部按数据推导。"""
-    case_ids: list[str] = []
-    if "case_id" in getattr(tasks_df, "columns", []):
-        case_ids = [str(c) for c in tasks_df["case_id"].dropna().tolist()]
-
-    usable = 0
-    partial_cases: list[str] = []
-    for case_id in case_ids:
-        if evaluate_gold_quality(gold_answer_map.get(case_id, {}))["is_usable"]:
-            usable += 1
-        else:
-            partial_cases.append(case_id)
-
-    total = len(case_ids)
-    return {
-        "total": total,
-        "usable": usable,
-        "partial": total - usable,
-        "partial_cases": partial_cases,
     }
 
 
@@ -330,3 +259,75 @@ def _render_data_quality_status(validation_result) -> None:
         st.error(message)
     for message in validation_result.warnings:
         st.warning(message)
+
+
+# Backward-compatible aliases for tests that import removed functions.
+def get_overview_asset_cards(data):
+    """Deprecated: kept for backward compatibility with PR-09 tests."""
+    task_count = len(data.tasks)
+    gold_count = len(data.gold_answer_map)
+    output_count = len(data.model_outputs)
+    error_type_count = _distinct_count(data.errors, "error_type")
+    error_rows = len(data.errors)
+    optimization_count = len(data.optimizations)
+    return [
+        {"label": "任务样本", "value": str(task_count), "note": "尽调任务样本"},
+        {"label": "模型回答", "value": str(output_count), "note": "模型回答记录"},
+        {"label": "Gold Answer 覆盖", "value": f"{gold_count}/{task_count}", "note": "Gold Answer 覆盖"},
+        {"label": "错误标签", "value": f"{error_type_count} 类 · {error_rows} 条", "note": "错误标签"},
+        {"label": "Preference Pair", "value": "0", "note": "Preference Pair"},
+        {"label": "优化动作", "value": str(optimization_count), "note": "数据补强优化动作"},
+    ]
+
+
+def get_overview_insight_cards(data) -> list[dict]:
+    """Deprecated: kept for backward compatibility."""
+    task_count = len(data.tasks)
+    domain_count = _distinct_count(data.tasks, "domain")
+    model_count = _distinct_count(data.model_outputs, "model_name")
+    optimization_count = len(data.optimizations)
+    return [
+        {"label": "样本资产", "value": task_count, "note": f"覆盖 {domain_count} 个专业领域"},
+        {"label": "评测机制", "value": model_count, "note": "参与评测的模型数量"},
+        {"label": "数据优化价值", "value": optimization_count, "note": "已记录的数据补强动作"},
+    ]
+
+
+def get_dataset_metric_cards(data) -> list[dict]:
+    """Deprecated: kept for backward compatibility."""
+    return [
+        {"label": "任务样本", "value": len(data.tasks)},
+        {"label": "覆盖领域", "value": _distinct_count(data.tasks, "domain")},
+        {"label": "模型回答", "value": len(data.model_outputs)},
+        {"label": "错误标签", "value": len(data.errors)},
+    ]
+
+
+def get_domain_coverage_items(tasks_df) -> list[tuple[str, str]]:
+    """Deprecated: kept for backward compatibility."""
+    if "domain" not in getattr(tasks_df, "columns", []):
+        return []
+    counts = tasks_df["domain"].dropna().astype(str).value_counts()
+    from src.ui.tasks import DOMAIN_LABELS, display_label
+    return [(display_label(domain, DOMAIN_LABELS), f"{count} 道") for domain, count in counts.items()]
+
+
+def build_gold_quality_summary(gold_answer_map: dict, tasks_df) -> dict:
+    """Deprecated: kept for backward compatibility."""
+    case_ids: list[str] = []
+    if "case_id" in getattr(tasks_df, "columns", []):
+        case_ids = [str(c) for c in tasks_df["case_id"].dropna().tolist()]
+    usable = 0
+    partial_cases: list[str] = []
+    for case_id in case_ids:
+        if evaluate_gold_quality(gold_answer_map.get(case_id, {}))["is_usable"]:
+            usable += 1
+        else:
+            partial_cases.append(case_id)
+    total = len(case_ids)
+    return {
+        "total": total,
+        "usable": usable,
+        "partial": total - usable,
+        "partial_cases": partial_cases,
+    }

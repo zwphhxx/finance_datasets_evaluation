@@ -40,6 +40,7 @@ REPRODUCIBILITY_NOTE = (
     "本页是面试官可选的现场可复现实验，不是项目主线。这里的“本次现场运行”受 API Key、网络、"
     "模型版本与限流影响，结果可能波动；它默认进入草稿（待复核），不会覆盖各分析页默认展示的"
     "“离线样本评价”。只有经人工复核确认后，现场结果才计入正式评测结论。"
+    "（离线样本评价 vs 本次现场运行）"
 )
 
 _STATUS_BADGE = {
@@ -62,8 +63,7 @@ def render_eval_run_page(data_bundle: dict) -> None:
         title=config.title,
         question=config.question,
     )
-    render_info_panel("离线样本评价 vs 本次现场运行", REPRODUCIBILITY_NOTE)
-    render_info_panel("评测边界", BOUNDARY_NOTE)
+    st.caption(REPRODUCIBILITY_NOTE)
 
     tasks_df = base.tasks
     if tasks_df is None or tasks_df.empty:
@@ -71,13 +71,13 @@ def render_eval_run_page(data_bundle: dict) -> None:
         return
     task_records = tasks_df.to_dict("records")
 
-    # Step rail
+    # Light experiment flow: 4 steps
     _render_step_rail()
 
     has_run = eval_state.has_run()
 
-    # 01 选择配置
-    render_numbered_section("01", "选择配置", "选择 Provider、模型、任务与生成参数。")
+    # Step 01 选择样本
+    render_numbered_section("Step 01", "选择样本", "选择任务与模型，配置生成参数。")
     with st.expander("展开配置", expanded=not has_run):
         provider_name = _render_config_controls()
         model_ids = _render_model_selector(provider_name)
@@ -85,39 +85,35 @@ def render_eval_run_page(data_bundle: dict) -> None:
         temperature, max_tokens = _render_parameters()
         _render_run_button(provider_name, model_ids, selected_tasks, temperature, max_tokens)
 
-    # 02 运行结果
-    render_numbered_section("02", "运行结果", "查看本次模型调用状态、回答与元信息。")
+    # Step 02 调用模型
+    render_numbered_section("Step 02", "调用模型", "查看本次模型调用状态、回答与元信息。")
     _render_results()
 
-    # 03 裁判自动评分
-    render_numbered_section("03", "裁判自动评分", "由裁判模型对照 Gold Answer 与 Rubric 打出建议分。")
+    # Step 03 查看回答
+    render_numbered_section("Step 03", "查看回答", "按任务与模型查看完整回答与调用元信息。")
+    _render_answer_viewer_from_results()
+
+    # Step 04 进入草稿评测
+    render_numbered_section("Step 04", "进入草稿评测", "由裁判模型对照 Gold Answer 与 Rubric 打出建议分。")
     with st.expander("展开评分", expanded=False):
         _render_scoring(base, provider_name, task_records)
 
-    # 04 评分结果
-    render_numbered_section("04", "评分结果", "建议分汇总与人工复核入口。")
     _render_score_results()
-
-    # 05 下一步
-    render_numbered_section("05", "下一步", "运行与评分完成后，可前往分析页查看结论。")
     _render_completion_cta()
 
 
 def _render_step_rail() -> None:
-    steps = ["选择配置", "运行生成", "裁判评分", "人工复核", "查看分析"]
+    steps = ["选择样本", "调用模型", "查看回答", "草稿评测"]
     current = 0
     if eval_state.has_run():
         current = 1
     if eval_state.get_last_score() is not None:
-        current = 2
-    if current >= 2:
-        current = min(current, len(steps) - 1)
-    html = '<div class="loop-rail">'
+        current = 3
+    html = '<div class="loop-rail" style="border:none;background:transparent;box-shadow:none;">'
     for idx, label in enumerate(steps, start=1):
-        active_class = "loop-step" if idx - 1 <= current else "loop-step"
-        muted = "color:var(--fde-muted);" if idx - 1 > current else ""
+        muted = "opacity:0.4;" if idx - 1 > current else ""
         html += (
-            f'<div class="{active_class}" style="{muted}">'
+            f'<div class="loop-step" style="{muted}">'
             f'<div class="loop-step-index">步骤 {idx:02d}</div>'
             f'<div class="loop-step-label">{escape(label)}</div></div>'
         )
@@ -287,7 +283,6 @@ def _render_results() -> None:
 
     with st.expander("查看运行明细（回答与调用元信息）", expanded=result.success_count == 0):
         _render_results_table(result)
-        _render_answer_viewer(result)
 
 
 def _render_run_summary(result) -> None:
@@ -337,8 +332,10 @@ def _render_results_table(result) -> None:
     render_evidence_panel("运行明细", table_html)
 
 
-def _render_answer_viewer(result) -> None:
-    render_section_title("查看模型回答", "按「任务 · 模型」查看完整回答与调用元信息。")
+def _render_answer_viewer_from_results() -> None:
+    result = eval_state.get_last_run()
+    if result is None:
+        return
     outcomes = list(result.outcomes)
     if not outcomes:
         return

@@ -36,9 +36,17 @@ STYLE_CSS = """
     --fde-radius: 12px;
     --fde-radius-lg: 18px;
     --fde-space: 1rem;
+    /* Portfolio template tokens (PR-UI6) */
+    --portfolio-bg-start: #f0f4f8;
+    --portfolio-bg-end: #f7f9fb;
+    --portfolio-text: #1a1a1a;
+    --portfolio-muted: #6b7280;
+    --portfolio-accent-green: #2f5d3f;
+    --portfolio-line: #e5e7eb;
+    --portfolio-max-width: 1200px;
 }
 .stApp {
-    background: var(--fde-bg);
+    background: linear-gradient(180deg, var(--portfolio-bg-start) 0%, var(--portfolio-bg-end) 100%);
     color: var(--fde-text);
 }
 #MainMenu,
@@ -55,10 +63,65 @@ header,
 .block-container {
     padding-top: 2rem;
     padding-bottom: 3rem;
+    max-width: var(--portfolio-max-width);
+    margin: 0 auto;
 }
 [data-testid="stSidebar"] {
     background: #ffffff;
     border-right: 1px solid var(--fde-line);
+}
+/* Top nav bar styling */
+.top-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.75rem 1.5rem;
+    border-bottom: 1px solid var(--portfolio-line);
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(8px);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    margin: -2rem -1rem 1.5rem -1rem;
+}
+.top-nav-brand {
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: var(--portfolio-text);
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+}
+.top-nav-links {
+    display: flex;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+}
+.top-nav-link {
+    display: inline-block;
+    padding: 0.4rem 0.85rem;
+    font-size: 0.88rem;
+    font-weight: 650;
+    color: var(--portfolio-muted);
+    text-decoration: none;
+    border-radius: 8px;
+    transition: all 0.15s ease;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+}
+.top-nav-link:hover,
+.top-nav-link.active {
+    color: var(--portfolio-text);
+    background: var(--fde-surface-muted);
+}
+.top-nav-link.active {
+    font-weight: 750;
+}
+@media (max-width: 768px) {
+    .top-nav { flex-wrap: wrap; padding: 0.6rem 1rem; }
+    .top-nav-brand { font-size: 1rem; }
+    .top-nav-link { padding: 0.3rem 0.6rem; font-size: 0.82rem; }
 }
 .nav-brand {
     border: 1px solid var(--fde-line);
@@ -1109,6 +1172,346 @@ header,
     line-height: 1.5;
     margin: 0.15rem 0 0.4rem 0;
 }
+/* -------------------------------------------------------------------------- */
+/* PR-UI6 Portfolio template: new hero, mockup, checklist, story components  */
+/* -------------------------------------------------------------------------- */
+.portfolio-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    gap: 2.5rem;
+    align-items: start;
+    padding: 2.5rem 0 3rem 0;
+    margin: 0 0 1rem 0;
+}
+@media (max-width: 820px) {
+    .portfolio-hero { grid-template-columns: 1fr; gap: 1.5rem; padding: 1.5rem 0 2rem 0; }
+}
+.portfolio-hero-main {
+    min-width: 0;
+}
+.portfolio-hero-title {
+    color: var(--portfolio-text);
+    font-size: 3.6rem;
+    font-weight: 900;
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    margin: 0 0 0.6rem 0;
+}
+@media (max-width: 820px) {
+    .portfolio-hero-title { font-size: 2.4rem; }
+}
+.portfolio-hero-subtitle {
+    color: var(--portfolio-text);
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1.5;
+    margin: 0 0 0.8rem 0;
+}
+.portfolio-hero-desc {
+    color: var(--portfolio-muted);
+    font-size: 1.05rem;
+    line-height: 1.7;
+    margin: 0 0 1.2rem 0;
+}
+.portfolio-checklist {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin: 0 0 1.2rem 0;
+}
+.portfolio-checklist-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--portfolio-accent-green);
+    font-size: 0.98rem;
+    font-weight: 650;
+    line-height: 1.5;
+}
+.portfolio-meta-line {
+    color: var(--portfolio-muted);
+    font-size: 0.88rem;
+    line-height: 1.6;
+    margin: 0;
+}
+.portfolio-hero-mockups {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    align-items: center;
+    padding-top: 1rem;
+}
+.mockup-desktop {
+    width: 100%;
+    max-width: 360px;
+    height: 220px;
+    border: 1px solid var(--portfolio-line);
+    border-radius: 10px;
+    background: #ffffff;
+    padding: 0.6rem 0.7rem;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+    display: flex;
+    flex-direction: column;
+}
+.mockup-mobile {
+    width: 100%;
+    max-width: 160px;
+    height: 280px;
+    border: 1px solid var(--portfolio-line);
+    border-radius: 14px;
+    background: #ffffff;
+    padding: 0.5rem 0.55rem;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+    display: flex;
+    flex-direction: column;
+}
+.mockup-topbar {
+    display: flex;
+    gap: 0.3rem;
+    margin-bottom: 0.4rem;
+    padding-bottom: 0.3rem;
+    border-bottom: 1px solid var(--portfolio-line);
+}
+.mockup-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--portfolio-line);
+}
+.mockup-nav {
+    display: flex;
+    gap: 0.35rem;
+    margin-bottom: 0.5rem;
+}
+.mockup-nav-item {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--portfolio-line);
+}
+.mockup-nav-item:first-child {
+    width: 24px;
+    background: var(--fde-blue);
+}
+.mockup-nav-item:nth-child(2) {
+    width: 18px;
+}
+.mockup-nav-item:nth-child(3) {
+    width: 14px;
+}
+.mockup-line {
+    height: 5px;
+    border-radius: 2px;
+    background: var(--fde-surface-muted);
+    margin-bottom: 0.35rem;
+}
+.mockup-line.short { width: 55%; }
+.mockup-line.medium { width: 75%; }
+.mockup-line.long { width: 95%; }
+.mockup-line.highlight {
+    background: var(--fde-blue-soft);
+    height: 18px;
+    margin: 0.4rem 0;
+}
+.mockup-stack {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+@media (max-width: 820px) {
+    .mockup-stack { flex-direction: column; align-items: center; }
+}
+/* Story section: two-column narrative layout */
+.story-section {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: 2.5rem;
+    align-items: start;
+    padding: 2rem 0;
+    border-top: 1px solid var(--portfolio-line);
+    margin-top: 1rem;
+}
+@media (max-width: 820px) {
+    .story-section { grid-template-columns: 1fr; gap: 1rem; padding: 1.5rem 0; }
+}
+.story-section-title {
+    color: var(--portfolio-text);
+    font-size: 1.6rem;
+    font-weight: 800;
+    line-height: 1.2;
+    margin: 0 0 0.4rem 0;
+}
+.story-section-body {
+    color: var(--portfolio-muted);
+    font-size: 0.98rem;
+    line-height: 1.75;
+}
+.story-section-body p {
+    margin: 0 0 0.8rem 0;
+}
+/* Process line: horizontal narrative flow */
+.process-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem;
+    margin: 0.6rem 0 1.2rem 0;
+    padding: 0.5rem 0;
+}
+.process-node {
+    display: inline-block;
+    padding: 0.35rem 0.7rem;
+    border-radius: 8px;
+    background: var(--fde-surface);
+    border: 1px solid var(--portfolio-line);
+    font-size: 0.9rem;
+    font-weight: 650;
+    color: var(--portfolio-text);
+    white-space: nowrap;
+}
+.process-arrow {
+    color: var(--portfolio-muted);
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+/* Tag cloud */
+.tag-cloud {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0.5rem 0 1rem 0;
+}
+.tag-cloud-item {
+    display: inline-block;
+    padding: 0.3rem 0.8rem;
+    border-radius: 999px;
+    background: var(--fde-surface);
+    border: 1px solid var(--portfolio-line);
+    font-size: 0.9rem;
+    font-weight: 650;
+    color: var(--portfolio-text);
+}
+/* Pull quote */
+.pull-quote {
+    border-left: 3px solid var(--fde-blue);
+    padding: 0.6rem 1.2rem;
+    margin: 1rem 0;
+    color: var(--portfolio-text);
+    font-size: 1.1rem;
+    font-weight: 700;
+    font-style: italic;
+    line-height: 1.6;
+}
+/* Editorial list */
+.editorial-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin: 0.5rem 0 1rem 0;
+}
+.editorial-item {
+    display: flex;
+    align-items: baseline;
+    gap: 0.7rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--portfolio-line);
+}
+.editorial-item:last-child {
+    border-bottom: none;
+}
+.editorial-item-name {
+    font-weight: 750;
+    color: var(--portfolio-text);
+    font-size: 0.98rem;
+    white-space: nowrap;
+}
+.editorial-item-judgment {
+    color: var(--portfolio-muted);
+    font-size: 0.94rem;
+    line-height: 1.5;
+    flex: 1;
+}
+.editorial-item-bar {
+    display: flex;
+    gap: 0.2rem;
+    align-items: center;
+}
+.editorial-bar-segment {
+    width: 20px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--portfolio-line);
+}
+.editorial-bar-segment.filled {
+    background: var(--fde-blue);
+}
+/* Evidence block: thin-bordered, minimal evidence container */
+.evidence-block {
+    border: 1px solid var(--portfolio-line);
+    border-radius: 8px;
+    background: var(--fde-surface);
+    padding: 1rem 1.1rem;
+    margin: 0.5rem 0;
+}
+.evidence-block-title {
+    color: var(--portfolio-muted);
+    font-size: 0.82rem;
+    font-weight: 750;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+}
+/* Conclusion list: minimal, no-card formal conclusions */
+.conclusion-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+    margin: 0.5rem 0 1rem 0;
+}
+.conclusion-item {
+    padding: 0.8rem 0;
+    border-bottom: 1px solid var(--portfolio-line);
+}
+.conclusion-item:last-child {
+    border-bottom: none;
+}
+.conclusion-item-text {
+    color: var(--portfolio-text);
+    font-size: 1rem;
+    line-height: 1.7;
+    font-weight: 650;
+}
+.conclusion-item-meta {
+    color: var(--portfolio-muted);
+    font-size: 0.85rem;
+    margin-top: 0.25rem;
+}
+/* CTA row: lightweight inline CTAs */
+.cta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    align-items: center;
+    margin: 0.8rem 0 1.2rem 0;
+}
+.cta-link {
+    display: inline-block;
+    padding: 0.4rem 0.9rem;
+    border-radius: 8px;
+    background: var(--fde-surface);
+    border: 1px solid var(--portfolio-line);
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: var(--fde-blue);
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.cta-link:hover {
+    background: var(--fde-blue-soft);
+    border-color: var(--fde-blue-border);
+}
 </style>
 """
 
@@ -1816,3 +2219,229 @@ def render_portfolio_page_shell(
         stats=hero_stats,
     )
     render_boundary_bar()
+
+
+# --------------------------------------------------------------------------- #
+# PR-UI6: Portfolio template new components
+# --------------------------------------------------------------------------- #
+
+def render_portfolio_landing_hero(
+    title: str,
+    subtitle: str,
+    description: str,
+    checklist_items: list[str],
+    meta_line: str | None = None,
+) -> None:
+    """Render the portfolio-style landing hero with huge title, checklist, and mockups.
+
+    Left side: huge title + subtitle + description + green checklist + meta line.
+    Right side: webpage preview mockups (rendered separately via render_mockup_stack).
+    """
+    checklist_html = "".join(
+        f'<div class="portfolio-checklist-item">'
+        f'<span style="font-size:1.1rem;">✅</span> {escape(str(item))}</div>'
+        for item in checklist_items
+    )
+    meta_html = f'<p class="portfolio-meta-line">{escape(str(meta_line))}</p>' if meta_line else ""
+    render_html(
+        f"""
+        <div class="portfolio-hero">
+            <div class="portfolio-hero-main">
+                <h1 class="portfolio-hero-title">{escape(str(title))}</h1>
+                <p class="portfolio-hero-subtitle">{escape(str(subtitle))}</p>
+                <p class="portfolio-hero-desc">{escape(str(description))}</p>
+                <div class="portfolio-checklist">{checklist_html}</div>
+                {meta_html}
+            </div>
+            <div class="portfolio-hero-mockups">
+                <!-- Mockups rendered separately via render_mockup_stack -->
+            </div>
+        </div>
+        """
+    )
+
+
+def render_checklist(items: list[str]) -> None:
+    """Render a standalone green checklist (no cards)."""
+    html = "".join(
+        f'<div class="portfolio-checklist-item">'
+        f'<span style="font-size:1.1rem;">✅</span> {escape(str(item))}</div>'
+        for item in items
+    )
+    render_html(f'<div class="portfolio-checklist">{html}</div>')
+
+
+def render_site_mockup_preview(
+    variant: str = "desktop",
+    lines: int = 6,
+    has_highlight: bool = True,
+) -> None:
+    """Render a single webpage preview mockup (desktop or mobile).
+
+    `variant`: "desktop" or "mobile".
+    `lines`: number of text lines to simulate.
+    `has_highlight`: whether to include a highlighted content block.
+    """
+    css_class = "mockup-desktop" if variant == "desktop" else "mockup-mobile"
+    line_classes = ["long", "medium", "short", "long", "medium", "short"]
+    line_html = "".join(
+        f'<div class="mockup-line {line_classes[i % len(line_classes)]}"></div>'
+        for i in range(lines)
+    )
+    highlight_html = '<div class="mockup-line highlight"></div>' if has_highlight else ""
+    render_html(
+        f"""
+        <div class="{css_class}">
+            <div class="mockup-topbar">
+                <div class="mockup-dot"></div>
+                <div class="mockup-dot"></div>
+                <div class="mockup-dot"></div>
+            </div>
+            <div class="mockup-nav">
+                <div class="mockup-nav-item"></div>
+                <div class="mockup-nav-item"></div>
+                <div class="mockup-nav-item"></div>
+            </div>
+            {highlight_html}
+            {line_html}
+        </div>
+        """
+    )
+
+
+def render_mockup_stack() -> None:
+    """Render a stack of 2-3 webpage preview mockups (desktop + mobile)."""
+    render_html('<div class="mockup-stack">')
+    render_site_mockup_preview(variant="desktop", lines=5, has_highlight=True)
+    render_site_mockup_preview(variant="mobile", lines=6, has_highlight=False)
+    render_html('</div>')
+
+
+def render_project_meta_line(
+    task_count: int,
+    domain_count: int,
+    scored_count: int,
+    dimension_count: int,
+) -> None:
+    """Render a one-line meta text with dynamic project numbers."""
+    text = f"{task_count} 任务 · {domain_count} 领域 · {scored_count} 已评分 · {dimension_count} 维度"
+    render_html(f'<p class="portfolio-meta-line">{escape(text)}</p>')
+
+
+def render_story_section(
+    title: str,
+    paragraphs: list[str],
+    index: str | None = None,
+) -> None:
+    """Render a two-column story section: left big title, right paragraphs.
+
+    `index`: optional section number like "01".
+    """
+    index_html = f'<span style="color:var(--portfolio-muted);font-weight:750;font-size:0.9rem;">{escape(str(index))}</span><br>' if index else ""
+    body_html = "".join(
+        f'<p>{escape(str(p))}</p>' for p in paragraphs
+    )
+    render_html(
+        f"""
+        <div class="story-section">
+            <div>
+                {index_html}
+                <h2 class="story-section-title">{escape(str(title))}</h2>
+            </div>
+            <div class="story-section-body">{body_html}</div>
+        </div>
+        """
+    )
+
+
+def render_process_line(steps: list[str]) -> None:
+    """Render a horizontal process line with arrows between nodes."""
+    parts: list[str] = []
+    for i, step in enumerate(steps):
+        if i > 0:
+            parts.append('<span class="process-arrow">→</span>')
+        parts.append(f'<span class="process-node">{escape(str(step))}</span>')
+    render_html(f'<div class="process-line">{"".join(parts)}</div>')
+
+
+def render_pull_quote(text: str) -> None:
+    """Render a styled pull quote block."""
+    render_html(f'<div class="pull-quote">{escape(str(text))}</div>')
+
+
+def render_tag_cloud(tags: list[str]) -> None:
+    """Render a tag cloud of domain/task type labels."""
+    html = "".join(f'<span class="tag-cloud-item">{escape(str(tag))}</span>' for tag in tags)
+    render_html(f'<div class="tag-cloud">{html}</div>')
+
+
+def render_editorial_list(items: list[tuple[str, str, int]]) -> None:
+    """Render an editorial comparison list: name + judgment + small dimension bars.
+
+    `items` is a list of (name, judgment, bar_count) tuples where bar_count
+    is 0-5 representing how many dimension bars to fill.
+    """
+    rows: list[str] = []
+    for name, judgment, bar_count in items:
+        bars = "".join(
+            f'<span class="editorial-bar-segment{" filled" if i < bar_count else ""}"></span>'
+            for i in range(5)
+        )
+        rows.append(
+            f'<div class="editorial-item">'
+            f'<span class="editorial-item-name">{escape(str(name))}</span>'
+            f'<span class="editorial-item-judgment">{escape(str(judgment))}</span>'
+            f'<span class="editorial-item-bar">{bars}</span>'
+            f'</div>'
+        )
+    render_html(f'<div class="editorial-list">{"".join(rows)}</div>')
+
+
+def render_evidence_block(title: str, content_html: str) -> None:
+    """Render a thin-bordered evidence block for tables/appendix content."""
+    render_html(
+        f"""
+        <div class="evidence-block">
+            <div class="evidence-block-title">{escape(str(title))}</div>
+            <div>{content_html}</div>
+        </div>
+        """
+    )
+
+
+def render_conclusion_list(items: list[tuple[str, str]]) -> None:
+    """Render a minimal conclusion list: text + meta per item, no cards."""
+    rows = "".join(
+        f'<div class="conclusion-item">'
+        f'<div class="conclusion-item-text">{escape(str(text))}</div>'
+        f'<div class="conclusion-item-meta">{escape(str(meta))}</div>'
+        f'</div>'
+        for text, meta in items
+    )
+    render_html(f'<div class="conclusion-list">{rows}</div>')
+
+
+def render_cta_row(actions: list[tuple[str, str]], key_prefix: str = "cta") -> None:
+    """Render lightweight inline CTA links that navigate to pages.
+
+    `actions` is a list of (label, page_key) tuples.
+    """
+    import streamlit as st
+
+    if not actions:
+        return
+    html = '<div class="cta-row">'
+    for label, page_key in actions:
+        # Use a Streamlit button for actual navigation, styled as a link
+        html += (
+            f'<span class="cta-link" onclick="">{escape(str(label))}</span>'
+        )
+    html += '</div>'
+    render_html(html)
+    # Also render actual buttons below for functionality
+    cols = st.columns(len(actions))
+    for col, (label, page_key) in zip(cols, actions):
+        with col:
+            if st.button(label, key=f"{key_prefix}_row_{page_key}", use_container_width=True):
+                st.session_state.current_page = page_key
+                st.rerun()

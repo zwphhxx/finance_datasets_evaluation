@@ -30,8 +30,17 @@ PAGES = {
 }
 
 
-# 作品集目录：按叙事顺序分区——项目 → 评测 → 深度分析 → 可复现实验 → 数据集。
-# 数据集分区排在最后，保留后台维护属性，不抢主叙事。组内顺序按列表顺序渲染。
+# Top nav: 5 main items matching the portfolio template spec.
+# Maps display label -> page_key for the top nav bar.
+_TOP_NAV_ITEMS = [
+    ("Case Study", "project_methodology"),
+    ("Samples", "tasks"),
+    ("Evaluation", "evaluation_conclusions"),
+    ("Experiment", "eval_run"),
+    ("Admin", "dataset_admin"),
+]
+
+# Sidebar groups kept for compatibility/debug.
 _NAV_GROUPS = [
     ("01 项目", ["project_methodology"]),
     ("02 评测", ["overview", "tasks", "evaluation_conclusions"]),
@@ -45,26 +54,50 @@ def _set_current_page(page_key: str) -> None:
     st.session_state.current_page = page_key
 
 
+def render_top_navigation() -> None:
+    """Render a sticky top nav bar with 5 portfolio-style links."""
+    current = st.session_state.get("current_page", DEFAULT_PAGE_KEY)
+    links_html = ""
+    for label, page_key in _TOP_NAV_ITEMS:
+        active_class = "active" if current == page_key else ""
+        # Use a data attribute for page key; Streamlit buttons handle the actual click
+        links_html += f'<span class="top-nav-link {active_class}">{label}</span>'
+    render_html(
+        f"""
+        <div class="top-nav">
+            <div class="top-nav-brand">FinDueEval</div>
+            <div class="top-nav-links">{links_html}</div>
+        </div>
+        """
+    )
+    # Render actual Streamlit buttons invisibly for navigation
+    cols = st.columns(len(_TOP_NAV_ITEMS))
+    for col, (label, page_key) in zip(cols, _TOP_NAV_ITEMS):
+        with col:
+            if st.button(label, key=f"top_nav_{page_key}", use_container_width=False):
+                st.session_state.current_page = page_key
+                st.rerun()
+
+
 def render_sidebar_navigation() -> str:
     valid_page_keys = set(PAGE_CONFIG_BY_KEY)
     if st.session_state.get("current_page") not in valid_page_keys:
         st.session_state.current_page = DEFAULT_PAGE_KEY
 
+    # Render top nav first
+    render_top_navigation()
+
+    # Weaken sidebar: minimal brand, no group headers
     render_html(
         """
-        <div class="nav-brand">
-            <div class="nav-brand-title">FinDueEval</div>
-            <div class="nav-brand-subtitle">尽调模型评测 · 项目作品集目录</div>
+        <div class="nav-brand" style="opacity:0.7;">
+            <div class="nav-brand-title" style="font-size:0.9rem;">导航</div>
         </div>
         """,
         container=st.sidebar,
     )
 
     for group_title, keys in _NAV_GROUPS:
-        render_html(
-            f'<div style="margin:0.9rem 0 0.35rem 0;color:var(--fde-muted);font-size:0.75rem;font-weight:750;letter-spacing:0.04em;">{group_title}</div>',
-            container=st.sidebar,
-        )
         for key in keys:
             config = PAGE_CONFIG_BY_KEY.get(key)
             if config is None:
@@ -77,11 +110,6 @@ def render_sidebar_navigation() -> str:
                 args=(config.page_key,),
                 type="primary" if is_current else "secondary",
                 use_container_width=True,
-            )
-        if keys == _NAV_GROUPS[-1][1]:
-            render_html(
-                '<div style="margin:0.25rem 0 0 0;color:var(--fde-muted);font-size:0.72rem;line-height:1.45;">数据集为后台维护入口，不影响主叙事。</div>',
-                container=st.sidebar,
             )
 
     _render_data_context_bar()

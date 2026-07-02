@@ -22,9 +22,12 @@ from src.ui.page_config import get_page_config
 from src.ui.components import (
     render_action_cards,
     render_compact_hero,
+    render_conclusion_list,
     render_context_grid,
+    render_editorial_list,
+    render_empty_state,
+    render_evidence_block,
     render_info_panel,
-    render_metric_card,
     render_numbered_section,
     render_section_title,
     render_status_badge,
@@ -52,11 +55,6 @@ def render_evaluation_conclusions_page(data_bundle: dict) -> None:
         title=config.title,
         question=config.question,
     )
-    render_info_panel(
-        "本页定位",
-        "这是当前专业样本内的“可用边界观察”，不是模型排行榜。正式结论只纳入已人工沉淀的"
-        "基准结论与现场已复核归档的结论；现场新增评测先进入草稿，经人工复核确认后才计入正式结论。",
-    )
 
     _render_formal_conclusions(seed_scores, confirmed_live, seed_errors)
     _render_drafts(pending_live, responses, db_ready)
@@ -81,55 +79,35 @@ def _render_formal_conclusions(seed_scores, confirmed_live, seed_errors) -> None
         )
         return
 
-    # Conclusion cards first (metric cards as narrative cards)
-    cols = st.columns(4)
-    with cols[0]:
-        render_metric_card("纳入模型", summary["model_count"], "参与正式结论的模型数")
-    with cols[1]:
-        avg = summary["avg_total"]
-        render_metric_card("平均总分", f"{avg:.1f}" if avg is not None else "—", "样本内平均，不代表整体能力")
-    with cols[2]:
-        render_metric_card("已有结论", summary["seed_rows"], "seed 人工沉淀基准")
-    with cols[3]:
-        render_metric_card("已复核归档", summary["confirmed_rows"], "现场复核后计入")
+    # Status summary as inline pills, not metric cards
+    render_status_summary([
+        ("纳入模型", str(summary["model_count"]), "accent"),
+        ("平均总分", f"{summary['avg_total']:.1f}" if summary['avg_total'] is not None else "—", "neutral"),
+        ("seed 基准", str(summary["seed_rows"]), "success"),
+        ("已复核归档", str(summary["confirmed_rows"]), "success"),
+    ])
 
-    # Evidence: per-model conclusion cards
+    # Editorial list: model + one-sentence judgment + small dimension bars
     conclusions = cc.build_formal_conclusions(seed_scores, confirmed_live)
+    editorial_items = []
     for item in conclusions:
-        _render_model_conclusion(item)
+        name = item['display_name']
+        avg = item['avg_total']
+        bar_count = min(5, max(0, int(avg / 20))) if avg is not None else 0
+        judgment = f"平均总分 {avg:.1f}，样本 {item['sample_count']} 条"
+        editorial_items.append((name, judgment, bar_count))
+    render_editorial_list(editorial_items)
 
-    # Evidence: frequent issues table
+    # Evidence: frequent issues sink below
     combined = cc.combine_formal_scores(seed_scores, confirmed_live)
     all_notes = [note for item in conclusions for note in item.get("review_notes", [])]
     issues = cc.summarize_frequent_issues(combined, seed_errors, all_notes)
-    render_section_title("高频问题归纳", "由低分维度、错误标签与人工复核说明动态归纳，仅为样本内观察。")
     if issues:
-        for issue in issues:
-            st.markdown(f"- {issue}")
+        with st.expander("高频问题归纳（支撑数据）", expanded=False):
+            for issue in issues:
+                st.markdown(f"- {issue}")
     else:
         st.caption("当前样本内暂无足以归纳的高频问题。")
-
-
-def _render_model_conclusion(item: dict) -> None:
-    render_section_title(
-        f"{item['display_name']} · 平均总分 {item['avg_total']:.1f}",
-        f"样本 {item['sample_count']} 条（已有结论 {item['seed_count']} · 已复核 {item['confirmed_count']}）。",
-    )
-    grid_items: list[tuple[str, str]] = [("平均总分", f"{item['avg_total']:.1f}")]
-    for field in cc.DIMENSION_FIELDS:
-        label = cc.DIMENSION_LABELS.get(field, field)
-        value = item["dimensions"].get(field)
-        grid_items.append((label, f"{value:.1f}" if value is not None else "暂无"))
-    render_context_grid(grid_items)
-
-    notes = item.get("review_notes") or []
-    if notes:
-        st.caption("人工点评摘要：" + "；".join(notes[:3]))
-    else:
-        st.caption("暂无人工点评说明。")
-    st.caption(
-        "边界意识与红线表现已并入“风险覆盖 / 专业表达”维度与高频问题归纳，单独的硬性红线在红线评测台呈现。"
-    )
 
 
 # --------------------------------------------------------------------------- #
