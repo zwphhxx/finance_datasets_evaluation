@@ -6,7 +6,7 @@ top filters narrow that row set. Nothing is hardcoded.
 import unittest
 
 from src.data_service import load_all_data
-from src.ui import tasks
+from src.ui import samples as tasks
 from src.ui.page_config import get_page_config
 
 
@@ -16,7 +16,7 @@ class TaskBrowserTests(unittest.TestCase):
         self.rows = tasks.build_case_overview_rows(self.data)
 
     def test_title_is_task_sample(self):
-        self.assertEqual("样本库", get_page_config("tasks").title)
+        self.assertEqual("样本库", get_page_config("samples").title)
 
     def test_one_row_per_task_with_expected_columns(self):
         self.assertEqual(len(self.data.tasks), len(self.rows))

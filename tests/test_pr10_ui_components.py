@@ -7,16 +7,11 @@ from src.ui.page_config import PAGE_CONFIGS
 
 
 EXPECTED_PAGE_ORDER = [
-    "project_methodology",
-    "overview",
-    "tasks",
-    "eval_run",
-    "case_detail",
-    "model_diagnosis",
-    "model_boundary",
-    "evaluation_conclusions",
-    "dataset_quality",
-    "dataset_admin",
+    "case_study",
+    "samples",
+    "test_run",
+    "review",
+    "conclusions",
 ]
 
 BANNED_PHRASES = ["AI赋能", "智能洞察", "一键优化", "专家级", "秒级"]
@@ -63,13 +58,11 @@ class UIComponentsTests(unittest.TestCase):
 
     def test_pages_import_shared_components(self):
         page_files = [
-            "src/ui/overview.py",
-            "src/ui/tasks.py",
-            "src/ui/eval_run_page.py",
-            "src/ui/case_detail.py",
-            "src/ui/model_diagnosis.py",
-            "src/ui/error_analysis.py",
-            "src/ui/optimization_compare.py",
+            "src/ui/case_study.py",
+            "src/ui/samples.py",
+            "src/ui/test_run.py",
+            "src/ui/review.py",
+            "src/ui/conclusions.py",
         ]
         for file_path in page_files:
             source = Path(file_path).read_text(encoding="utf-8")

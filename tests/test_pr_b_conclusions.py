@@ -47,12 +47,14 @@ def _live_row(case_id, model, status, total=80, **scores):
 
 class RegistrationTests(unittest.TestCase):
     def test_page_registered_with_config(self):
-        self.assertIn("evaluation_conclusions", PAGES)
-        self.assertIn("evaluation_conclusions", PAGE_CONFIG_BY_KEY)
+        self.assertIn("conclusions", PAGES)
+        self.assertIn("conclusions", PAGE_CONFIG_BY_KEY)
         self.assertIn("评测结论", PAGE_CONTEXTS)
 
     def test_positioning_not_a_leaderboard(self):
-        source = Path("src/ui/evaluation_conclusions.py").read_text(encoding="utf-8")
+        # PR-LOGIC2 merged model_diagnosis/model_boundary/overview into conclusions;
+        # the "not a leaderboard" positioning lives in case_study (project intro).
+        source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         self.assertIn("不是模型排行榜", source)
         self.assertIn("可用边界", source)
 
@@ -179,7 +181,7 @@ class RenderTests(unittest.TestCase):
         from streamlit.testing.v1 import AppTest
 
         at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
-        at.session_state["current_page"] = "evaluation_conclusions"
+        at.session_state["current_page"] = "conclusions"
         at.run()
         self.assertEqual(list(at.exception), [])
 

@@ -19,8 +19,6 @@ from src.model_boundary import (
     classify_task_usage,
     summarize_usage_tiers,
 )
-from src.ui.page_config import PAGE_CONFIG_BY_KEY
-from src.ui.navigation import PAGES
 
 MATRIX_DIMENSIONS = ["事实依据", "推理完整性", "风险识别", "专业表达", BOUNDARY_AWARENESS_LABEL]
 MEDICAL_TOKENS = ["临床", "试验", "医学", "病", "诊疗"]
@@ -119,16 +117,6 @@ class DimensionMatrixTests(unittest.TestCase):
             self.assertEqual(awareness["dimension"], BOUNDARY_AWARENESS_LABEL)
             self.assertIn(awareness["level"], {"success", "warning", "danger", "neutral"})
             self.assertIn("redline_count", awareness)
-
-
-class PageRegistrationTests(unittest.TestCase):
-    def test_model_boundary_page_registered(self):
-        self.assertIn("model_boundary", PAGES)
-        self.assertIn("model_boundary", PAGE_CONFIG_BY_KEY)
-        config = PAGE_CONFIG_BY_KEY["model_boundary"]
-        self.assertEqual(config.title, "模型边界报告")
-        self.assertTrue(config.question.strip())
-        self.assertTrue(config.boundary.strip())
 
 
 if __name__ == "__main__":

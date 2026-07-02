@@ -16,8 +16,6 @@ import streamlit as st
 from app.db.repository import Repository
 from app.services import dataset_service as ds
 from src.data_service import get_data_dir, read_json_file
-from src.ui.navigation import PAGES
-from src.ui.page_config import PAGE_CONFIG_BY_KEY
 
 _TMP = tempfile.TemporaryDirectory()
 _DB_PATH = Path(_TMP.name) / "findueval_pr31.db"
@@ -140,38 +138,6 @@ class RubricCrudTests(unittest.TestCase):
         self.assertEqual(int(row["weight"]), 33)
         self.assertEqual(row["full_mark_standard"], "满分标准")
         self.assertEqual(row["deduction_rules"], "扣分规则")
-
-
-class PageWiringTests(unittest.TestCase):
-    def test_page_registered(self):
-        self.assertIn("dataset_admin", PAGES)
-        self.assertIn("dataset_admin", PAGE_CONFIG_BY_KEY)
-        self.assertEqual(PAGE_CONFIG_BY_KEY["dataset_admin"].title, "数据集管理")
-
-    def test_renders_in_db_ready_and_fallback_modes(self):
-        from streamlit.testing.v1 import AppTest
-
-        previous = os.environ.get("FINDUEVAL_DB_PATH")
-        try:
-            st.cache_data.clear()
-            os.environ["FINDUEVAL_DB_PATH"] = str(_DB_PATH)
-            ready = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
-            ready.session_state["current_page"] = "dataset_admin"
-            ready.run(timeout=60)
-            self.assertEqual(list(ready.exception), [])
-
-            st.cache_data.clear()
-            os.environ["FINDUEVAL_DB_PATH"] = str(Path(_TMP.name) / "missing.db")
-            fallback = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
-            fallback.session_state["current_page"] = "dataset_admin"
-            fallback.run(timeout=60)
-            self.assertEqual(list(fallback.exception), [])
-        finally:
-            if previous is None:
-                os.environ.pop("FINDUEVAL_DB_PATH", None)
-            else:
-                os.environ["FINDUEVAL_DB_PATH"] = previous
-            st.cache_data.clear()
 
 
 if __name__ == "__main__":

@@ -2,54 +2,37 @@ from __future__ import annotations
 
 import streamlit as st
 
-from src.ui.case_detail import render_case_detail_page
+from src.ui.case_study import render_case_study_page
+from src.ui.samples import render_samples_page
+from src.ui.test_run import render_test_run_page
+from src.ui.review import render_review_page
+from src.ui.conclusions import render_conclusions_page
 from src.ui.components import render_html
-from src.ui.dataset_admin import render_dataset_admin_page
-from src.ui.dataset_quality import render_dataset_quality_page
-from src.ui.eval_run_page import render_eval_run_page
-from src.ui.evaluation_conclusions import render_evaluation_conclusions_page
-from src.ui.model_boundary import render_model_boundary_page
-from src.ui.model_diagnosis import render_model_diagnosis_page
-from src.ui.overview import render_overview_page
 from src.ui.page_config import DEFAULT_PAGE_KEY, PAGE_CONFIG_BY_KEY
-from src.ui.project_methodology import render_project_methodology_page
-from src.ui.tasks import render_tasks_page
 
 
 PAGES = {
-    "project_methodology": render_project_methodology_page,
-    "overview": render_overview_page,
-    "tasks": render_tasks_page,
-    "eval_run": render_eval_run_page,
-    "case_detail": render_case_detail_page,
-    "model_diagnosis": render_model_diagnosis_page,
-    "model_boundary": render_model_boundary_page,
-    "evaluation_conclusions": render_evaluation_conclusions_page,
-    "dataset_quality": render_dataset_quality_page,
-    "dataset_admin": render_dataset_admin_page,
+    "case_study": render_case_study_page,
+    "samples": render_samples_page,
+    "test_run": render_test_run_page,
+    "review": render_review_page,
+    "conclusions": render_conclusions_page,
 }
 
 
 # Top nav: exactly 5 main items matching the core evaluation workflow.
 # Maps display label -> page_key for the top nav bar.
 _TOP_NAV_ITEMS = [
-    ("Case Study", "project_methodology"),
-    ("样本库", "tasks"),
-    ("发起测试", "eval_run"),
-    ("评测复核", "case_detail"),
-    ("评测结论", "evaluation_conclusions"),
+    ("Case Study", "case_study"),
+    ("样本库", "samples"),
+    ("发起测试", "test_run"),
+    ("评测复核", "review"),
+    ("评测结论", "conclusions"),
 ]
 
-# Hidden pages kept for backward compatibility (tests may depend on routing keys).
-_HIDDEN_PAGES = {"overview", "model_diagnosis", "model_boundary", "dataset_quality", "dataset_admin"}
-
-# Sidebar groups kept for compatibility/debug.
+# Sidebar shows same 5 items only (no old pages).
 _NAV_GROUPS = [
-    ("01 项目", ["project_methodology"]),
-    ("02 评测", ["overview", "tasks", "evaluation_conclusions"]),
-    ("03 深度分析", ["case_detail", "model_diagnosis", "model_boundary"]),
-    ("04 可复现实验", ["eval_run"]),
-    ("05 数据集", ["dataset_quality", "dataset_admin"]),
+    ("", ["case_study", "samples", "test_run", "review", "conclusions"]),
 ]
 
 
@@ -63,7 +46,6 @@ def render_top_navigation() -> None:
     links_html = ""
     for label, page_key in _TOP_NAV_ITEMS:
         active_class = "active" if current == page_key else ""
-        # Use a data attribute for page key; Streamlit buttons handle the actual click
         links_html += f'<span class="top-nav-link {active_class}">{label}</span>'
     render_html(
         f"""

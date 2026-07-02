@@ -14,9 +14,9 @@ class DatasetSummaryTests(unittest.TestCase):
     def setUp(self):
         self.data = load_all_data()
 
-    def test_overview_title_is_redline_cockpit(self):
-        config = get_page_config("overview")
-        self.assertIn("红线评测台", config.title)
+    def test_samples_title_is_redline_cockpit(self):
+        config = get_page_config("samples")
+        self.assertIn("样本库", config.title)
 
     def test_metric_cards_are_at_most_four_and_data_driven(self):
         cards = overview.get_dataset_metric_cards(self.data)

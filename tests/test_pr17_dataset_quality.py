@@ -7,16 +7,6 @@ import unittest
 
 from src.data_service import load_all_data, load_dataset_manifest, load_label_taxonomy
 from src.ui import dataset_quality as dq
-from src.ui.navigation import PAGES
-from src.ui.page_config import PAGE_CONFIG_BY_KEY
-
-
-class NavigationWiringTests(unittest.TestCase):
-    def test_dataset_quality_page_is_registered(self):
-        self.assertIn("dataset_quality", PAGES)
-        self.assertIn("dataset_quality", PAGE_CONFIG_BY_KEY)
-        config = PAGE_CONFIG_BY_KEY["dataset_quality"]
-        self.assertEqual(config.title, "数据集质量")
 
 
 class DatasetQualityBuilderTests(unittest.TestCase):

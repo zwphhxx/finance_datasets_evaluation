@@ -298,7 +298,7 @@ class CtaGroupTests(unittest.TestCase):
     def test_cta_group_renders_without_error(self):
         # 不点击时不应触发导航/重跑，只渲染按钮与说明。
         components.render_cta_group(
-            [("查看评测结论 →", "evaluation_conclusions"), ("红线评测台 →", "overview")],
+            [("查看评测结论 →", "conclusions"), ("红线评测台 →", "samples")],
             note="说明",
         )
 
@@ -314,13 +314,14 @@ class PortfolioNavTests(unittest.TestCase):
         self.assertEqual(len(group_keys), len(set(group_keys)))
 
     def test_methodology_is_first_dataset_group_is_last(self):
-        self.assertIn("project_methodology", _NAV_GROUPS[0][1])
-        self.assertEqual(["dataset_quality", "dataset_admin"], _NAV_GROUPS[-1][1])
+        self.assertIn("case_study", _NAV_GROUPS[0][1])
+        # PR-LOGIC2: all 5 pages in a single nav group
+        self.assertEqual(["case_study", "samples", "test_run", "review", "conclusions"], _NAV_GROUPS[-1][1])
 
     def test_renamed_titles(self):
-        self.assertEqual("样本库", PAGE_CONFIG_BY_KEY["tasks"].title)
-        self.assertEqual("发起测试", PAGE_CONFIG_BY_KEY["eval_run"].title)
-        self.assertEqual("数据集质量", PAGE_CONFIG_BY_KEY["dataset_quality"].title)
+        self.assertEqual("样本库", PAGE_CONFIG_BY_KEY["samples"].title)
+        self.assertEqual("发起测试", PAGE_CONFIG_BY_KEY["test_run"].title)
+        self.assertEqual("评测结论", PAGE_CONFIG_BY_KEY["conclusions"].title)
 
     def test_top_nav_has_five_items(self):
         """Top nav must have exactly 5 items: Case Study, 样本库, 发起测试, 评测复核, 评测结论."""
@@ -339,70 +340,50 @@ class PageRenderSmokeTests(unittest.TestCase):
         for name, fn in PAGES.items():
             self.assertTrue(callable(fn), f"{name} should be callable")
 
-    def test_project_methodology_page_exists(self):
-        from src.ui.project_methodology import render_project_methodology_page
-        self.assertTrue(callable(render_project_methodology_page))
+    def test_case_study_page_exists(self):
+        from src.ui.case_study import render_case_study_page
+        self.assertTrue(callable(render_case_study_page))
 
-    def test_tasks_page_exists(self):
-        from src.ui.tasks import render_tasks_page
-        self.assertTrue(callable(render_tasks_page))
+    def test_samples_page_exists(self):
+        from src.ui.samples import render_samples_page
+        self.assertTrue(callable(render_samples_page))
 
-    def test_evaluation_conclusions_page_exists(self):
-        from src.ui.evaluation_conclusions import render_evaluation_conclusions_page
-        self.assertTrue(callable(render_evaluation_conclusions_page))
+    def test_conclusions_page_exists(self):
+        from src.ui.conclusions import render_conclusions_page
+        self.assertTrue(callable(render_conclusions_page))
 
-    def test_eval_run_page_exists(self):
-        from src.ui.eval_run_page import render_eval_run_page
-        self.assertTrue(callable(render_eval_run_page))
+    def test_test_run_page_exists(self):
+        from src.ui.test_run import render_test_run_page
+        self.assertTrue(callable(render_test_run_page))
 
-    def test_overview_page_exists(self):
-        from src.ui.overview import render_overview_page
-        self.assertTrue(callable(render_overview_page))
-
-    def test_case_detail_page_exists(self):
-        from src.ui.case_detail import render_case_detail_page
-        self.assertTrue(callable(render_case_detail_page))
-
-    def test_model_diagnosis_page_exists(self):
-        from src.ui.model_diagnosis import render_model_diagnosis_page
-        self.assertTrue(callable(render_model_diagnosis_page))
-
-    def test_model_boundary_page_exists(self):
-        from src.ui.model_boundary import render_model_boundary_page
-        self.assertTrue(callable(render_model_boundary_page))
-
-    def test_dataset_quality_page_exists(self):
-        from src.ui.dataset_quality import render_dataset_quality_page
-        self.assertTrue(callable(render_dataset_quality_page))
-
-    def test_dataset_admin_page_exists(self):
-        from src.ui.dataset_admin import render_dataset_admin_page
-        self.assertTrue(callable(render_dataset_admin_page))
+    def test_review_page_exists(self):
+        from src.ui.review import render_review_page
+        self.assertTrue(callable(render_review_page))
 
 
 class NoDataStateTests(unittest.TestCase):
     """Test that pages handle no-data / no-score / SQLite-unavailable states gracefully."""
 
-    def test_project_methodology_handles_empty_data(self):
-        from src.ui.project_methodology import render_project_methodology_page
+    def test_case_study_handles_empty_data(self):
+        from src.ui.case_study import render_case_study_page
         # Just verify it doesn't raise on import; actual rendering requires Streamlit runtime
-        self.assertTrue(callable(render_project_methodology_page))
+        self.assertTrue(callable(render_case_study_page))
 
-    def test_evaluation_conclusions_handles_no_scores(self):
-        from src.ui.evaluation_conclusions import render_evaluation_conclusions_page
-        self.assertTrue(callable(render_evaluation_conclusions_page))
+    def test_conclusions_handles_no_scores(self):
+        from src.ui.conclusions import render_conclusions_page
+        self.assertTrue(callable(render_conclusions_page))
 
-    def test_overview_handles_no_scores(self):
-        from src.ui.overview import render_overview_page
-        self.assertTrue(callable(render_overview_page))
+    def test_samples_handles_no_scores(self):
+        from src.ui.samples import render_samples_page
+        self.assertTrue(callable(render_samples_page))
 
-    def test_model_boundary_handles_no_live_run(self):
-        from src.ui.model_boundary import render_model_boundary_page
-        self.assertTrue(callable(render_model_boundary_page))
+    def test_review_handles_no_live_run(self):
+        from src.ui.review import render_review_page
+        self.assertTrue(callable(render_review_page))
 
-    def test_model_diagnosis_handles_no_live_run(self):
-        from src.ui.model_diagnosis import render_model_diagnosis_page
-        self.assertTrue(callable(render_model_diagnosis_page))
+    def test_test_run_handles_no_live_run(self):
+        from src.ui.test_run import render_test_run_page
+        self.assertTrue(callable(render_test_run_page))
 
 
 if __name__ == "__main__":

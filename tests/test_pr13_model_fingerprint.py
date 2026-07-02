@@ -17,14 +17,15 @@ from app.services.live_results import empty_results_evaluation_data
 from src.data_service import load_all_data
 from src.metrics import get_model_total_scores
 from src.ui import components, model_diagnosis as md
+from src.ui.conclusions import render_conclusions_page
 from src.ui.page_config import get_page_config
 from src.validators import validate_evaluation_data
 
 
 class FingerprintConfigTests(unittest.TestCase):
     def test_page_title_is_capability_fingerprint(self):
-        config = get_page_config("model_diagnosis")
-        self.assertIn("指纹", config.title)
+        config = get_page_config("conclusions")
+        self.assertIn("评测结论", config.title)
 
     def test_fingerprint_component_and_styles_exist(self):
         self.assertTrue(hasattr(components, "render_fingerprint_cards"))
@@ -132,21 +133,21 @@ class FingerprintRenderTests(unittest.TestCase):
         }
 
     def test_renders_with_real_run(self):
-        md.render_model_diagnosis_page(self._bundle(self.base, True))
+        render_conclusions_page(self._bundle(self.base, True))
 
     def test_renders_without_run(self):
-        md.render_model_diagnosis_page(self._bundle(empty_results_evaluation_data(self.base), False))
+        render_conclusions_page(self._bundle(empty_results_evaluation_data(self.base), False))
 
     def test_renders_with_no_error_labels(self):
         import dataclasses
 
         no_errors = dataclasses.replace(self.base, errors=self.base.errors.iloc[0:0])
-        md.render_model_diagnosis_page(self._bundle(no_errors, True))
+        render_conclusions_page(self._bundle(no_errors, True))
 
 
 class NoHardcodingSourceTests(unittest.TestCase):
     def test_fingerprint_logic_does_not_hardcode_models_or_error_types(self):
-        source = Path("src/ui/model_diagnosis.py").read_text(encoding="utf-8")
+        source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
         for forbidden in ("Model_A", "Model_B", "Model_C", "qwen", "deepseek"):
             self.assertNotIn(forbidden, source)
 

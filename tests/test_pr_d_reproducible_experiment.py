@@ -23,7 +23,7 @@ from app.services import scorer as sc
 from src.ui.page_config import PAGE_CONFIG_BY_KEY
 
 
-_PAGE_SOURCE = Path("src/ui/eval_run_page.py").read_text(encoding="utf-8")
+_PAGE_SOURCE = Path("src/ui/test_run.py").read_text(encoding="utf-8")
 
 
 class DefaultActiveTaskSelectionTests(unittest.TestCase):
@@ -53,13 +53,13 @@ class DefaultActiveTaskSelectionTests(unittest.TestCase):
 
 class PageFramingTests(unittest.TestCase):
     def test_subtitle_emphasizes_reproducibility_and_offline_default(self):
-        config = PAGE_CONFIG_BY_KEY["eval_run"]
+        config = PAGE_CONFIG_BY_KEY["test_run"]
         subtitle = config.subtitle
         # 页面副标题应包含评测相关关键词
         self.assertIn("评测", subtitle)
 
     def test_boundary_mentions_fixed_judge_model(self):
-        config = PAGE_CONFIG_BY_KEY["eval_run"]
+        config = PAGE_CONFIG_BY_KEY["test_run"]
         self.assertIn("deepseek", config.boundary.lower())
 
     def test_page_distinguishes_offline_vs_live(self):

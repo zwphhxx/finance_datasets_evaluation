@@ -8,30 +8,20 @@ from src.ui.overview import get_overview_asset_cards
 
 # 导航页键（PAGES 的英文键，决定路由与顺序）。
 EXPECTED_PAGE_KEYS = [
-    "project_methodology",
-    "overview",
-    "tasks",
-    "eval_run",
-    "case_detail",
-    "model_diagnosis",
-    "model_boundary",
-    "evaluation_conclusions",
-    "dataset_quality",
-    "dataset_admin",
+    "case_study",
+    "samples",
+    "test_run",
+    "review",
+    "conclusions",
 ]
 
 # 每页标题（PAGE_CONTEXTS 的键），与 EXPECTED_PAGE_KEYS 一一对应。
 EXPECTED_PAGE_TITLES = [
     "Case Study",
-    "红线评测台",
     "样本库",
     "发起测试",
     "评测复核",
-    "模型能力指纹",
-    "模型边界报告",
     "评测结论",
-    "数据集质量",
-    "数据集管理",
 ]
 
 BANNED_PHRASES = ["AI赋能", "智能洞察", "一键优化", "专家级"]

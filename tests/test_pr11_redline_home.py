@@ -40,11 +40,11 @@ def _empty_dataset(base):
 
 
 class RedlineHomeConfigTests(unittest.TestCase):
-    def test_overview_title_and_subtitle_frame_the_cockpit(self):
-        config = get_page_config("overview")
-        self.assertIn("红线评测台", config.title)
-        # 副标题必须点出三类判断。
-        for word in ["可直接用", "复核", "不可直接用"]:
+    def test_conclusions_title_and_subtitle(self):
+        config = get_page_config("conclusions")
+        self.assertIn("评测结论", config.title)
+        # 评测结论页副标题包含结论汇总相关关键词
+        for word in ["正式", "结论", "seed"]:
             self.assertIn(word, config.subtitle)
 
     def test_loop_steps_keep_closed_loop_with_revalidation(self):
