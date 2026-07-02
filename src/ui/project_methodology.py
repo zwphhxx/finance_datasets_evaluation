@@ -72,6 +72,95 @@ def get_sample_structure_items() -> list[tuple[str, str]]:
     ]
 
 
+def get_project_brief_items() -> list[tuple[str, str]]:
+    """Project Brief 的四个叙事卡片：背景、问题、方法、输出。"""
+    return [
+        (
+            "背景",
+            "在投行、财务和法律尽调中，模型的回答经常‘写得像对，但漏掉关键风险’——"
+            "结论通顺专业，却可能隐藏致命遗漏或无依据的确定性判断。",
+        ),
+        (
+            "问题",
+            "尽调是高风险、强合规工作。相比明显的事实错误，‘看起来对’的错误更难发现，也更危险。"
+            "我想回答：在尽调任务上，模型回答到底能不能放心用？",
+        ),
+        (
+            "我的方法",
+            "把过往尽调经验脱敏抽象成标准化任务，人工撰写 Gold Answer，"
+            "再用 Rubric 多维评分 + 红线错误 + 人工复核，量化模型的可用边界。",
+        ),
+        (
+            "项目输出",
+            "一套可复用的评测样本库、离线评测结论、典型样本拆解与可复现实验入口，"
+            "让‘能不能用’从主观判断变成可验证的样本内观察。",
+        ),
+    ]
+
+
+def get_methodology_items() -> list[tuple[str, str]]:
+    """Methodology 的五个核心方法卡片。"""
+    return [
+        (
+            "样本脱敏抽象",
+            "从真实投行、财务、法律尽调经验中抽取判断结构与风险点，"
+            "去除真实公司、交易与敏感数据，保留可评测的专业任务。",
+        ),
+        (
+            "Gold Answer",
+            "每道题人工撰写参考答案：核心结论、关键依据、边界条件与必须覆盖点，"
+            "作为评分和错误归因的锚点。",
+        ),
+        (
+            "Rubric 多维评分",
+            "把‘好的尽调回答’拆成准确性、推理完整性、风险覆盖、证据充分、专业表达五个维度，"
+            "由裁判模型对照 Gold 给出建议分。",
+        ),
+        (
+            "红线错误",
+            "重大风险遗漏、无依据定性、错误适用规则等触碰红线的回答，"
+            "再高分也不能直接使用，必须人工复核或判为不可用。",
+        ),
+        (
+            "人工复核归档",
+            "裁判分数为建议分；现场评测结果默认进入草稿（pending），"
+            "经人工复核确认后才计入正式评测结论。",
+        ),
+    ]
+
+
+def get_dataset_snapshot_items(data) -> list[tuple[str, str]]:
+    """Dataset Snapshot 的关键数字，全部从当前数据动态计算。"""
+    task_count = len(getattr(data, "tasks", []))
+    domain_count = _distinct_count(getattr(data, "tasks", None), "domain")
+    gold_count = len(getattr(data, "gold_answer_map", {}))
+    output_count = len(getattr(data, "model_outputs", []))
+    scored = scored_case_count(getattr(data, "scores", None))
+    return [
+        ("任务样本", f"{task_count} 道"),
+        ("覆盖领域", f"{domain_count} 个"),
+        ("Gold 覆盖", f"{gold_count}/{task_count}"),
+        ("评分记录", f"{scored} 条"),
+        ("模型回答", f"{output_count} 条"),
+    ]
+
+
+def get_how_to_read_steps() -> list[str]:
+    return [
+        "先看已有评测结论",
+        "再看典型样本拆解",
+        "最后可现场发起可复现实验",
+    ]
+    return [
+        ("任务题与背景", "每道题给出业务场景、问题与必要背景，对应真实尽调中的一个判断节点。"),
+        ("考察能力", "标注这道题主要考察的专业能力，便于按能力维度归类分析。"),
+        ("风险等级", "标注任务的风险等级，风险越高的任务，红线判定越严格。"),
+        ("Gold Answer", "人工撰写的参考答案，包含核心结论、关键依据与边界条件。"),
+        ("必须覆盖点", "这道题必须命中的要点，遗漏即扣风险覆盖分。"),
+        ("不可接受错误", "触碰即触发红线的错误，例如重大风险遗漏或无依据定性。"),
+    ]
+
+
 # 评价框架：五个 Rubric 维度的标签直接取自 metrics.SCORE_DIMENSIONS，避免与评分口径漂移；
 # 边界意识作为一条横切维度，由红线与错误标注频率反映。
 _RUBRIC_DIM_NOTES = {
@@ -102,13 +191,11 @@ def get_redline_triggers() -> list[str]:
     ]
 
 
-def get_usage_flow_steps() -> list[str]:
+def get_how_to_read_steps() -> list[str]:
     return [
-        "先看离线评测结论",
-        "选模型与典型样本",
-        "现场复现实验",
-        "对照 Gold 与红线",
-        "判断可用边界",
+        "先看已有评测结论",
+        "再看典型样本拆解",
+        "最后可现场发起可复现实验",
     ]
 
 
@@ -137,81 +224,41 @@ def render_project_methodology_page(data_bundle: dict) -> None:
 
     render_section_block(
         "01",
-        "项目背景",
-        "尽调回答常“写得像对，却漏掉关键风险”，这类问题最难发现、也最危险。",
+        "Project Brief",
+        "为什么做这个项目、解决什么问题、用什么方法、输出什么。",
     )
-    st.markdown(
-        "在投行、财务和法律尽调里，模型的回答经常“写得像对，但漏掉关键风险”——"
-        "结论读起来通顺、专业，却没有提示真正致命的问题，或者给出无依据的确定性判断。"
-        "在这种高风险、强合规的工作中，这类问题比明显的事实错误更难发现，也更危险。"
-        "FinDueEval 想回答的就是一个具体问题：在尽调任务上，模型的回答到底能不能放心用、"
-        "在哪些地方必须人工兜底。"
-    )
+    render_feature_card(get_project_brief_items())
 
     render_section_block(
         "02",
-        "样本来源",
-        "来自真实尽调经验，脱敏抽象后重写，不含任何真实公司与敏感数据。",
+        "Methodology",
+        "从真实经验到可复现评测：脱敏抽象、Gold Answer、Rubric、红线、复核归档。",
     )
-    st.markdown(
-        "样本来自我过往在投行、财务尽调、法律核查与并购项目中的经验，经过脱敏与抽象后"
-        "重新编写。题目保留了真实尽调中的判断结构与风险点，但**不包含任何真实公司、"
-        "真实交易或敏感数据**，只作为评测用途。"
-    )
+    render_feature_card(get_methodology_items())
 
     render_section_block(
         "03",
-        "样本体系",
-        "每道题按统一结构组织，便于按能力与风险归类分析。",
+        "Dataset Snapshot",
+        "当前数据规模与覆盖情况，全部从加载的数据动态计算。",
     )
-    render_feature_card(get_sample_structure_items())
-
-    render_section_block(
-        "04",
-        "评价框架",
-        "把“一份好的尽调回答”拆成可评分的维度。",
-    )
-    st.markdown(
-        "我先用历史尽调资料人工梳理了“优秀回答应该长什么样”，把它落成下面这套评分维度，"
-        "由裁判模型对照 Gold Answer 给出建议分，再人工复核。"
-    )
-    render_feature_card(get_rubric_framework_items())
-
-    render_section_block(
-        "05",
-        "红线机制",
-        "触碰红线的回答，再高分也不能直接使用。",
-    )
-    st.markdown(
-        "评分之外还有一层红线判定。当回答触发下列任一红线时，这道题不计入“可直接使用”，"
-        "必须人工复核或判为不可用："
-    )
-    for trigger in get_redline_triggers():
-        st.markdown(f"- {trigger}")
-
-    render_section_block(
-        "06",
-        "评测结论与使用方式",
-        "先看离线得出的结论，再上手现场验证。",
-    )
-    render_flow_strip(get_usage_flow_steps())
-    st.markdown(
-        "建议先在「模型边界报告」「模型能力指纹」「评测结论」等页看离线评测得出的结论——"
-        "各模型在当前样本下的强弱项、高频风险与可用边界；再到「可复现实验」用项目样本"
-        "现场测试感兴趣的模型，对照 Gold Answer 与红线看它在专业题上的真实表现。"
-    )
-
-    render_section_block(
-        "07",
-        "数据集规模",
-        "下列数字均由当前题库与评分维度动态计算。",
-    )
-    render_context_grid(build_dataset_summary_items(data))
+    render_context_grid(get_dataset_snapshot_items(data))
     scored = scored_case_count(getattr(data, "scores", None))
     if scored > 0:
         st.caption(f"当前样本内已产出 {scored} 条裁判评分，可在各分析页查看样本内观察结论。")
     else:
-        st.caption("当前尚无评测评分；运行一次真实评测后，各分析页会基于真实结果生成样本内观察。")
+        st.caption("当前尚无评测评分；运行一次真实评测后，Dataset Snapshot 会更新评分记录。")
+
+    render_section_block(
+        "04",
+        "How to Read",
+        "推荐阅读顺序：先看结论，再拆样本，最后现场复现。",
+    )
+    render_flow_strip(get_how_to_read_steps())
+    st.markdown(
+        "建议先在「评测结论」「模型边界报告」「模型能力指纹」等页看离线得出的结论；"
+        "再到「典型样本拆解」看单题为什么能测出模型能力；"
+        "最后到「可复现实验」用项目样本现场测试模型，对照 Gold Answer 与红线验证可用边界。"
+    )
 
     render_info_panel(
         "口径与边界",
@@ -220,8 +267,8 @@ def render_project_methodology_page(data_bundle: dict) -> None:
     )
     render_cta_group(
         [
-            ("进入红线评测台 →", "overview"),
-            ("浏览样本库 →", "tasks"),
+            ("查看评测结论 →", "evaluation_conclusions"),
+            ("典型样本拆解 →", "case_detail"),
             ("发起可复现实验 →", "eval_run"),
         ],
         key_prefix="methodology_foot",

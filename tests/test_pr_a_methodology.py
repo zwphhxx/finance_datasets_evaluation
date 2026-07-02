@@ -13,8 +13,13 @@ from src.ui.navigation import PAGES, _NAV_GROUPS
 from src.ui.page_config import DEFAULT_PAGE_KEY, PAGE_CONFIG_BY_KEY, PAGE_CONTEXTS
 from src.ui.project_methodology import (
     build_dataset_summary_items,
-    get_rubric_framework_items,
+    build_hero_stats,
+    get_dataset_snapshot_items,
+    get_how_to_read_steps,
+    get_methodology_items,
+    get_project_brief_items,
     get_redline_triggers,
+    get_rubric_framework_items,
     get_sample_structure_items,
     scored_case_count,
 )
@@ -48,13 +53,17 @@ class RegistrationTests(unittest.TestCase):
         self.assertIn("src.ui.components", source)
         # 首屏改为作品集 Hero：方法论页以 render_hero 作为共享页头组件。
         self.assertIn("render_hero", source)
+        # Portfolio case-study 结构：编号 section block + 卡片化叙事。
+        self.assertIn("render_section_block", source)
+        self.assertIn("render_feature_card", source)
         for phrase in BANNED_PHRASES:
             self.assertNotIn(phrase, source)
 
-    def test_positioning_states_not_a_leaderboard(self):
+    def test_page_follows_portfolio_case_study_sections(self):
         source = Path("src/ui/project_methodology.py").read_text(encoding="utf-8")
-        self.assertIn("不是", source)
-        self.assertIn("排行榜", source)
+        for section in ("Project Brief", "Methodology", "Dataset Snapshot", "How to Read"):
+            self.assertIn(section, source, section)
+        self.assertIn("不是模型排行榜", source)
         self.assertIn("可用边界", source)
 
 
@@ -89,6 +98,69 @@ class DynamicStatsTests(unittest.TestCase):
         self.assertIn("2", items["任务样本"])
         self.assertIn("2", items["覆盖领域"])
         self.assertIn("1/2", items["Gold Answer"])
+
+    def test_project_brief_has_four_narrative_cards(self):
+        items = get_project_brief_items()
+        labels = [label for label, _ in items]
+        self.assertEqual(["背景", "问题", "我的方法", "项目输出"], labels)
+        for _, note in items:
+            self.assertTrue(note.strip())
+
+    def test_methodology_has_five_steps(self):
+        items = get_methodology_items()
+        labels = [label for label, _ in items]
+        self.assertEqual(
+            ["样本脱敏抽象", "Gold Answer", "Rubric 多维评分", "红线错误", "人工复核归档"],
+            labels,
+        )
+        for _, note in items:
+            self.assertTrue(note.strip())
+
+    def test_dataset_snapshot_is_dynamic(self):
+        items = dict(get_dataset_snapshot_items(self.data))
+        task_count = len(self.data.tasks)
+        domain_count = self.data.tasks["domain"].dropna().nunique()
+        gold_count = len(self.data.gold_answer_map)
+        output_count = len(self.data.model_outputs)
+        scored = int(self.data.scores["total_score"].notna().sum())
+
+        self.assertIn(str(task_count), items["任务样本"])
+        self.assertIn(str(domain_count), items["覆盖领域"])
+        self.assertIn(f"{gold_count}/{task_count}", items["Gold 覆盖"])
+        self.assertIn(str(scored), items["评分记录"])
+        self.assertIn(str(output_count), items["模型回答"])
+
+    def test_dataset_snapshot_handles_empty_data(self):
+        import types
+
+        import pandas as pd
+
+        stub = types.SimpleNamespace(
+            tasks=pd.DataFrame(),
+            gold_answer_map={},
+            scores=pd.DataFrame(),
+            model_outputs=pd.DataFrame(),
+        )
+        items = dict(get_dataset_snapshot_items(stub))
+        self.assertEqual("0 道", items["任务样本"])
+        self.assertEqual("0/0", items["Gold 覆盖"])
+        self.assertEqual("0 条", items["评分记录"])
+        self.assertEqual("0 条", items["模型回答"])
+
+    def test_how_to_read_steps(self):
+        steps = get_how_to_read_steps()
+        self.assertEqual(
+            ["先看已有评测结论", "再看典型样本拆解", "最后可现场发起可复现实验"],
+            steps,
+        )
+
+    def test_hero_stats_are_dynamic(self):
+        stats = {label: value for value, label in build_hero_stats(self.data)}
+        task_count = len(self.data.tasks)
+        domain_count = self.data.tasks["domain"].dropna().nunique()
+        self.assertEqual(str(task_count), stats["尽调任务样本"])
+        self.assertEqual(str(domain_count), stats["专业领域"])
+        self.assertEqual(str(len(SCORE_DIMENSIONS)), stats["Rubric 评分维度"])
 
     def test_rubric_items_cover_all_dimensions_plus_boundary(self):
         items = get_rubric_framework_items()
