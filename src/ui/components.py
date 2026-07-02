@@ -1681,3 +1681,138 @@ def render_cta_group(actions, note=None, key_prefix: str = "cta") -> None:
                 st.rerun()
     if note:
         render_html(f'<div class="cta-note">{escape(str(note))}</div>')
+
+
+# --------------------------------------------------------------------------- #
+# Portfolio case-study shared components (PR-UI2)
+# --------------------------------------------------------------------------- #
+
+def render_compact_hero(
+    eyebrow: str,
+    title: str,
+    question: str | None = None,
+    stats: list[tuple[str, str]] | None = None,
+) -> None:
+    """Compact hero for business pages: eyebrow + title + optional question + stat cards.
+
+    `stats` is a list of (value, label) tuples — every value should be derived
+    from live data, never hardcoded. When `stats` is empty the right column is
+    omitted, so the hero degrades gracefully with no data.
+    """
+    stat_html = "".join(
+        f'<div class="fde-hero-stat">'
+        f'<div class="fde-hero-stat-value">{escape(str(value))}</div>'
+        f'<div class="fde-hero-stat-label">{escape(str(label))}</div>'
+        f"</div>"
+        for value, label in (stats or [])
+    )
+    aside_html = f'<div class="fde-hero-aside">{stat_html}</div>' if stat_html else ""
+    eyebrow_html = f'<div class="fde-hero-eyebrow">{escape(str(eyebrow))}</div>' if eyebrow else ""
+    question_html = f'<p class="fde-hero-value">{escape(str(question))}</p>' if question else ""
+    render_html(
+        f"""
+        <div class="fde-hero">
+            <div class="fde-hero-main">
+                {eyebrow_html}
+                <h1 class="fde-hero-title">{escape(str(title))}</h1>
+                {question_html}
+            </div>
+            {aside_html}
+        </div>
+        """
+    )
+
+
+def render_numbered_section(index: str, title: str, caption: str | None = None) -> None:
+    """Numbered section header (01 / 02 / 03 …) for the case-study narrative.
+
+    This is an alias of ``render_section_block`` with a more explicit name
+    matching the portfolio vocabulary. Kept as a separate wrapper so callers
+    can migrate gradually without renaming existing uses.
+    """
+    render_section_block(index, title, caption)
+
+
+def render_feature_grid(items: list[tuple[str, str]]) -> None:
+    """Render a responsive, auto-wrapping grid of feature cards.
+
+    `items` is a list of (title, body) tuples.  Alias of ``render_feature_card``
+    with a plural name that matches the portfolio vocabulary.
+    """
+    render_feature_card(items)
+
+
+def render_evidence_panel(title: str, content_html: str) -> None:
+    """Sink tables / evidence below narrative in a styled card panel.
+
+    Use this to wrap tables, matrices, or structured data that supports the
+    narrative above it. The panel visually separates "evidence" from "story".
+    """
+    render_html(
+        f"""
+        <div class="evidence-card">
+            <div class="evidence-title">{escape(str(title))}</div>
+            <div class="evidence-value">{content_html}</div>
+        </div>
+        """
+    )
+
+
+def render_action_cards(actions: list[tuple[str, str]], note: str | None = None, key_prefix: str = "cta") -> None:
+    """Render action entry cards as a CTA button row. Alias of ``render_cta_group``."""
+    render_cta_group(actions, note=note, key_prefix=key_prefix)
+
+
+def render_data_table_panel(df, title: str, caption: str | None = None) -> None:
+    """Wrap st.dataframe in an evidence-panel-styled card.
+
+    Renders a compact title + optional caption above the table, then the
+    interactive dataframe inside a bordered card. The dataframe itself is
+    rendered via Streamlit so sorting/filtering still works.
+    """
+    import streamlit as st
+
+    render_html(
+        f"""
+        <div class="evidence-card">
+            <div class="evidence-title">{escape(str(title))}</div>
+        </div>
+        """
+    )
+    if caption:
+        st.caption(caption)
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+
+def render_status_summary(status_items: list[tuple[str, str, str]]) -> None:
+    """Render a row of status pills as a summary.
+
+    `status_items` is a list of (label, value, level) tuples where level is one
+    of the shared status vocabulary (success / warning / danger / neutral / accent).
+    """
+    pills = "".join(
+        f'<span class="status-pill status-pill-{_PILL_LEVELS.get(str(level).strip().lower(), "neutral")}">'
+        f'{escape(str(label))}：{escape(str(value))}</span>'
+        for label, value, level in status_items
+    )
+    render_html(f'<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin:0.5rem 0 1rem 0;">{pills}</div>')
+
+
+def render_portfolio_page_shell(
+    page_config,
+    eyebrow: str = "FinDueEval",
+    hero_stats: list[tuple[str, str]] | None = None,
+) -> None:
+    """Unified page wrapper: compact hero + optional numbered sections start.
+
+    Replaces the old ``render_page_shell`` for pages that want the portfolio
+    case-study feel. The old ``render_page_shell`` is kept for backward
+    compatibility but internally delegates to this function.
+    """
+    render_compact_hero(
+        eyebrow=eyebrow,
+        title=page_config.title,
+        question=page_config.question,
+        stats=hero_stats,
+    )
+    render_boundary_bar()

@@ -28,10 +28,10 @@ class UIUXAuditFixesTests(unittest.TestCase):
         eval_run_source = Path("src/ui/eval_run_page.py").read_text(encoding="utf-8")
         self.assertIn("loop-rail", eval_run_source)
 
-    def test_pages_use_page_shell_and_context_grid(self):
+    def test_pages_use_compact_hero_and_context_grid(self):
         import src.ui.components as components
 
-        self.assertTrue(hasattr(components, "render_page_shell"))
+        self.assertTrue(hasattr(components, "render_compact_hero"))
         self.assertTrue(hasattr(components, "render_context_grid"))
         self.assertIn(".context-grid", components.STYLE_CSS)
         self.assertIn(".context-item", components.STYLE_CSS)
@@ -46,7 +46,14 @@ class UIUXAuditFixesTests(unittest.TestCase):
             "src/ui/optimization_compare.py",
         ]:
             source = Path(file_path).read_text(encoding="utf-8")
-            self.assertIn("render_page_shell", source, file_path)
+            self.assertIn("render_compact_hero", source, file_path)
+
+    def test_pages_still_export_render_page_shell_for_backward_compat(self):
+        import src.ui.components as components
+
+        self.assertTrue(hasattr(components, "render_page_shell"))
+        self.assertIn(".context-grid", components.STYLE_CSS)
+        self.assertIn(".context-item", components.STYLE_CSS)
 
     def test_sidebar_navigation_has_active_state_and_groups(self):
         from src.ui.navigation import PAGES, _NAV_GROUPS

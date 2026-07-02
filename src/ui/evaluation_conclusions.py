@@ -20,12 +20,15 @@ from app.services import eval_state
 from app.services import scorer as sc
 from src.ui.page_config import get_page_config
 from src.ui.components import (
+    render_action_cards,
+    render_compact_hero,
     render_context_grid,
     render_info_panel,
     render_metric_card,
-    render_page_shell,
+    render_numbered_section,
     render_section_title,
     render_status_badge,
+    render_status_summary,
 )
 
 
@@ -43,7 +46,12 @@ def render_evaluation_conclusions_page(data_bundle: dict) -> None:
     confirmed_live, pending_live = cc.split_live_scores(live_scores)
     responses = cc.load_live_responses()
 
-    render_page_shell(get_page_config("evaluation_conclusions"))
+    config = get_page_config("evaluation_conclusions")
+    render_compact_hero(
+        eyebrow="FinDueEval",
+        title=config.title,
+        question=config.question,
+    )
     render_info_panel(
         "本页定位",
         "这是当前专业样本内的“可用边界观察”，不是模型排行榜。正式结论只纳入已人工沉淀的"
@@ -56,10 +64,11 @@ def render_evaluation_conclusions_page(data_bundle: dict) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# 正式评测结论（首屏）
+# 01 正式评测结论
 # --------------------------------------------------------------------------- #
 def _render_formal_conclusions(seed_scores, confirmed_live, seed_errors) -> None:
-    render_section_title(
+    render_numbered_section(
+        "01",
         "正式评测结论",
         "只统计 seed 已有结论与已复核归档（confirmed）的现场结论，不含待复核草稿。",
     )
@@ -72,6 +81,7 @@ def _render_formal_conclusions(seed_scores, confirmed_live, seed_errors) -> None
         )
         return
 
+    # Conclusion cards first (metric cards as narrative cards)
     cols = st.columns(4)
     with cols[0]:
         render_metric_card("纳入模型", summary["model_count"], "参与正式结论的模型数")
@@ -83,10 +93,12 @@ def _render_formal_conclusions(seed_scores, confirmed_live, seed_errors) -> None
     with cols[3]:
         render_metric_card("已复核归档", summary["confirmed_rows"], "现场复核后计入")
 
+    # Evidence: per-model conclusion cards
     conclusions = cc.build_formal_conclusions(seed_scores, confirmed_live)
     for item in conclusions:
         _render_model_conclusion(item)
 
+    # Evidence: frequent issues table
     combined = cc.combine_formal_scores(seed_scores, confirmed_live)
     all_notes = [note for item in conclusions for note in item.get("review_notes", [])]
     issues = cc.summarize_frequent_issues(combined, seed_errors, all_notes)
@@ -121,10 +133,11 @@ def _render_model_conclusion(item: dict) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# 草稿评测（待复核）
+# 02 草稿评测（待复核）
 # --------------------------------------------------------------------------- #
 def _render_drafts(pending_live, responses, db_ready: bool) -> None:
-    render_section_title(
+    render_numbered_section(
+        "02",
         "草稿评测（待复核）",
         "现场新增评测先进入草稿，未进入正式结论；经人工复核确认后才会归档计入。",
     )
@@ -203,20 +216,17 @@ def _render_inline_confirm(row: dict) -> None:
 
 
 def _render_draft_entries() -> None:
-    cols = st.columns(2)
-    if cols[0].button("去典型样本拆解复核 →", key="conc_to_case_detail", use_container_width=True):
-        _set_page("case_detail")
-        st.rerun()
-    if cols[1].button("去可复现实验 / 批量复核 →", key="conc_to_eval_run", use_container_width=True):
-        _set_page("eval_run")
-        st.rerun()
+    render_action_cards([
+        ("去典型样本拆解复核 →", "case_detail"),
+        ("去可复现实验 / 批量复核 →", "eval_run"),
+    ], key_prefix="conc")
 
 
 # --------------------------------------------------------------------------- #
-# 人工复核后归档说明
+# 03 人工复核后归档
 # --------------------------------------------------------------------------- #
 def _render_archive_explainer(db_ready: bool) -> None:
-    render_section_title("人工复核后归档", "把现场草稿转为正式结论的处理方式。")
+    render_numbered_section("03", "人工复核后归档", "把现场草稿转为正式结论的处理方式。")
     render_info_panel(
         "复核与归档流程",
         "人工可在草稿条目中修改各维度分数与复核说明；点击“确认并归档”后，该条 review_status "

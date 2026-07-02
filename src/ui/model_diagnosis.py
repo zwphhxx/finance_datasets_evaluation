@@ -18,11 +18,13 @@ from src.metrics import (
 from src.ui.page_config import get_page_config
 from src.ui.tasks import DOMAIN_LABELS, display_label
 from src.ui.components import (
+    render_compact_hero,
     render_empty_state,
     render_empty_state_with_actions,
+    render_evidence_panel,
     render_fingerprint_cards,
     render_html,
-    render_page_shell,
+    render_numbered_section,
     render_review_caveat,
     render_section_title,
 )
@@ -33,17 +35,10 @@ _DIMENSION_FULL_BY_LABEL = {
 }
 _DIMENSION_ORDER = [label for _, label in SCORE_DIMENSIONS]
 
-# Capability-fingerprint thresholds (evaluation methodology config, aligned with
-# the case-detail verdict): a model only *tends toward* direct use when its
-# sample average clears the upper floor with no weak dimension; below the pass
-# floor — or with any red-line error — it tends toward not-directly-usable.
 FINGERPRINT_DIRECT_FLOOR = 85.0
 FINGERPRINT_PASS_FLOOR = 60.0
 FINGERPRINT_WEAK_RATIO = 0.6
 
-# Severity values that count as a red-line hit. Derived purely from the error
-# label's severity column, so no specific error *type* is hardcoded here; this
-# tolerates new high-risk error types appearing in the data.
 HIGH_SEVERITY_VALUES = {"高", "high"}
 
 
@@ -99,12 +94,6 @@ def build_diagnosis(scores_df, error_df) -> dict | None:
 
 
 def _dimension_spreads(scores_df):
-    """Return (most divergent dimension, its spread, priority dimension).
-
-    Divergence is the gap between the best and worst model on a dimension's
-    attainment; the priority dimension is the one where even the best model
-    attains least, signalling a systemic gap.
-    """
     dimension_scores = get_model_dimension_scores(scores_df)
     if dimension_scores.empty:
         return "暂无", 0.0, "暂无"
@@ -136,11 +125,6 @@ def _top_error_for_model(error_counts, model_name: str) -> str:
 
 
 def _model_attainments(dimension_scores, model_name: str) -> list[tuple[str, float]]:
-    """Per-dimension attainment (score / full mark) for one model, weakest first.
-
-    Dimensions without a known full mark are skipped, so the result reflects only
-    dimensions actually present in the current score schema.
-    """
     if dimension_scores.empty:
         return []
     subset = dimension_scores[dimension_scores["model_name"].astype(str) == model_name]
@@ -163,12 +147,6 @@ def _model_dimension_extremes(dimension_scores, model_name: str) -> tuple[str, s
 
 
 def count_model_redline_errors(error_df, model_name: str) -> int:
-    """Count this model's red-line errors, derived from the severity column.
-
-    A red-line hit is any error labelled high severity. Counting from severity
-    (not a fixed list of error types) keeps the metric robust to new high-risk
-    labels in the data and avoids hardcoding error types.
-    """
     if (
         error_df is None
         or error_df.empty
@@ -184,8 +162,6 @@ def count_model_redline_errors(error_df, model_name: str) -> int:
 
 
 def _boundary_tendency(avg_score: float, weakest_attainment, redline_count: int) -> tuple[str, str, str]:
-    """Map an average, weakest-dimension attainment and red-line count to a
-    usage-boundary tendency. Returns (tendency, level, sample-scoped note)."""
     if redline_count > 0:
         return "倾向不可直接用", "danger", "当前样本内观察到红线错误，须人工与合规终审。"
     if avg_score < FINGERPRINT_PASS_FLOOR:
@@ -197,15 +173,6 @@ def _boundary_tendency(avg_score: float, weakest_attainment, redline_count: int)
 
 
 def build_model_fingerprints(scores_df, error_df, tasks_df) -> list[dict]:
-    """One capability-fingerprint card per model, derived from current data.
-
-    Each card carries the model's sample average, strongest/weakest dimension,
-    frequent error, red-line error count and a usage-boundary *tendency* — never
-    an absolute ranking claim. All figures are scoped to the current evaluation
-    sample. ``tasks_df`` is accepted for signature parity with the other builders
-    and future domain-aware extensions; the current derivation needs only scores
-    and error labels.
-    """
     totals = get_model_total_scores(scores_df)
     if totals.empty:
         return []
@@ -258,11 +225,6 @@ def _model_boundary(domain_scores, model_name: str) -> str:
 
 
 def build_model_comparison_rows(scores_df, error_df, tasks_df) -> list[dict]:
-    """One comparison row per model, sorted by average score (high to low).
-
-    Average, strongest/weakest dimension, frequent error and applicable
-    boundary are all computed from the loaded scores, error labels and tasks.
-    """
     totals = get_model_total_scores(scores_df)
     if totals.empty:
         return []
@@ -289,7 +251,6 @@ def build_model_comparison_rows(scores_df, error_df, tasks_df) -> list[dict]:
 
 
 def build_dimension_matrix(scores_df) -> dict:
-    """Models (rows) × Rubric dimensions (columns) with attainment levels."""
     dimension_scores = get_model_dimension_scores(scores_df)
     if dimension_scores.empty:
         return {"dimensions": [], "rows": []}
@@ -325,7 +286,13 @@ def build_dimension_matrix(scores_df) -> dict:
 def render_model_diagnosis_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
     eval_status = data_bundle.get("eval_status") or {}
-    render_page_shell(get_page_config("model_diagnosis"))
+
+    config = get_page_config("model_diagnosis")
+    render_compact_hero(
+        eyebrow="FinDueEval",
+        title=config.title,
+        question=config.question,
+    )
     render_review_caveat(eval_status)
 
     if not eval_status.get("live"):
@@ -345,10 +312,18 @@ def render_model_diagnosis_page(data_bundle: dict) -> None:
         return
 
     _render_boundary_line(data)
+
+    # 01 模型能力指纹（narrative cards first）
+    render_numbered_section(
+        "01",
+        "模型能力指纹",
+        "每个模型一张指纹卡，呈现强项、短板、红线风险与适用边界倾向。",
+    )
     _render_fingerprint_section(data)
 
-    st.divider()
-    render_section_title(
+    # 02 评分证据（charts and tables sink below as evidence panels）
+    render_numbered_section(
+        "02",
         "评分证据",
         "以下为指纹卡结论的支撑数据：横向对比、维度达成矩阵与分项图表，均按当前评测集计算。",
     )
@@ -358,10 +333,6 @@ def render_model_diagnosis_page(data_bundle: dict) -> None:
 
 
 def _render_fingerprint_section(data) -> None:
-    render_section_title(
-        "模型能力指纹",
-        "每个模型一张指纹卡，呈现强项、短板、红线风险与适用边界倾向。",
-    )
     cards = build_model_fingerprints(data.scores, data.errors, data.tasks)
     if not cards:
         render_empty_state("当前暂无可展示的评分数据。")
@@ -401,10 +372,11 @@ def _render_comparison_table(rows: list[dict]) -> None:
             f'<td>{escape(row["top_error"])}</td>'
             f'<td>{escape(row["boundary"])}</td></tr>'
         )
-    render_html(
+    table_html = (
         '<table class="check-table"><thead><tr>'
         f"{header}</tr></thead><tbody>{body}</tbody></table>"
     )
+    render_evidence_panel("横向对比表", table_html)
 
 
 def _render_dimension_matrix(scores_df) -> None:
@@ -427,10 +399,11 @@ def _render_dimension_matrix(scores_df) -> None:
                     f'{cell["score"]:.0f}/{cell["full"]}</span></td>'
                 )
         body += f'<tr><th>{escape(row["model"])}</th>{cells}</tr>'
-    render_html(
+    table_html = (
         '<table class="matrix-table"><thead><tr>'
         f"{header}</tr></thead><tbody>{body}</tbody></table>"
     )
+    render_evidence_panel("维度达成矩阵", table_html)
     st.caption("达成率 ≥85% 为浅绿，60–85% 为米色，<60% 为浅玫瑰。")
 
 

@@ -12,10 +12,11 @@ from src.metrics import (
 )
 from src.ui.page_config import get_page_config
 from src.ui.components import (
+    render_compact_hero,
     render_context_grid,
     render_empty_state,
     render_info_panel,
-    render_page_shell,
+    render_numbered_section,
     render_section_title,
 )
 
@@ -152,7 +153,13 @@ def collect_optimization_compare_tables(data_bundle: dict) -> dict:
 def render_optimization_compare_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
     comparison_df = getattr(data, "optimization_comparison", pd.DataFrame())
-    render_page_shell(get_page_config("optimization_compare"))
+
+    config = get_page_config("optimization_compare")
+    render_compact_hero(
+        eyebrow="FinDueEval",
+        title=config.title,
+        question=config.question,
+    )
 
     if comparison_df.empty:
         render_empty_state("暂无可展示数据")

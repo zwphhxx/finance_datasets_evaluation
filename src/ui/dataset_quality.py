@@ -24,11 +24,13 @@ from src.ui.tasks import (
     display_label,
 )
 from src.ui.components import (
+    render_compact_hero,
     render_context_grid,
     render_empty_state,
+    render_evidence_panel,
     render_html,
     render_metric_card,
-    render_page_shell,
+    render_numbered_section,
     render_section_title,
 )
 
@@ -38,7 +40,6 @@ MVP_MATRIX_NOTE = (
     "样本较少时空白单元仅表示该组合暂未收录，可作为后续扩展的补样方向。"
 )
 
-# Gold Answer 结构化要素 → 中文标签，统一来自 gold_quality 模块的质量字段定义。
 GOLD_FIELD_CHECKS = [(label, canonical) for canonical, label in QUALITY_FIELDS]
 
 
@@ -293,18 +294,39 @@ def render_dataset_quality_page(data_bundle: dict) -> None:
     manifest = load_dataset_manifest()
     taxonomy = load_label_taxonomy()
 
-    render_page_shell(get_page_config("dataset_quality"))
+    config = get_page_config("dataset_quality")
+    render_compact_hero(
+        eyebrow="FinDueEval",
+        title=config.title,
+        question=config.question,
+    )
 
+    # 01 数据集概览
+    render_numbered_section("01", "数据集概览", "关键数字均由当前数据文件动态计算。")
     _render_overview(data, manifest)
+
+    # 02 任务覆盖矩阵
+    render_numbered_section("02", "任务覆盖矩阵", "从领域、任务类型与难度三个角度观察样本覆盖结构。")
     _render_coverage(data)
+
+    # 03 Gold Answer 质量检查
+    render_numbered_section("03", "Gold Answer 质量检查", "确认每道题的参考答案具备评分所需的核心要素。")
     _render_gold_answer_quality(data)
+
+    # 04 Rubric 质量检查
+    render_numbered_section("04", "Rubric 质量检查", "确认评分维度、权重与扣分标准可执行且可归因。")
     _render_rubric_quality(manifest, data, taxonomy)
+
+    # 05 错误标签覆盖
+    render_numbered_section("05", "错误标签覆盖", "展示错误标签体系、出现次数与高频错误的数据补强方向。")
     _render_error_label_coverage(taxonomy, data)
-    _render_extension(manifest)
+
+    # 06 扩展接入说明
+    render_numbered_section("06", "扩展接入说明", "从五道示例扩展到更大数据集时，各类资产的补齐方式。")
+    render_context_grid(get_extension_steps(manifest))
 
 
 def _render_overview(data, manifest: dict) -> None:
-    render_section_title("数据集概览", "关键数字均由当前数据文件动态计算。")
     cards = get_dataset_overview_cards(data, manifest)
     columns = st.columns(3)
     for index, card in enumerate(cards):
@@ -313,8 +335,6 @@ def _render_overview(data, manifest: dict) -> None:
 
 
 def _render_coverage(data) -> None:
-    render_section_title("任务覆盖矩阵", "从领域、任务类型与难度三个角度观察样本覆盖结构。")
-
     matrices = [
         ("领域 × 任务类型", "domain", "task_type", DOMAIN_LABELS, TASK_TYPE_LABELS),
         ("领域 × 难度", "domain", "difficulty", DOMAIN_LABELS, DIFFICULTY_LABELS),
@@ -325,17 +345,17 @@ def _render_coverage(data) -> None:
         matrix = build_coverage_matrix(data.tasks, row_field, col_field, row_labels, col_labels)
         if matrix.empty:
             continue
-        render_html(f'<div class="check-key">{escape(title)}</div>')
-        _render_matrix(matrix)
+        table_html = _render_matrix_html(matrix, title)
+        render_evidence_panel(title, table_html)
         rendered_any = True
 
     if rendered_any:
-        render_html(f'<div class="check-note">{escape(MVP_MATRIX_NOTE)}</div>')
+        st.caption(MVP_MATRIX_NOTE)
     else:
         render_empty_state("暂无任务样本，无法生成覆盖矩阵。")
 
 
-def _render_matrix(matrix: pd.DataFrame) -> None:
+def _render_matrix_html(matrix: pd.DataFrame, title: str) -> str:
     columns = list(matrix.columns)
     header_cells = "".join(f"<th>{escape(str(column))}</th>" for column in columns)
     body_rows = ""
@@ -353,11 +373,10 @@ def _render_matrix(matrix: pd.DataFrame) -> None:
             class_attr = f' class="{" ".join(classes)}"' if classes else ""
             cells += f"<td{class_attr}>{escape(str(value))}</td>"
         body_rows += f"<tr><th>{escape(str(index))}</th>{cells}</tr>"
-    table = (
+    return (
         '<table class="matrix-table"><thead><tr><th></th>'
         f"{header_cells}</tr></thead><tbody>{body_rows}</tbody></table>"
     )
-    render_html(table)
 
 
 def _status_cell(status: str) -> str:
@@ -366,16 +385,15 @@ def _status_cell(status: str) -> str:
 
 
 def _render_gold_answer_quality(data) -> None:
-    render_section_title("Gold Answer 质量检查", "确认每道题的参考答案具备评分所需的核心要素。")
     checks = build_gold_answer_checks(data.gold_answer_map, data.tasks)
     if not checks:
         render_empty_state("暂无任务样本，无法检查 Gold Answer。")
         return
 
     summary = summarize_gold_answer_quality(checks)
-    render_html(
-        f'<div class="check-note">共 {summary["total"]} 道题，其中 {summary["complete"]} 道满足评测使用条件，'
-        f'{summary["partial"]} 道部分满足。</div>'
+    st.caption(
+        f'共 {summary["total"]} 道题，其中 {summary["complete"]} 道满足评测使用条件，'
+        f'{summary["partial"]} 道部分满足。'
     )
 
     element_labels = [label for label, _ in GOLD_FIELD_CHECKS]
@@ -386,10 +404,11 @@ def _render_gold_answer_quality(data) -> None:
         status_class = "success" if row["complete"] else "warning"
         status_badge = f'<span class="status-badge status-{status_class}">{escape(row["status"])}</span>'
         body += f'<tr><td class="check-key">{escape(row["case_id"])}</td>{cells}<td>{status_badge}</td></tr>'
-    render_html(
+    table_html = (
         f'<table class="check-table"><thead><tr><th>案例编号</th>{header}<th>质量状态</th></tr></thead>'
         f"<tbody>{body}</tbody></table>"
     )
+    render_evidence_panel("Gold Answer 质量检查", table_html)
 
 
 def _wrap_td(inner: str) -> str:
@@ -397,7 +416,6 @@ def _wrap_td(inner: str) -> str:
 
 
 def _render_rubric_quality(manifest: dict, data, taxonomy: dict) -> None:
-    render_section_title("Rubric 质量检查", "确认评分维度、权重与扣分标准可执行且可归因。")
     checks = build_rubric_checks(manifest, data.scores, taxonomy)
     if not checks:
         render_empty_state("暂无 Rubric 配置，无法检查评分一致性。")
@@ -410,14 +428,14 @@ def _render_rubric_quality(manifest: dict, data, taxonomy: dict) -> None:
             f"{_wrap_td(_status_cell(check['status']))}"
             f'<td class="check-note">{escape(check["detail"])}</td></tr>'
         )
-    render_html(
+    table_html = (
         '<table class="check-table"><thead><tr><th>检查项</th><th>状态</th><th>说明</th></tr></thead>'
         f"<tbody>{body}</tbody></table>"
     )
+    render_evidence_panel("Rubric 质量检查", table_html)
 
 
 def _render_error_label_coverage(taxonomy: dict, data) -> None:
-    render_section_title("错误标签覆盖", "展示错误标签体系、出现次数与高频错误的数据补强方向。")
     rows = build_error_label_coverage(taxonomy, data.errors)
     if not rows:
         render_empty_state("尚未定义错误标签体系。")
@@ -435,12 +453,8 @@ def _render_error_label_coverage(taxonomy: dict, data) -> None:
             f'<td class="check-count">{count_cell}</td>'
             f'<td class="check-note">{escape(row["data_direction"])}</td></tr>'
         )
-    render_html(
+    table_html = (
         '<table class="check-table"><thead><tr><th>错误类型</th><th>定义</th><th>出现次数</th>'
         f"<th>数据补强方向</th></tr></thead><tbody>{body}</tbody></table>"
     )
-
-
-def _render_extension(manifest: dict) -> None:
-    render_section_title("扩展接入说明", "从五道示例扩展到更大数据集时，各类资产的补齐方式。")
-    render_context_grid(get_extension_steps(manifest))
+    render_evidence_panel("错误标签覆盖", table_html)

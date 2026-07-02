@@ -12,8 +12,9 @@ from src.metrics import (
 )
 from src.ui.page_config import get_page_config
 from src.ui.components import (
+    render_compact_hero,
     render_empty_state,
-    render_page_shell,
+    render_numbered_section,
     render_section_title,
 )
 
@@ -158,7 +159,12 @@ def build_error_improvement_table(actions_df, error_df) -> pd.DataFrame:
 
 
 def render_error_analysis(data_bundle):
-    render_page_shell(get_page_config("error_analysis"))
+    config = get_page_config("error_analysis")
+    render_compact_hero(
+        eyebrow="FinDueEval",
+        title=config.title,
+        question=config.question,
+    )
 
     data = data_bundle["data"]
     error_df = data.errors

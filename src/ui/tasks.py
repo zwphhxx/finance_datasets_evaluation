@@ -9,15 +9,19 @@ from src.metrics import get_task_by_case_id, merge_case_outputs_with_scores
 from src.gold_quality import evaluate_gold_quality, field_text, field_value
 from src.ui.page_config import get_page_config
 from src.ui.components import (
+    render_action_cards,
     render_answer_boundary_panel,
     render_card,
+    render_compact_hero,
     render_context_grid,
     render_empty_state,
+    render_evidence_panel,
     render_html,
     render_info_panel,
-    render_page_shell,
+    render_numbered_section,
     render_section_title,
     render_status_badge,
+    render_status_summary,
 )
 
 
@@ -197,22 +201,67 @@ def filter_case_rows(rows, domain="全部", task_type="全部", difficulty="全�
     return filtered
 
 
+def _build_sample_coverage_summary(rows) -> list[tuple[str, str]]:
+    """Sample coverage summary derived from the case rows."""
+    total = len(rows)
+    with_gold = sum(1 for r in rows if r["has_gold"])
+    with_answer = sum(1 for r in rows if r["model_answer_count"] > 0)
+    with_error = sum(1 for r in rows if r["error_label_count"] > 0)
+    return [
+        ("任务总数", f"{total} 道"),
+        ("Gold Answer 覆盖", f"{with_gold}/{total}"),
+        ("已有模型回答", f"{with_answer} 道"),
+        ("已触发错误标签", f"{with_error} 道"),
+    ]
+
+
 def render_tasks_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
-    render_page_shell(get_page_config("tasks"))
+    config = get_page_config("tasks")
+
+    # Portfolio compact hero
+    hero_stats = [
+        (str(len(data.tasks)), "尽调任务样本"),
+        (str(len({r.get("domain") for _, r in data.tasks.iterrows() if r.get("domain")}) if not data.tasks.empty else "0"), "专业领域"),
+    ]
+    # Fix: compute domain count properly
+    domain_count = 0
+    if not data.tasks.empty and "domain" in data.tasks.columns:
+        domain_count = data.tasks["domain"].dropna().nunique()
+    hero_stats = [
+        (str(len(data.tasks)), "尽调任务样本"),
+        (str(int(domain_count)), "专业领域"),
+    ]
+    render_compact_hero(
+        eyebrow="FinDueEval",
+        title=config.title,
+        question=config.question,
+        stats=hero_stats,
+    )
+
     if data.tasks.empty:
         render_empty_state("暂无可展示数据")
         return
 
     rows = build_case_overview_rows(data)
+
+    # 01 Sample coverage summary
+    render_numbered_section("01", "样本覆盖摘要", "当前数据集的 Gold Answer、模型回答与错误标签覆盖情况。")
+    render_context_grid(_build_sample_coverage_summary(rows))
+
+    # 02 Filters
+    render_numbered_section("02", "筛选条件", "按领域、任务类型、难度、Gold Answer 与模型回答状态过滤。")
     filtered = _render_filters(rows)
 
-    render_section_title("任务清单", "一行一题，长文本见下方任务详情。")
+    # 03 Task table as evidence panel
+    render_numbered_section("03", "任务清单", "一行一题，长文本见下方任务详情。")
     if not filtered:
         render_empty_state("没有符合当前筛选条件的任务。")
     else:
         _render_overview_table(filtered)
 
+    # 04 Selected task detail
+    render_numbered_section("04", "选中任务详情", "查看任务背景、要求、Gold Answer 与模型覆盖。")
     _render_selected_task_detail(data, filtered)
 
 
@@ -264,13 +313,11 @@ def _render_overview_table(rows) -> None:
             f'<td class="check-count">{row["model_answer_count"]}</td>'
             f'<td class="check-count">{row["error_label_count"]}</td></tr>'
         )
-    render_html(
-        f'<table class="check-table"><thead><tr>{header_cells}</tr></thead><tbody>{body}</tbody></table>'
-    )
+    table_html = f'<table class="check-table"><thead><tr>{header_cells}</tr></thead><tbody>{body}</tbody></table>'
+    render_evidence_panel("任务列表", table_html)
 
 
 def _render_selected_task_detail(data, rows) -> None:
-    render_section_title("选中任务详情", "查看任务背景、要求、Gold Answer 与模型覆盖。")
     if not rows:
         render_empty_state("请调整筛选条件后再查看任务详情。")
         return

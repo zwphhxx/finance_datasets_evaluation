@@ -17,18 +17,18 @@ from src.ui.page_config import get_page_config
 from src.ui.tasks import DOMAIN_LABELS, TASK_TYPE_LABELS, display_label
 from src.ui.components import (
     render_card,
+    render_compact_hero,
     render_context_grid,
     render_empty_state,
     render_empty_state_with_actions,
+    render_evidence_panel,
     render_html,
     render_info_panel,
-    render_page_shell,
+    render_numbered_section,
     render_review_caveat,
-    render_section_title,
 )
 
 
-# 使用边界三类对应的低饱和状态色：可直接使用=浅绿，需人工复核=米色，不可直接使用=浅玫瑰。
 _TIER_BADGE_LEVEL = {
     "direct": "success",
     "review": "warning",
@@ -39,7 +39,13 @@ _TIER_BADGE_LEVEL = {
 def render_model_boundary_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
     eval_status = data_bundle.get("eval_status") or {}
-    render_page_shell(get_page_config("model_boundary"))
+
+    config = get_page_config("model_boundary")
+    render_compact_hero(
+        eyebrow="FinDueEval",
+        title=config.title,
+        question=config.question,
+    )
     render_review_caveat(eval_status)
 
     if not eval_status.get("live"):
@@ -54,10 +60,33 @@ def render_model_boundary_page(data_bundle: dict) -> None:
         return
 
     manifest = load_dataset_manifest()
+
+    # 01 数据边界
+    render_numbered_section("01", "数据边界", "先看清结论建立在什么样本与版本上。")
     _render_data_boundary(build_data_boundary(data, manifest))
+
+    # 02 模型可用边界
+    render_numbered_section(
+        "02",
+        "模型可用边界",
+        "按风险等级、能力下限与是否触发红线错误，将任务归入三类使用边界。",
+    )
     _render_usage_tiers(summarize_usage_tiers(data))
+
+    # 03 高频风险
+    render_numbered_section("03", "高频风险", "按错误标签出现次数排序，对应受影响的评分维度。")
     _render_frequent_risks(build_frequent_risks(data))
+
+    # 04 数据补强方向
+    render_numbered_section("04", "数据补强方向", "由高频错误关联到既有优化计划中的数据补强动作与验证指标。")
     _render_data_actions(build_data_actions(data))
+
+    # 05 模型维度矩阵（evidence panel)
+    render_numbered_section(
+        "05",
+        "模型维度矩阵",
+        "行为模型，列为事实依据、推理完整性、风险识别、专业表达与边界意识。",
+    )
     _render_dimension_matrix(build_boundary_matrix(data))
 
     st.caption(
@@ -67,7 +96,6 @@ def render_model_boundary_page(data_bundle: dict) -> None:
 
 
 def _render_data_boundary(boundary: dict) -> None:
-    render_section_title("数据边界", "先看清结论建立在什么样本与版本上。")
     render_context_grid(
         [
             (
@@ -102,10 +130,6 @@ def _tier_score_text(summary: dict) -> str:
 
 
 def _render_usage_tiers(summaries: list[dict]) -> None:
-    render_section_title(
-        "模型可用边界",
-        "按风险等级、能力下限与是否触发红线错误，将任务归入三类使用边界。",
-    )
     for summary in summaries:
         level = _TIER_BADGE_LEVEL.get(summary["key"], "neutral")
         count = summary["count"]
@@ -136,7 +160,6 @@ def _render_usage_tiers(summaries: list[dict]) -> None:
 
 
 def _render_frequent_risks(risks: list[dict]) -> None:
-    render_section_title("高频风险", "按错误标签出现次数排序，对应受影响的评分维度。")
     if not risks:
         render_empty_state("当前暂无错误标签，无法归纳高频风险。")
         return
@@ -154,14 +177,14 @@ def _render_frequent_risks(risks: list[dict]) -> None:
             f'<td class="check-count">{risk["model_count"]}</td>'
             f'<td class="check-count">{risk["case_count"]}</td></tr>'
         )
-    render_html(
+    table_html = (
         f'<table class="check-table"><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>'
     )
+    render_evidence_panel("高频风险列表", table_html)
     st.caption("出现次数与涉及模型/案例数均按当前错误标签统计，反映样本内的集中风险点。")
 
 
 def _render_data_actions(actions: list[dict]) -> None:
-    render_section_title("数据补强方向", "由高频错误关联到既有优化计划中的数据补强动作与验证指标。")
     if not actions:
         render_empty_state("当前暂无可关联的数据补强动作。")
         return
@@ -175,16 +198,13 @@ def _render_data_actions(actions: list[dict]) -> None:
             f'<td>{escape(action["data_action"])}</td>'
             f'<td class="check-note">{escape(action["validation_metric"])}</td></tr>'
         )
-    render_html(
+    table_html = (
         f'<table class="check-table"><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>'
     )
+    render_evidence_panel("数据补强动作", table_html)
 
 
 def _render_dimension_matrix(matrix: dict) -> None:
-    render_section_title(
-        "模型维度矩阵",
-        "行为模型，列为事实依据、推理完整性、风险识别、专业表达与边界意识。",
-    )
     if not matrix["rows"]:
         render_empty_state("当前暂无分维度评分数据。")
         return
@@ -201,9 +221,10 @@ def _render_dimension_matrix(matrix: dict) -> None:
                 f'{escape(str(cell["text"]))}</span></td>'
             )
         body += f'<tr><th>{escape(row["model"])}</th>{cells}</tr>'
-    render_html(
+    table_html = (
         f'<table class="matrix-table"><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>'
     )
+    render_evidence_panel("维度达成矩阵", table_html)
     render_info_panel(
         "边界意识如何得出",
         "前四列为 Rubric 维度达成率（达成率 ≥85% 浅绿、60–85% 米色、<60% 浅玫瑰）；"

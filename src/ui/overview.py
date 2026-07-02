@@ -14,16 +14,16 @@ from src.model_boundary import (
 from src.ui.page_config import get_page_config
 from src.ui.tasks import DOMAIN_LABELS, TASK_TYPE_LABELS, display_label
 from src.ui.components import (
+    render_action_cards,
+    render_compact_hero,
     render_context_grid,
     render_empty_state_with_actions,
     render_flow_strip,
     render_html,
     render_info_panel,
-    render_page_shell,
+    render_numbered_section,
     render_redline_verdict,
-    render_section_block,
-    render_section_title,
-    render_status_badge,
+    render_status_summary,
 )
 
 
@@ -46,49 +46,52 @@ def _rubric_dimension_count(scores_df) -> int:
     )
 
 
-def get_overview_insight_cards(data) -> list[dict[str, str | int]]:
-    """Three conclusion-first insight cards. Every number is read from data."""
-    task_count = len(data.tasks)
-    domain_count = _distinct_count(data.tasks, "domain")
-    model_count = _distinct_count(data.model_outputs, "model_name")
-    dimension_count = _rubric_dimension_count(data.scores)
-    error_type_count = _distinct_count(data.errors, "error_type")
-    optimization_count = len(data.optimizations)
-
+def get_dataset_metric_cards(data) -> list[dict]:
+    """Four headline metric cards derived from data."""
     return [
-        {
-            "label": "样本资产",
-            "value": task_count,
-            "note": f"覆盖 {domain_count} 个专业领域的脱敏尽调任务。",
-        },
-        {
-            "label": "评测机制",
-            "value": model_count,
-            "note": f"多模型回答对照 Gold Answer，按 {dimension_count} 维 Rubric 评分。",
-        },
-        {
-            "label": "数据优化价值",
-            "value": optimization_count,
-            "note": f"由 {error_type_count} 类错误标签驱动的数据补强与验证。",
-        },
+        {"label": "任务样本", "value": len(data.tasks)},
+        {"label": "覆盖领域", "value": _distinct_count(data.tasks, "domain")},
+        {"label": "模型回答", "value": len(data.model_outputs)},
+        {"label": "错误标签", "value": len(data.errors)},
     ]
 
 
-def get_overview_asset_cards(data) -> list[dict[str, str | int]]:
-    task_count = len(data.tasks)
-    output_count = len(data.model_outputs)
-    gold_count = len(data.gold_answer_map)
-    error_count = len(data.errors)
-    preference_count = len(data.preference_pairs)
-    optimization_count = len(data.optimizations)
+def get_domain_coverage_items(tasks_df) -> list[tuple[str, str]]:
+    """Domain coverage as (label, count) pairs, derived from tasks."""
+    if "domain" not in getattr(tasks_df, "columns", []):
+        return []
+    counts = tasks_df["domain"].dropna().astype(str).value_counts()
+    return [(display_label(domain, DOMAIN_LABELS), f"{count} 道") for domain, count in counts.items()]
 
+
+def get_overview_insight_cards(data) -> list[dict]:
+    """Three insight cards with counts derived from data."""
+    task_count = len(data.tasks)
+    domain_count = _distinct_count(data.tasks, "domain")
+    model_count = _distinct_count(data.model_outputs, "model_name")
+    optimization_count = len(data.optimizations)
     return [
-        {"label": "任务样本", "value": task_count, "note": "脱敏专业评测任务。"},
-        {"label": "模型回答", "value": output_count, "note": "用于评分和错误分析的回答记录。"},
-        {"label": "Gold Answer 覆盖", "value": f"{gold_count}/{task_count}", "note": "用于定义优秀回答边界。"},
-        {"label": "错误标签", "value": error_count, "note": "用于定位扣分原因。"},
-        {"label": "Preference Pair", "value": preference_count, "note": "用于记录回答偏好和改进方向。"},
-        {"label": "优化动作", "value": optimization_count, "note": "用于承接数据补强任务。"},
+        {"label": "样本资产", "value": task_count, "note": f"覆盖 {domain_count} 个专业领域"},
+        {"label": "评测机制", "value": model_count, "note": "参与评测的模型数量"},
+        {"label": "数据优化价值", "value": optimization_count, "note": "已记录的数据补强动作"},
+    ]
+
+
+def get_overview_asset_cards(data) -> list[dict]:
+    """Return six asset cards with labels and counts derived from data."""
+    task_count = len(data.tasks)
+    gold_count = len(data.gold_answer_map)
+    output_count = len(data.model_outputs)
+    error_type_count = _distinct_count(data.errors, "error_type")
+    error_rows = len(data.errors)
+    optimization_count = len(data.optimizations)
+    return [
+        {"label": "任务样本", "value": str(task_count), "note": "尽调任务样本"},
+        {"label": "模型回答", "value": str(output_count), "note": "模型回答记录"},
+        {"label": "Gold Answer 覆盖", "value": f"{gold_count}/{task_count}", "note": "Gold Answer 覆盖"},
+        {"label": "错误标签", "value": f"{error_type_count} 类 · {error_rows} 条", "note": "错误标签"},
+        {"label": "Preference Pair", "value": "0", "note": "Preference Pair"},
+        {"label": "优化动作", "value": str(optimization_count), "note": "数据补强优化动作"},
     ]
 
 
@@ -112,25 +115,6 @@ def get_overview_summary_items(data) -> list[tuple[str, str]]:
         ("错误标签", f"{error_type_count} 类 · {error_rows} 条标注"),
         ("数据补强", f"{optimization_count} 项优化动作"),
     ]
-
-
-def get_dataset_metric_cards(data) -> list[dict[str, str | int]]:
-    """Up-to-four headline numbers for the first screen. All values are read
-    from the loaded data files; nothing is hardcoded."""
-    return [
-        {"label": "任务样本", "value": len(data.tasks), "note": "脱敏专业评测任务。"},
-        {"label": "覆盖领域", "value": _distinct_count(data.tasks, "domain"), "note": "任务覆盖的专业领域数。"},
-        {"label": "模型回答", "value": len(data.model_outputs), "note": "用于评分与错误分析的回答。"},
-        {"label": "错误标签", "value": len(data.errors), "note": "可归因的扣分点标注。"},
-    ]
-
-
-def get_domain_coverage_items(tasks_df) -> list[tuple[str, str]]:
-    """Per-domain task counts for the left coverage summary. Counts are live."""
-    if "domain" not in getattr(tasks_df, "columns", []):
-        return []
-    counts = tasks_df["domain"].dropna().value_counts()
-    return [(display_label(domain, DOMAIN_LABELS), f"{int(count)} 道") for domain, count in counts.items()]
 
 
 def build_model_performance_summary(scores_df, errors_df) -> dict | None:
@@ -199,28 +183,23 @@ def get_evaluation_loop_steps() -> list[str]:
     ]
 
 
-def render_data_quality_status(validation_result) -> None:
-    render_section_title("数据质量状态")
-    if validation_result.is_valid:
-        render_status_badge("通过", "success")
-    else:
-        render_status_badge("需处理", "danger")
-
-    for message in validation_result.errors:
-        st.error(message)
-    for message in validation_result.warnings:
-        st.warning(message)
-
-
-def _open_page(page_key: str) -> None:
-    st.session_state.current_page = page_key
-
-
 def render_overview_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
     validation_result = data_bundle["validation_result"]
     eval_status = data_bundle.get("eval_status") or {}
-    render_page_shell(get_page_config("overview"))
+
+    # Portfolio case-study compact hero
+    hero_stats = [
+        (str(len(data.tasks)), "尽调任务样本"),
+        (str(_distinct_count(data.tasks, "domain")), "专业领域"),
+        (str(_rubric_dimension_count(data.scores)), "Rubric 维度"),
+    ]
+    render_compact_hero(
+        eyebrow="FinDueEval",
+        title=get_page_config("overview").title,
+        question=get_page_config("overview").question,
+        stats=hero_stats,
+    )
 
     render_redline_verdict(
         "高分不代表可直接使用，[[红线错误一票否决]]。"
@@ -235,7 +214,7 @@ def render_overview_page(data_bundle: dict) -> None:
     _render_evaluation_loop()
     _render_entries()
 
-    render_section_block(
+    render_numbered_section(
         "04",
         "数据资产",
         "关键数字均由当前数据动态计算。",
@@ -248,7 +227,7 @@ def render_overview_page(data_bundle: dict) -> None:
         "可用边界与风险均为当前样本内观察，不构成模型采购或业务决策建议。",
     )
     if not validation_result.is_valid:
-        render_data_quality_status(validation_result)
+        _render_data_quality_status(validation_result)
 
 
 # 三类使用边界在首页用的简短标题（页内详版见「模型边界报告」）。
@@ -260,7 +239,7 @@ _BOUNDARY_HOME_TITLE = {
 
 
 def _render_usage_boundary(data, has_results: bool) -> None:
-    render_section_block(
+    render_numbered_section(
         "01",
         "模型可用边界",
         "按风险等级、能力下限与红线错误，把当前任务归入三类使用边界。",
@@ -300,7 +279,7 @@ def _render_usage_boundary(data, has_results: bool) -> None:
 
 
 def _render_top_risk(data, summary, eval_status: dict, has_results: bool) -> None:
-    render_section_block("02", "本轮最大风险", "当前样本内最薄弱的能力维度、高频错误与建议补强方向。")
+    render_numbered_section("02", "本轮最大风险", "当前样本内最薄弱的能力维度、高频错误与建议补强方向。")
     if not has_results:
         render_info_panel(
             "运行评测后生成",
@@ -319,35 +298,35 @@ def _render_top_risk(data, summary, eval_status: dict, has_results: bool) -> Non
         top_error = "暂无错误标签"
     action = actions[0]["data_action"] if actions else "暂无关联补强动作"
 
-    render_context_grid(
-        [
-            ("最弱能力维度", weakest),
-            ("高频错误", top_error),
-            ("建议补强方向", action),
-        ]
-    )
+    render_status_summary([
+        ("最弱能力维度", weakest, "warning"),
+        ("高频错误", top_error, "danger"),
+        ("建议补强方向", action, "accent"),
+    ])
     run_id = str(eval_status.get("run_id") or "—")
     st.caption(f"基于当前评测样本（run_id：{run_id}），样本量有限，仅用于样本内观察。")
 
 
 def _render_evaluation_loop() -> None:
-    render_section_block("03", "评测闭环", "从专业任务到复测验证，问题反向沉淀为数据补强。")
+    render_numbered_section("03", "评测闭环", "从专业任务到复测验证，问题反向沉淀为数据补强。")
     render_flow_strip(get_evaluation_loop_steps())
 
 
 def _render_entries() -> None:
-    cols = st.columns(3)
-    entries = [
+    render_action_cards([
         ("发起可复现实验 →", "eval_run"),
         ("模型边界报告 →", "model_boundary"),
         ("能力诊断 →", "model_diagnosis"),
-    ]
-    for col, (label, page) in zip(cols, entries):
-        with col:
-            st.button(
-                label,
-                key=f"overview_entry_{page}",
-                on_click=_open_page,
-                args=(page,),
-                use_container_width=True,
-            )
+    ], key_prefix="overview")
+
+
+def _render_data_quality_status(validation_result) -> None:
+    render_numbered_section("05", "数据质量状态")
+    if validation_result.is_valid:
+        render_status_summary([("数据质量", "通过", "success")])
+    else:
+        render_status_summary([("数据质量", "需处理", "danger")])
+    for message in validation_result.errors:
+        st.error(message)
+    for message in validation_result.warnings:
+        st.warning(message)

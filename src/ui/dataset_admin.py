@@ -18,9 +18,12 @@ from app.services import dataset_service as ds
 from src.data_service import load_label_taxonomy
 from src.gold_quality import field_list, field_text
 from src.ui.components import (
+    render_compact_hero,
     render_empty_state,
+    render_evidence_panel,
     render_html,
-    render_page_shell,
+    render_info_panel,
+    render_numbered_section,
     render_section_title,
 )
 from src.ui.page_config import get_page_config
@@ -35,17 +38,13 @@ from src.ui.tasks import (
 
 CRUD_NOTE = "当前 CRUD 写入 SQLite；CSV/JSON/YAML 仍为初始化 seed 和可审阅数据资产。"
 
-# 难度与风险等级使用固定的展示词表（非业务数据），其余可选项从现有数据动态取值。
 _DIFFICULTY_OPTIONS = list(DIFFICULTY_LABELS.keys())
 _RISK_OPTIONS = ["", "高", "中", "低"]
 _STATUS_BADGE = {"active": ("启用中", "success"), "inactive": ("已停用", "neutral")}
 
-# 错误标签默认低饱和呈现：仅显式标为「红线/高」的严重度使用浅玫瑰底（danger），
-# 中等用米色（warning），其余保持中性，避免把全部错误标签渲染成红色。
 _RED_LINE_TOKENS = {"红线", "高", "high", "critical"}
 _MID_TOKENS = {"中", "medium"}
 _PRIORITY_BADGE = {"高": "warning", "中": "neutral", "低": "neutral"}
-# 配置校验问题：error 用浅玫瑰、warning 用米色。
 _ISSUE_BADGE = {"error": "danger", "warning": "warning"}
 
 
@@ -53,7 +52,12 @@ _ISSUE_BADGE = {"error": "danger", "warning": "warning"}
 # 入口
 # --------------------------------------------------------------------------- #
 def render_dataset_admin_page(data_bundle: dict) -> None:
-    render_page_shell(get_page_config("dataset_admin"))
+    config = get_page_config("dataset_admin")
+    render_compact_hero(
+        eyebrow="FinDueEval",
+        title=config.title,
+        question=config.question,
+    )
     st.caption(CRUD_NOTE)
     _render_rerun_prompt()
 
@@ -61,6 +65,7 @@ def render_dataset_admin_page(data_bundle: dict) -> None:
         _render_uninitialized(data_bundle)
         return
 
+    # Admin pages keep tab navigation but apply unified section styling within tabs
     tasks_tab, gold_tab, rubric_tab, label_tab, action_tab = st.tabs(
         ["任务题管理", "Gold Answer 管理", "Rubric 管理", "错误标签管理", "数据补强动作管理"]
     )
@@ -95,7 +100,7 @@ def _render_uninitialized(data_bundle: dict) -> None:
     data = data_bundle.get("data")
     if data is None or data.tasks.empty:
         return
-    render_section_title("当前任务题（只读）", "数据来自 seed 文件，初始化后可在此维护。")
+    render_numbered_section("01", "当前任务题（只读）", "数据来自 seed 文件，初始化后可在此维护。")
     _render_task_table(data.tasks.to_dict(orient="records"))
 
 
@@ -106,7 +111,7 @@ def _render_task_admin() -> None:
     tasks = ds.list_task_cases()
     records = tasks.to_dict(orient="records")
 
-    render_section_title("任务清单", "含启用与停用任务，停用任务以软删除标记保留。")
+    render_numbered_section("01", "任务清单", "含启用与停用任务，停用任务以软删除标记保留。")
     if records:
         _render_task_table(records)
     else:
@@ -145,15 +150,16 @@ def _render_task_table(records: list[dict]) -> None:
             f"<td>{escape(display_label(row.get('risk_level'), RISK_LABELS))}</td>"
             f'<td><span class="status-badge status-{level}">{escape(label)}</span></td></tr>'
         )
-    render_html(
+    table_html = (
         f'<table class="check-table"><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>'
     )
+    render_evidence_panel("任务列表", table_html)
 
 
 def _render_task_detail(records: list[dict]) -> None:
     if not records:
         return
-    render_section_title("任务详情", "选择任务查看完整字段。")
+    render_numbered_section("02", "任务详情", "选择任务查看完整字段。")
     case_ids = [str(r.get("case_id")) for r in records]
     selected = st.selectbox("查看任务", case_ids, key="admin_task_detail_select")
     row = next((r for r in records if str(r.get("case_id")) == selected), None)
@@ -183,7 +189,7 @@ def _render_task_detail(records: list[dict]) -> None:
 
 
 def _render_task_create_form(records: list[dict]) -> None:
-    render_section_title("新增任务", "新建一道任务题，写入 SQLite。")
+    render_numbered_section("03", "新增任务", "新建一道任务题，写入 SQLite。")
     with st.form("admin_task_create", clear_on_submit=True):
         case_id = st.text_input("任务编号 case_id", help="唯一编号，例如 CM-016。")
         col1, col2 = st.columns(2)
@@ -235,7 +241,7 @@ def _render_task_create_form(records: list[dict]) -> None:
 def _render_task_edit_form(records: list[dict]) -> None:
     if not records:
         return
-    render_section_title("编辑 / 停用任务", "修改任务字段，或将任务停用（软删除）。")
+    render_numbered_section("04", "编辑 / 停用任务", "修改任务字段，或将任务停用（软删除）。")
     case_ids = [str(r.get("case_id")) for r in records]
     selected = st.selectbox("选择任务", case_ids, key="admin_task_edit_select")
     row = next((r for r in records if str(r.get("case_id")) == selected), None)
@@ -313,7 +319,7 @@ def _render_status_toggle(row: dict, case_id: str) -> None:
 # --------------------------------------------------------------------------- #
 def _render_gold_admin() -> None:
     case_ids = ds.list_gold_answer_case_ids()
-    render_section_title("编辑 Gold Answer", "在原始条目上就地修改，raw_json 无损保留其余内容。")
+    render_numbered_section("01", "编辑 Gold Answer", "在原始条目上就地修改，raw_json 无损保留其余内容。")
     if not case_ids:
         render_empty_state("暂无 Gold Answer 记录。")
         return
@@ -376,9 +382,8 @@ def _render_weight_check(records: list[dict]) -> None:
     weight_sum = sum(int(r.get("weight") or 0) for r in records)
     totals = {int(r.get("total")) for r in records if r.get("total") is not None}
     total = next(iter(totals)) if len(totals) == 1 else None
-    render_section_title("评分维度", f"共 {len(records)} 个维度，权重合计 {weight_sum}。")
+    render_numbered_section("01", "评分维度", f"共 {len(records)} 个维度，权重合计 {weight_sum}。")
     if total is not None and weight_sum != total:
-        # 权重合计异常给出提示，但不阻断保存。
         st.warning(f"当前权重合计 {weight_sum} 与声明满分 {total} 不一致，请按需调整（不影响保存）。")
 
 
@@ -401,13 +406,14 @@ def _render_rubric_table(records: list[dict]) -> None:
             f'<td class="check-note">{escape(_text(row.get("deduction_rules"), "待补充"))}</td>'
             f'<td class="check-note">{escape(linked_text)}</td></tr>'
         )
-    render_html(
+    table_html = (
         f'<table class="check-table"><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>'
     )
+    render_evidence_panel("Rubric 维度列表", table_html)
 
 
 def _render_rubric_edit_form(records: list[dict]) -> None:
-    render_section_title("编辑维度", "维护权重、满分标准与扣分规则。")
+    render_numbered_section("02", "编辑维度", "维护权重、满分标准与扣分规则。")
     fields = [str(r.get("dimension_field")) for r in records]
     name_by_field = {str(r.get("dimension_field")): str(r.get("name") or r.get("dimension_field")) for r in records}
     selected = st.selectbox(
@@ -463,7 +469,7 @@ def _severity_level(value: object) -> str:
 
 def _render_error_label_admin() -> None:
     labels = ds.list_error_taxonomy().to_dict(orient="records")
-    render_section_title("错误标签清单", "含启用与停用标签；默认低饱和呈现，仅红线/高严重度使用浅玫瑰底。")
+    render_numbered_section("01", "错误标签清单", "含启用与停用标签；默认低饱和呈现，仅红线/高严重度使用浅玫瑰底。")
     if labels:
         _render_label_table(labels)
     else:
@@ -493,9 +499,10 @@ def _render_label_table(records: list[dict]) -> None:
             f'<td class="check-note">{escape(_text(row.get("validation_metric"), "待补充"))}</td>'
             f'<td><span class="status-badge status-{s_level}">{escape(s_label)}</span></td></tr>'
         )
-    render_html(
+    table_html = (
         f'<table class="check-table"><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>'
     )
+    render_evidence_panel("错误标签列表", table_html)
 
 
 def _dimension_options() -> list[str]:
@@ -509,7 +516,7 @@ def _dimension_options() -> list[str]:
 
 
 def _render_label_create_form(records: list[dict]) -> None:
-    render_section_title("新增错误标签", "登记一类错误标签，写入 SQLite。")
+    render_numbered_section("02", "新增错误标签", "登记一类错误标签，写入 SQLite。")
     dimensions = _dimension_options()
     with st.form("admin_label_create", clear_on_submit=True):
         error_label = st.text_input("错误标签 error_label")
@@ -548,7 +555,7 @@ def _render_label_create_form(records: list[dict]) -> None:
 def _render_label_edit_form(records: list[dict]) -> None:
     if not records:
         return
-    render_section_title("编辑 / 停用错误标签", "修改标签字段，或将标签停用（保留历史，不物理删除）。")
+    render_numbered_section("03", "编辑 / 停用错误标签", "修改标签字段，或将标签停用（保留历史，不物理删除）。")
     labels = [str(r.get("error_label")) for r in records]
     selected = st.selectbox("选择错误标签", labels, key="admin_label_edit_select")
     row = next((r for r in records if str(r.get("error_label")) == selected), None)
@@ -607,7 +614,7 @@ def _render_label_edit_form(records: list[dict]) -> None:
 
 
 def _render_config_check() -> None:
-    render_section_title("配置校验", "识别无效标签、缺少补强动作的高频错误，以及关联不存在标签的补强动作。")
+    render_numbered_section("04", "配置校验", "识别无效标签、缺少补强动作的高频错误，以及关联不存在标签的补强动作。")
     issues = ds.evaluate_error_configuration()
     if not issues:
         render_html('<div class="empty-state">当前错误标签与补强动作配置一致，无待处理问题。</div>')
@@ -621,10 +628,11 @@ def _render_config_check() -> None:
             f'<td class="check-key">{escape(str(issue.target))}</td>'
             f'<td class="check-note">{escape(issue.message)}</td></tr>'
         )
-    render_html(
+    table_html = (
         '<table class="check-table"><thead><tr><th>级别</th><th>对象</th><th>说明</th></tr></thead>'
         f"<tbody>{body}</tbody></table>"
     )
+    render_evidence_panel("配置校验结果", table_html)
 
 
 # --------------------------------------------------------------------------- #
@@ -632,7 +640,7 @@ def _render_config_check() -> None:
 # --------------------------------------------------------------------------- #
 def _render_action_admin() -> None:
     actions = ds.list_improvement_actions().to_dict(orient="records")
-    render_section_title("补强动作清单", "每条补强动作关联到一个错误标签，写入即被错误归因页读取。")
+    render_numbered_section("01", "补强动作清单", "每条补强动作关联到一个错误标签，写入即被错误归因页读取。")
     if actions:
         _render_action_table(actions)
     else:
@@ -661,13 +669,14 @@ def _render_action_table(records: list[dict]) -> None:
             f"<td>{p_badge}</td>"
             f'<td><span class="status-badge status-{s_level}">{escape(s_label)}</span></td></tr>'
         )
-    render_html(
+    table_html = (
         f'<table class="check-table"><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>'
     )
+    render_evidence_panel("补强动作列表", table_html)
 
 
 def _render_action_create_form() -> None:
-    render_section_title("新增补强动作", "补强动作必须关联到一个已登记的错误标签。")
+    render_numbered_section("02", "新增补强动作", "补强动作必须关联到一个已登记的错误标签。")
     labels = sorted(ds.active_error_labels())
     if not labels:
         render_empty_state("请先在「错误标签管理」中登记错误标签，再新增补强动作。")
@@ -705,7 +714,7 @@ def _render_action_create_form() -> None:
 def _render_action_edit_form(records: list[dict]) -> None:
     if not records:
         return
-    render_section_title("编辑 / 停用补强动作", "修改动作字段、改换关联标签，或将动作停用（软删除）。")
+    render_numbered_section("03", "编辑 / 停用补强动作", "修改动作字段、改换关联标签，或将动作停用（软删除）。")
     labels = sorted(ds.active_error_labels())
     options = [int(r.get("id")) for r in records if r.get("id") is not None]
     id_to_row = {int(r.get("id")): r for r in records if r.get("id") is not None}

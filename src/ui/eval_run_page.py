@@ -19,12 +19,14 @@ from app.services import dataset_service as ds
 from app.services import eval_runner as er
 from app.services import eval_state
 from app.services import scorer as sc
-from app.services.data_resolver import build_data_context_info
 from src.ui.components import (
+    render_action_cards,
+    render_compact_hero,
     render_empty_state,
+    render_evidence_panel,
     render_html,
     render_info_panel,
-    render_page_shell,
+    render_numbered_section,
     render_section_title,
 )
 from src.ui.page_config import get_page_config
@@ -34,7 +36,6 @@ BOUNDARY_NOTE = (
     "模型回答仅用于评测，不构成金融、法律或投资建议；评分为裁判模型建议分，需人工复核确认后归档。"
 )
 
-# 现场实验是面试官可选功能，不作为项目主线；离线样本评价才是默认展示依据。
 REPRODUCIBILITY_NOTE = (
     "本页是面试官可选的现场可复现实验，不是项目主线。这里的“本次现场运行”受 API Key、网络、"
     "模型版本与限流影响，结果可能波动；它默认进入草稿（待复核），不会覆盖各分析页默认展示的"
@@ -54,7 +55,13 @@ def _set_page(page_key: str) -> None:
 
 def render_eval_run_page(data_bundle: dict) -> None:
     base = data_bundle["base"]
-    render_page_shell(get_page_config("eval_run"))
+
+    config = get_page_config("eval_run")
+    render_compact_hero(
+        eyebrow="FinDueEval",
+        title=config.title,
+        question=config.question,
+    )
     render_info_panel("离线样本评价 vs 本次现场运行", REPRODUCIBILITY_NOTE)
     render_info_panel("评测边界", BOUNDARY_NOTE)
 
@@ -64,23 +71,35 @@ def render_eval_run_page(data_bundle: dict) -> None:
         return
     task_records = tasks_df.to_dict("records")
 
-    # 步骤指示器
+    # Step rail
     _render_step_rail()
 
     has_run = eval_state.has_run()
-    with st.expander("步骤 1：选择 Provider、模型与任务", expanded=not has_run):
+
+    # 01 选择配置
+    render_numbered_section("01", "选择配置", "选择 Provider、模型、任务与生成参数。")
+    with st.expander("展开配置", expanded=not has_run):
         provider_name = _render_config_controls()
         model_ids = _render_model_selector(provider_name)
         selected_tasks = _render_task_selector(task_records)
         temperature, max_tokens = _render_parameters()
         _render_run_button(provider_name, model_ids, selected_tasks, temperature, max_tokens)
 
+    # 02 运行结果
+    render_numbered_section("02", "运行结果", "查看本次模型调用状态、回答与元信息。")
     _render_results()
 
-    with st.expander("步骤 2：裁判自动评分", expanded=False):
+    # 03 裁判自动评分
+    render_numbered_section("03", "裁判自动评分", "由裁判模型对照 Gold Answer 与 Rubric 打出建议分。")
+    with st.expander("展开评分", expanded=False):
         _render_scoring(base, provider_name, task_records)
 
+    # 04 评分结果
+    render_numbered_section("04", "评分结果", "建议分汇总与人工复核入口。")
     _render_score_results()
+
+    # 05 下一步
+    render_numbered_section("05", "下一步", "运行与评分完成后，可前往分析页查看结论。")
     _render_completion_cta()
 
 
@@ -91,7 +110,6 @@ def _render_step_rail() -> None:
         current = 1
     if eval_state.get_last_score() is not None:
         current = 2
-    # 复核状态由数据层决定，页面渲染时不再实时计算
     if current >= 2:
         current = min(current, len(steps) - 1)
     html = '<div class="loop-rail">'
@@ -126,8 +144,6 @@ def _render_config_controls() -> str:
 
 
 def _render_connectivity_check(provider_name: str) -> None:
-    """连通性检查：核对 API Key 是否配置、list_models 是否成功，回显 provider / mode /
-    错误码 / 错误信息；全程不回显或泄露 API Key 本身。"""
     if st.button("连通性检查", key="live_eval_connectivity"):
         provider = get_text_provider(prefer=provider_name)
         key_configured = sf.is_configured() if provider_name == "siliconflow" else (provider.name == "mock")
@@ -243,7 +259,6 @@ def _render_run_button(provider_name, model_ids, selected_tasks, temperature, ma
         status.empty()
         persisted = er.persist_compare_result(result)
         eval_state.set_last_run(result)
-        # 修复：记录落库的真实返回值，而非是否为 mock。
         st.session_state["live_eval_persisted"] = persisted
         st.rerun()
 
@@ -316,9 +331,10 @@ def _render_results_table(result) -> None:
             f'<td class="check-count">{escape(_n(outcome.latency_ms))}</td>'
             f'<td class="check-count">{escape(str(outcome.answer_length))}</td></tr>'
         )
-    render_html(
+    table_html = (
         f'<table class="check-table"><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>'
     )
+    render_evidence_panel("运行明细", table_html)
 
 
 def _render_answer_viewer(result) -> None:
@@ -445,9 +461,10 @@ def _render_score_compare_table(score_result, dimensions) -> None:
             f"<td>{escape(_dash(o.error_code))}</td>"
             f"<td>{escape(_short(o.error_message))}</td></tr>"
         )
-    render_html(
+    table_html = (
         f'<table class="check-table"><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>'
     )
+    render_evidence_panel("评分对比表", table_html)
     st.caption("裁判状态为 failed 且错误码为 judge_parse_error 时，表示裁判输出无法解析为有效 JSON 评分。")
 
 
@@ -492,17 +509,11 @@ def _render_score_review(score_result, dimensions) -> None:
 def _render_completion_cta() -> None:
     if not eval_state.has_run():
         return
-    render_section_title("下一步", "运行与评分完成后，可前往分析页查看结论。")
-    c1, c2, c3 = st.columns(3)
-    if c1.button("查看单题深度评测 →", key="eval_run_to_case_detail"):
-        _set_page("case_detail")
-        st.rerun()
-    if c2.button("查看模型能力指纹 →", key="eval_run_to_diagnosis"):
-        _set_page("model_diagnosis")
-        st.rerun()
-    if c3.button("查看模型边界报告 →", key="eval_run_to_boundary"):
-        _set_page("model_boundary")
-        st.rerun()
+    render_action_cards([
+        ("查看单题深度评测 →", "case_detail"),
+        ("查看模型能力指纹 →", "model_diagnosis"),
+        ("查看模型边界报告 →", "model_boundary"),
+    ], key_prefix="eval_run")
 
 
 def _dedupe(items: list[str]) -> list[str]:
