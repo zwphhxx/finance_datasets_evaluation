@@ -27,15 +27,20 @@ from src.gold_quality import field_list, field_text, field_value
 from src.metrics import get_task_by_case_id, merge_case_outputs_with_scores
 from src.ui.components import (
     render_card,
+    render_clean_list,
     render_compact_hero,
     render_empty_state,
     render_evidence_panel,
     render_html,
     render_info_panel,
+    render_inline_status,
+    render_key_value_list,
     render_numbered_section,
     render_section_title,
     render_status_badge,
     render_tag_cloud,
+    render_text_block,
+    render_two_column_panel,
 )
 from src.ui.page_config import get_page_config
 from src.ui.tasks import (
@@ -294,15 +299,19 @@ def _render_selected_task_detail(data, rows) -> None:
     scenario = _clean_text(task.get("scenario"), fallback=_clean_text(task.get("question"), fallback="暂无任务场景"))
     context = _clean_text(task.get("context"), fallback="暂无背景材料")
     capability = _clean_text(task.get("expected_capability"), fallback="暂无任务要求")
-    fields = [("任务场景", scenario), ("任务背景", context), ("任务要求", capability)]
-    render_card(
-        "".join(
-            f'<div class="fact-field"><div class="fact-label">{escape(label)}</div>'
-            f'<div class="fact-value">{escape(value)}</div></div>'
-            for label, value in fields
-        ),
-        class_name="fact-card",
-    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        render_text_block("任务场景", scenario)
+        render_text_block("任务背景", context)
+    with col2:
+        render_text_block("任务要求", capability)
+        render_key_value_list([
+            ("领域", display_label(task.get("domain"), DOMAIN_LABELS)),
+            ("类型", display_label(task.get("task_type"), TASK_TYPE_LABELS)),
+            ("难度", DIFFICULTY_LABELS.get(_clean_text(task.get("difficulty")), _clean_text(task.get("difficulty")))),
+            ("风险", RISK_LABELS.get(_clean_text(task.get("risk_level")), _clean_text(task.get("risk_level")))),
+        ])
 
     _render_gold_summary(data.gold_answer_map.get(selected))
     _render_covered_models(data, selected)
@@ -317,29 +326,29 @@ def _render_gold_summary(gold) -> None:
     quality = evaluate_gold_quality(gold)
     status_class = "success" if quality["is_usable"] else "warning"
     render_status_badge(f"Gold Answer {quality['status']}", status_class)
-    render_info_panel("Gold Answer 摘要", field_text(gold, "core_conclusion", "暂无标准结论"))
 
-    render_info_panel(
-        "评测边界",
-        f"边界条件：{field_text(gold, 'boundary_conditions', '暂无记录')}  |  "
-        f"不可接受错误：{field_text(gold, 'unacceptable_errors', '暂无记录')}",
-    )
+    col1, col2 = st.columns(2)
+    with col1:
+        render_text_block("标准结论", field_text(gold, "core_conclusion", "暂无记录"))
+        render_text_block("关键依据", field_text(gold, "key_evidence", "暂无记录"))
+    with col2:
+        render_text_block("边界条件", field_text(gold, "boundary_conditions", "暂无记录"))
 
-    must_points = field_list(gold, "must_have_points")
-    if must_points:
-        render_html(
-            '<div class="fact-label">必须覆盖点</div><div class="boundary-list">'
-            + "".join(f'<div class="point-item">{escape(str(point))}</div>' for point in must_points)
-            + "</div>"
-        )
-
-    red_lines = field_list(gold, "unacceptable_errors")
-    if red_lines:
-        render_html(
-            '<div class="fact-label">不可接受错误（红线）</div><div class="boundary-list">'
-            + "".join(f'<div class="redline-item">{escape(str(item))}</div>' for item in red_lines)
-            + "</div>"
-        )
+    col3, col4 = st.columns(2)
+    with col3:
+        render_text_block("必须覆盖点", "")
+        must_points = field_list(gold, "must_have_points")
+        if must_points:
+            render_clean_list(must_points)
+        else:
+            st.caption("暂无")
+    with col4:
+        render_text_block("不可接受错误（红线）", "")
+        red_lines = field_list(gold, "unacceptable_errors")
+        if red_lines:
+            render_clean_list(red_lines)
+        else:
+            st.caption("暂无")
 
 
 def _render_covered_models(data, case_id: str) -> None:
@@ -359,8 +368,7 @@ def _render_covered_models(data, case_id: str) -> None:
         items.append((model_name, score_text))
 
     render_section_title("已覆盖模型回答", f"当前任务共 {len(items)} 个模型回答。")
-    from src.ui.components import render_context_grid
-    render_context_grid(items)
+    render_key_value_list(items)
 
 
 # --------------------------------------------------------------------------- #

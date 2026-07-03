@@ -1512,6 +1512,104 @@ header,
     background: var(--fde-blue-soft);
     border-color: var(--fde-blue-border);
 }
+/* -------------------------------------------------------------------------- */
+/* Clean, low-card layout helpers (UI refinement pass).                        */
+/* Used to reduce card walls and improve information hierarchy.               */
+/* -------------------------------------------------------------------------- */
+.kv-list {
+    display: grid;
+    grid-template-columns: minmax(90px, auto) 1fr;
+    gap: 0.35rem 0.9rem;
+    font-size: 0.94rem;
+    line-height: 1.55;
+    margin: 0.4rem 0 0.9rem 0;
+}
+.kv-list dt {
+    color: var(--fde-muted);
+    font-weight: 700;
+    font-size: 0.82rem;
+}
+.kv-list dd {
+    color: var(--fde-text);
+    margin: 0;
+}
+.text-block {
+    margin: 0.4rem 0 0.9rem 0;
+}
+.text-block-label {
+    color: var(--fde-muted);
+    font-size: 0.82rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+.text-block-body {
+    color: var(--fde-text);
+    font-size: 0.95rem;
+    line-height: 1.65;
+    white-space: pre-wrap;
+}
+.two-col-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 1.25rem;
+    margin: 0.4rem 0 1rem 0;
+}
+@media (max-width: 820px) {
+    .two-col-panel { grid-template-columns: 1fr; }
+}
+.two-col-panel .col {
+    min-width: 0;
+}
+.inline-status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 1.2rem;
+    font-size: 0.9rem;
+    color: var(--fde-muted);
+    margin: 0.3rem 0 0.9rem 0;
+}
+.inline-status strong {
+    color: var(--fde-text);
+    font-weight: 650;
+}
+.clean-list {
+    list-style: none;
+    margin: 0.4rem 0 0.9rem 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.clean-list li {
+    position: relative;
+    padding-left: 1.1rem;
+    color: var(--fde-text);
+    font-size: 0.94rem;
+    line-height: 1.55;
+}
+.clean-list li::before {
+    content: "•";
+    position: absolute;
+    left: 0;
+    color: var(--fde-muted);
+}
+.clean-list-item {
+    position: relative;
+    padding-left: 1.1rem;
+    color: var(--fde-text);
+    font-size: 0.94rem;
+    line-height: 1.55;
+    margin: 0.35rem 0;
+}
+.clean-list-item::before {
+    content: "•";
+    position: absolute;
+    left: 0;
+    color: var(--fde-muted);
+}
+.clean-list-item.red::before {
+    color: var(--fde-red);
+}
 </style>
 """
 
@@ -2445,3 +2543,53 @@ def render_cta_row(actions: list[tuple[str, str]], key_prefix: str = "cta") -> N
             if st.button(label, key=f"{key_prefix}_row_{page_key}", use_container_width=True):
                 st.session_state.current_page = page_key
                 st.rerun()
+
+
+def render_key_value_list(items: list[tuple[str, str]]) -> None:
+    """Render a clean key-value list without card borders.
+
+    `items` is a list of (label, value) tuples.
+    """
+    pairs = "".join(
+        f'<dt>{escape(str(label))}</dt><dd>{escape(str(value))}</dd>'
+        for label, value in items
+    )
+    render_html(f'<dl class="kv-list">{pairs}</dl>')
+
+
+def render_text_block(label: str, text: str) -> None:
+    """Render a simple labelled text block, no card."""
+    render_html(
+        f'<div class="text-block">'
+        f'<div class="text-block-label">{escape(str(label))}</div>'
+        f'<div class="text-block-body">{escape(str(text))}</div>'
+        f'</div>'
+    )
+
+
+def render_two_column_panel(left_html: str, right_html: str) -> None:
+    """Render a two-column panel for side-by-side content."""
+    render_html(
+        f'<div class="two-col-panel">'
+        f'<div class="col">{left_html}</div>'
+        f'<div class="col">{right_html}</div>'
+        f'</div>'
+    )
+
+
+def render_inline_status(items: list[tuple[str, str]]) -> None:
+    """Render a restrained inline status line: label + value pairs.
+
+    `items` is a list of (label, value) tuples.
+    """
+    parts = "".join(
+        f'<span>{escape(str(label))}: <strong>{escape(str(value))}</strong></span>'
+        for label, value in items
+    )
+    render_html(f'<div class="inline-status">{parts}</div>')
+
+
+def render_clean_list(items: list[str]) -> None:
+    """Render a clean bullet list without card borders."""
+    rows = "".join(f'<li>{escape(str(item))}</li>' for item in items)
+    render_html(f'<ul class="clean-list">{rows}</ul>')

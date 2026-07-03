@@ -22,11 +22,13 @@ from src.ui.components import (
     render_context_grid,
     render_editorial_list,
     render_empty_state,
-    render_info_panel,
+    render_evidence_block,
+    render_key_value_list,
     render_numbered_section,
     render_section_title,
     render_status_badge,
     render_status_summary,
+    render_text_block,
 )
 
 
@@ -66,7 +68,7 @@ def _render_formal_conclusions(seed_scores, confirmed_live, seed_errors) -> None
 
     summary = cc.summarize_formal(seed_scores, confirmed_live)
     if summary["total_rows"] == 0:
-        render_info_panel(
+        render_text_block(
             "暂无正式结论",
             "当前没有可纳入正式结论的评分。运行一次真实评测并经人工复核归档后，结论会在这里汇总。",
         )
@@ -115,7 +117,7 @@ def _render_model_boundaries(seed_scores, confirmed_live, seed_errors) -> None:
 
     combined = cc.combine_formal_scores(seed_scores, confirmed_live)
     if combined.empty or "total_score" not in combined.columns:
-        render_info_panel(
+        render_text_block(
             "暂无边界数据",
             "运行评测并经人工复核后，此处按当前样本生成三类使用边界。",
         )
@@ -147,13 +149,15 @@ def _render_model_boundaries(seed_scores, confirmed_live, seed_errors) -> None:
         ("不可直接使用", "danger", not_direct_count, not_direct_models, "总分 <60 或触发红线，不建议直接采用。"),
     ]
 
+    rows = []
     for title, level, count, models, desc in boundaries:
         if count == 0:
             detail = "当前样本中暂无归入此类的模型。"
         else:
             model_list = "、".join(f"{m}（{a:.1f}）" for m, a in models[:3])
             detail = f"{model_list} 等 {count} 个模型。{desc}"
-        render_info_panel(f"{title} ({count})", detail)
+        rows.append((title, detail))
+    render_key_value_list(rows)
 
     st.caption("红线错误一票否决：触发高严重度红线错误的模型不计入「可直接使用」。边界结论来自当前样本内观察，不代表模型整体能力。")
 
@@ -170,7 +174,7 @@ def _render_model_capability_fingerprint(seed_scores, confirmed_live, seed_error
 
     combined = cc.combine_formal_scores(seed_scores, confirmed_live)
     if combined.empty or "model_name" not in combined.columns:
-        render_info_panel(
+        render_text_block(
             "暂无指纹数据",
             "运行评测并经人工复核后，此处生成各模型能力指纹。",
         )
@@ -220,7 +224,7 @@ def _render_drafts(pending_live, responses, db_ready: bool) -> None:
         if db_ready:
             st.caption("当前没有待复核的现场评分。发起一次真实评测并评分后，草稿会显示在这里。")
         else:
-            render_info_panel(
+            render_text_block(
                 "尚未初始化 SQLite",
                 "初始化 SQLite 运行时数据层后，现场新增评测可在此暂存为草稿并归档；当前仅展示 seed 已有结论。",
             )
@@ -294,7 +298,7 @@ def _render_draft_entries() -> None:
 # --------------------------------------------------------------------------- #
 def _render_archive_explainer(db_ready: bool) -> None:
     render_numbered_section("05", "人工复核后归档", "把现场草稿转为正式结论的处理方式。")
-    render_info_panel(
+    render_text_block(
         "复核与归档流程",
         "人工可在草稿条目中修改各维度分数与复核说明；点击「确认并归档」后，该条 review_status "
         "变为 confirmed，下次进入正式评测结论汇总。seed 已有结论默认只读，新增与复核结果只写入 "

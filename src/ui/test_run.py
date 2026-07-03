@@ -26,8 +26,10 @@ from src.ui.components import (
     render_evidence_panel,
     render_html,
     render_info_panel,
+    render_inline_status,
     render_numbered_section,
     render_section_title,
+    render_text_block,
 )
 from src.ui.page_config import get_page_config
 from src.ui.tasks import TASK_TYPE_LABELS, display_label, summarize_text
@@ -303,19 +305,13 @@ def _render_results() -> None:
 
 def _render_run_summary(result) -> None:
     summary = er.summarize_outcomes(result.outcomes)
-    cards = [
-        ("成功", summary.success, "success"),
-        ("空回答", summary.empty_response, "warning" if summary.empty_response else "neutral"),
-        ("超时", summary.timeout, "danger" if summary.timeout else "neutral"),
-        ("鉴权/权限失败", summary.auth, "danger" if summary.auth else "neutral"),
-        ("其他失败", summary.other, "danger" if summary.other else "neutral"),
-    ]
-    cells = "".join(
-        f'<div class="context-item"><div class="context-label">{escape(label)}</div>'
-        f'<div class="context-copy"><span class="status-badge status-{level}">{count}</span></div></div>'
-        for label, count, level in cards
-    )
-    render_html(f'<div class="context-grid">{cells}</div>')
+    render_inline_status([
+        ("成功", summary.success),
+        ("空回答", summary.empty_response),
+        ("超时", summary.timeout),
+        ("鉴权/权限失败", summary.auth),
+        ("其他失败", summary.other),
+    ])
     if summary.total and summary.success == 0:
         st.warning("本次运行没有任何成功回答；请查看下方明细中的错误码与错误信息，或先做连通性检查。")
 
@@ -366,23 +362,16 @@ def _render_answer_viewer_from_results() -> None:
     outcome = outcomes[selected]
 
     label, level = _STATUS_BADGE.get(outcome.run_status, (outcome.run_status, "neutral"))
-    meta = [
+    render_inline_status([
         ("模型", outcome.model_id),
         ("状态", label),
         ("耗时", "—" if outcome.latency_ms is None else f"{outcome.latency_ms} ms"),
         ("Token（输入/输出/合计）", f"{_n(outcome.input_tokens)}/{_n(outcome.output_tokens)}/{_n(outcome.total_tokens)}"),
-    ]
-    if outcome.trace_id:
-        meta.append(("trace_id", outcome.trace_id))
-    meta_html = "".join(
-        f'<div class="fact-field"><div class="fact-label">{escape(k)}</div>'
-        f'<div class="fact-value">{escape(str(v))}</div></div>'
-        for k, v in meta
-    )
-    render_html(f'<div class="fact-grid">{meta_html}</div>')
+        *([] if not outcome.trace_id else [("trace_id", outcome.trace_id)]),
+    ])
 
     if outcome.success and outcome.answer_text:
-        render_html(f'<div class="fde-card"><div class="answer-body">{escape(outcome.answer_text)}</div></div>')
+        render_text_block("模型回答", outcome.answer_text)
     else:
         st.error(outcome.error_message or "本题未获得有效回答。")
 

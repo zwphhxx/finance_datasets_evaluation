@@ -25,14 +25,18 @@ from src.metrics import (
 from src.ui.common import has_value
 from src.ui.components import (
     render_card,
+    render_clean_list,
     render_compact_hero,
     render_empty_state,
     render_evidence_panel,
     render_html,
-    render_info_panel,
+    render_inline_status,
+    render_key_value_list,
     render_numbered_section,
     render_section_title,
     render_status_badge,
+    render_text_block,
+    render_two_column_panel,
 )
 from src.ui.page_config import get_page_config
 from src.ui.tasks import (
@@ -267,10 +271,9 @@ def render_review_page(data_bundle: dict) -> None:
         title=config.title,
         question=config.question,
     )
-    render_info_panel(
-        "怎么读这一页",
+    st.caption(
         "逐条查看评判标准、模型回复、各维度建议分与扣分理由，人工复核后确认归档。"
-        "重点是'这道题为什么能测出模型能力'，而不只是分数。",
+        "重点是'这道题为什么能测出模型能力'，而不只是分数。"
     )
 
     # 始终以 seed 题库决定可选样本
@@ -300,7 +303,7 @@ def render_review_page(data_bundle: dict) -> None:
     merged = merge_case_outputs_with_scores(data.model_outputs, data.scores, selected_case)
 
     # 01 任务背景与考察能力
-    render_numbered_section("01", "任务背景与考察能力", "这道题放在什么尽调场景下、要考察模型哪种专业能力。")
+    render_numbered_section("01", "任务", "当前评测任务的业务场景、考察能力与数据边界。")
     _render_task_context(task_info)
     with st.expander("查看任务题全文", expanded=False):
         _render_task_brief(task_info)
@@ -380,43 +383,34 @@ def _render_task_context(task_info: pd.Series) -> None:
     difficulty = DIFFICULTY_LABELS.get(_text(task_info.get("difficulty")), _text(task_info.get("difficulty")))
     risk = RISK_LABELS.get(_text(task_info.get("risk_level")), _text(task_info.get("risk_level")))
     requirement = _text(task_info.get("question"), _text(task_info.get("scenario"), "暂无任务要求"))
-    st.caption(
-        f"{domain} · {task_type} · 难度 {difficulty} · 风险 {risk} ｜ {summarize_text(requirement, 80)}"
-    )
+    capability = _text(task_info.get("expected_capability"), "暂无考察能力说明")
+
+    render_text_block("任务要求", requirement)
+    render_inline_status([
+        ("领域", domain),
+        ("类型", task_type),
+        ("难度", difficulty),
+        ("风险", risk),
+        ("考察能力", capability),
+    ])
 
 
 def _render_task_brief(task_info: pd.Series) -> None:
-    render_section_title("任务题")
     background = _text(task_info.get("context"), "暂无背景材料")
     requirement = _text(task_info.get("question"), _text(task_info.get("scenario"), "暂无任务要求"))
     capability = _text(task_info.get("expected_capability"), "暂无考察能力说明")
-    domain = display_label(task_info.get("domain"), DOMAIN_LABELS)
-    task_type = display_label(task_info.get("task_type"), TASK_TYPE_LABELS)
-    difficulty = DIFFICULTY_LABELS.get(_text(task_info.get("difficulty")), _text(task_info.get("difficulty")))
-    risk = RISK_LABELS.get(_text(task_info.get("risk_level")), _text(task_info.get("risk_level")))
-    boundary = f"{domain} · {task_type} · 难度 {difficulty} · 风险 {risk}"
 
-    fields = [
-        ("任务背景", summarize_text(background, 160)),
-        ("任务要求", summarize_text(requirement, 160)),
-        ("考察能力", capability),
-        ("数据边界", boundary),
-    ]
-    render_card(
-        "".join(
-            f'<div class="fact-field"><div class="fact-label">{escape(label)}</div>'
-            f'<div class="fact-value">{escape(value)}</div></div>'
-            for label, value in fields
-        ),
-        class_name="fact-card",
+    left = (
+        f'<div class="text-block"><div class="text-block-label">任务背景</div>'
+        f'<div class="text-block-body">{escape(background)}</div></div>'
+        f'<div class="text-block"><div class="text-block-label">考察能力</div>'
+        f'<div class="text-block-body">{escape(capability)}</div></div>'
     )
-    if len(background) > 160 or len(requirement) > 160:
-        with st.expander("查看任务全文"):
-            st.markdown("**任务要求**")
-            st.write(requirement)
-            if background and background != "暂无背景材料":
-                st.markdown("**任务背景**")
-                st.write(background)
+    right = (
+        f'<div class="text-block"><div class="text-block-label">任务要求</div>'
+        f'<div class="text-block-body">{escape(requirement)}</div></div>'
+    )
+    render_two_column_panel(left, right)
 
 
 def _render_gold_standard(gold: dict | None) -> None:
@@ -427,29 +421,40 @@ def _render_gold_standard(gold: dict | None) -> None:
     from src.gold_quality import evaluate_gold_quality
     quality = evaluate_gold_quality(gold)
     status_class = "success" if quality["is_usable"] else "warning"
-    render_html(
-        f'<span class="status-badge status-{status_class}">当前 Gold Answer {escape(quality["status"])}</span>'
-    )
+    render_status_badge(f"Gold Answer {quality['status']}", status_class)
 
-    render_info_panel("标准结论", field_text(gold, "core_conclusion", "需进一步补充"))
-    render_info_panel("关键依据", field_text(gold, "key_evidence", "待补充依据"))
-    render_info_panel("边界条件", field_text(gold, "boundary_conditions", "待补充边界"))
+    core = field_text(gold, "core_conclusion", "需进一步补充")
+    evidence = field_text(gold, "key_evidence", "待补充依据")
+    boundary = field_text(gold, "boundary_conditions", "待补充边界")
+
+    left = (
+        f'<div class="text-block"><div class="text-block-label">标准结论</div>'
+        f'<div class="text-block-body">{escape(core)}</div></div>'
+        f'<div class="text-block"><div class="text-block-label">关键依据</div>'
+        f'<div class="text-block-body">{escape(evidence)}</div></div>'
+    )
+    right = (
+        f'<div class="text-block"><div class="text-block-label">边界条件</div>'
+        f'<div class="text-block-body">{escape(boundary)}</div></div>'
+    )
+    render_two_column_panel(left, right)
 
     must_points = field_list(gold, "must_have_points")
-    if must_points:
-        render_html(
-            '<div class="fact-label">必须覆盖点</div><div class="boundary-list">'
-            + "".join(f'<div class="point-item">{escape(str(point))}</div>' for point in must_points)
-            + "</div>"
-        )
-
     red_lines = field_list(gold, "unacceptable_errors")
-    if red_lines:
-        render_html(
-            '<div class="fact-label">不可接受错误（红线）</div><div class="boundary-list">'
-            + "".join(f'<div class="redline-item">{escape(str(item))}</div>' for item in red_lines)
-            + "</div>"
-        )
+
+    col_left, col_right = st.columns(2)
+    with col_left:
+        render_text_block("必须覆盖点", "")
+        if must_points:
+            render_clean_list(must_points)
+        else:
+            st.caption("暂无")
+    with col_right:
+        render_text_block("不可接受错误（红线）", "")
+        if red_lines:
+            render_clean_list(red_lines)
+        else:
+            st.caption("暂无")
 
     review = quality["manual_review"]
     if review:
@@ -510,11 +515,7 @@ def _render_model_answer(output_row: pd.Series | None, gold) -> None:
         return
 
     answer = _text(output_row.get("answer_text"), "暂无回答内容。")
-    render_card(
-        '<div class="fact-field"><div class="fact-label">回答摘要</div>'
-        f'<div class="fact-value">{escape(summarize_text(answer, ANSWER_SUMMARY_LIMIT))}</div></div>',
-        class_name="fact-card",
-    )
+    render_text_block("回答摘要", summarize_text(answer, ANSWER_SUMMARY_LIMIT))
     if len(answer) > ANSWER_SUMMARY_LIMIT:
         with st.expander("查看完整模型回答"):
             st.write(answer)
@@ -523,18 +524,13 @@ def _render_model_answer(output_row: pd.Series | None, gold) -> None:
     if must_points:
         covered, missed = build_point_coverage(must_points, answer)
         st.caption("要点覆盖基于关键词近似匹配，仅供对照参考。")
-        if covered:
-            render_html(
-                '<div class="fact-label">已覆盖要点</div><div class="boundary-list">'
-                + "".join(f'<div class="point-item">{escape(point)}</div>' for point in covered)
-                + "</div>"
-            )
-        if missed:
-            render_html(
-                '<div class="fact-label">遗漏要点</div><div class="boundary-list">'
-                + "".join(f'<div class="redline-item">{escape(point)}</div>' for point in missed)
-                + "</div>"
-            )
+        col1, col2 = st.columns(2)
+        with col1:
+            render_text_block("已覆盖要点", "")
+            render_clean_list(covered if covered else ["未识别到明确覆盖"])
+        with col2:
+            render_text_block("遗漏要点", "")
+            render_clean_list(missed if missed else ["未识别到明显遗漏"])
 
 
 def _render_scoring_matrix(output_row: pd.Series | None, errors_df) -> None:
@@ -606,7 +602,7 @@ def _render_human_review_note(output_row: pd.Series | None) -> None:
         return
     note = _text(output_row.get("review_note"), "")
     if note:
-        render_info_panel("复核点评", note)
+        render_text_block("复核点评", note)
     else:
         st.caption("该回答暂无人工点评（review_note 为空）。")
 
@@ -614,27 +610,16 @@ def _render_human_review_note(output_row: pd.Series | None) -> None:
 def _render_redline_panel(verdict: dict, gold, output_row: pd.Series | None, errors_df) -> None:
     render_numbered_section("06", "红线提示", "结合 Gold 不可接受错误、低分维度与错误标签动态生成。")
 
-    blocks: list[str] = []
+    blocks: list[tuple[str, list[str]]] = []
 
     hits = verdict.get("redline_hits") or []
     if hits:
-        blocks.append(
-            '<div class="fact-label">命中红线</div><div class="boundary-list">'
-            + "".join(f'<div class="redline-item">{escape(hit)}</div>' for hit in hits)
-            + "</div>"
-        )
+        blocks.append(("命中红线", hits))
 
     rubric_rows = build_rubric_rows(output_row) if output_row is not None else []
-    weak_dims = [r for r in rubric_rows if r["full"] and r["score"] / r["full"] < VERDICT_WEAK_RATIO]
+    weak_dims = [f"{r['dimension']}（{r['score']:.0f}/{r['full']}）" for r in rubric_rows if r["full"] and r["score"] / r["full"] < VERDICT_WEAK_RATIO]
     if weak_dims:
-        blocks.append(
-            '<div class="fact-label">低分维度预警</div><div class="boundary-list">'
-            + "".join(
-                f'<div class="point-item">{escape(r["dimension"])}（{r["score"]:.0f}/{r["full"]}）</div>'
-                for r in weak_dims
-            )
-            + "</div>"
-        )
+        blocks.append(("低分维度预警", weak_dims))
 
     errors = (
         get_errors_for_output(errors_df, output_row.get("output_id"))
@@ -642,25 +627,25 @@ def _render_redline_panel(verdict: dict, gold, output_row: pd.Series | None, err
         else pd.DataFrame()
     )
     if not errors.empty:
-        badges = "".join(
-            f'<span class="status-badge status-{SEVERITY_BADGE.get(_text(error.get("severity")), "neutral")}">'
-            f'{escape(_text(error.get("error_type"), "未分类错误"))}</span>'
+        error_items = [
+            f"{_text(error.get('error_type'), '未分类错误')}（严重度 {_text(error.get('severity'), '未标注')}）"
             for _, error in errors.iterrows()
-        )
-        blocks.append(f'<div class="fact-label">错误标签</div><div class="task-card-badges">{badges}</div>')
+        ]
+        blocks.append(("错误标签", error_items))
 
     red_lines = field_list(gold, "unacceptable_errors") if isinstance(gold, dict) else []
     if red_lines:
-        blocks.append(
-            '<div class="fact-label">本题标定的不可接受错误（Gold 红线）</div><div class="boundary-list">'
-            + "".join(f'<div class="redline-item">{escape(str(item))}</div>' for item in red_lines)
-            + "</div>"
-        )
+        blocks.append(("本题标定的不可接受错误（Gold 红线）", red_lines))
 
-    if blocks:
-        render_card("".join(blocks), class_name="fact-card")
-    else:
+    if not blocks:
         render_empty_state("本题未触发红线提示：无高严重度错误、无明显低分维度，且 Gold 未标定红线。")
+        return
+
+    col1, col2 = st.columns(2)
+    for i, (title, items) in enumerate(blocks):
+        with (col1 if i % 2 == 0 else col2):
+            render_text_block(title, "")
+            render_clean_list(items)
 
 
 def _render_case_review(output_row: pd.Series | None, eval_status: dict) -> None:
@@ -677,7 +662,7 @@ def _render_case_review(output_row: pd.Series | None, eval_status: dict) -> None
         return
     review_status = str(row.get("review_status") or "pending")
     if review_status == "confirmed":
-        render_info_panel("复核状态", "本条评分已复核归档。")
+        st.caption("本条评分已复核归档。")
         return
 
     dimensions = ds.get_rubric_dimensions()
