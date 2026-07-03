@@ -121,6 +121,49 @@ class SampleRepositoryTests(unittest.TestCase):
             self.assertTrue(sample.sample_id)
             self.assertTrue(sample.title)
 
+    def test_seed_enriches_related_data(self):
+        """初始化时应聚合 error_labels、model_outputs 与 optimization_plan。"""
+        samples = sr.seed_samples_from_tasks()
+        enriched = [
+            s for s in samples
+            if s.error_tags or s.model_answers or s.improvement_suggestions
+        ]
+        self.assertGreater(len(enriched), 0)
+
+    def test_get_eligible_case_ids_returns_approved_only(self):
+        sr.create_sample(self._sample_values("SM-ELIGIBLE"))
+        sr.create_sample(self._sample_values("SM-PENDING"))
+        sr.set_sample_status("SM-ELIGIBLE", "已入库")
+        eligible = sr.get_eligible_case_ids()
+        self.assertIn("SM-ELIGIBLE", eligible)
+        self.assertNotIn("SM-PENDING", eligible)
+
+    def test_export_and_import_samples(self):
+        sr.create_sample(self._sample_values("SM-EXP"))
+        exported = sr.export_samples_json()
+        self.assertIn("SM-EXP", exported)
+
+        imported = sr.import_samples([{
+            "sample_id": "SM-EXP",
+            "title": "导入后标题",
+            "scenario": "某公司拟进行重大资产重组",
+            "task_prompt": "请评估。",
+            "gold_answer": "{}",
+            "rubric": "[]",
+            "status": "待复核",
+        }])
+        self.assertEqual(1, len(imported))
+        updated = sr.get_sample("SM-EXP")
+        self.assertEqual("导入后标题", updated.title)
+
+    def test_import_samples_rejects_invalid_records(self):
+        sr.create_sample(self._sample_values("SM-VALID"))
+        with self.assertRaises(ValueError) as ctx:
+            sr.import_samples([
+                {"sample_id": "SM-VALID", "title": "有标题"},  # 缺少必填字段
+            ])
+        self.assertIn("必填项", str(ctx.exception))
+
 
 class SamplePageSmokeTests(unittest.TestCase):
     def test_samples_page_is_callable(self):

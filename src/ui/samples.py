@@ -99,6 +99,20 @@ def _format_json_text(text: str) -> str:
         return text
 
 
+def _searchable_text(sample: sr.Sample) -> str:
+    """Return a lower-cased string covering common searchable fields."""
+    parts = [
+        sample.sample_id,
+        sample.title,
+        sample.scenario,
+        sample.task_prompt,
+        sample.business_context,
+        sample.reviewer_note,
+        " ".join(sample.error_tags),
+    ]
+    return " ".join(str(p) for p in parts if p).lower()
+
+
 # --------------------------------------------------------------------------- #
 # Backward-compatible helpers (kept for existing tests)
 # --------------------------------------------------------------------------- #
@@ -230,16 +244,8 @@ def render_samples_page(data_bundle: dict) -> None:
 
     filtered = sr.filter_samples(status=status, scenario=scenario, difficulty=difficulty, error_tag=error_tag)
     if keyword:
-        filtered = sr.search_samples(keyword)
-        # keep other filters when keyword empty; if keyword present we search across all, but we can re-apply filters
-        if status != "全部" or scenario != "全部" or difficulty != "全部" or error_tag != "全部":
-            filtered = [
-                s for s in filtered
-                if (status == "全部" or s.status == status)
-                and (scenario == "全部" or s.scenario == scenario)
-                and (difficulty == "全部" or s.difficulty == difficulty)
-                and (error_tag == "全部" or error_tag in s.error_tags)
-            ]
+        kw = keyword.lower()
+        filtered = [s for s in filtered if kw in _searchable_text(s)]
 
     # 03 样本表格
     render_numbered_section("03", "样本清单", "一行一样本，状态用轻量标签标识。")
@@ -258,7 +264,7 @@ def render_samples_page(data_bundle: dict) -> None:
 
     st.caption(
         "样本数据保存在本地 data/samples.json；部署到无持久化卷的环境时，新增/编辑/归档内容可能随会话结束而丢失。"
-        "建议定期备份该文件或挂载持久化存储。"
+        "请使用上方「导出」定期备份，或挂载持久化存储。"
     )
 
 
@@ -351,12 +357,38 @@ def _render_sample_detail(samples: list[sr.Sample]) -> None:
 
 
 def _render_sample_management() -> None:
+    _render_backup_controls()
     _render_create_form()
 
     with st.expander("高级管理（编辑 / 状态变更 / 归档）", expanded=False):
         _render_edit_form()
         _render_status_transition()
         _render_archive_form()
+
+
+def _render_backup_controls() -> None:
+    st.markdown("**备份与恢复**")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.download_button(
+            label="导出 samples.json",
+            data=sr.export_samples_json(),
+            file_name="samples.json",
+            mime="application/json",
+            key="samples_export",
+        )
+    with col2:
+        uploaded = st.file_uploader("导入 samples.json", type=["json"], key="samples_import")
+        if uploaded is not None:
+            if st.button("确认导入并合并", key="samples_import_confirm"):
+                try:
+                    raw = json.loads(uploaded.getvalue().decode("utf-8"))
+                    sr.import_samples(raw)
+                except Exception as exc:
+                    st.error(str(exc))
+                else:
+                    st.success("导入成功，样本已合并到当前库。")
+                    st.rerun()
 
 
 def _render_create_form() -> None:

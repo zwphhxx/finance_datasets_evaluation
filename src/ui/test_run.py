@@ -18,6 +18,7 @@ from app.models.registry import available_providers, get_text_provider
 from app.services import dataset_service as ds
 from app.services import eval_runner as er
 from app.services import eval_state
+from app.services import sample_repository as sr
 from app.services import scorer as sc
 from src.ui.components import (
     render_compact_hero,
@@ -170,14 +171,15 @@ def _render_task_selector(task_records: list[dict], gold_map: dict) -> list[dict
         task_type = display_label(row.get("task_type"), TASK_TYPE_LABELS)
         return f"{case_id} · {task_type} · {summarize_text(row.get('question'), 24)}"
 
+    eligible_repo = set(sr.get_eligible_case_ids())
     eligible = []
     for case_id, row in by_case.items():
         gold = gold_map.get(case_id) or {}
-        if ds.can_enter_formal_testing(row, gold):
+        if ds.can_enter_formal_testing(row, gold) and case_id in eligible_repo:
             eligible.append(case_id)
 
     if not eligible:
-        st.warning("当前没有具备完整评判标准的样本可测。请到「样本库」补充 Gold Answer 的必须覆盖点与不可接受错误。")
+        st.warning("当前没有具备完整评判标准且样本库状态为「已入库」的样本可测。请到「样本库」补充完整 Gold/Rubric 并将状态设为已入库。")
         return []
 
     default_cases = [str(r.get("case_id")) for r in er.default_task_selection(task_records) if str(r.get("case_id")) in by_case]
@@ -194,7 +196,7 @@ def _render_task_selector(task_records: list[dict], gold_map: dict) -> list[dict
     )
     st.caption(
         "默认只跑 1 道活跃任务以快速看到结果。实际生成次数 = 模型数 × 任务数。"
-        "仅评判标准完整的样本可进入测试。"
+        "仅评判标准完整且样本库状态为「已入库」的样本可进入测试。"
     )
     return [by_case[c] for c in chosen]
 

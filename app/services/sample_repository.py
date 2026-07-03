@@ -22,6 +22,9 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _SAMPLES_PATH = _PROJECT_ROOT / "data" / "samples.json"
 _TASKS_PATH = _PROJECT_ROOT / "data" / "tasks.csv"
 _GOLD_PATH = _PROJECT_ROOT / "data" / "gold_answers.json"
+_ERROR_LABELS_PATH = _PROJECT_ROOT / "data" / "error_labels.csv"
+_MODEL_OUTPUTS_PATH = _PROJECT_ROOT / "data" / "model_outputs.csv"
+_OPTIMIZATION_PLAN_PATH = _PROJECT_ROOT / "data" / "optimization_plan.csv"
 
 
 @dataclass
@@ -80,6 +83,59 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _load_error_tags_by_case() -> dict[str, list[str]]:
+    """从 error_labels.csv 聚合每个 case_id 的错误类型标签。"""
+    if not _ERROR_LABELS_PATH.exists():
+        return {}
+    try:
+        df = pd.read_csv(_ERROR_LABELS_PATH, dtype=str).fillna("")
+        tags: dict[str, set[str]] = {}
+        for _, row in df.iterrows():
+            case_id = str(row.get("case_id", "")).strip()
+            tag = str(row.get("error_type", "")).strip()
+            if case_id and tag:
+                tags.setdefault(case_id, set()).add(tag)
+        return {case_id: sorted(values) for case_id, values in tags.items()}
+    except Exception:
+        return {}
+
+
+def _load_model_answers_by_case() -> dict[str, list[str]]:
+    """从 model_outputs.csv 聚合每个 case_id 的模型回答标识。"""
+    if not _MODEL_OUTPUTS_PATH.exists():
+        return {}
+    try:
+        df = pd.read_csv(_MODEL_OUTPUTS_PATH, dtype=str).fillna("")
+        answers: dict[str, set[str]] = {}
+        for _, row in df.iterrows():
+            case_id = str(row.get("case_id", "")).strip()
+            model = str(row.get("model_name", "")).strip()
+            if case_id and model:
+                answers.setdefault(case_id, set()).add(model)
+        return {case_id: sorted(values) for case_id, values in answers.items()}
+    except Exception:
+        return {}
+
+
+def _load_improvement_suggestions_by_case() -> dict[str, list[str]]:
+    """从 optimization_plan.csv 聚合每个 case_id 的优化建议。"""
+    if not _OPTIMIZATION_PLAN_PATH.exists():
+        return {}
+    try:
+        df = pd.read_csv(_OPTIMIZATION_PLAN_PATH, dtype=str).fillna("")
+        suggestions: dict[str, set[str]] = {}
+        for _, row in df.iterrows():
+            cases_raw = str(row.get("affected_cases", "")).strip()
+            action = str(row.get("optimization_action", "")).strip()
+            if not cases_raw or not action:
+                continue
+            for case_id in [c.strip() for c in cases_raw.split(";") if c.strip()]:
+                suggestions.setdefault(case_id, set()).add(action)
+        return {case_id: sorted(values) for case_id, values in suggestions.items()}
+    except Exception:
+        return {}
+
+
 def _samples_path() -> Path:
     return _SAMPLES_PATH
 
@@ -117,7 +173,8 @@ def save_samples(samples: list[Sample]) -> None:
 
 
 def seed_samples_from_tasks() -> list[Sample]:
-    """从 tasks.csv + gold_answers.json 生成初始样本。"""
+    """从 tasks.csv + gold_answers.json 生成初始样本，并聚合已有的错误标签、
+    模型回答与优化建议，让样本库一初始化就具备可维护的上下文。"""
     if not _TASKS_PATH.exists():
         return []
 
@@ -133,6 +190,10 @@ def seed_samples_from_tasks() -> list[Sample]:
                         gold_map[str(rec["case_id"])] = rec
         except Exception:
             pass
+
+    error_tags_map = _load_error_tags_by_case()
+    model_answers_map = _load_model_answers_by_case()
+    suggestions_map = _load_improvement_suggestions_by_case()
 
     samples: list[Sample] = []
     for _, row in tasks.iterrows():
@@ -152,9 +213,9 @@ def seed_samples_from_tasks() -> list[Sample]:
                 business_context=str(row.get("context", "")).strip(),
                 gold_answer=gold_text,
                 rubric="",
-                model_answers=[],
-                error_tags=[],
-                improvement_suggestions=[],
+                model_answers=model_answers_map.get(case_id, []),
+                error_tags=error_tags_map.get(case_id, []),
+                improvement_suggestions=suggestions_map.get(case_id, []),
                 status=status,
                 difficulty=str(row.get("difficulty", "")).strip(),
                 reviewer_note="",
@@ -231,6 +292,76 @@ def set_sample_status(sample_id: str, status: str) -> None:
 def archive_sample(sample_id: str) -> None:
     """归档样本（软删除）：状态改为已归档。"""
     set_sample_status(sample_id, "已归档")
+
+
+def get_eligible_case_ids() -> list[str]:
+    """返回当前可用于正式测试的样本编号（状态为已入库）。"""
+    return [s.sample_id for s in load_samples() if s.status == "已入库"]
+
+
+def export_samples_json() -> str:
+    """将当前样本库导出为格式化的 JSON 字符串。"""
+    return json.dumps(
+        [s.to_dict() for s in load_samples()],
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
+def import_samples(samples_data: list[dict[str, Any]]) -> list[Sample]:
+    """导入样本数组，按 sample_id 合并或新增，并统一校验。
+
+    导入失败时抛出 ValueError，保留原数据不变。
+    """
+    if not isinstance(samples_data, list):
+        raise ValueError("导入文件应为样本对象数组")
+
+    samples = load_samples()
+    existing_index = {s.sample_id: i for i, s in enumerate(samples)}
+    current_ids = {s.sample_id for s in samples}
+
+    errors: list[str] = []
+    seen_ids: set[str] = set()
+    imported: list[Sample] = []
+
+    for idx, raw in enumerate(samples_data):
+        if not isinstance(raw, dict):
+            errors.append(f"第 {idx + 1} 项不是对象")
+            continue
+
+        sample_id = str(raw.get("sample_id", "")).strip()
+        if not sample_id:
+            errors.append(f"第 {idx + 1} 项缺少 sample_id")
+            continue
+        if sample_id in seen_ids:
+            errors.append(f"第 {idx + 1} 项 sample_id {sample_id} 重复")
+            continue
+        seen_ids.add(sample_id)
+
+        item_errors = validate_sample(raw, existing_ids=current_ids - {sample_id})
+        if item_errors:
+            errors.append(f"样本 {sample_id}：{'；'.join(item_errors)}")
+            continue
+
+        sample = Sample.from_dict(raw)
+        now = _now()
+        if not sample.created_at:
+            sample.created_at = now
+        if not sample.updated_at:
+            sample.updated_at = now
+
+        if sample_id in existing_index:
+            samples[existing_index[sample_id]] = sample
+        else:
+            samples.append(sample)
+            current_ids.add(sample_id)
+        imported.append(sample)
+
+    if errors:
+        raise ValueError("\n".join(errors))
+
+    save_samples(samples)
+    return imported
 
 
 def validate_sample(values: dict[str, Any], existing_ids: set[str] | None = None) -> list[str]:
