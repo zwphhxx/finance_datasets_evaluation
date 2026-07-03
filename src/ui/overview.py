@@ -14,14 +14,13 @@ from src.model_boundary import (
 from src.ui.page_config import get_page_config
 from src.ui.tasks import DOMAIN_LABELS, TASK_TYPE_LABELS, display_label
 from src.ui.components import (
-    render_action_cards,
-    render_context_grid,
     render_flow_strip,
     render_info_panel,
     render_numbered_section,
     render_page_shell,
     render_section_title,
     render_status_summary,
+    render_text_block,
 )
 
 
@@ -113,13 +112,10 @@ def render_overview_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
     validation_result = data_bundle["validation_result"]
     eval_status = data_bundle.get("eval_status") or {}
-    live = bool(eval_status.get("live"))
 
     render_page_shell(get_page_config("overview"))
 
-    # ------------------------------------------------------------------ #
     # 01 项目背景与目的
-    # ------------------------------------------------------------------ #
     render_section_title("项目背景与目的", "为什么做 FinDueEval")
     st.markdown(
         """
@@ -129,9 +125,7 @@ def render_overview_page(data_bundle: dict) -> None:
         """
     )
 
-    # ------------------------------------------------------------------ #
-    # 02 初步模型分析（先验判断 + 样本内数据验证）
-    # ------------------------------------------------------------------ #
+    # 02 初步模型分析
     render_section_title(
         "初步模型分析（基于投行/财务/法律尽调资料）",
         "先讲先验判断，再用样本内数据验证。",
@@ -139,75 +133,49 @@ def render_overview_page(data_bundle: dict) -> None:
     st.markdown(
         """
         我先用投行、财务、法律的历史尽调资料做了一轮人工分析，把“一份好的尽调回答应该长什么样”
-        拆成可评测的标准：
-
-        - **优秀回答的 5 个要素** → Rubric 五个评分维度（事实依据、推理完整性、风险识别、专业表达、边界意识）；
-        - **不可触碰的红线** → 每道题的 Gold Answer（结论 / 依据 / 边界 / 红线）；
-        - **反复出现的失误** → 错误标签体系（如风险遗漏、依据错误、合规误判）。
-
-        基于这套先验，我的初步判断是：模型在“事实复述、专业表达”上通常较稳，真正的风险集中在
-        **“风险识别”** 与 **“边界意识”** ——该提示的风险没提示、不确定的地方不标注。
-        下面的样本内数据用来验证或修正它。
+        拆成可评测的标准：优秀回答的 5 个要素 → Rubric 五个评分维度；不可触碰的红线 → 每道题的
+        Gold Answer；反复出现的失误 → 错误标签体系。基于这套先验，真正的风险集中在
+        **风险识别** 与 **边界意识** ——该提示的风险没提示、不确定的地方不标注。
         """
     )
 
     summary = build_model_performance_summary(data.scores, data.errors)
     if summary:
-        render_context_grid([
-            ("平均总分", f"{summary['avg_score']:.1f}"),
-            ("最弱维度", f"{summary['weakest_dimension']}（达成率约 {summary['weakest_attainment']:.0%}）"),
-            ("高频错误", f"{summary['top_error_type']} · {summary['top_error_count']} 次"),
-        ])
-        run_id = str(eval_status.get("run_id") or "—")
-        st.caption(
-            f"当前评测样本内观察（run_id：{run_id}），样本量有限，仅用于验证上述先验，不代表模型整体能力。"
+        st.markdown(
+            f"样本内验证：平均总分 **{summary['avg_score']:.1f}** · 最弱维度 "
+            f"**{summary['weakest_dimension']}（达成率约 {summary['weakest_attainment']:.0%}）** · "
+            f"高频错误 **{summary['top_error_type']}（{summary['top_error_count']} 次）**"
         )
+        run_id = str(eval_status.get("run_id") or "—")
+        st.caption(f"当前评测样本内观察（run_id：{run_id}），样本量有限，不代表模型整体能力。")
     else:
         render_info_panel(
             "还没有样本内数据",
             "上面的判断目前只是基于历史资料的先验。运行一次真实评测后，这里会显示当前样本的"
-            "平均分、最弱维度与高频错误，三个分析页也会基于真实结果生成。",
+            "平均分、最弱维度与高频错误。",
         )
 
-    render_action_cards(
-        [
-            ("模型能力诊断 →", "model_diagnosis"),
-            ("模型边界报告 →", "model_boundary"),
-            ("样板题深度评测 →", "case_detail"),
-        ],
-        note="这三页基于真实评测结果生成；若尚未运行评测，进入后会引导先发起评测。",
-        key_prefix="overview_analysis",
-    )
+    if st.button("发起测试 →", type="primary", key="overview_cta"):
+        st.session_state.current_page = "test_run"
+        st.rerun()
 
-    # ------------------------------------------------------------------ #
     # 03 怎么用
-    # ------------------------------------------------------------------ #
     render_section_title("怎么用", "三步走完“评测 → 看结论 → 数据补强”闭环。")
     render_flow_strip(get_evaluation_loop_steps())
     st.markdown(
         """
-        1. **发起评测**：在“可复现实验”页选择模型与任务，裁判对照 Gold + Rubric 打出建议分；
-        2. **查看结论**：在“能力诊断”“边界报告”“样板题评测”页看分维度表现、可用边界与单题拆解；
-        3. **数据补强**：把高频错误带到后续数据集管理，形成“发现错误 → 补充数据 → 复测验证”的闭环。
+        1. 在“发起测试”页选择模型与任务，裁判对照 Gold + Rubric 打出建议分；
+        2. 在“评测复核”与“评测结论”页看分维度表现、可用边界与单题拆解；
+        3. 把高频错误带回样本管理做补强，形成“发现错误 → 补充数据 → 复测验证”的闭环。
         """
     )
-    render_action_cards(
-        [
-            ("发起可复现实验 →", "test_run"),
-            ("浏览任务样本 →", "samples"),
-        ],
-        key_prefix="overview_use",
-    )
 
-    # ------------------------------------------------------------------ #
     # 04 数据资产
-    # ------------------------------------------------------------------ #
     render_section_title("数据资产", "关键数字均由当前数据动态计算。")
-    render_context_grid(get_overview_summary_items(data))
+    items = get_overview_summary_items(data)
+    st.markdown(" · ".join(f"**{label}**：{value}" for label, value in items))
 
-    # ------------------------------------------------------------------ #
     # 05 边界与说明
-    # ------------------------------------------------------------------ #
     render_info_panel(
         "边界与说明",
         "题库与 Gold Answer 为 MVP 脱敏样本；模型回答来自评测控制台的真实运行；"

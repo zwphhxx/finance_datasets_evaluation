@@ -1,9 +1,10 @@
+import re
 import unittest
 from pathlib import Path
 
 
 class UIUXAuditFixesTests(unittest.TestCase):
-    def test_overview_has_evaluation_loop_rail_steps(self):
+    def test_overview_uses_flow_strip_not_loop_rail(self):
         from src.ui.overview import get_evaluation_loop_steps
         import src.ui.components as components
 
@@ -17,18 +18,17 @@ class UIUXAuditFixesTests(unittest.TestCase):
             "复测验证",
         ]
         self.assertEqual(expected, get_evaluation_loop_steps())
-        self.assertTrue(hasattr(components, "render_loop_rail"))
-        self.assertIn(".loop-rail", components.STYLE_CSS)
-        self.assertIn(".loop-step", components.STYLE_CSS)
+        self.assertTrue(hasattr(components, "render_flow_strip"))
+        self.assertIn(".flow-strip", components.STYLE_CSS)
 
-        # 概览页用横向流程（flow-strip）呈现评测闭环；分步向导（loop-rail）仍在「发起评测」页。
         overview_source = Path("src/ui/overview.py").read_text(encoding="utf-8")
         self.assertNotIn("render_loop_rail", overview_source)
         self.assertIn("render_flow_strip", overview_source)
-        eval_run_source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
-        self.assertIn("loop-rail", eval_run_source)
 
-    def test_pages_use_compact_hero_and_context_grid(self):
+        test_run_source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+        self.assertNotIn("loop-rail", test_run_source)
+
+    def test_pages_use_compact_hero(self):
         import src.ui.components as components
 
         self.assertTrue(hasattr(components, "render_compact_hero"))
@@ -44,7 +44,6 @@ class UIUXAuditFixesTests(unittest.TestCase):
         ]:
             source = Path(file_path).read_text(encoding="utf-8")
             self.assertIn("render_compact_hero", source, file_path)
-        # case_study uses render_portfolio_landing_hero (portfolio hero) instead
         case_study_source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         self.assertIn("render_portfolio_landing_hero", case_study_source, "src/ui/case_study.py")
 
@@ -55,21 +54,47 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn(".context-grid", components.STYLE_CSS)
         self.assertIn(".context-item", components.STYLE_CSS)
 
-    def test_sidebar_navigation_has_active_state_and_groups(self):
-        from src.ui.navigation import PAGES, _NAV_GROUPS
+    def test_top_navigation_has_five_items_and_no_duplicate_html_buttons(self):
+        from src.ui.navigation import PAGES, _TOP_NAV_ITEMS
         import src.ui.components as components
 
-        self.assertIn("samples", PAGES)
-        self.assertIn("test_run", PAGES)
-        self.assertIn("conclusions", PAGES)
+        self.assertEqual(5, len(_TOP_NAV_ITEMS))
+        self.assertEqual(sorted([key for _, key in _TOP_NAV_ITEMS]), sorted(PAGES.keys()))
+        self.assertIn(".top-nav", components.STYLE_CSS)
 
-        group_keys = [key for _, keys in _NAV_GROUPS for key in keys]
-        self.assertEqual(sorted(group_keys), sorted(PAGES.keys()))
-
-        self.assertIn(".nav-brand", components.STYLE_CSS)
         navigation_source = Path("src/ui/navigation.py").read_text(encoding="utf-8")
-        self.assertIn("current_page", navigation_source)
-        self.assertIn("_NAV_GROUPS", navigation_source)
+        # 侧边栏不再渲染页面按钮，避免与顶部导航重复。
+        self.assertNotIn("st.sidebar.button", navigation_source)
+
+    def test_no_emoji_in_checklist(self):
+        components_source = Path("src/ui/components.py").read_text(encoding="utf-8")
+        self.assertNotIn("✅", components_source)
+        case_study_source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
+        self.assertNotIn("✅", case_study_source)
+
+    def test_case_study_has_single_primary_cta(self):
+        source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
+        buttons = re.findall(r"st\.button\(", source)
+        self.assertEqual(1, len(buttons), "Case Study 页面应只有一个主 CTA 按钮")
+        self.assertIn('发起测试', source)
+
+    def test_test_run_has_at_most_two_primary_buttons(self):
+        source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+        primary_buttons = re.findall(r'type\s*=\s*"primary"', source)
+        self.assertLessEqual(len(primary_buttons), 2, "Test Run 常驻主按钮不应超过 2 个")
+
+    def test_review_seed_mode_hides_confirm_archive(self):
+        source = Path("src/ui/review.py").read_text(encoding="utf-8")
+        self.assertIn("score_run_id", source)
+        self.assertIn("if not score_run_id:", source)
+        self.assertIn('if review_status != "pending":', source)
+        self.assertIn('"确认并归档"', source)
+
+    def test_conclusions_does_not_render_card_classes(self):
+        source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
+        self.assertNotIn("fingerprint-card", source)
+        self.assertNotIn("boundary-card", source)
+        self.assertNotIn("render_action_cards", source)
 
     def test_case_detail_uses_review_workbench_components(self):
         import src.ui.components as components
@@ -79,12 +104,9 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn(".answer-boundary-panel", components.STYLE_CSS)
         self.assertIn(".comparison-grid", components.STYLE_CSS)
 
-        # PR-LOGIC2: review.py may use different component names; check if file exists
         review_path = Path("src/ui/review.py")
         if review_path.exists():
             source = review_path.read_text(encoding="utf-8")
-            # The review page may use render_evidence_panel or other components
-            # Just check it doesn't use old "Preferred/Rejected" terminology
             self.assertNotIn("Preferred", source)
             self.assertNotIn("Rejected", source)
 

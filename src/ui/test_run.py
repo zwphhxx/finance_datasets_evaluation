@@ -20,15 +20,11 @@ from app.services import eval_runner as er
 from app.services import eval_state
 from app.services import scorer as sc
 from src.ui.components import (
-    render_action_cards,
     render_compact_hero,
     render_empty_state,
     render_evidence_panel,
     render_html,
-    render_info_panel,
-    render_inline_status,
     render_numbered_section,
-    render_section_title,
     render_text_block,
 )
 from src.ui.page_config import get_page_config
@@ -39,9 +35,9 @@ BOUNDARY_NOTE = (
 )
 
 REPRODUCIBILITY_NOTE = (
-    "本页是面试官可选的现场可复现实验，不是项目主线。这里的'本次现场运行'受 API Key、网络、"
+    "本页是面试官可选的现场可复现实验，不是项目主线。这里的“本次现场运行”受 API Key、网络、"
     "模型版本与限流影响，结果可能波动；它默认进入草稿（待复核），不会覆盖各分析页默认展示的"
-    "'离线样本评价'。只有经人工复核确认后，现场结果才计入正式评测结论。"
+    "“离线样本评价”。只有经人工复核确认后，现场结果才计入正式评测结论。"
     "（离线样本评价 vs 本次现场运行）"
 )
 
@@ -62,10 +58,7 @@ def render_test_run_page(data_bundle: dict) -> None:
         question=config.question,
     )
     st.caption(REPRODUCIBILITY_NOTE)
-
-    # Fixed judge model display (read-only)
-    st.info(f"评分模型：{sc.DEFAULT_JUDGE_MODEL}（系统默认）")
-    st.caption("裁判模型固定，用户不可配置。被评测模型全程不可见 Gold Answer。")
+    st.caption(f"评分模型：{sc.DEFAULT_JUDGE_MODEL}（系统默认，被测模型全程不可见 Gold）")
 
     tasks_df = base.tasks
     if tasks_df is None or tasks_df.empty:
@@ -73,54 +66,22 @@ def render_test_run_page(data_bundle: dict) -> None:
         return
     task_records = tasks_df.to_dict("records")
 
-    # Light experiment flow: 4 steps
-    _render_step_rail()
+    # Configuration + advanced settings
+    provider_name = _render_config_controls()
+    _render_advanced_settings(provider_name)
+    model_ids = _render_model_selector(provider_name)
+    selected_tasks = _render_task_selector(task_records, getattr(base, "gold_answer_map", {}) or {})
+    temperature, max_tokens = _render_parameters()
+    _render_run_button(provider_name, model_ids, selected_tasks, temperature, max_tokens)
 
-    has_run = eval_state.has_run()
-
-    # Step 01 选择样本
-    render_numbered_section("Step 01", "选择样本", "选择任务与模型，配置生成参数。")
-    with st.expander("展开配置", expanded=not has_run):
-        provider_name = _render_config_controls()
-        model_ids = _render_model_selector(provider_name)
-        selected_tasks = _render_task_selector(task_records, getattr(base, "gold_answer_map", {}) or {})
-        temperature, max_tokens = _render_parameters()
-        _render_run_button(provider_name, model_ids, selected_tasks, temperature, max_tokens)
-
-    # Step 02 调用模型
-    render_numbered_section("Step 02", "调用模型", "查看本次模型调用状态、回答与元信息。")
+    # 01 测试结果
+    render_numbered_section("01", "测试结果", "本次模型回答与调用状态。")
     _render_results()
 
-    # Step 03 查看回答
-    render_numbered_section("Step 03", "查看回答", "按任务与模型查看完整回答与调用元信息。")
-    _render_answer_viewer_from_results()
-
-    # Step 04 进入草稿评测
-    render_numbered_section("Step 04", "进入草稿评测", "由裁判模型对照 Gold Answer 与 Rubric 打出建议分。")
-    with st.expander("展开评分", expanded=False):
-        _render_scoring(base, provider_name, task_records)
-
+    # 02 评分草稿
+    render_numbered_section("02", "评分草稿", "由裁判模型对照 Gold Answer 与 Rubric 给出建议分。")
+    _render_scoring(base, provider_name, task_records)
     _render_score_results()
-    _render_completion_cta()
-
-
-def _render_step_rail() -> None:
-    steps = ["选择样本", "调用模型", "查看回答", "草稿评测"]
-    current = 0
-    if eval_state.has_run():
-        current = 1
-    if eval_state.get_last_score() is not None:
-        current = 3
-    html = '<div class="loop-rail" style="border:none;background:transparent;box-shadow:none;">'
-    for idx, label in enumerate(steps, start=1):
-        muted = "opacity:0.4;" if idx - 1 > current else ""
-        html += (
-            f'<div class="loop-step" style="{muted}">'
-            f'<div class="loop-step-index">步骤 {idx:02d}</div>'
-            f'<div class="loop-step-label">{escape(label)}</div></div>'
-        )
-    html += "</div>"
-    render_html(html)
 
 
 def _render_config_controls() -> str:
@@ -131,14 +92,19 @@ def _render_config_controls() -> str:
     effective = get_text_provider(prefer=provider_name)
     if effective.name == "mock":
         if provider_name != "mock":
-            st.warning("未配置 SiliconFlow API Key，已切换为 mock 模式：回答为模拟生成，不代表真实模型结果。")
+            st.warning("未配置 SiliconFlow API Key，已切换为 mock 模式：回答为模拟生成。")
         else:
-            st.info("当前为 mock 模式：回答为模拟生成，不代表真实模型结果。")
+            st.caption("当前为 mock 模式：回答为模拟生成。")
     else:
         st.caption(f"当前为真实调用模式（{effective.name}）。请确认已在 .env 或 secrets 中配置 API Key。")
 
-    _render_connectivity_check(provider_name)
     return provider_name
+
+
+def _render_advanced_settings(provider_name: str) -> None:
+    with st.expander("高级设置（连通性检查 / 加载模型列表）", expanded=False):
+        _render_connectivity_check(provider_name)
+        _render_load_model_list_button(provider_name)
 
 
 def _render_connectivity_check(provider_name: str) -> None:
@@ -164,29 +130,28 @@ def _render_connectivity_check(provider_name: str) -> None:
             st.success(report)
         else:
             st.error(report)
-        st.caption("连通性检查仅核对配置与可达性，不回显 API Key。")
 
 
-def _render_model_selector(provider_name: str) -> list[str]:
-    st.caption("模型列表从 Provider 实时获取，不硬编码；也可手动追加模型 ID。")
+def _render_load_model_list_button(provider_name: str) -> None:
+    st.caption("模型列表从 Provider 实时获取，不硬编码；加载后可在下方多选。")
     provider = get_text_provider(prefer=provider_name)
     cache_key = f"test_run_models::{provider.name}"
-
     if st.button("加载 / 刷新模型列表", key="test_run_load_models"):
         st.session_state[cache_key] = provider.list_models()
 
+
+def _render_model_selector(provider_name: str) -> list[str]:
+    provider = get_text_provider(prefer=provider_name)
+    cache_key = f"test_run_models::{provider.name}"
     result = st.session_state.get(cache_key)
-    model_options: list[str] = []
+
+    selected_from_list: list[str] = []
     if result is not None:
         if result.ok and result.models:
             model_options = [m.id for m in result.models]
-            st.caption(f"已获取 {len(model_options)} 个文本对话模型（type=text、sub_type=chat）。")
+            selected_from_list = st.multiselect("模型（可多选）", model_options, key="test_run_models_select")
         else:
-            st.warning(result.error_message or "模型列表获取失败，可在下方手动追加模型 ID。")
-
-    selected_from_list: list[str] = []
-    if model_options:
-        selected_from_list = st.multiselect("模型（可多选）", model_options, key="test_run_models_select")
+            st.warning(result.error_message or "模型列表获取失败，可手动追加模型 ID。")
 
     manual_raw = st.text_input(
         "手动追加模型 ID（多个用逗号分隔）",
@@ -205,7 +170,6 @@ def _render_task_selector(task_records: list[dict], gold_map: dict) -> list[dict
         task_type = display_label(row.get("task_type"), TASK_TYPE_LABELS)
         return f"{case_id} · {task_type} · {summarize_text(row.get('question'), 24)}"
 
-    # Only allow tasks with complete judgment criteria (non-draft) into testing
     eligible = []
     for case_id, row in by_case.items():
         gold = gold_map.get(case_id) or {}
@@ -217,22 +181,20 @@ def _render_task_selector(task_records: list[dict], gold_map: dict) -> list[dict
         return []
 
     default_cases = [str(r.get("case_id")) for r in er.default_task_selection(task_records) if str(r.get("case_id")) in by_case]
-    # Filter default to eligible
     default_cases = [c for c in default_cases if c in eligible]
     if not default_cases and eligible:
         default_cases = eligible[:1]
 
     chosen = st.multiselect(
-        "任务范围（默认仅 1 道活跃任务，可手动多选；仅显示评判标准完整的样本）",
+        "任务范围（默认仅 1 道活跃任务，可手动多选）",
         eligible,
         default=default_cases,
         format_func=_label,
         key="test_run_cases",
     )
     st.caption(
-        "默认只跑 1 道活跃任务以快速看到结果、避免长时间无反馈；如需更多请手动多选。"
-        "注意：实际生成次数 = 模型数 × 任务数，选得越多耗时越长。"
-        "仅评判标准完整（具备 Gold Answer、必须覆盖点、不可接受错误）的样本可进入测试。"
+        "默认只跑 1 道活跃任务以快速看到结果。实际生成次数 = 模型数 × 任务数。"
+        "仅评判标准完整的样本可进入测试。"
     )
     return [by_case[c] for c in chosen]
 
@@ -248,7 +210,7 @@ def _render_parameters() -> tuple[float, int]:
 
 def _render_run_button(provider_name, model_ids, selected_tasks, temperature, max_tokens) -> None:
     disabled = not model_ids or not selected_tasks
-    if st.button("运行评测", type="primary", disabled=disabled, key="test_run_run"):
+    if st.button("运行模型回答", type="primary", disabled=disabled, key="test_run_run"):
         provider = get_text_provider(prefer=provider_name)
         total = len(model_ids) * len(selected_tasks)
         progress = st.progress(0.0)
@@ -258,9 +220,7 @@ def _render_run_button(provider_name, model_ids, selected_tasks, temperature, ma
             ratio = (done / total_count) if total_count else 1.0
             progress.progress(min(1.0, ratio))
             if model_id:
-                status.caption(
-                    f"已完成 {done}/{total_count} · 正在生成：模型 {model_id} · 任务 {case_id}"
-                )
+                status.caption(f"已完成 {done}/{total_count} · 正在生成：模型 {model_id} · 任务 {case_id}")
             else:
                 status.caption(f"已完成 {done}/{total_count} · 正在汇总结果……")
 
@@ -283,37 +243,24 @@ def _render_run_button(provider_name, model_ids, selected_tasks, temperature, ma
 def _render_results() -> None:
     result = eval_state.get_last_run()
     if result is None:
+        render_empty_state("尚未运行模型回答。配置模型与任务后点击「运行模型回答」。")
         return
 
-    render_section_title(
-        "本次运行",
-        f"run_id：{result.run_id} · 模式：{result.mode} · 模型 {len(result.model_ids)} 个 · "
-        f"成功 {result.success_count}/{len(result.outcomes)}",
-    )
-    _render_run_summary(result)
-    if er.is_mock_result(result):
-        st.info("本次为 mock 模式运行，回答为模拟生成，不代表真实模型结果。")
-    persisted = st.session_state.get("test_run_persisted")
-    if persisted:
-        st.caption("结果已写入 SQLite（live_run_responses），并驱动各分析页展示真实回答。")
-    else:
-        st.caption("结果暂存于当前页面会话（未落库 / SQLite 未初始化），仍可驱动各分析页展示。")
-
-    with st.expander("查看运行明细（回答与调用元信息）", expanded=result.success_count == 0):
-        _render_results_table(result)
-
-
-def _render_run_summary(result) -> None:
     summary = er.summarize_outcomes(result.outcomes)
-    render_inline_status([
-        ("成功", summary.success),
-        ("空回答", summary.empty_response),
-        ("超时", summary.timeout),
-        ("鉴权/权限失败", summary.auth),
-        ("其他失败", summary.other),
-    ])
+    st.markdown(
+        f"本次运行 **成功 {summary.success} / {summary.total}** · "
+        f"模型 {len(result.model_ids)} 个 · 模式 {result.mode}"
+    )
     if summary.total and summary.success == 0:
-        st.warning("本次运行没有任何成功回答；请查看下方明细中的错误码与错误信息，或先做连通性检查。")
+        st.warning("本次运行没有任何成功回答；请查看明细中的错误码与错误信息，或先做连通性检查。")
+    if er.is_mock_result(result):
+        st.caption("本次为 mock 模式运行，回答为模拟生成。")
+
+    with st.expander("查看回答", expanded=False):
+        _render_answer_viewer(result)
+
+    with st.expander("查看运行明细", expanded=False):
+        _render_results_table(result)
 
 
 def _render_results_table(result) -> None:
@@ -344,12 +291,10 @@ def _render_results_table(result) -> None:
     render_evidence_panel("运行明细", table_html)
 
 
-def _render_answer_viewer_from_results() -> None:
-    result = eval_state.get_last_run()
-    if result is None:
-        return
+def _render_answer_viewer(result) -> None:
     outcomes = list(result.outcomes)
     if not outcomes:
+        st.caption("暂无回答可查看。")
         return
 
     options = list(range(len(outcomes)))
@@ -361,14 +306,13 @@ def _render_answer_viewer_from_results() -> None:
     selected = st.selectbox("任务 · 模型", options, format_func=_fmt, key="test_run_view_outcome")
     outcome = outcomes[selected]
 
-    label, level = _STATUS_BADGE.get(outcome.run_status, (outcome.run_status, "neutral"))
-    render_inline_status([
-        ("模型", outcome.model_id),
-        ("状态", label),
-        ("耗时", "—" if outcome.latency_ms is None else f"{outcome.latency_ms} ms"),
-        ("Token（输入/输出/合计）", f"{_n(outcome.input_tokens)}/{_n(outcome.output_tokens)}/{_n(outcome.total_tokens)}"),
-        *([] if not outcome.trace_id else [("trace_id", outcome.trace_id)]),
-    ])
+    st.markdown(
+        f"状态：{outcome.run_status} · 耗时："
+        f"{'—' if outcome.latency_ms is None else f'{outcome.latency_ms} ms'} · "
+        f"Token：{_n(outcome.input_tokens)}/{_n(outcome.output_tokens)}/{_n(outcome.total_tokens)}"
+    )
+    if outcome.trace_id:
+        st.caption(f"trace_id：{outcome.trace_id}")
 
     if outcome.success and outcome.answer_text:
         render_text_block("模型回答", outcome.answer_text)
@@ -379,21 +323,15 @@ def _render_answer_viewer_from_results() -> None:
 def _render_scoring(base, provider_name: str, task_records: list[dict]) -> None:
     result = eval_state.get_last_run()
     if result is None:
-        st.info("请先完成步骤 1 的运行，再进行裁判评分。")
+        st.caption("请先运行模型回答，再进行裁判评分。")
         return
-
-    render_section_title(
-        "自动评分（裁判模型）",
-        "由裁判模型对照 Gold Answer 与 Rubric 打出建议分；分数为机器建议，需人工复核确认后归档。",
-    )
-    st.caption(f"评分模型：{sc.DEFAULT_JUDGE_MODEL}（系统默认）。被评测模型全程不可见 Gold；并列对比不代表最终结论。")
 
     no_success = result.success_count == 0
     if no_success:
-        st.warning("本次运行没有成功回答，无法评分。请先在步骤 1 获得至少一条成功回答（可先做连通性检查排查失败原因）。")
+        st.warning("本次运行没有成功回答，无法评分。")
 
     if st.button(
-        "运行自动评分（裁判模型）", type="primary", disabled=no_success, key="test_run_score_run"
+        "生成评分草稿", type="primary", disabled=no_success, key="test_run_score_run"
     ):
         provider = get_text_provider(prefer=provider_name)
         gold_map = getattr(base, "gold_answer_map", {}) or {}
@@ -415,20 +353,19 @@ def _render_score_results() -> None:
         return
     dimensions = st.session_state.get("test_run_score_dims") or ds.get_rubric_dimensions()
 
-    render_section_title(
-        "评分结果（建议分 · 待人工复核）",
-        f"score_run_id：{score_result.score_run_id} · 模式：{score_result.mode} · "
-        f"已评分 {score_result.scored_count}/{len(score_result.outcomes)}",
+    st.markdown(
+        f"已评分 {score_result.scored_count}/{len(score_result.outcomes)} · "
+        f"score_run_id：{score_result.score_run_id} · 模式：{score_result.mode}"
     )
     if sc.is_mock_score(score_result):
-        st.info("本次为 mock 模式：未产生真实评分，各维度留空，仅用于打通链路。")
+        st.caption("本次为 mock 模式：未产生真实评分，各维度留空。")
 
     _render_score_compare_table(score_result, dimensions)
 
     if ds.database_ready():
         _render_score_review(score_result, dimensions)
     else:
-        st.caption("评分暂存于当前页面会话；初始化 SQLite 数据层后可改分并归档为已复核。")
+        st.caption("评分暂存于当前页面会话；初始化 SQLite 数据层后可改分并归档。")
 
 
 def _render_score_compare_table(score_result, dimensions) -> None:
@@ -458,23 +395,20 @@ def _render_score_compare_table(score_result, dimensions) -> None:
             f"<td>{escape(_short(o.error_message))}</td></tr>"
         )
     table_html = (
-        f'<table class="check-table"><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>'
+        f'<table class="check-table"><thead><tr>'
+        f"{header}</tr></thead><tbody>{body}</tbody></table>"
     )
     render_evidence_panel("评分对比表", table_html)
-    st.caption("裁判状态为 failed 且错误码为 judge_parse_error 时，表示裁判输出无法解析为有效 JSON 评分。")
 
 
 def _render_score_review(score_result, dimensions) -> None:
     rows = sc.load_score_rows(score_result.score_run_id)
     reviewable = [r for r in rows if r.get("judge_status") == "success"]
     if not reviewable:
-        st.caption("当前无可复核的成功评分（mock / 失败的评分不进入人工复核）。")
+        st.caption("当前无可复核的成功评分。")
         return
 
-    render_section_title(
-        "人工复核（批量）",
-        "可逐条修订各维度分与复核说明，确认后归档为已复核；更推荐到「评测复核」页对照 Gold 复核。",
-    )
+    render_numbered_section("03", "人工复核", "逐条修订各维度分与复核说明，确认后归档。")
     for row in reviewable:
         row_id = int(row["id"])
         status_text = str(row.get("review_status") or "pending")
@@ -494,21 +428,12 @@ def _render_score_review(score_result, dimensions) -> None:
             note = st.text_area(
                 "复核说明", value=str(row.get("review_note") or ""), key=f"score_note::{row_id}"
             )
-            if st.button("确认并归档（人工复核通过）", key=f"score_confirm::{row_id}"):
+            if st.button("确认并归档", key=f"score_confirm::{row_id}"):
                 if sc.confirm_score_review(row_id, edited, note):
                     st.success("已归档为已复核（confirmed）。")
                     st.rerun()
                 else:
                     st.warning("归档失败：请确认 SQLite 数据层已初始化。")
-
-
-def _render_completion_cta() -> None:
-    if not eval_state.has_run():
-        return
-    render_action_cards([
-        ("查看评测复核 →", "review"),
-        ("查看评测结论 →", "conclusions"),
-    ], key_prefix="test_run")
 
 
 def _dedupe(items: list[str]) -> list[str]:

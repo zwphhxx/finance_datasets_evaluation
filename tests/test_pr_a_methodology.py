@@ -55,7 +55,6 @@ class RegistrationTests(unittest.TestCase):
         self.assertIn("render_portfolio_landing_hero", source)
         # Portfolio case-study 结构：编号 section block + 卡片化叙事。
         self.assertIn("render_story_section", source)
-        self.assertIn("render_checklist", source)
         for phrase in BANNED_PHRASES:
             self.assertNotIn(phrase, source)
 

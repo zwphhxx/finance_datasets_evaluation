@@ -24,17 +24,14 @@ from src.metrics import (
 )
 from src.ui.common import has_value
 from src.ui.components import (
-    render_card,
     render_clean_list,
     render_compact_hero,
     render_empty_state,
     render_evidence_panel,
-    render_html,
     render_inline_status,
     render_key_value_list,
     render_numbered_section,
     render_section_title,
-    render_status_badge,
     render_text_block,
     render_two_column_panel,
 )
@@ -305,36 +302,25 @@ def render_review_page(data_bundle: dict) -> None:
     # 01 任务背景与考察能力
     render_numbered_section("01", "任务", "当前评测任务的业务场景、考察能力与数据边界。")
     _render_task_context(task_info)
-    with st.expander("查看任务题全文", expanded=False):
-        _render_task_brief(task_info)
+    _render_task_brief(task_info)
 
     # 02 Gold Answer（评测锚点 / 评判标准）
     render_numbered_section("02", "评判标准", "优秀回答的锚点：核心结论、关键依据、边界条件、必须覆盖点与红线。")
     _render_gold_standard(gold)
 
-    # 03 模型回答对比
-    render_numbered_section("03", "模型回答对比", "先并排看各模型在本题上的结论，再切换查看单个模型的回答与扣分。")
+    # 03 模型回答选择
+    render_numbered_section("03", "模型回答", "选择模型查看回答、评分与红线提示。")
     models = get_case_models(merged)
     if models:
-        comparison = []
+        model_totals = []
         for model in models:
             output_row = get_output_row(merged, model)
-            verdict = build_case_verdict(output_row, data.errors, gold, task_info)
             total = output_row.get("total_score") if output_row is not None else None
-            comparison.append({
-                "model_name": model,
-                "tier": verdict["tier"],
-                "title": verdict["title"],
-                "level": verdict["level"],
-                "score_text": verdict["score_text"],
-                "total": float(total) if has_value(total) else None,
-                "weakest": verdict["weakest"],
-                "redline_count": len(verdict["redline_hits"]),
-            })
-        comparison.sort(key=lambda row: (row["total"] is None, -(row["total"] or 0.0), row["model_name"]))
-        _render_model_comparison(comparison)
-
-        selected_model = st.selectbox("选择模型", [row["model_name"] for row in comparison], key="review_model_select")
+            model_totals.append((model, float(total) if has_value(total) else None))
+        model_totals.sort(key=lambda x: (x[1] is None, -(x[1] or 0.0), x[0]))
+        selected_model = st.selectbox(
+            "选择模型", [m for m, _ in model_totals], key="review_model_select"
+        )
         output_row = get_output_row(merged, selected_model)
     else:
         st.selectbox("选择模型", ["暂无模型回答"], disabled=True, key="review_model_select")
@@ -344,19 +330,19 @@ def render_review_page(data_bundle: dict) -> None:
     # 04 模型回答详情
     if output_row is not None:
         verdict = build_case_verdict(output_row, data.errors, gold, task_info)
-        _render_verdict_card(verdict)
+        _render_inline_verdict(verdict)
         _render_model_answer(output_row, gold)
 
-        # 05 多维度评分（证据）
-        _render_scoring_matrix(output_row, data.errors)
+        with st.expander("评分矩阵", expanded=False):
+            _render_scoring_matrix(output_row, data.errors)
 
-        # 06 人工点评
+        # 05 人工点评
         _render_human_review_note(output_row)
 
-        # 07 红线提示
+        # 06 红线提示
         _render_redline_panel(verdict, gold, output_row, data.errors)
 
-        # 08 人工复核（可编辑分数并确认）
+        # 07 人工复核（仅 pending 现场评分）
         _render_case_review(output_row, eval_status)
 
 
@@ -420,8 +406,7 @@ def _render_gold_standard(gold: dict | None) -> None:
 
     from src.gold_quality import evaluate_gold_quality
     quality = evaluate_gold_quality(gold)
-    status_class = "success" if quality["is_usable"] else "warning"
-    render_status_badge(f"Gold Answer {quality['status']}", status_class)
+    st.markdown(f"**Gold Answer 状态：** {quality['status']}")
 
     core = field_text(gold, "core_conclusion", "需进一步补充")
     evidence = field_text(gold, "key_evidence", "待补充依据")
@@ -461,51 +446,13 @@ def _render_gold_standard(gold: dict | None) -> None:
         st.caption(f"人工复核提示：{review}")
 
 
-def _render_model_comparison(comparison: list[dict]) -> None:
-    if not comparison:
-        render_empty_state("该任务暂无模型回答记录，无法并排对比。")
-        return
-    header = "<th>模型</th><th>使用边界结论</th><th>总分</th><th>最弱维度</th><th>红线命中</th>"
-    body = ""
-    for row in comparison:
-        redline = f'{row["redline_count"]} 项' if row["redline_count"] else "未命中"
-        body += (
-            f'<tr><td><span class="rubric-dim">{escape(row["model_name"])}</span></td>'
-            f'<td><span class="status-badge status-{escape(row["level"])}">{escape(row["title"])}</span></td>'
-            f'<td><span class="rubric-score">{escape(row["score_text"])}</span></td>'
-            f'<td><span class="rubric-gap">{escape(row["weakest"])}</span></td>'
-            f'<td><span class="rubric-gap">{escape(redline)}</span></td></tr>'
-        )
-    table_html = f'<table class="rubric-table"><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>'
-    render_evidence_panel("模型对比结论", table_html)
-    st.caption('并排结论为样本内观察，不构成模型排行榜；切换下方"选择模型"查看单题回答与扣分依据。')
-
-
-def _render_verdict_card(verdict: dict) -> None:
-    if verdict["redline_hits"]:
-        redline_html = '<div class="boundary-list">' + "".join(
-            f'<div class="redline-item">{escape(hit)}</div>' for hit in verdict["redline_hits"]
-        ) + "</div>"
-    else:
-        redline_html = '<div class="verdict-field-value">未观察到</div>'
-
-    render_html(
-        f"""
-        <div class="verdict-card verdict-card-{escape(verdict["tier"])}">
-            <div class="verdict-head">
-                <span class="status-badge status-{escape(verdict["level"])}">{escape(verdict["title"])}</span>
-                <span class="verdict-score">总分 {escape(verdict["score_text"])}</span>
-            </div>
-            <div class="verdict-reason">{escape(verdict["reason"])}</div>
-            <div class="verdict-grid">
-                <div class="verdict-field">
-                    <div class="verdict-field-label">红线命中</div>
-                    {redline_html}
-                </div>
-            </div>
-        </div>
-        """
+def _render_inline_verdict(verdict: dict) -> None:
+    redline_count = len(verdict.get("redline_hits") or [])
+    redline_text = f"红线命中 {redline_count} 项" if redline_count else "未命中红线"
+    st.markdown(
+        f"**{verdict['title']}** · 总分 {verdict['score_text']} · {redline_text}"
     )
+    st.caption(verdict["reason"])
 
 
 def _render_model_answer(output_row: pd.Series | None, gold) -> None:
@@ -523,14 +470,15 @@ def _render_model_answer(output_row: pd.Series | None, gold) -> None:
     must_points = field_list(gold, "must_have_points") if isinstance(gold, dict) else []
     if must_points:
         covered, missed = build_point_coverage(must_points, answer)
-        st.caption("要点覆盖基于关键词近似匹配，仅供对照参考。")
-        col1, col2 = st.columns(2)
-        with col1:
-            render_text_block("已覆盖要点", "")
-            render_clean_list(covered if covered else ["未识别到明确覆盖"])
-        with col2:
-            render_text_block("遗漏要点", "")
-            render_clean_list(missed if missed else ["未识别到明显遗漏"])
+        with st.expander("要点覆盖", expanded=False):
+            st.caption("基于关键词近似匹配，仅供对照参考。")
+            col1, col2 = st.columns(2)
+            with col1:
+                render_text_block("已覆盖要点", "")
+                render_clean_list(covered if covered else ["未识别到明确覆盖"])
+            with col2:
+                render_text_block("遗漏要点", "")
+                render_clean_list(missed if missed else ["未识别到明显遗漏"])
 
 
 def _render_scoring_matrix(output_row: pd.Series | None, errors_df) -> None:
@@ -649,7 +597,7 @@ def _render_redline_panel(verdict: dict, gold, output_row: pd.Series | None, err
 
 
 def _render_case_review(output_row: pd.Series | None, eval_status: dict) -> None:
-    """在当前 (case, model) 评分未复核时，提供就地复核表单。"""
+    """在当前 (case, model) 评分处于 pending 现场结果时，提供就地复核表单。"""
     if output_row is None:
         return
     score_run_id = eval_status.get("score_run_id")
@@ -663,6 +611,9 @@ def _render_case_review(output_row: pd.Series | None, eval_status: dict) -> None
     review_status = str(row.get("review_status") or "pending")
     if review_status == "confirmed":
         st.caption("本条评分已复核归档。")
+        return
+    if review_status != "pending":
+        st.caption(f"本条评分状态为 {review_status}，仅 pending 草稿可在此归档。")
         return
 
     dimensions = ds.get_rubric_dimensions()
@@ -681,7 +632,7 @@ def _render_case_review(output_row: pd.Series | None, eval_status: dict) -> None
     note = st.text_area(
         "复核说明", value=str(row.get("review_note") or ""), key=f"review_note::{row['id']}"
     )
-    if st.button("确认并归档（人工复核通过）", key=f"review_confirm::{row['id']}"):
+    if st.button("确认并归档", type="primary", key=f"review_confirm::{row['id']}"):
         if sc.confirm_score_review(int(row["id"]), edited, note):
             st.success("已归档为已复核（confirmed）。")
             st.rerun()

@@ -221,7 +221,7 @@ class ComponentRenderTests(unittest.TestCase):
         html = "".join(self._captured)
         self.assertIn("mockup-stack", html)
         self.assertIn("mockup-desktop", html)
-        self.assertIn("mockup-mobile", html)
+        self.assertNotIn("mockup-mobile", html)
 
     def test_story_section_renders(self):
         components.render_story_section(

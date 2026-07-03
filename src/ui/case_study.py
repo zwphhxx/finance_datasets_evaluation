@@ -10,15 +10,13 @@ import streamlit as st
 from src.metrics import SCORE_DIMENSIONS
 from src.model_boundary import BOUNDARY_AWARENESS_LABEL
 from src.ui.components import (
-    render_checklist,
-    render_cta_group,
+    render_conclusion_list,
     render_mockup_stack,
     render_portfolio_landing_hero,
-    render_story_section,
     render_process_line,
-    render_tag_cloud,
     render_pull_quote,
-    render_conclusion_list,
+    render_story_section,
+    render_tag_cloud,
 )
 
 
@@ -148,7 +146,7 @@ def render_case_study_page(data_bundle: dict) -> None:
             "expression_score": "表达是否专业克制、结构清楚",
         }.get(key, "")
         eval_items.append(f"{label}：{note}")
-    render_checklist(eval_items)
+    st.markdown("\n".join(f"{i + 1}. {item}" for i, item in enumerate(eval_items)))
     render_pull_quote("高分不代表可直接使用，红线错误一票否决。")
 
     # --- Section 05: Conclusions ---
@@ -169,14 +167,9 @@ def render_case_study_page(data_bundle: dict) -> None:
         ],
         index="06",
     )
-    render_cta_group(
-        [
-            ("浏览样本库 →", "samples"),
-            ("查看评测结论 →", "conclusions"),
-            ("发起可复现实验 →", "test_run"),
-        ],
-        key_prefix="case_study_try",
-    )
+    if st.button("发起测试 →", type="primary", key="case_study_try"):
+        st.session_state.current_page = "test_run"
+        st.rerun()
 
 
 # --------------------------------------------------------------------------- #

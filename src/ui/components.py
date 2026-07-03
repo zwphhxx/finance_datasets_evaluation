@@ -29,7 +29,7 @@ STYLE_CSS = """
     --fde-green-soft: #e9f0ea;
     --fde-green-border: #cdddd0;
     --fde-gray-soft: #f1f3f6;
-    --fde-shadow: 0 1px 2px rgba(31, 39, 51, 0.05);
+    --fde-shadow: 0 0 0 transparent;
     /* Portfolio aliases: a single accent + shared radius/spacing scale so the
        case-study layer stays consistent with the existing design system. */
     --fde-accent: #2b4a6f;
@@ -1228,6 +1228,11 @@ header,
     font-weight: 650;
     line-height: 1.5;
 }
+.check-symbol {
+    color: var(--portfolio-accent-green);
+    font-weight: 700;
+    font-size: 1rem;
+}
 .portfolio-meta-line {
     color: var(--portfolio-muted);
     font-size: 0.88rem;
@@ -1249,7 +1254,7 @@ header,
     border-radius: 10px;
     background: #ffffff;
     padding: 0.6rem 0.7rem;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+    box-shadow: var(--fde-shadow);
     display: flex;
     flex-direction: column;
 }
@@ -2337,7 +2342,7 @@ def render_portfolio_landing_hero(
     """
     checklist_html = "".join(
         f'<div class="portfolio-checklist-item">'
-        f'<span style="font-size:1.1rem;">✅</span> {escape(str(item))}</div>'
+        f'<span class="check-symbol">&#10003;</span> {escape(str(item))}</div>'
         for item in checklist_items
     )
     meta_html = f'<p class="portfolio-meta-line">{escape(str(meta_line))}</p>' if meta_line else ""
@@ -2363,7 +2368,7 @@ def render_checklist(items: list[str]) -> None:
     """Render a standalone green checklist (no cards)."""
     html = "".join(
         f'<div class="portfolio-checklist-item">'
-        f'<span style="font-size:1.1rem;">✅</span> {escape(str(item))}</div>'
+        f'<span class="check-symbol">&#10003;</span> {escape(str(item))}</div>'
         for item in items
     )
     render_html(f'<div class="portfolio-checklist">{html}</div>')
@@ -2408,10 +2413,9 @@ def render_site_mockup_preview(
 
 
 def render_mockup_stack() -> None:
-    """Render a stack of 2-3 webpage preview mockups (desktop + mobile)."""
+    """Render a single desktop preview mockup."""
     render_html('<div class="mockup-stack">')
     render_site_mockup_preview(variant="desktop", lines=5, has_highlight=True)
-    render_site_mockup_preview(variant="mobile", lines=6, has_highlight=False)
     render_html('</div>')
 
 

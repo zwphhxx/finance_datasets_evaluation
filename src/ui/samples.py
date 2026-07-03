@@ -4,15 +4,6 @@ Sample = task content + judgment criteria.
 - 展示样本列表，含评判标准完整性（draft vs active）
 - 包含 add/edit sample UI（合并自 dataset_admin.py 的样本管理）
 - 缺少评判标准的样本为 draft，不可进入正式测试
-
-Required sample fields:
-  - 任务题
-  - 背景
-  - 考察能力
-  - Gold Answer
-  - 必须覆盖点
-  - 不可接受错误
-  - 风险等级
 """
 
 from __future__ import annotations
@@ -24,20 +15,16 @@ import streamlit as st
 
 from app.services import dataset_service as ds
 from src.gold_quality import field_list, field_text, field_value
-from src.metrics import get_task_by_case_id, merge_case_outputs_with_scores
+from src.metrics import get_task_by_case_id
 from src.ui.components import (
-    render_card,
     render_clean_list,
     render_compact_hero,
     render_empty_state,
     render_evidence_panel,
     render_html,
-    render_info_panel,
-    render_inline_status,
     render_key_value_list,
     render_numbered_section,
     render_section_title,
-    render_status_badge,
     render_tag_cloud,
     render_text_block,
     render_two_column_panel,
@@ -45,17 +32,14 @@ from src.ui.components import (
 from src.ui.page_config import get_page_config
 from src.ui.tasks import (
     DIFFICULTY_LABELS,
-    DIFFICULTY_BADGE,
     DOMAIN_LABELS,
     RISK_LABELS,
-    RISK_BADGE,
     TASK_TYPE_LABELS,
     display_label,
-    summarize_text,
 )
 
 
-_STATUS_BADGE = {"active": ("启用中", "success"), "inactive": ("已停用", "neutral"), "draft": ("草稿", "warning")}
+_STATUS_TEXT = {"active": "可测试", "inactive": "已停用", "draft": "草稿"}
 _DIFFICULTY_OPTIONS = list(DIFFICULTY_LABELS.keys())
 _RISK_OPTIONS = ["", "高", "中", "低"]
 
@@ -77,8 +61,7 @@ def _truncate(value, limit: int = 40) -> str:
 
 
 def build_case_overview_rows(data) -> list[dict]:
-    """One compact row per task, with Gold Answer / model-answer / error-label
-    status derived from the linked data files. Includes judgment criteria completeness (draft vs active)."""
+    """One compact row per task, with Gold Answer / judgment criteria completeness."""
     tasks_df = data.tasks
     if tasks_df.empty or "case_id" not in tasks_df.columns:
         return []
@@ -96,13 +79,11 @@ def build_case_overview_rows(data) -> list[dict]:
         difficulty_raw = _clean_text(row.get("difficulty"))
         gold = data.gold_answer_map.get(case_id) or {}
         has_gold = field_value(gold, "core_conclusion") is not None
-        # Judgment criteria completeness
         has_criteria = bool(
             has_gold
             and field_value(gold, "must_have_points")
             and field_value(gold, "unacceptable_errors")
         )
-        # Sample status: draft if missing criteria
         sample_status = "active" if has_criteria else "draft"
         rows.append(
             {
@@ -110,7 +91,6 @@ def build_case_overview_rows(data) -> list[dict]:
                 "domain_label": display_label(row.get("domain"), DOMAIN_LABELS),
                 "task_type_label": display_label(row.get("task_type"), TASK_TYPE_LABELS),
                 "difficulty_label": DIFFICULTY_LABELS.get(difficulty_raw, difficulty_raw),
-                "difficulty_badge": DIFFICULTY_BADGE.get(difficulty_raw, "neutral"),
                 "capability": _truncate(row.get("expected_capability")),
                 "has_gold": has_gold,
                 "has_criteria": has_criteria,
@@ -127,23 +107,23 @@ def _build_sample_coverage_summary(rows) -> list[tuple[str, str]]:
     total = len(rows)
     with_gold = sum(1 for r in rows if r["has_gold"])
     with_criteria = sum(1 for r in rows if r["has_criteria"])
-    with_answer = sum(1 for r in rows if r["model_answer_count"] > 0)
-    with_error = sum(1 for r in rows if r["error_label_count"] > 0)
     return [
         ("任务总数", f"{total} 道"),
         ("Gold Answer 覆盖", f"{with_gold}/{total}"),
         ("评判标准完整", f"{with_criteria}/{total}"),
-        ("已有模型回答", f"{with_answer} 道"),
-        ("已触发错误标签", f"{with_error} 道"),
     ]
 
 
-# Difficulty display order from hardest to easiest, for the filter dropdown.
-_DIFFICULTY_ORDER = ["高难度", "中等难度", "低难度"]
-
-
-def filter_case_rows(rows, domain="全部", task_type="全部", difficulty="全部", gold="全部", answer="全部") -> list[dict]:
-    """Apply the lightweight top filters to the pre-built case rows."""
+def filter_case_rows(
+    rows,
+    domain="全部",
+    task_type="全部",
+    difficulty="全部",
+    gold="全部",
+    answer="全部",
+    status="全部",
+) -> list[dict]:
+    """Apply lightweight top filters to the pre-built case rows."""
     filtered = []
     for row in rows:
         if domain != "全部" and row["domain_label"] != domain:
@@ -160,6 +140,10 @@ def filter_case_rows(rows, domain="全部", task_type="全部", difficulty="全�
             continue
         if answer == "无" and row["model_answer_count"] > 0:
             continue
+        if status == "可测试" and row["sample_status"] != "active":
+            continue
+        if status == "草稿" and row["sample_status"] != "draft":
+            continue
         filtered.append(row)
     return filtered
 
@@ -168,7 +152,6 @@ def render_samples_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
     config = get_page_config("samples")
 
-    # Portfolio compact hero
     domain_count = 0
     if not data.tasks.empty and "domain" in data.tasks.columns:
         domain_count = data.tasks["domain"].dropna().nunique()
@@ -189,88 +172,58 @@ def render_samples_page(data_bundle: dict) -> None:
 
     rows = build_case_overview_rows(data)
 
-    # Portfolio sub-page: intro + inline tags
     domains = sorted({row["domain_label"] for row in rows})
     render_tag_cloud(domains)
 
-    # 01 Sample coverage summary
-    render_numbered_section("01", "样本覆盖摘要", "当前数据集的 Gold Answer、模型回答与错误标签覆盖情况。")
-    from src.ui.components import render_context_grid
-    render_context_grid(_build_sample_coverage_summary(rows))
+    # 01 Inline meta line (replaces card grid)
+    total, with_gold, with_criteria = _build_sample_coverage_summary(rows)[:3]
+    st.markdown(
+        f"**{total[1]}** 样本 · **{with_criteria[1]}** 评判标准完整 · "
+        f"**{with_gold[1]}** 已配 Gold Answer"
+    )
 
-    # 02 Filters
-    render_numbered_section("02", "筛选条件", "按领域、任务类型、难度、Gold Answer 与模型回答状态过滤。")
+    # 02 Filters: domain + sample status only
+    render_numbered_section("02", "筛选条件", "按领域与样本状态过滤。")
     filtered = _render_filters(rows)
 
-    # 03 Task table as evidence panel
-    render_numbered_section("03", "任务清单", "一行一题，长文本见下方任务详情。评判标准完整的样本可进入正式测试。")
+    # 03 Task table
+    render_numbered_section("03", "任务清单", "评判标准完整的样本可进入正式测试。")
     if not filtered:
         render_empty_state("没有符合当前筛选条件的任务。")
     else:
         _render_overview_table(filtered)
 
     # 04 Selected task detail
-    render_numbered_section("04", "选中任务详情", "查看任务背景、要求、Gold Answer 与模型覆盖。")
+    render_numbered_section("04", "选中任务详情", "查看任务背景、要求与 Gold Answer。")
     _render_selected_task_detail(data, filtered)
 
-    # 05 Add/Edit sample (merged from dataset_admin)
-    render_numbered_section("05", "样本管理", "新增或编辑样本题与 Gold Answer 评判标准。")
+    # 05 Sample management: create form visible, advanced ops folded
+    render_numbered_section("05", "样本管理", "新增样本或进入高级管理编辑、停用/启用。")
     _render_sample_management(data)
 
 
 def _render_filters(rows) -> list[dict]:
     domains = ["全部"] + sorted({row["domain_label"] for row in rows})
-    task_types = ["全部"] + sorted({row["task_type_label"] for row in rows})
-    present_difficulties = {row["difficulty_label"] for row in rows}
-    difficulties = ["全部"] + [d for d in _DIFFICULTY_ORDER if d in present_difficulties]
-    difficulties += sorted(present_difficulties - set(_DIFFICULTY_ORDER))
-
-    columns = st.columns(5)
-    domain = columns[0].selectbox("领域", domains, key="samples_filter_domain")
-    task_type = columns[1].selectbox("任务类型", task_types, key="samples_filter_task_type")
-    difficulty = columns[2].selectbox("难度", difficulties, key="samples_filter_difficulty")
-    gold = columns[3].selectbox("Gold Answer", ["全部", "有", "无"], key="samples_filter_gold")
-    answer = columns[4].selectbox("模型回答", ["全部", "有", "无"], key="samples_filter_answer")
-
-    return filter_case_rows(rows, domain, task_type, difficulty, gold, answer)
+    col1, col2 = st.columns(2)
+    domain = col1.selectbox("领域", domains, key="samples_filter_domain")
+    status = col2.selectbox("样本状态", ["全部", "可测试", "草稿"], key="samples_filter_status")
+    return filter_case_rows(rows, domain, status)
 
 
 def _render_overview_table(rows) -> None:
     header_cells = "".join(
         f"<th>{escape(name)}</th>"
-        for name in [
-            "任务编号",
-            "领域",
-            "任务类型",
-            "难度",
-            "考察能力",
-            "Gold Answer",
-            "评判标准",
-            "模型回答数",
-            "错误标签数",
-        ]
+        for name in ["任务编号", "领域", "任务类型", "评判标准状态", "操作"]
     )
     body = ""
     for row in rows:
-        diff_badge = f'<span class="status-badge status-{row["difficulty_badge"]}">{escape(row["difficulty_label"])}</span>'
-        if row["has_gold"]:
-            gold_badge = '<span class="status-badge status-success">具备</span>'
-        else:
-            gold_badge = '<span class="status-badge status-neutral">缺失</span>'
-        if row["has_criteria"]:
-            criteria_badge = '<span class="status-badge status-success">完整</span>'
-        else:
-            criteria_badge = '<span class="status-badge status-warning">草稿</span>'
+        status_text = _STATUS_TEXT.get(row["sample_status"], row["sample_status"])
         body += (
             f'<tr><td class="check-key">{escape(row["case_id"])}</td>'
             f"<td>{escape(row['domain_label'])}</td>"
             f"<td>{escape(row['task_type_label'])}</td>"
-            f"<td>{diff_badge}</td>"
-            f'<td class="check-note">{escape(row["capability"])}</td>'
-            f"<td>{gold_badge}</td>"
-            f"<td>{criteria_badge}</td>"
-            f'<td class="check-count">{row["model_answer_count"]}</td>'
-            f'<td class="check-count">{row["error_label_count"]}</td></tr>'
+            f'<td>{escape(status_text)}</td>'
+            f'<td class="check-note">—</td></tr>'
         )
     table_html = f'<table class="check-table"><thead><tr>{header_cells}</tr></thead><tbody>{body}</tbody></table>'
     render_evidence_panel("任务列表", table_html)
@@ -314,7 +267,6 @@ def _render_selected_task_detail(data, rows) -> None:
         ])
 
     _render_gold_summary(data.gold_answer_map.get(selected))
-    _render_covered_models(data, selected)
 
 
 def _render_gold_summary(gold) -> None:
@@ -324,8 +276,7 @@ def _render_gold_summary(gold) -> None:
 
     from src.gold_quality import evaluate_gold_quality
     quality = evaluate_gold_quality(gold)
-    status_class = "success" if quality["is_usable"] else "warning"
-    render_status_badge(f"Gold Answer {quality['status']}", status_class)
+    st.markdown(f"**Gold Answer 状态：** {quality['status']}")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -350,36 +301,23 @@ def _render_gold_summary(gold) -> None:
         else:
             st.caption("暂无")
 
-
-def _render_covered_models(data, case_id: str) -> None:
-    merged = merge_case_outputs_with_scores(data.model_outputs, data.scores, case_id)
-    if merged.empty or "model_name" not in merged.columns:
-        render_empty_state("该任务暂无模型回答记录。")
-        return
-
-    items = []
-    for model_name in sorted(merged["model_name"].dropna().astype(str).unique()):
-        model_rows = merged[merged["model_name"].astype(str) == model_name]
-        total = model_rows.iloc[0].get("total_score")
-        if total is None or (isinstance(total, float) and pd.isna(total)):
-            score_text = "未评分"
-        else:
-            score_text = f"总分 {float(total):.0f}"
-        items.append((model_name, score_text))
-
-    render_section_title("已覆盖模型回答", f"当前任务共 {len(items)} 个模型回答。")
-    render_key_value_list(items)
+    review = quality["manual_review"]
+    if review:
+        st.caption(f"人工复核提示：{review}")
 
 
 # --------------------------------------------------------------------------- #
-# Sample management (merged from dataset_admin.py)
+# Sample management
 # --------------------------------------------------------------------------- #
 
 def _render_sample_management(data) -> None:
-    """Render add/edit sample forms."""
+    """Render add sample form; advanced ops folded."""
     db_ready = ds.database_ready()
     if not db_ready:
-        st.info("SQLite 运行时数据层未初始化，样本管理以只读模式展示。初始化后可新增/编辑样本。")
+        render_text_block(
+            "SQLite 未初始化",
+            "SQLite 运行时数据层未初始化，样本管理以只读模式展示。初始化后可新增/编辑样本。",
+        )
         if st.button("从 seed 文件初始化 SQLite 数据层", key="samples_init_db"):
             try:
                 counts = ds.ensure_seed_database(force=False)
@@ -390,10 +328,9 @@ def _render_sample_management(data) -> None:
                 st.rerun()
         return
 
-    tabs = st.tabs(["新增样本", "编辑样本 / Gold Answer"])
-    with tabs[0]:
-        _render_task_create_form()
-    with tabs[1]:
+    _render_task_create_form()
+
+    with st.expander("高级管理（编辑 / 停用 / 启用）", expanded=False):
         _render_task_edit_form()
         _render_gold_edit_form()
 
@@ -453,7 +390,7 @@ def _render_task_create_form() -> None:
         except Exception as exc:
             st.error(str(exc))
         else:
-            st.success(f"已新增样本 {case_id.strip()}。请到「编辑样本 / Gold Answer」补充评判标准，否则该样本为草稿状态，不可进入测试。")
+            st.success(f"已新增样本 {case_id.strip()}。请到「高级管理」补充评判标准，否则该样本为草稿状态，不可进入测试。")
             st.rerun()
 
 
@@ -517,7 +454,6 @@ def _render_task_edit_form() -> None:
         st.success(f"已保存样本 {selected}。")
         st.rerun()
 
-    # Status toggle
     status = str(row.get("status") or "active").strip().lower()
     if status == ds.INACTIVE_STATUS:
         if st.button("启用样本", key="samples_activate"):
