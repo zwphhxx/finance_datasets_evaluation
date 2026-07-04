@@ -23,7 +23,7 @@ PAGES = {
 # Top nav: exactly 5 main items matching the core evaluation workflow.
 # Maps display label -> page_key for the top nav bar.
 _TOP_NAV_ITEMS = [
-    ("Case Study", "case_study"),
+    ("项目说明", "case_study"),
     ("样本库", "samples"),
     ("发起测试", "test_run"),
     ("评测复核", "review"),

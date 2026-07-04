@@ -1,6 +1,9 @@
 """轻量级样本库数据管理层。
 
-样本数据统一存放在 `data/samples.json`，与现有 task/gold 解耦，避免影响评测核心流程。
+样本库是业务操作视图：待复核、已入库、需优化、已归档只在页面展示中文状态。
+状态会尽量同步到 SQLite `task_cases.status`，用于控制样本是否可进入测试；样本内容
+仍保存在 `data/samples.json`。正式评测的题干、参考答案和评分量表仍来自
+`task_cases` / `gold_answers` / `rubrics`。
 首次加载时若 JSON 不存在，从现有 `data/tasks.csv` + `data/gold_answers.json` 自动生成初始样本。
 """
 
@@ -16,6 +19,12 @@ import pandas as pd
 
 
 SAMPLE_STATUSES = ["待复核", "已入库", "需优化", "已归档"]
+FORMAL_STATUS_BY_SAMPLE_STATUS = {
+    "待复核": "draft",
+    "已入库": "active",
+    "需优化": "draft",
+    "已归档": "inactive",
+}
 REQUIRED_FIELDS = ["title", "scenario", "task_prompt", "gold_answer", "rubric", "status"]
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -246,7 +255,7 @@ def _existing_ids() -> set[str]:
     return {s.sample_id for s in load_samples()}
 
 
-def create_sample(values: dict[str, Any]) -> None:
+def create_sample(values: dict[str, Any], *, db_path: Path | None = None) -> None:
     """新增样本。会校验必填字段与 sample_id 唯一性。"""
     errors = validate_sample(values, existing_ids=_existing_ids())
     if errors:
@@ -257,9 +266,10 @@ def create_sample(values: dict[str, Any]) -> None:
     samples = load_samples()
     samples.append(sample)
     save_samples(samples)
+    _sync_status_to_formal_layer(sample.sample_id, sample.status, db_path=db_path)
 
 
-def update_sample(sample_id: str, changes: dict[str, Any]) -> None:
+def update_sample(sample_id: str, changes: dict[str, Any], *, db_path: Path | None = None) -> None:
     """更新样本字段。sample_id 不可修改；updated_at 自动刷新。"""
     if "sample_id" in changes:
         raise ValueError("不允许修改样本编号 sample_id")
@@ -280,18 +290,20 @@ def update_sample(sample_id: str, changes: dict[str, Any]) -> None:
 
     samples[idx] = Sample.from_dict(updated)
     save_samples(samples)
+    if "status" in changes:
+        _sync_status_to_formal_layer(sample_id, samples[idx].status, db_path=db_path)
 
 
-def set_sample_status(sample_id: str, status: str) -> None:
+def set_sample_status(sample_id: str, status: str, *, db_path: Path | None = None) -> None:
     """变更样本状态。"""
     if status not in SAMPLE_STATUSES:
         raise ValueError(f"无效状态：{status}，可选：{', '.join(SAMPLE_STATUSES)}")
-    update_sample(sample_id, {"status": status})
+    update_sample(sample_id, {"status": status}, db_path=db_path)
 
 
-def archive_sample(sample_id: str) -> None:
+def archive_sample(sample_id: str, *, db_path: Path | None = None) -> None:
     """归档样本（软删除）：状态改为已归档。"""
-    set_sample_status(sample_id, "已归档")
+    set_sample_status(sample_id, "已归档", db_path=db_path)
 
 
 def get_eligible_case_ids() -> list[str]:
@@ -361,6 +373,8 @@ def import_samples(samples_data: list[dict[str, Any]]) -> list[Sample]:
         raise ValueError("\n".join(errors))
 
     save_samples(samples)
+    for sample in imported:
+        _sync_status_to_formal_layer(sample.sample_id, sample.status)
     return imported
 
 
@@ -434,3 +448,35 @@ def count_by_status() -> dict[str, int]:
         if sample.status in counts:
             counts[sample.status] += 1
     return counts
+
+
+def formal_status_for_sample_status(status: str) -> str:
+    """把页面中文业务状态映射为正式任务层状态。"""
+    if status not in FORMAL_STATUS_BY_SAMPLE_STATUS:
+        raise ValueError(f"无效状态：{status}，可选：{', '.join(SAMPLE_STATUSES)}")
+    return FORMAL_STATUS_BY_SAMPLE_STATUS[status]
+
+
+def _sync_status_to_formal_layer(
+    sample_id: str,
+    sample_status: str,
+    *,
+    db_path: Path | None = None,
+) -> bool:
+    """将样本状态同步到 SQLite 任务层。
+
+    只同步已存在于正式任务层的同编号样本；新增样本内容不在这里双写进 task/gold/rubric，
+    避免把自由表单文本误当作正式评测资产。
+    """
+    formal_status = formal_status_for_sample_status(sample_status)
+    try:
+        from app.services import dataset_service as ds
+
+        if not ds.database_ready(db_path):
+            return False
+        if ds.get_task_case(sample_id, db_path) is None:
+            return False
+        ds.set_task_case_status(sample_id, formal_status, db_path=db_path)
+        return True
+    except Exception:
+        return False

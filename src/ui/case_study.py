@@ -1,23 +1,22 @@
-"""Case Study page: project background, sample source, evaluation framework, business flow.
-
-Replaces project_methodology. Portfolio/landing style from PR-UI6.
+"""项目说明页：定位、样本口径、评测闭环与主入口。
 """
 
 from __future__ import annotations
 
 import streamlit as st
 
+from app.services import sample_repository as sr
 from src.metrics import SCORE_DIMENSIONS
 from src.model_boundary import BOUNDARY_AWARENESS_LABEL
 from src.ui.components import (
-    render_conclusion_list,
-    render_mockup_stack,
-    render_portfolio_landing_hero,
+    render_compact_hero,
     render_process_line,
     render_pull_quote,
     render_story_section,
+    render_status_summary,
     render_tag_cloud,
 )
+from src.ui.page_config import get_page_config
 
 
 def _distinct_count(df, column: str) -> int:
@@ -43,6 +42,26 @@ def _build_meta_line(data) -> str:
     scored = scored_case_count(getattr(data, "scores", None))
     dimension_count = len(SCORE_DIMENSIONS)
     return f"{task_count} 任务 · {domain_count} 领域 · {scored} 已评分 · {dimension_count} 维度"
+
+
+def _sample_library_counts() -> dict[str, int]:
+    try:
+        return sr.count_by_status()
+    except Exception:
+        return {status: 0 for status in sr.SAMPLE_STATUSES}
+
+
+def _build_home_stats(base, eval_status: dict | None) -> list[tuple[str, str]]:
+    tasks = getattr(base, "tasks", None)
+    task_count = len(tasks) if tasks is not None else 0
+    counts = _sample_library_counts()
+    confirmed = int((eval_status or {}).get("confirmed", 0) or 0)
+    return [
+        (str(task_count), "正式样本"),
+        (str(counts.get("已入库", 0)), "已入库"),
+        (str(confirmed), "已复核评分"),
+        (str(len(SCORE_DIMENSIONS)), "评分维度"),
+    ]
 
 
 def _get_domain_tags(data) -> list[str]:
@@ -76,63 +95,58 @@ def _get_formal_conclusions(data) -> list[tuple[str, str]]:
 
 def render_case_study_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
+    base = data_bundle.get("base") or data
+    eval_status = data_bundle.get("eval_status") or {}
+    config = get_page_config("case_study")
 
-    # --- Hero: two-column with huge title, checklist, mockups ---
-    render_portfolio_landing_hero(
-        title="FinDueEval",
-        subtitle="专业尽调场景下的大模型可用边界评测",
-        description=(
-            "基于投资投行、财务与法律尽调经验，不是模型排行榜；"
-            "判断模型的回答哪些能参考、哪些需人工复核、哪些触发红线。"
-        ),
-        checklist_items=[
-            "经验样本脱敏沉淀",
-            "Gold Answer + Rubric 多维评价",
-            "草稿评测经人工复核后归档",
-        ],
-        meta_line=_build_meta_line(data),
+    render_compact_hero(
+        eyebrow="FinDueEval",
+        title=config.title,
+        question=config.question,
+        stats=_build_home_stats(base, eval_status),
     )
-    render_mockup_stack()
 
-    # --- Section 01: Why this project (Project Brief) ---
     render_story_section(
-        title="Why this project",
+        title="项目定位",
         paragraphs=[
-            "在投行、财务和法律尽调中，模型的回答经常'写得像对，但漏掉关键风险'——结论通顺专业，却可能隐藏致命遗漏或无依据的确定性判断。",
-            "尽调是高风险、强合规工作。相比明显的事实错误，'看起来对'的错误更难发现，也更危险。我想回答：在尽调任务上，模型回答到底能不能放心用？",
-            "把过往尽调经验脱敏抽象成标准化任务，人工撰写 Gold Answer，再用 Rubric 多维评分 + 红线错误 + 人工复核，量化模型的可用边界。",
+            "FinDueEval 是一个面试 MVP，用脱敏尽调样本评估模型回答的可参考程度、复核需求和使用边界。",
+            "项目不是模型排行榜，也不替代专业判断；它把“看起来专业”的回答拆回参考答案、评分量表和人工复核记录。",
         ],
         index="01",
     )
 
-    # --- Section 02: Method (Methodology) ---
     render_story_section(
-        title="Method",
+        title="评测闭环",
         paragraphs=[
-            "从真实经验到可复现评测，整个流程分为六个环节：",
+            "主线从样本状态开始，到测试、评分草稿、人工复核和正式结论结束。只有已入库样本可进入测试，只有已复核评分进入正式结论。",
         ],
         index="02",
     )
     render_process_line([
-        "经验样本", "Gold Answer", "Rubric", "模型回答", "人工复核", "结论归档"
+        "待复核样本", "已入库样本", "发起测试", "评分草稿", "人工复核", "正式结论"
     ])
 
-    # --- Section 03: Dataset (Dataset Snapshot) ---
     render_story_section(
-        title="Dataset",
+        title="样本口径",
         paragraphs=[
-            "所有样本均从真实尽调经验中脱敏抽象，去除真实公司、交易与敏感数据，保留可评测的专业任务结构。每道题包含业务场景、考察能力、风险等级与 Gold Answer。",
+            "样本库用于浏览和维护中文业务状态；正式评测读取任务题、参考答案和评分量表，避免把管理草稿误计入结论。",
+            "所有样本均从尽调场景脱敏抽象，去除真实公司、交易与敏感数据，保留可评测的专业判断结构。",
         ],
         index="03",
     )
-    render_tag_cloud(_get_domain_tags(data))
-    st.caption("样本脱敏原则：去除真实公司名、交易金额、敏感数据，保留判断结构与风险点。")
+    render_tag_cloud(_get_domain_tags(base))
+    counts = _sample_library_counts()
+    render_status_summary([
+        ("待复核样本", str(counts.get("待复核", 0)), "warning"),
+        ("已入库样本", str(counts.get("已入库", 0)), "success"),
+        ("需优化样本", str(counts.get("需优化", 0)), "danger"),
+        ("已复核评分", str(int(eval_status.get("confirmed", 0) or 0)), "success"),
+    ])
 
-    # --- Section 04: Evaluation ---
     render_story_section(
-        title="Evaluation",
+        title="评分方式",
         paragraphs=[
-            "把'好的尽调回答'拆成五个维度，由裁判模型对照 Gold 给出建议分：",
+            "评分草稿由裁判模型对照参考答案和评分量表生成，人工可以修订分数和复核说明。高分不代表可直接使用，红线错误仍需人工判断。",
         ],
         index="04",
     )
@@ -149,27 +163,22 @@ def render_case_study_page(data_bundle: dict) -> None:
     st.markdown("\n".join(f"{i + 1}. {item}" for i, item in enumerate(eval_items)))
     render_pull_quote("高分不代表可直接使用，红线错误一票否决。")
 
-    # --- Section 05: Conclusions ---
     render_story_section(
-        title="Conclusions",
+        title="下一步",
         paragraphs=[
-            "正式结论只纳入已人工沉淀的基准结论与已复核归档的现场结论。草稿评测未进入正式结论。",
+            "先检查样本库状态，再选择已入库样本发起测试。测试完成后会生成评分草稿，进入人工复核后才形成正式结论。",
         ],
         index="05",
     )
-    render_conclusion_list(_get_formal_conclusions(data))
-
-    # --- Section 06: Try it (How to Read) ---
-    render_story_section(
-        title="Try it",
-        paragraphs=[
-            "从样本库浏览到可复现实验，三个入口按需进入：",
-        ],
-        index="06",
-    )
-    if st.button("发起测试 →", type="primary", key="case_study_try"):
-        st.session_state.current_page = "test_run"
-        st.rerun()
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("进入样本库", type="primary", key="case_study_samples"):
+            st.session_state.current_page = "samples"
+            st.rerun()
+    with col2:
+        if st.button("发起测试", key="case_study_try"):
+            st.session_state.current_page = "test_run"
+            st.rerun()
 
 
 # --------------------------------------------------------------------------- #
@@ -236,7 +245,7 @@ def get_project_brief_items() -> list[tuple[str, str]]:
         ),
         (
             "项目输出",
-            "一套可复用的评测样本库、离线评测结论、典型样本拆解与可复现实验入口，"
+            "一套可复用的评测样本库、评分草稿、人工复核和正式结论入口，"
             "让'能不能用'从主观判断变成可验证的样本内观察。",
         ),
     ]
@@ -267,7 +276,7 @@ def get_methodology_items() -> list[tuple[str, str]]:
         ),
         (
             "人工复核归档",
-            "裁判分数为建议分；现场评测结果默认进入草稿（pending），"
+            "裁判分数为建议分；现场评测结果默认进入评分草稿，"
             "经人工复核确认后才计入正式评测结论。",
         ),
     ]
@@ -292,9 +301,9 @@ def get_dataset_snapshot_items(data) -> list[tuple[str, str]]:
 def get_how_to_read_steps() -> list[str]:
     """Deprecated: kept for backward compatibility."""
     return [
-        "先看已有评测结论",
-        "再看典型样本拆解",
-        "最后可现场发起可复现实验",
+        "先检查样本库状态",
+        "再选择已入库样本发起测试",
+        "最后复核评分并归档结论",
     ]
 
 

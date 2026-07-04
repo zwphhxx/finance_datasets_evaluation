@@ -1,10 +1,10 @@
-"""发起测试页面（Test Run）。
+"""发起测试页面。
 
 Replaces eval_run_page.
-- User selects test sample(s) and tested model(s)
-- Fixed judge model display; no judge model input
-- Tested model prompt does NOT contain Gold Answer
-- Keep default single-task selection
+- 选择可进入测试的样本与被测模型。
+- 裁判模型使用系统默认配置，页面不提供裁判模型输入。
+- 被测模型提示词不包含参考答案。
+- 默认仅选择一道样本，降低面试演示时的等待时间。
 """
 
 from __future__ import annotations
@@ -35,18 +35,21 @@ BOUNDARY_NOTE = (
     "模型回答仅用于评测，不构成金融、法律或投资建议；评分为裁判模型建议分，需人工复核确认后归档。"
 )
 
-REPRODUCIBILITY_NOTE = (
-    "本页是面试官可选的现场可复现实验，不是项目主线。这里的“本次现场运行”受 API Key、网络、"
-    "模型版本与限流影响，结果可能波动；它默认进入草稿（待复核），不会覆盖各分析页默认展示的"
-    "“离线样本评价”。只有经人工复核确认后，现场结果才计入正式评测结论。"
-    "（离线样本评价 vs 本次现场运行）"
+MAIN_PROMPT = "选择已入库样本和模型，运行后生成评分草稿；草稿需人工复核后才进入正式结论。"
+
+RUN_BOUNDARY_NOTE = (
+    "本页运行受密钥、网络、模型版本与限流影响，结果可能波动。新评分默认进入评分草稿，"
+    "不会覆盖正式结论；只有人工复核确认后才会归档。"
 )
 
 _STATUS_BADGE = {
     "success": ("成功", "success"),
-    "mock": ("mock", "neutral"),
+    "mock": ("模拟回退", "neutral"),
     "failed": ("失败", "danger"),
 }
+
+_MODE_LABEL = {"mock": "模拟回退", "live": "真实调用"}
+_REVIEW_STATUS_LABEL = {"pending": "待复核", "confirmed": "已复核"}
 
 
 def render_test_run_page(data_bundle: dict) -> None:
@@ -58,8 +61,10 @@ def render_test_run_page(data_bundle: dict) -> None:
         title=config.title,
         question=config.question,
     )
-    st.caption(REPRODUCIBILITY_NOTE)
-    st.caption(f"评分模型：{sc.DEFAULT_JUDGE_MODEL}（系统默认，被测模型全程不可见 Gold）")
+    st.info(MAIN_PROMPT)
+    with st.expander("运行边界", expanded=False):
+        st.write(RUN_BOUNDARY_NOTE)
+        st.caption(f"裁判评分使用系统默认配置；被测模型全程不可见参考答案。")
 
     tasks_df = base.tasks
     if tasks_df is None or tasks_df.empty:
@@ -80,7 +85,7 @@ def render_test_run_page(data_bundle: dict) -> None:
     _render_results()
 
     # 02 评分草稿
-    render_numbered_section("02", "评分草稿", "由裁判模型对照 Gold Answer 与 Rubric 给出建议分。")
+    render_numbered_section("02", "评分草稿", "由裁判模型对照参考答案与评分量表给出建议分。")
     _render_scoring(base, provider_name, task_records)
     _render_score_results()
 
@@ -88,16 +93,16 @@ def render_test_run_page(data_bundle: dict) -> None:
 def _render_config_controls() -> str:
     providers = available_providers()
     default_index = providers.index("siliconflow") if (sf.is_configured() and "siliconflow" in providers) else 0
-    provider_name = st.selectbox("Provider", providers, index=default_index, key="test_run_provider")
+    provider_name = st.selectbox("模型服务", providers, index=default_index, key="test_run_provider")
 
     effective = get_text_provider(prefer=provider_name)
     if effective.name == "mock":
         if provider_name != "mock":
-            st.warning("未配置 SiliconFlow API Key，已切换为 mock 模式：回答为模拟生成。")
+            st.warning("未配置模型服务密钥，已切换为模拟回退模式：回答为模拟生成。")
         else:
-            st.caption("当前为 mock 模式：回答为模拟生成。")
+            st.caption("当前为模拟回退模式：回答为模拟生成。")
     else:
-        st.caption(f"当前为真实调用模式（{effective.name}）。请确认已在 .env 或 secrets 中配置 API Key。")
+        st.caption("当前为真实调用模式。请确认已在本地配置中提供模型服务密钥。")
 
     return provider_name
 
@@ -113,12 +118,12 @@ def _render_connectivity_check(provider_name: str) -> None:
         provider = get_text_provider(prefer=provider_name)
         key_configured = sf.is_configured() if provider_name == "siliconflow" else (provider.name == "mock")
         listing = provider.list_models()
-        mode = "mock" if provider.name == "mock" else "live"
+        mode = "模拟回退" if provider.name == "mock" else "真实调用"
         lines = [
-            f"Provider：{provider.name}",
+            f"服务标识：{provider.name}",
             f"模式：{mode}",
-            f"API Key：{'已配置' if key_configured else '未配置'}",
-            f"list_models：{'成功' if listing.ok else '失败'}",
+            f"密钥：{'已配置' if key_configured else '未配置'}",
+            f"模型列表：{'成功' if listing.ok else '失败'}",
         ]
         if listing.ok and listing.models:
             lines.append(f"可用模型数：{len(listing.models)}")
@@ -134,7 +139,7 @@ def _render_connectivity_check(provider_name: str) -> None:
 
 
 def _render_load_model_list_button(provider_name: str) -> None:
-    st.caption("模型列表从 Provider 实时获取，不硬编码；加载后可在下方多选。")
+    st.caption("模型列表从服务实时获取；加载后可在下方多选。")
     provider = get_text_provider(prefer=provider_name)
     cache_key = f"test_run_models::{provider.name}"
     if st.button("加载 / 刷新模型列表", key="test_run_load_models"):
@@ -157,7 +162,7 @@ def _render_model_selector(provider_name: str) -> list[str]:
     manual_raw = st.text_input(
         "手动追加模型 ID（多个用逗号分隔）",
         key="test_run_models_manual",
-        placeholder="例如 THUDM/GLM-4-9B-0414, Qwen/Qwen2.5-7B-Instruct",
+        placeholder="输入模型 ID，多个用逗号分隔",
     )
     manual_ids = [item.strip() for item in manual_raw.split(",") if item.strip()]
     return _dedupe(list(selected_from_list) + manual_ids)
@@ -179,7 +184,7 @@ def _render_task_selector(task_records: list[dict], gold_map: dict) -> list[dict
             eligible.append(case_id)
 
     if not eligible:
-        st.warning("当前没有具备完整评判标准且样本库状态为「已入库」的样本可测。请到「样本库」补充完整 Gold/Rubric 并将状态设为已入库。")
+        st.warning("当前没有具备完整评判标准且样本库状态为「已入库」的样本可测。请到「样本库」补充完整参考答案和评分量表，并将状态设为已入库。")
         return []
 
     default_cases = [str(r.get("case_id")) for r in er.default_task_selection(task_records) if str(r.get("case_id")) in by_case]
@@ -251,12 +256,12 @@ def _render_results() -> None:
     summary = er.summarize_outcomes(result.outcomes)
     st.markdown(
         f"本次运行 **成功 {summary.success} / {summary.total}** · "
-        f"模型 {len(result.model_ids)} 个 · 模式 {result.mode}"
+        f"模型 {len(result.model_ids)} 个 · 运行模式：{_mode_label(result.mode)}"
     )
     if summary.total and summary.success == 0:
         st.warning("本次运行没有任何成功回答；请查看明细中的错误码与错误信息，或先做连通性检查。")
     if er.is_mock_result(result):
-        st.caption("本次为 mock 模式运行，回答为模拟生成。")
+        st.caption("本次为模拟回退模式运行，回答为模拟生成。")
 
     with st.expander("查看回答", expanded=False):
         _render_answer_viewer(result)
@@ -309,7 +314,7 @@ def _render_answer_viewer(result) -> None:
     outcome = outcomes[selected]
 
     st.markdown(
-        f"状态：{outcome.run_status} · 耗时："
+        f"状态：{_status_label(outcome.run_status)} · 耗时："
         f"{'—' if outcome.latency_ms is None else f'{outcome.latency_ms} ms'} · "
         f"Token：{_n(outcome.input_tokens)}/{_n(outcome.output_tokens)}/{_n(outcome.total_tokens)}"
     )
@@ -357,10 +362,10 @@ def _render_score_results() -> None:
 
     st.markdown(
         f"已评分 {score_result.scored_count}/{len(score_result.outcomes)} · "
-        f"score_run_id：{score_result.score_run_id} · 模式：{score_result.mode}"
+        f"运行模式：{_mode_label(score_result.mode)}"
     )
     if sc.is_mock_score(score_result):
-        st.caption("本次为 mock 模式：未产生真实评分，各维度留空。")
+        st.caption("本次为模拟回退模式：未产生真实评分，各维度留空。")
 
     _render_score_compare_table(score_result, dimensions)
 
@@ -413,7 +418,7 @@ def _render_score_review(score_result, dimensions) -> None:
     render_numbered_section("03", "人工复核", "逐条修订各维度分与复核说明，确认后归档。")
     for row in reviewable:
         row_id = int(row["id"])
-        status_text = str(row.get("review_status") or "pending")
+        status_text = _review_status_label(row.get("review_status"))
         title = f"{row.get('eval_model')} · {row.get('case_id')} · 复核：{status_text}"
         with st.expander(title, expanded=False):
             cols = st.columns(len(dimensions))
@@ -432,7 +437,7 @@ def _render_score_review(score_result, dimensions) -> None:
             )
             if st.button("确认并归档", key=f"score_confirm::{row_id}"):
                 if sc.confirm_score_review(row_id, edited, note):
-                    st.success("已归档为已复核（confirmed）。")
+                    st.success("已归档为已复核。")
                     st.rerun()
                 else:
                     st.warning("归档失败：请确认 SQLite 数据层已初始化。")
@@ -447,6 +452,19 @@ def _dedupe(items: list[str]) -> list[str]:
             seen.add(value)
             ordered.append(value)
     return ordered
+
+
+def _mode_label(value) -> str:
+    return _MODE_LABEL.get(str(value or "").strip().lower(), str(value or "未知"))
+
+
+def _status_label(value) -> str:
+    label, _ = _STATUS_BADGE.get(str(value or "").strip().lower(), (value or "未知", "neutral"))
+    return str(label)
+
+
+def _review_status_label(value) -> str:
+    return _REVIEW_STATUS_LABEL.get(str(value or "pending").strip().lower(), "待复核")
 
 
 def _n(value) -> str:

@@ -1,8 +1,8 @@
-"""评测复核页面（Review）。
+"""评测复核页面。
 
 Replaces case_detail review function.
-- Shows judgment criteria, model response, DeepSeek suggested scores, deduction reasons, redline, usage boundary
-- Human can edit dimension scores and review note; confirm to set confirmed
+- 展示评判标准、模型回答、建议分、扣分理由、红线和使用边界。
+- 人工可修订维度分和复核说明，确认后归档。
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ from src.ui.tasks import (
 )
 
 
-# 当 Rubric 数据表未维护满分标准时，用作 Gold 要求展示的默认依据文案。
+# 当评分量表未维护满分标准时，用作参考答案要求展示的默认依据文案。
 _DEFAULT_DIMENSION_BASIS = {
     "accuracy_score": "结论与关键计算是否准确，并对照判断依据。",
     "reasoning_score": "分析逻辑是否完整，是否贴合任务场景。",
@@ -72,7 +72,7 @@ _VERDICT_TIERS = {
 
 
 def _get_rubric() -> list[dict]:
-    """返回当前生效的 Rubric 维度，优先使用 DB / manifest 维护的值。"""
+    """返回当前生效的评分维度，优先使用 DB / manifest 维护的值。"""
     return ds.get_rubric_dimensions()
 
 
@@ -273,13 +273,13 @@ def render_review_page(data_bundle: dict) -> None:
         "重点是'这道题为什么能测出模型能力'，而不只是分数。"
     )
 
-    # 始终以 seed 题库决定可选样本
+    # 始终以正式题库决定可选样本
     case_ids = get_case_ids(seed_data.tasks)
     if not case_ids:
         render_empty_state("暂无可展示的任务样本。")
         return
 
-    # 数据来源：默认离线 seed 评价；有真实运行时可切换查看本次结果
+    # 数据来源：默认已沉淀评价；有真实运行时可切换查看本次结果
     data = _resolve_source(seed_data, live_data, live)
 
     # 选择样本
@@ -304,7 +304,7 @@ def render_review_page(data_bundle: dict) -> None:
     _render_task_context(task_info)
     _render_task_brief(task_info)
 
-    # 02 Gold Answer（评测锚点 / 评判标准）
+    # 02 参考答案（评测锚点 / 评判标准）
     render_numbered_section("02", "评判标准", "优秀回答的锚点：核心结论、关键依据、边界条件、必须覆盖点与红线。")
     _render_gold_standard(gold)
 
@@ -348,18 +348,18 @@ def render_review_page(data_bundle: dict) -> None:
 
 def _resolve_source(seed_data, live_data, live: bool):
     if not live:
-        st.caption("当前展示离线 seed 评价（尚未运行真实评测）。运行真实评测后可在此切换查看本次结果。")
+        st.caption("当前展示已沉淀评价。运行评测后可在此切换查看本次结果。")
         return seed_data
     choice = st.radio(
         "样本来源",
-        ["离线 seed 评价", "本次运行结果"],
+        ["已沉淀评价", "本次运行结果"],
         horizontal=True,
-        help="默认展示离线 seed 评价；本次运行结果仅供对照，不会覆盖离线评价。",
+        help="默认展示已沉淀评价；本次运行结果仅供对照，不会覆盖正式结论。",
     )
     if choice == "本次运行结果":
-        st.caption("正在查看本次真实运行结果；离线 seed 评价不受影响。")
+        st.caption("正在查看本次运行结果；已沉淀评价不受影响。")
         return live_data
-    st.caption("正在查看离线 seed 评价（默认）。")
+    st.caption("正在查看已沉淀评价。")
     return seed_data
 
 
@@ -401,12 +401,12 @@ def _render_task_brief(task_info: pd.Series) -> None:
 
 def _render_gold_standard(gold: dict | None) -> None:
     if not isinstance(gold, dict):
-        render_empty_state("该任务暂无 Gold Answer 记录。")
+        render_empty_state("该任务暂无参考答案记录。")
         return
 
     from src.gold_quality import evaluate_gold_quality
     quality = evaluate_gold_quality(gold)
-    st.markdown(f"**Gold Answer 状态：** {quality['status']}")
+    st.markdown(f"**参考答案状态：** {quality['status']}")
 
     core = field_text(gold, "core_conclusion", "需进一步补充")
     evidence = field_text(gold, "key_evidence", "待补充依据")
@@ -597,7 +597,7 @@ def _render_redline_panel(verdict: dict, gold, output_row: pd.Series | None, err
 
 
 def _render_case_review(output_row: pd.Series | None, eval_status: dict) -> None:
-    """在当前 (case, model) 评分处于 pending 现场结果时，提供就地复核表单。"""
+    """在当前 (case, model) 评分处于待复核草稿时，提供就地复核表单。"""
     if output_row is None:
         return
     score_run_id = eval_status.get("score_run_id")
@@ -613,11 +613,11 @@ def _render_case_review(output_row: pd.Series | None, eval_status: dict) -> None
         st.caption("本条评分已复核归档。")
         return
     if review_status != "pending":
-        st.caption(f"本条评分状态为 {review_status}，仅 pending 草稿可在此归档。")
+        st.caption(f"本条评分状态为 {_review_status_label(review_status)}，仅待复核草稿可在此归档。")
         return
 
     dimensions = ds.get_rubric_dimensions()
-    render_numbered_section("07", "人工复核", "对照 Gold Answer 与模型回答，确认或修订各维度分。")
+    render_numbered_section("07", "人工复核", "对照参考答案与模型回答，确认或修订各维度分。")
     cols = st.columns(len(dimensions))
     edited: dict[str, int] = {}
     for i, dim in enumerate(dimensions):
@@ -634,7 +634,7 @@ def _render_case_review(output_row: pd.Series | None, eval_status: dict) -> None
     )
     if st.button("确认并归档", type="primary", key=f"review_confirm::{row['id']}"):
         if sc.confirm_score_review(int(row["id"]), edited, note):
-            st.success("已归档为已复核（confirmed）。")
+            st.success("已归档为已复核。")
             st.rerun()
         else:
             st.warning("归档失败：请确认 SQLite 数据层已初始化。")
@@ -647,6 +647,10 @@ def _domain_by_case(tasks_df: pd.DataFrame) -> dict[str, str]:
         str(row.get("case_id")): display_label(row.get("domain"), DOMAIN_LABELS)
         for _, row in tasks_df.iterrows()
     }
+
+
+def _review_status_label(status: str) -> str:
+    return {"pending": "待复核", "confirmed": "已复核"}.get(str(status).strip().lower(), "待复核")
 
 
 def _text(value, fallback: str = "未标注") -> str:

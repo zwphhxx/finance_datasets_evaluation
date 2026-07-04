@@ -41,7 +41,7 @@ class RegistrationTests(unittest.TestCase):
         self.assertIn("case_study", first_group_keys)
 
     def test_page_context_is_complete_and_clean(self):
-        context = PAGE_CONTEXTS["Case Study"]
+        context = PAGE_CONTEXTS["项目说明"]
         for key in ("question", "boundary", "highlights"):
             self.assertTrue(context[key].strip(), key)
         combined = " ".join(context.values())
@@ -51,16 +51,16 @@ class RegistrationTests(unittest.TestCase):
     def test_source_has_no_banned_phrases_and_uses_shared_components(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         self.assertIn("src.ui.components", source)
-        # 首屏改为作品集 Hero：方法论页以 render_portfolio_landing_hero 作为共享页头组件。
-        self.assertIn("render_portfolio_landing_hero", source)
-        # Portfolio case-study 结构：编号 section block + 卡片化叙事。
+        self.assertIn("render_compact_hero", source)
+        self.assertNotIn("render_mockup_stack", source)
+        # 项目说明页保留编号 section block，但不再走作品集 mockup 叙事。
         self.assertIn("render_story_section", source)
         for phrase in BANNED_PHRASES:
             self.assertNotIn(phrase, source)
 
-    def test_page_follows_portfolio_case_study_sections(self):
+    def test_page_follows_project_explanation_sections(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
-        for section in ("Project Brief", "Methodology", "Dataset Snapshot", "How to Read"):
+        for section in ("项目定位", "评测闭环", "样本口径", "评分方式", "下一步"):
             self.assertIn(section, source, section)
         self.assertIn("不是模型排行榜", source)
         self.assertIn("可用边界", source)
@@ -149,7 +149,7 @@ class DynamicStatsTests(unittest.TestCase):
     def test_how_to_read_steps(self):
         steps = get_how_to_read_steps()
         self.assertEqual(
-            ["先看已有评测结论", "再看典型样本拆解", "最后可现场发起可复现实验"],
+            ["先检查样本库状态", "再选择已入库样本发起测试", "最后复核评分并归档结论"],
             steps,
         )
 

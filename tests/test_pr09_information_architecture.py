@@ -17,7 +17,7 @@ EXPECTED_PAGE_KEYS = [
 
 # 每页标题（PAGE_CONTEXTS 的键），与 EXPECTED_PAGE_KEYS 一一对应。
 EXPECTED_PAGE_TITLES = [
-    "Case Study",
+    "项目说明",
     "样本库",
     "发起测试",
     "评测复核",
@@ -25,6 +25,7 @@ EXPECTED_PAGE_TITLES = [
 ]
 
 BANNED_PHRASES = ["AI赋能", "智能洞察", "一键优化", "专家级"]
+BANNED_TECH_COPY = ["add/edit sample", "seed + confirmed live", "model averages"]
 
 
 class InformationArchitectureTests(unittest.TestCase):
@@ -42,6 +43,8 @@ class InformationArchitectureTests(unittest.TestCase):
             self.assertTrue(context["highlights"].strip(), page_name)
             combined = " ".join(context.values())
             for phrase in BANNED_PHRASES:
+                self.assertNotIn(phrase, combined)
+            for phrase in BANNED_TECH_COPY:
                 self.assertNotIn(phrase, combined)
 
     def test_overview_asset_cards_cover_core_data_assets(self):

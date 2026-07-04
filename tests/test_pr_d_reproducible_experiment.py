@@ -58,15 +58,14 @@ class PageFramingTests(unittest.TestCase):
         # 页面副标题应包含评测相关关键词
         self.assertIn("评测", subtitle)
 
-    def test_boundary_mentions_fixed_judge_model(self):
+    def test_boundary_mentions_prompt_separation(self):
         config = PAGE_CONFIG_BY_KEY["test_run"]
-        self.assertIn("deepseek", config.boundary.lower())
+        self.assertIn("不看到参考答案", config.boundary)
 
-    def test_page_distinguishes_offline_vs_live(self):
-        # 页面显式渲染「离线样本评价 vs 本次现场运行」的区分面板。
-        self.assertIn("离线样本评价 vs 本次现场运行", _PAGE_SOURCE)
-        self.assertIn("REPRODUCIBILITY_NOTE", _PAGE_SOURCE)
-        self.assertIn("不会覆盖", _PAGE_SOURCE)
+    def test_page_keeps_live_run_boundary_in_collapsed_note(self):
+        self.assertIn("RUN_BOUNDARY_NOTE", _PAGE_SOURCE)
+        self.assertIn("不会覆盖正式结论", _PAGE_SOURCE)
+        self.assertIn("st.expander", _PAGE_SOURCE)
 
 
 class ResultsTableColumnsTests(unittest.TestCase):

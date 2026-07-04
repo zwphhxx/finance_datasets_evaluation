@@ -69,7 +69,7 @@ class TopNavTests(unittest.TestCase):
     def test_top_nav_labels_are_core_workflow(self):
         """Top nav labels must match the core evaluation workflow."""
         labels = [label for label, _ in _TOP_NAV_ITEMS]
-        expected = ["Case Study", "样本库", "发起测试", "评测复核", "评测结论"]
+        expected = ["项目说明", "样本库", "发起测试", "评测复核", "评测结论"]
         self.assertEqual(labels, expected)
 
     def test_top_nav_keys_match_pages(self):

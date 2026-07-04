@@ -54,6 +54,17 @@ class SampleJudgmentCriteriaTests(unittest.TestCase):
         self.assertEqual(ds.get_sample_status(task, gold_complete), ds.ACTIVE_STATUS)
         self.assertTrue(ds.can_enter_formal_testing(task, gold_complete))
 
+    def test_task_draft_status_cannot_enter_testing_even_with_complete_gold(self):
+        """任务层标记为 draft 时，即使评判标准完整，也不可进入测试。"""
+        task = {"case_id": "T1", "status": "draft"}
+        gold_complete = {
+            "core_conclusion": "有结论",
+            "must_have_points": ["要点1"],
+            "unacceptable_errors": ["错误1"],
+        }
+        self.assertEqual(ds.get_sample_status(task, gold_complete), ds.DRAFT_STATUS)
+        self.assertFalse(ds.can_enter_formal_testing(task, gold_complete))
+
     def test_inactive_sample_cannot_enter_testing(self):
         """已停用样本不可进入测试，无论评判标准是否完整。"""
         task = {"case_id": "T1", "status": "inactive"}
@@ -165,7 +176,7 @@ class NavigationTests(unittest.TestCase):
     def test_top_nav_items_are_core_workflow(self):
         """主导航条目对应核心评测流程。"""
         labels = [label for label, _ in _TOP_NAV_ITEMS]
-        expected = ["Case Study", "样本库", "发起测试", "评测复核", "评测结论"]
+        expected = ["项目说明", "样本库", "发起测试", "评测复核", "评测结论"]
         self.assertEqual(labels, expected)
 
 

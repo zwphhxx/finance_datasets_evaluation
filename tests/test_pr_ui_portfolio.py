@@ -324,11 +324,11 @@ class PortfolioNavTests(unittest.TestCase):
         self.assertEqual("评测结论", PAGE_CONFIG_BY_KEY["conclusions"].title)
 
     def test_top_nav_has_five_items(self):
-        """Top nav must have exactly 5 items: Case Study, 样本库, 发起测试, 评测复核, 评测结论."""
+        """Top nav must have exactly 5 items."""
         self.assertEqual(5, len(_TOP_NAV_ITEMS))
         labels = [label for label, _ in _TOP_NAV_ITEMS]
         self.assertEqual(
-            ["Case Study", "样本库", "发起测试", "评测复核", "评测结论"],
+            ["项目说明", "样本库", "发起测试", "评测复核", "评测结论"],
             labels,
         )
 

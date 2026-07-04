@@ -1,9 +1,9 @@
-"""评测结论页面（Conclusions）。
+"""评测结论页面。
 
 Replaces evaluation_conclusions, merges capabilities from model_diagnosis, model_boundary, overview.
-- Only seed existing conclusions + confirmed live conclusions count
-- Pending drafts do not enter formal conclusions
-- Show per-model multi-dimensional averages and usage boundaries
+- 已沉淀结论 + 已复核归档结论计入正式结论。
+- 待复核草稿不进入正式结论。
+- 展示当前样本内的模型均值与使用边界。
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ def _render_formal_conclusions(seed_scores, confirmed_live, seed_errors) -> None
     render_numbered_section(
         "01",
         "正式评测结论",
-        "只统计 seed 已有结论与已复核归档（confirmed）的现场结论，不含待复核草稿。",
+        "只统计已沉淀结论与已复核归档结论，不含待复核草稿。",
     )
 
     summary = cc.summarize_formal(seed_scores, confirmed_live)
@@ -63,7 +63,7 @@ def _render_formal_conclusions(seed_scores, confirmed_live, seed_errors) -> None
     avg_text = f"{summary['avg_total']:.1f}" if summary['avg_total'] is not None else "—"
     st.markdown(
         f"纳入 **{summary['model_count']}** 个模型 · 平均总分 **{avg_text}** · "
-        f"seed 基准 **{summary['seed_rows']}** 条 · 已复核归档 **{summary['confirmed_rows']}** 条"
+        f"已沉淀评分 **{summary['seed_rows']}** 条 · 已复核归档 **{summary['confirmed_rows']}** 条"
     )
 
     conclusions = cc.build_formal_conclusions(seed_scores, confirmed_live)

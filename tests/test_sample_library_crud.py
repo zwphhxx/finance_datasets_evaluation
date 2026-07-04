@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from app.services import dataset_service as ds
 from app.services import sample_repository as sr
 
 
@@ -137,6 +138,22 @@ class SampleRepositoryTests(unittest.TestCase):
         eligible = sr.get_eligible_case_ids()
         self.assertIn("SM-ELIGIBLE", eligible)
         self.assertNotIn("SM-PENDING", eligible)
+
+    def test_sample_status_syncs_to_formal_task_layer_when_available(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "findueval.db"
+            ds.ensure_seed_database(db_path, force=True)
+            case_id = str(ds.list_task_cases(db_path).iloc[0]["case_id"])
+
+            sr.create_sample(self._sample_values(case_id))
+            sr.set_sample_status(case_id, "需优化", db_path=db_path)
+            self.assertEqual(ds.DRAFT_STATUS, ds.get_task_case(case_id, db_path)["status"])
+
+            sr.set_sample_status(case_id, "已入库", db_path=db_path)
+            self.assertEqual(ds.ACTIVE_STATUS, ds.get_task_case(case_id, db_path)["status"])
+
+            sr.archive_sample(case_id, db_path=db_path)
+            self.assertEqual(ds.INACTIVE_STATUS, ds.get_task_case(case_id, db_path)["status"])
 
     def test_export_and_import_samples(self):
         sr.create_sample(self._sample_values("SM-EXP"))

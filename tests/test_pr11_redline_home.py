@@ -44,8 +44,9 @@ class RedlineHomeConfigTests(unittest.TestCase):
         config = get_page_config("conclusions")
         self.assertIn("评测结论", config.title)
         # 评测结论页副标题包含结论汇总相关关键词
-        for word in ["正式", "结论", "seed"]:
+        for word in ["正式", "结论", "复核"]:
             self.assertIn(word, config.subtitle)
+        self.assertNotIn("seed", config.subtitle.lower())
 
     def test_loop_steps_keep_closed_loop_with_revalidation(self):
         steps = overview.get_evaluation_loop_steps()

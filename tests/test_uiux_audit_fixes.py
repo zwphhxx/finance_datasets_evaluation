@@ -37,6 +37,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn(".context-item", components.STYLE_CSS)
 
         for file_path in [
+            "src/ui/case_study.py",
             "src/ui/samples.py",
             "src/ui/test_run.py",
             "src/ui/review.py",
@@ -45,7 +46,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
             source = Path(file_path).read_text(encoding="utf-8")
             self.assertIn("render_compact_hero", source, file_path)
         case_study_source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
-        self.assertIn("render_portfolio_landing_hero", case_study_source, "src/ui/case_study.py")
+        self.assertNotIn("render_mockup_stack", case_study_source, "src/ui/case_study.py")
 
     def test_pages_still_export_render_page_shell_for_backward_compat(self):
         import src.ui.components as components
@@ -75,7 +76,8 @@ class UIUXAuditFixesTests(unittest.TestCase):
     def test_case_study_has_single_primary_cta(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         buttons = re.findall(r"st\.button\(", source)
-        self.assertEqual(1, len(buttons), "Case Study 页面应只有一个主 CTA 按钮")
+        self.assertEqual(2, len(buttons), "项目说明页应提供样本库与发起测试两个入口")
+        self.assertIn('进入样本库', source)
         self.assertIn('发起测试', source)
 
     def test_test_run_has_at_most_two_primary_buttons(self):

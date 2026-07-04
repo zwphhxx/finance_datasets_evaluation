@@ -160,8 +160,8 @@ def _load_from_db(db_path_value: str, _mtime: float) -> EvaluationData:
 # --------------------------------------------------------------------------- #
 # 最小 CRUD（PR-31）
 #
-# 仅写入 SQLite，不回写 data/ 下的 seed 文件；写入后清空缓存，使任务样本页、
-# 样板题评测页等读取方在下一次 rerun 立即看到最新数据。所有写入统一经由
+# 仅写入 SQLite，不回写 data/ 下的 seed 文件；写入后清空缓存，使样本库、
+# 发起测试、评测复核和评测结论在下一次 rerun 立即看到最新数据。所有写入统一经由
 # repository，页面层不出现任何 SQL。
 # --------------------------------------------------------------------------- #
 
@@ -206,6 +206,11 @@ JUDGMENT_CRITERIA_FIELDS = (
 ACTIVE_STATUS = "active"
 INACTIVE_STATUS = "inactive"
 DRAFT_STATUS = "draft"
+DATA_STATUS_LABELS = {
+    ACTIVE_STATUS: "已入库",
+    DRAFT_STATUS: "待复核",
+    INACTIVE_STATUS: "已归档",
+}
 
 
 def has_judgment_criteria(gold_record: dict | None) -> bool:
@@ -220,13 +225,25 @@ def has_judgment_criteria(gold_record: dict | None) -> bool:
 
 
 def get_sample_status(task_record: dict | None, gold_record: dict | None) -> str:
-    """返回样本状态：具备完整评判标准则为 active，否则为 draft。"""
+    """返回底层样本状态。
+
+    页面只展示中文业务状态；这里保留 active/draft/inactive 作为正式评测数据层的
+    准入控制字段。draft 或 inactive 都不可进入测试。
+    """
     task_status = str((task_record or {}).get("status") or ACTIVE_STATUS).strip().lower()
     if task_status == INACTIVE_STATUS:
         return INACTIVE_STATUS
+    if task_status == DRAFT_STATUS:
+        return DRAFT_STATUS
     if not has_judgment_criteria(gold_record):
         return DRAFT_STATUS
     return ACTIVE_STATUS
+
+
+def sample_status_label(status: str | None) -> str:
+    """把底层状态映射为页面业务状态，避免在 UI 暴露 active/draft/inactive。"""
+    normalized = str(status or ACTIVE_STATUS).strip().lower()
+    return DATA_STATUS_LABELS.get(normalized, "待复核")
 
 
 def can_enter_formal_testing(task_record: dict | None, gold_record: dict | None) -> bool:
@@ -269,7 +286,7 @@ def list_dataset_versions(db_path: Path | None = None) -> list[str]:
     """返回数据集中出现过的版本号（去重、降序）。
 
     数据库可用时取自 task_cases.version；否则回退读取 manifest 声明的版本。
-    供「真实模型评测」等页面做数据集版本选择。
+    供「发起测试」等页面做数据集版本选择。
     """
     path = db_path or get_db_path()
     if database_ready(path):

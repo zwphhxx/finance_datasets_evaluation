@@ -1,4 +1,4 @@
-"""样本库页面（Sample Library）。
+"""样本库页面。
 
 基于 app.services.sample_repository 的轻量样本管理：
 - 支持按状态、场景、难度、错误标签筛选与关键词搜索；
@@ -233,13 +233,9 @@ def render_samples_page(data_bundle: dict) -> None:
         render_empty_state("暂无可展示的样本。请检查 data/tasks.csv 与 data/gold_answers.json 是否存在。")
         return
 
-    # 01 状态统计（inline，无卡片）
-    counts = sr.count_by_status()
-    status_parts = [f"{status} {count}" for status, count in counts.items()]
-    st.markdown(" · ".join(f"**{label}**：{counts[label]}" for label in sr.SAMPLE_STATUSES))
+    st.caption("数据口径：样本库状态决定能否进入测试；正式评测题干、参考答案和评分量表仍由正式数据层读取。")
 
-    # 02 筛选与搜索
-    render_numbered_section("02", "筛选与搜索", "按状态、场景、难度、错误标签筛选，或使用关键词搜索。")
+    render_numbered_section("01", "筛选与搜索", "按状态、场景、难度、错误标签筛选，或使用关键词搜索。")
     status, scenario, difficulty, error_tag, keyword = _render_filters(samples)
 
     filtered = sr.filter_samples(status=status, scenario=scenario, difficulty=difficulty, error_tag=error_tag)
@@ -247,25 +243,17 @@ def render_samples_page(data_bundle: dict) -> None:
         kw = keyword.lower()
         filtered = [s for s in filtered if kw in _searchable_text(s)]
 
-    # 03 样本表格
-    render_numbered_section("03", "样本清单", "一行一样本，状态用轻量标签标识。")
+    render_numbered_section("02", "样本清单", "一行一样本，状态用轻量标签标识。")
     if not filtered:
         render_empty_state("没有符合当前筛选条件的样本。")
     else:
         _render_samples_table(filtered)
 
-    # 04 样本详情
-    render_numbered_section("04", "选中样本详情", "查看并维护样本的完整信息。")
+    render_numbered_section("03", "选中样本详情", "查看样本的完整信息。")
     _render_sample_detail(filtered)
 
-    # 05 样本管理
-    render_numbered_section("05", "样本管理", "新增样本，或在高级管理中编辑、变更状态、归档。")
-    _render_sample_management()
-
-    st.caption(
-        "样本数据保存在本地 data/samples.json；部署到无持久化卷的环境时，新增/编辑/归档内容可能随会话结束而丢失。"
-        "请使用上方「导出」定期备份，或挂载持久化存储。"
-    )
+    with st.expander("样本管理", expanded=False):
+        _render_sample_management()
 
 
 def _render_filters(samples: list[sr.Sample]) -> tuple[str, str, str, str, str]:
@@ -290,7 +278,7 @@ def _render_filters(samples: list[sr.Sample]) -> tuple[str, str, str, str, str]:
 def _render_samples_table(samples: list[sr.Sample]) -> None:
     header_cells = "".join(
         f"<th>{escape(name)}</th>"
-        for name in ["样本编号", "标题", "场景", "难度", "状态", "操作"]
+        for name in ["样本编号", "标题", "场景", "难度", "状态"]
     )
     body = ""
     for sample in samples:
@@ -299,8 +287,7 @@ def _render_samples_table(samples: list[sr.Sample]) -> None:
             f'<td>{escape(_truncate(sample.title, 32))}</td>'
             f'<td>{escape(_truncate(sample.scenario, 24))}</td>'
             f'<td>{escape(_difficulty_label(sample.difficulty))}</td>'
-            f'<td>{_status_badge(sample.status)}</td>'
-            f'<td class="check-note">—</td></tr>'
+            f'<td>{_status_badge(sample.status)}</td></tr>'
         )
     table_html = f'<table class="check-table"><thead><tr>{header_cells}</tr></thead><tbody>{body}</tbody></table>'
     render_evidence_panel("样本列表", table_html)
@@ -339,9 +326,9 @@ def _render_sample_detail(samples: list[sr.Sample]) -> None:
     rubric_formatted = _format_json_text(sample.rubric)
     col3, col4 = st.columns(2)
     with col3:
-        render_text_block("Gold Answer", gold_formatted or "未填写")
+        render_text_block("参考答案", gold_formatted or "未填写")
     with col4:
-        render_text_block("Rubric", rubric_formatted or "未填写")
+        render_text_block("评分量表", rubric_formatted or "未填写")
 
     if sample.model_answers or sample.error_tags or sample.improvement_suggestions:
         col5, col6, col7 = st.columns(3)
@@ -357,13 +344,23 @@ def _render_sample_detail(samples: list[sr.Sample]) -> None:
 
 
 def _render_sample_management() -> None:
-    _render_backup_controls()
-    _render_create_form()
-
-    with st.expander("高级管理（编辑 / 状态变更 / 归档）", expanded=False):
+    st.caption(
+        "管理区写入本地样本文件；状态变更会在 SQLite 可用且任务编号存在时同步为测试准入状态。"
+        "样本正文不会自动写入正式题干、参考答案或评分量表。"
+    )
+    tab_create, tab_edit, tab_status, tab_backup = st.tabs(["新增样本", "编辑样本", "状态管理", "导入导出"])
+    with tab_create:
+        _render_create_form()
+    with tab_edit:
         _render_edit_form()
+    with tab_status:
         _render_status_transition()
         _render_archive_form()
+    with tab_backup:
+        _render_backup_controls()
+        st.caption(
+            "样本管理记录保存在本地样本文件；部署到无持久化卷的环境时，新增、编辑、归档内容可能随会话结束而丢失。"
+        )
 
 
 def _render_backup_controls() -> None:
@@ -371,14 +368,14 @@ def _render_backup_controls() -> None:
     col1, col2 = st.columns(2)
     with col1:
         st.download_button(
-            label="导出 samples.json",
+            label="导出样本库 JSON",
             data=sr.export_samples_json(),
             file_name="samples.json",
             mime="application/json",
             key="samples_export",
         )
     with col2:
-        uploaded = st.file_uploader("导入 samples.json", type=["json"], key="samples_import")
+        uploaded = st.file_uploader("导入样本库 JSON", type=["json"], key="samples_import")
         if uploaded is not None:
             if st.button("确认导入并合并", key="samples_import_confirm"):
                 try:
@@ -393,25 +390,25 @@ def _render_backup_controls() -> None:
 
 def _render_create_form() -> None:
     with st.form("samples_create", clear_on_submit=True):
-        sample_id = st.text_input("样本编号 sample_id", help="唯一编号，例如 SM-001。")
-        title = st.text_input("标题 title")
+        sample_id = st.text_input("样本编号", help="唯一编号。")
+        title = st.text_input("标题")
         col1, col2 = st.columns(2)
-        scenario = col1.text_input("场景 scenario")
+        scenario = col1.text_input("场景")
         difficulty = col2.selectbox(
-            "难度 difficulty",
+            "难度",
             _DIFFICULTY_OPTIONS,
             format_func=lambda v: DIFFICULTY_LABELS.get(v, v) if v else "未标注",
             key="samples_create_difficulty",
         )
-        task_prompt = st.text_area("任务描述 task_prompt", height=110)
-        business_context = st.text_area("业务背景 business_context", height=80)
-        gold_answer = st.text_area("Gold Answer *", height=120, help="可填写文本或 JSON。")
-        rubric = st.text_area("Rubric *", height=80, help="可填写文本或 JSON。")
+        task_prompt = st.text_area("任务描述", height=110)
+        business_context = st.text_area("业务背景", height=80)
+        gold_answer = st.text_area("参考答案 *", height=120, help="可填写文本或 JSON。")
+        rubric = st.text_area("评分量表 *", height=80, help="可填写文本或 JSON。")
         col3, col4 = st.columns(2)
         model_answers = col3.text_area("模型回答（每行一条）", height=80)
         error_tags = col4.text_area("错误标签（每行一条）", height=80)
         improvement_suggestions = st.text_area("优化建议（每行一条）", height=80)
-        reviewer_note = st.text_area("复核备注 reviewer_note", height=60)
+        reviewer_note = st.text_area("复核备注", height=60)
         status = st.selectbox("状态 *", sr.SAMPLE_STATUSES, key="samples_create_status")
         submitted = st.form_submit_button("新增样本", type="primary")
 
@@ -452,27 +449,27 @@ def _render_edit_form() -> None:
         return
 
     with st.form("samples_edit"):
-        title = st.text_input("标题 title", value=sample.title)
+        title = st.text_input("标题", value=sample.title)
         col1, col2 = st.columns(2)
-        scenario = col1.text_input("场景 scenario", value=sample.scenario)
+        scenario = col1.text_input("场景", value=sample.scenario)
         difficulty = col2.selectbox(
-            "难度 difficulty",
+            "难度",
             _DIFFICULTY_OPTIONS,
             index=_index_of(_DIFFICULTY_OPTIONS, sample.difficulty),
             format_func=lambda v: DIFFICULTY_LABELS.get(v, v) if v else "未标注",
             key="samples_edit_difficulty",
         )
-        task_prompt = st.text_area("任务描述 task_prompt", value=sample.task_prompt, height=110)
-        business_context = st.text_area("业务背景 business_context", value=sample.business_context, height=80)
-        gold_answer = st.text_area("Gold Answer *", value=sample.gold_answer, height=120)
-        rubric = st.text_area("Rubric *", value=sample.rubric, height=80)
+        task_prompt = st.text_area("任务描述", value=sample.task_prompt, height=110)
+        business_context = st.text_area("业务背景", value=sample.business_context, height=80)
+        gold_answer = st.text_area("参考答案 *", value=sample.gold_answer, height=120)
+        rubric = st.text_area("评分量表 *", value=sample.rubric, height=80)
         col3, col4 = st.columns(2)
         model_answers = col3.text_area("模型回答（每行一条）", value=_as_lines(sample.model_answers), height=80)
         error_tags = col4.text_area("错误标签（每行一条）", value=_as_lines(sample.error_tags), height=80)
         improvement_suggestions = st.text_area(
             "优化建议（每行一条）", value=_as_lines(sample.improvement_suggestions), height=80
         )
-        reviewer_note = st.text_area("复核备注 reviewer_note", value=sample.reviewer_note, height=60)
+        reviewer_note = st.text_area("复核备注", value=sample.reviewer_note, height=60)
         status = st.selectbox(
             "状态 *",
             sr.SAMPLE_STATUSES,
