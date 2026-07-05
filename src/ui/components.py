@@ -1688,7 +1688,6 @@ header,
 }
 .review-risk-note {
     border: 1px solid var(--fde-status-neutral-border);
-    border-left: 3px solid var(--fde-status-neutral-text);
     background: #ffffff;
     border-radius: 8px;
     padding: 0.72rem 0.9rem;
@@ -1714,23 +1713,19 @@ header,
 }
 .review-risk-note-success {
     border-color: var(--fde-status-success-border);
-    border-left-color: var(--fde-status-success-text);
     background: #ffffff;
 }
 .review-risk-note-warning {
     border-color: var(--fde-status-warning-border);
-    border-left-color: var(--fde-status-warning-text);
     background: #ffffff;
 }
 .review-risk-note-danger {
     border-color: var(--fde-status-danger-border);
-    border-left-color: var(--fde-status-danger-text);
     background: #ffffff;
 }
 .review-risk-note-neutral,
 .review-risk-note-muted {
     border-color: var(--fde-status-neutral-border);
-    border-left-color: var(--fde-status-neutral-text);
     background: #ffffff;
 }
 .text-block-label {

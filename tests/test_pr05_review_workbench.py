@@ -58,6 +58,21 @@ class ReviewStructureTests(unittest.TestCase):
         self.assertIn('render_numbered_section("03", REVIEW_SECTIONS[2]', source)
         self.assertIn("build_review_recommendation", source)
 
+    def test_confirmation_actions_are_dialog_based(self):
+        source = Path("src/ui/review.py").read_text(encoding="utf-8")
+        self.assertIn('@st.dialog("确认生效"', source)
+        self.assertIn('@st.dialog("修订后确认"', source)
+        self.assertIn('@st.dialog("暂不采用"', source)
+        actions_source = source.split("def _render_confirmation_actions", 1)[1].split('@st.dialog("确认生效"', 1)[0]
+        self.assertNotIn("number_input", actions_source)
+        self.assertNotIn("text_area", actions_source)
+
+    def test_review_page_does_not_use_risk_note_cards(self):
+        source = Path("src/ui/review.py").read_text(encoding="utf-8")
+        self.assertNotIn("review-risk-note", source)
+        self.assertIn('st.markdown("### 命中红线")', source)
+        self.assertIn('st.markdown("### 关键维度低分")', source)
+
 
 class ReviewMatrixTests(unittest.TestCase):
     def test_scoring_matrix_rows_use_dynamic_rubric_and_error_labels(self):
@@ -283,7 +298,8 @@ class TagStyleTests(unittest.TestCase):
             self.assertIn(token, css)
         self.assertIn("--fde-status-danger-bg", css)
         self.assertIn(".review-risk-note", css)
-        self.assertIn("border-left", css)
+        risk_css = css.split(".review-risk-note {", 1)[1].split(".text-block-label", 1)[0]
+        self.assertNotIn("border-left", risk_css)
 
 
 if __name__ == "__main__":

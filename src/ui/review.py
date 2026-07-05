@@ -31,7 +31,6 @@ from src.ui.components import (
     render_clean_list,
     render_compact_hero,
     render_empty_state,
-    render_html,
     render_inline_status,
     render_numbered_section,
     render_text_block,
@@ -892,16 +891,9 @@ def _render_score_detail(item: dict, verdict: dict) -> None:
 
 
 def _render_recommendation_note(recommendation: dict) -> None:
-    level = str(recommendation.get("level") or "neutral")
     title = str(recommendation.get("recommendation") or "待判断")
-    render_html(
-        f"""
-        <div class="review-risk-note review-risk-note-{escape(level)}">
-            <strong>{escape(title)}</strong>
-            <span>该建议只辅助人工判断，不会自动生效。</span>
-        </div>
-        """
-    )
+    st.markdown(f"**建议处理：** {title}")
+    st.caption("该建议只辅助人工判断，不会自动生效。")
 
 
 @st.dialog("任务与标准详情", width="large")
@@ -1005,15 +997,8 @@ def _render_gold_standard(gold: dict | None) -> None:
 def _render_inline_verdict(verdict: dict) -> None:
     redline_count = len(verdict.get("redline_hits") or [])
     redline_text = f"红线命中 {redline_count} 项" if redline_count else "未命中红线"
-    render_html(
-        f"""
-        <div class="review-risk-note review-risk-note-{escape(str(verdict.get("level", "neutral")))}">
-            <strong>{escape(str(verdict["title"]))}</strong>
-            <span>总分 {escape(str(verdict["score_text"]))} · {escape(redline_text)}</span>
-            <p>{escape(str(verdict["reason"]))}</p>
-        </div>
-        """
-    )
+    st.markdown(f"**使用边界：** {verdict['title']}")
+    st.caption(f"总分 {verdict['score_text']} · {redline_text}。{verdict['reason']}")
 
 
 def _render_model_answer(output_row: pd.Series | None, gold) -> None:
@@ -1234,31 +1219,78 @@ def _dedupe_texts(items: list[str]) -> list[str]:
 
 
 def _render_redline_panel(verdict: dict, gold, output_row: pd.Series | None, errors_df, task_info) -> None:
-    blocks = build_redline_blocks(verdict, gold, output_row, errors_df, task_info)
-    if not blocks:
-        render_html(
-            '<div class="review-risk-note review-risk-note-neutral">'
-            '<strong>当前未发现红线提示</strong>'
-            '<span>无高严重度错误、无关键维度低分，当前 Gold Answer 未标定不可接受错误。</span>'
-            '</div>'
+    row = output_row if isinstance(output_row, pd.Series) else pd.Series(output_row or {})
+    output_id = row.get("output_id")
+    errors = get_errors_for_output(errors_df if isinstance(errors_df, pd.DataFrame) else pd.DataFrame(), output_id)
+    rendered = False
+
+    redline_hits = [str(item) for item in (verdict.get("redline_hits") or []) if str(item).strip()]
+    if redline_hits:
+        st.markdown("### 命中红线")
+        _render_markdown_bullets(redline_hits)
+        rendered = True
+
+    high_errors = []
+    if not errors.empty:
+        for _, error in errors.iterrows():
+            if _text(error.get("severity"), "") == "高":
+                high_errors.append(
+                    f"{_text(error.get('error_type'), '未分类错误')}："
+                    f"{_text(error.get('error_description'), '暂无错误表现')}"
+                )
+    if high_errors:
+        st.markdown("### 高严重度错误")
+        _render_markdown_bullets(_dedupe_texts(high_errors))
+        rendered = True
+
+    weak_rows = [
+        {"维度": r["dimension"], "得分": f"{r['score']:.0f} / {r['full']}"}
+        for r in build_rubric_rows(row)
+        if r["full"] and r["score"] / r["full"] < VERDICT_WEAK_RATIO
+    ]
+    if weak_rows:
+        st.markdown("### 关键维度低分")
+        st.dataframe(
+            pd.DataFrame(weak_rows),
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "维度": st.column_config.TextColumn("维度", width="medium"),
+                "得分": st.column_config.TextColumn("得分", width="small"),
+            },
         )
+        rendered = True
+
+    risk = _text(task_info.get("risk_level"), "") if task_info is not None else ""
+    if risk:
+        st.markdown("### 任务风险等级")
+        risk_label = RISK_LABELS.get(risk, risk)
+        if risk == "高":
+            _render_markdown_bullets([f"当前任务风险等级为{risk_label}，确认前需复核评分依据。"])
+        else:
+            _render_markdown_bullets([f"当前任务风险等级为{risk_label}。"])
+        rendered = True
+
+    red_lines = field_list(gold, "unacceptable_errors") if isinstance(gold, dict) else []
+    if red_lines:
+        st.markdown("### Gold Answer 中的不可接受错误")
+        _render_markdown_bullets([str(item) for item in red_lines])
+        rendered = True
+
+    if not rendered:
+        st.markdown("### 当前未发现红线提示")
+        _render_markdown_bullets(["未发现高严重度错误或关键维度低分。"])
+
+
+def _render_markdown_bullets(items: list[str]) -> None:
+    cleaned = [str(item).strip() for item in items if str(item).strip()]
+    if not cleaned:
+        st.caption("暂无")
         return
-    html = ""
-    for block in blocks:
-        items = "".join(f"<li>{escape(str(item))}</li>" for item in block["items"])
-        html += (
-            '<div class="review-risk-note review-risk-note-danger">'
-            f'<strong>{escape(str(block["title"]))}</strong>'
-            f'<ul class="clean-list">{items}</ul>'
-            '</div>'
-        )
-    render_html(html)
+    st.markdown("\n".join(f"- {item}" for item in cleaned))
 
 
 def _render_confirmation_actions(item: dict) -> None:
-    output_row = item["output_row"]
-    recommendation = item["recommendation"]
-
     row = item.get("score_row") or {}
     row_id = _as_int(item.get("score_row_id"))
     if not row or row_id is None:
@@ -1276,50 +1308,128 @@ def _render_confirmation_actions(item: dict) -> None:
         st.caption(f"本条评分状态为 {_review_status_label(review_status)}，仅待确认草稿可在此确认。")
         return
 
-    skip_key = f"review_not_archive::{row_id}"
-    if st.session_state.get(skip_key):
-        render_html(
-            '<div class="review-risk-note review-risk-note-muted">'
-            '<strong>已暂不采用</strong>'
-            '<span>该操作不改变数据库状态；评分草稿仍保留，未进入正式结论。</span>'
-            '</div>'
-        )
+    st.caption("确认后才纳入正式结论；暂不采用的评分会保留记录，但不会进入正式结论。")
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col1:
+        if st.button("确认生效", type="primary", key=f"review_confirm::{row_id}", use_container_width=True):
+            _render_confirm_dialog(item)
+    with col2:
+        if st.button("修订后确认", type="secondary", key=f"review_confirm_edit::{row_id}", use_container_width=True):
+            _render_revision_dialog(item)
+    with col3:
+        if st.button("暂不采用", type="tertiary", key=f"review_skip::{row_id}", use_container_width=True):
+            _render_skip_dialog(item)
 
+
+@st.dialog("确认生效", width="medium")
+def _render_confirm_dialog(item: dict) -> None:
+    row = item.get("score_row") or {}
+    row_id = _as_int(item.get("score_row_id"))
+    if row_id is None:
+        render_empty_state("未找到可确认的评分草稿。")
+        return
+    recommendation = item.get("recommendation") or {}
+    required = _review_note_required(recommendation)
+
+    st.markdown("你将确认当前评分草稿。确认后，该评分将纳入正式结论。")
+    _render_dialog_score_summary(item)
+    note = st.text_area("复核说明", value=str(row.get("review_note") or ""), key=f"review_confirm_note::{row_id}")
+    if required:
+        st.caption("建议复核或不建议采用的评分，需要填写复核说明。")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("确认生效", type="primary", key=f"review_confirm_dialog_submit::{row_id}", use_container_width=True):
+            _confirm_review(row_id, _scores_from_row(row, ds.get_rubric_dimensions()), note, required)
+    with col2:
+        if st.button("取消", type="tertiary", key=f"review_confirm_dialog_cancel::{row_id}", use_container_width=True):
+            st.rerun()
+
+
+@st.dialog("修订后确认", width="large")
+def _render_revision_dialog(item: dict) -> None:
+    row = item.get("score_row") or {}
+    row_id = _as_int(item.get("score_row_id"))
+    if row_id is None:
+        render_empty_state("未找到可确认的评分草稿。")
+        return
+    st.markdown("请修订维度分数，并填写复核说明。保存后，该评分将纳入正式结论。")
+    _render_dialog_score_summary(item)
     dimensions = ds.get_rubric_dimensions()
-    st.caption("可确认生效，也可修订维度分与复核说明后确认。确认后才纳入正式结论。")
-    cols = st.columns(len(dimensions))
     edited: dict[str, int] = {}
-    original: dict[str, int] = {}
-    for i, dim in enumerate(dimensions):
+    for dim in dimensions:
         field_name = dim["field"]
         full_mark = int(dim.get("full_mark") or 0)
         current = row.get(field_name)
         value = int(current) if current is not None and str(current) != "nan" else 0
-        original[field_name] = min(value, full_mark)
-        edited[field_name] = cols[i].number_input(
-            dim["name"], min_value=0, max_value=full_mark, value=min(value, full_mark),
-            step=1, key=f"review_score::{row_id}::{field_name}",
+        edited[field_name] = st.number_input(
+            dim["name"],
+            min_value=0,
+            max_value=full_mark,
+            value=min(value, full_mark),
+            step=1,
+            key=f"review_revision_score::{row_id}::{field_name}",
         )
-    note = st.text_area(
-        "复核说明", value=str(row.get("review_note") or ""), key=f"review_note::{row_id}"
-    )
-    changed = any(edited.get(key) != original.get(key) for key in edited)
-    requires_note = recommendation.get("recommendation") != "建议确认" or changed
-    col1, col2, col3 = st.columns([1, 1, 1])
+    note = st.text_area("复核说明", value=str(row.get("review_note") or ""), key=f"review_revision_note::{row_id}")
+    col1, col2 = st.columns(2)
     with col1:
-        if st.button("确认生效", type="primary", key=f"review_confirm::{row_id}", use_container_width=True):
-            _confirm_review(row_id, edited, note, requires_note)
-    with col2:
-        if st.button("修订后确认", type="secondary", key=f"review_confirm_edit::{row_id}", use_container_width=True):
+        if st.button("保存并确认", type="primary", key=f"review_revision_submit::{row_id}", use_container_width=True):
             _confirm_review(row_id, edited, note, True)
-    with col3:
-        if st.button("暂不采用", type="tertiary", key=f"review_skip::{row_id}", use_container_width=True):
-            skip_note = _clean(note) or "人工标记暂不采用，未纳入正式结论。"
-            if sc.skip_score_review(row_id, skip_note):
+    with col2:
+        if st.button("取消", type="tertiary", key=f"review_revision_cancel::{row_id}", use_container_width=True):
+            st.rerun()
+
+
+@st.dialog("暂不采用", width="medium")
+def _render_skip_dialog(item: dict) -> None:
+    row_id = _as_int(item.get("score_row_id"))
+    if row_id is None:
+        render_empty_state("未找到可处理的评分草稿。")
+        return
+    st.markdown("该评分草稿不会纳入正式结论，但会保留记录，便于后续追溯。")
+    _render_dialog_score_summary(item)
+    reason = st.text_area("原因", key=f"review_skip_reason::{row_id}")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("确认暂不采用", type="primary", key=f"review_skip_submit::{row_id}", use_container_width=True):
+            cleaned = _clean(reason)
+            if not cleaned:
+                st.warning("请填写暂不采用原因。")
+                return
+            if sc.skip_score_review(row_id, f"暂不采用：{cleaned}"):
                 st.info("已暂不采用。该评分草稿仍保留，未纳入正式结论。")
                 st.rerun()
             else:
                 st.warning("暂不采用操作失败：请确认 SQLite 数据层已初始化。")
+    with col2:
+        if st.button("取消", type="tertiary", key=f"review_skip_cancel::{row_id}", use_container_width=True):
+            st.rerun()
+
+
+def _render_dialog_score_summary(item: dict) -> None:
+    row = item["output_row"]
+    recommendation = item.get("recommendation") or {}
+    st.markdown(f"**样本：** {item['case_id']}")
+    st.markdown(f"**模型：** {item['display_model']}")
+    st.markdown(f"**总分：** {_score_text(row.get('total_score'))} / 100")
+    st.markdown(f"**建议处理：** {recommendation.get('recommendation') or '待判断'}")
+
+
+def _review_note_required(recommendation: dict) -> bool:
+    return str(recommendation.get("recommendation") or "") != "建议确认"
+
+
+def _scores_from_row(row: dict | pd.Series, dimensions: list[dict]) -> dict[str, int]:
+    scores: dict[str, int] = {}
+    for dim in dimensions:
+        field_name = str(dim.get("field") or "")
+        if not field_name:
+            continue
+        full_mark = int(dim.get("full_mark") or 0)
+        value = row.get(field_name) if hasattr(row, "get") else None
+        number = _as_float(value)
+        score = 0 if number is None else int(round(number))
+        scores[field_name] = max(0, min(full_mark, score))
+    return scores
 
 
 def _confirm_review(row_id: int, edited: dict[str, int], note: str, requires_note: bool) -> None:
