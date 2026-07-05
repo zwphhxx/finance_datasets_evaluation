@@ -2,7 +2,7 @@
 
 - 只汇总已确认评分。
 - 待确认草稿不进入正式结论。
-- 按模型展示当前建议、主要问题和待确认评分，不展示示例评价。
+- 按模型展示当前判断和待确认评分，不展示示例评价。
 """
 
 from __future__ import annotations
@@ -38,8 +38,7 @@ def render_conclusions_page(data_bundle: dict) -> None:
         title=config.title,
         question=config.question,
     )
-    st.markdown("本页只汇总已确认评分，用于判断各模型在当前样本内的使用边界。待确认评分不会进入正式结论。")
-    st.caption("阅读顺序：先看当前结论，再看各模型当前建议，再看单个模型的问题明细。")
+    st.markdown("本页只汇总已确认评分。待确认评分不会进入正式结论，结论仅代表当前样本内观察。")
 
     _render_current_conclusion(confirmed_live, draft_rows)
     _render_model_recommendations(model_summaries)
@@ -60,41 +59,36 @@ def _render_current_conclusion(confirmed_live, draft_rows: list[dict]) -> None:
     empty_seed = pd.DataFrame()
     summary = cc.summarize_formal(empty_seed, confirmed_live)
     if summary["total_rows"] == 0:
-        description = (
-            "请先在评分确认页完成确认。确认后的评分才会纳入正式结论。"
-            if draft_rows
-            else "当前暂无已确认评分，也没有待确认评分草稿。请先在发起评测页运行模型回答并生成评分草稿。"
-        )
         render_text_block(
             "当前暂无已确认评分",
-            description,
+            "请先在评分确认页完成确认。",
         )
         return
 
-    avg_text = f"{summary['avg_total']:.1f}" if summary["avg_total"] is not None else "—"
+    confirmed = int(summary["confirmed_rows"])
+    models = int(summary["model_count"])
+    cases = int(summary.get("case_count", 0))
+    sample_note = "当前样本数较少，仅作为当前样本内观察。" if cases < 3 else "结论仅代表当前已确认样本内观察。"
     st.markdown(
-        f"已确认评分 **{summary['confirmed_rows']}** 条 · "
-        f"覆盖模型 **{summary['model_count']}** 个 · "
-        f"覆盖样本 **{summary.get('case_count', 0)}** 个 · "
-        f"平均总分 **{avg_text}**"
+        f"已确认评分 **{confirmed}** 条，覆盖 **{models}** 个模型、**{cases}** 个样本。"
     )
-    st.caption("当前结论只代表当前样本内观察，不构成模型整体能力或采购建议。")
+    st.caption(f"{sample_note} 待确认评分和暂不采用记录未纳入正式结论。")
 
 
 # --------------------------------------------------------------------------- #
-# 02 各模型当前建议
+# 02 模型当前判断
 # --------------------------------------------------------------------------- #
 def _render_model_recommendations(model_summaries: list[dict]) -> None:
     render_numbered_section(
         "02",
-        "各模型当前建议",
-        "按模型汇总平均分、已确认样本数、主要问题和判断依据。",
+        "模型当前判断",
+        "按模型汇总已确认样本、平均分、当前判断和主要依据。",
     )
 
     if not model_summaries:
         render_text_block(
-            "暂无模型建议",
-            "暂无已确认评分。完成评分确认后，此处会生成各模型当前建议。",
+            "暂无模型判断",
+            "暂无已确认评分。完成评分确认后，此处会生成模型当前判断。",
         )
         return
 
@@ -105,39 +99,37 @@ def _render_model_recommendations(model_summaries: list[dict]) -> None:
         use_container_width=True,
         column_config={
             "模型": st.column_config.TextColumn("模型", width="medium"),
-            "平均分": st.column_config.NumberColumn("平均分", format="%.1f", width="small"),
             "已确认样本数": st.column_config.NumberColumn("已确认样本数", width="small"),
-            "当前建议": st.column_config.TextColumn("当前建议", width="medium"),
-            "主要问题": st.column_config.TextColumn("主要问题", width="large"),
-            "为什么这样判断": st.column_config.TextColumn("为什么这样判断", width="large"),
+            "平均分": st.column_config.NumberColumn("平均分", format="%.1f", width="small"),
+            "当前判断": st.column_config.TextColumn("当前判断", width="medium"),
+            "主要依据": st.column_config.TextColumn("主要依据", width="large"),
         },
     )
-    st.caption("当前建议不是模型排名，只说明各模型在当前已确认样本内的使用边界。")
+    st.caption("当前判断只说明模型在当前已确认样本内的使用边界。")
 
 
 def _recommendation_row(item: dict) -> dict[str, object]:
     return {
         "模型": str(item.get("display_name") or item.get("model_name") or "未标注模型"),
-        "平均分": float(item.get("avg_total") or 0),
         "已确认样本数": int(item.get("sample_count") or 0),
-        "当前建议": str(item.get("current_suggestion") or "暂不形成判断"),
-        "主要问题": _join_texts(item.get("main_issues") or [], "当前样本内暂无补充说明"),
-        "为什么这样判断": str(item.get("basis_summary") or "基于已确认评分判断"),
+        "平均分": float(item.get("avg_total") or 0),
+        "当前判断": _current_judgment(item),
+        "主要依据": _primary_basis(item),
     }
 
 
 # --------------------------------------------------------------------------- #
-# 03 单个模型问题明细
+# 03 模型详情
 # --------------------------------------------------------------------------- #
 def _render_model_issue_details(model_summaries: list[dict]) -> None:
     render_numbered_section(
         "03",
-        "单个模型问题明细",
-        "查看某个模型的主要问题、涉及样本、低分维度和使用建议。",
+        "模型详情",
+        "只展示当前选中模型的判断依据和后续建议。",
     )
 
     if not model_summaries:
-        st.caption("暂无模型问题明细。确认评分后再查看。")
+        st.caption("暂无模型详情。确认评分后再查看。")
         return
 
     selected = model_summaries[0]
@@ -146,7 +138,7 @@ def _render_model_issue_details(model_summaries: list[dict]) -> None:
             str(item.get("display_name") or item.get("model_name") or "未标注模型"): item
             for item in model_summaries
         }
-        label = st.selectbox("选择模型查看问题明细", list(options.keys()), key="conclusion_model_issue_select")
+        label = st.selectbox("选择模型查看详情", list(options.keys()), key="conclusion_model_issue_select")
         selected = options[label]
 
     _render_issue_markdown(selected)
@@ -154,48 +146,33 @@ def _render_model_issue_details(model_summaries: list[dict]) -> None:
 
 def _render_issue_markdown(item: dict) -> None:
     display = str(item.get("display_name") or item.get("model_name") or "未标注模型")
-    st.markdown(f"### {display} 的主要问题")
+    model_id = str(item.get("model_name") or "")
+    st.markdown(f"### {display}")
+    if model_id and model_id != display:
+        st.caption(f"模型 ID：{model_id}")
 
-    issues = item.get("main_issues") or []
-    if issues:
-        st.markdown("\n".join(f"- {issue}" for issue in issues))
-    else:
-        st.markdown("- 当前样本内暂无补充说明")
+    st.markdown("**当前判断**")
+    st.markdown(_current_judgment(item))
 
-    affected = _join_texts(item.get("affected_cases") or [], "暂无明确样本")
-    low_dimensions = _join_texts(item.get("low_dimensions") or [], "暂无明显低分维度")
-    high_errors = _join_texts(item.get("high_severity_errors") or [], "暂无高严重度错误")
+    st.markdown("**主要依据**")
+    basis_items = item.get("detail_basis") or item.get("main_issues") or []
+    st.markdown("\n".join(f"- {text}" for text in basis_items[:4]) or "- 当前样本内暂无补充说明")
 
-    st.markdown("#### 涉及样本")
-    st.markdown(f"- {affected}")
-    st.markdown("#### 低分维度")
-    st.markdown(f"- {low_dimensions}")
-    st.markdown("#### 高严重度错误")
-    st.markdown(f"- {high_errors}")
+    st.markdown("**后续建议**")
+    st.markdown(item.get("usage_advice") or "请结合评分依据人工复核。")
 
-    detail_rows = item.get("detail_items") or []
-    if detail_rows:
-        table_rows = [
-            {
-                "主要问题": str(row.get("主要问题") or ""),
-                "对结论的影响": str(row.get("对结论的影响") or ""),
-                "使用建议": str(row.get("使用建议") or ""),
-            }
-            for row in detail_rows
-        ]
-        st.dataframe(
-            pd.DataFrame(table_rows),
-            hide_index=True,
-            use_container_width=True,
-            column_config={
-                "主要问题": st.column_config.TextColumn("主要问题", width="medium"),
-                "对结论的影响": st.column_config.TextColumn("对结论的影响", width="large"),
-                "使用建议": st.column_config.TextColumn("使用建议", width="large"),
-            },
-        )
-    else:
-        st.markdown("#### 使用建议")
-        st.markdown(f"- {item.get('usage_advice') or '请结合评分依据人工复核。'}")
+
+def _current_judgment(item: dict) -> str:
+    if int(item.get("sample_count") or 0) < 3:
+        return "样本不足，暂不形成判断"
+    return str(item.get("current_suggestion") or "暂不形成判断")
+
+
+def _primary_basis(item: dict) -> str:
+    basis = item.get("detail_basis") or []
+    if basis:
+        return _join_texts(basis[:2], "基于已确认评分判断")
+    return str(item.get("basis_summary") or "基于已确认评分判断")
 
 
 def _join_texts(values, fallback: str) -> str:
@@ -215,22 +192,22 @@ def _render_drafts(draft_rows: list[dict]) -> None:
 
     count = len(draft_rows)
     if count == 0:
-        st.caption("当前没有待确认评分草稿。")
+        st.caption("当前没有待确认评分。")
         return
 
-    st.markdown(f"以下 **{count}** 条评分仍待确认，未纳入正式结论。")
-    rows = [_draft_row(row) for row in draft_rows]
-    st.dataframe(
-        pd.DataFrame(rows),
-        hide_index=True,
-        use_container_width=True,
-        column_config={
-            "样本编号": st.column_config.TextColumn("样本编号", width="small"),
-            "模型": st.column_config.TextColumn("模型", width="medium"),
-            "总分": st.column_config.TextColumn("总分", width="small"),
-            "状态": st.column_config.TextColumn("状态", width="small"),
-        },
-    )
+    st.markdown(f"还有 **{count}** 条评分待确认，未纳入正式结论。")
+    rows = [_draft_row(row) for row in draft_rows[:3]]
+    if rows:
+        st.dataframe(
+            pd.DataFrame(rows),
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "样本编号": st.column_config.TextColumn("样本编号", width="small"),
+                "模型": st.column_config.TextColumn("模型", width="medium"),
+                "总分": st.column_config.TextColumn("总分", width="small"),
+            },
+        )
     if st.button("进入评分确认", key="conc_to_review", type="secondary"):
         st.session_state.current_page = "review"
         st.rerun()
@@ -243,16 +220,7 @@ def _draft_row(row: dict) -> dict[str, str]:
         "样本编号": str(row.get("case_id") or ""),
         "模型": str(row.get("display_name") or row.get("model_name") or "未标注模型"),
         "总分": score_text,
-        "状态": _review_status_label(row.get("review_status")),
     }
-
-
-def _review_status_label(status) -> str:
-    return {
-        "pending": "待确认",
-        "confirmed": "已确认",
-        "skipped": "暂不采用",
-    }.get(str(status or "pending").strip().lower(), "待确认")
 
 
 # --------------------------------------------------------------------------- #

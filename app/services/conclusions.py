@@ -39,6 +39,7 @@ BOUNDARY_NOT_EVIDENCE = "不可作为依据"
 BOUNDARY_REFERENCE_FLOOR = 85.0
 BOUNDARY_PASS_FLOOR = 60.0
 MIN_BOUNDARY_SAMPLE_COUNT = 2
+MIN_CONCLUSION_SAMPLE_COUNT = 3
 WEAK_DIMENSION_ATTAINMENT = 0.60
 SEVERE_DIMENSION_ATTAINMENT = 0.35
 HIGH_RISK_REVIEW_FLOOR = 70.0
@@ -371,11 +372,7 @@ def build_model_issue_summaries(
         high_errors = _high_severity_errors(_errors_for_model_group(errors_df, scores, model))
         weaknesses = list(boundary.get("major_weaknesses") or _model_dimension_weaknesses(scores))
         sample_count = int(len(scores))
-        sample_insufficient = bool(boundary.get("sample_insufficient") or sample_count < MIN_BOUNDARY_SAMPLE_COUNT)
-        cases = _dedupe(scores.get("case_id", pd.Series(dtype=str)).dropna().astype(str).tolist())
-        affected_cases = _affected_cases(scores, high_errors)
-        if not affected_cases:
-            affected_cases = cases[:3]
+        sample_insufficient = bool(boundary.get("sample_insufficient") or sample_count < MIN_CONCLUSION_SAMPLE_COUNT)
         notes = _collect_notes(raw_group.get("review_note") if not raw_group.empty else scores.get("review_note"))
         rationale_snippets = _collect_rationale_snippets(raw_group)
         current_suggestion = _current_suggestion_for_boundary(boundary, sample_insufficient)
@@ -387,16 +384,6 @@ def build_model_issue_summaries(
             rationale_snippets=rationale_snippets,
             sample_insufficient=sample_insufficient,
         )
-        detail_items = _detail_items_for_model(
-            main_issues=main_issues,
-            affected_cases=affected_cases,
-            weaknesses=weaknesses,
-            high_errors=high_errors,
-            current_suggestion=current_suggestion,
-            sample_insufficient=sample_insufficient,
-            notes=notes,
-            rationale_snippets=rationale_snippets,
-        )
         summaries.append(
             {
                 "model_name": model,
@@ -405,10 +392,17 @@ def build_model_issue_summaries(
                 "sample_count": sample_count,
                 "current_suggestion": current_suggestion,
                 "main_issues": main_issues,
-                "affected_cases": affected_cases,
                 "basis_summary": _basis_summary_for_model(boundary, sample_insufficient),
+                "detail_basis": _detail_basis_for_model(
+                    boundary=boundary,
+                    weaknesses=weaknesses,
+                    high_errors=high_errors,
+                    notes=notes,
+                    rationale_snippets=rationale_snippets,
+                    sample_count=sample_count,
+                    sample_insufficient=sample_insufficient,
+                ),
                 "sample_insufficient": sample_insufficient,
-                "detail_items": detail_items,
                 "low_dimensions": _low_dimension_labels(weaknesses),
                 "high_severity_errors": _high_error_labels(high_errors),
                 "usage_advice": _usage_advice(current_suggestion),
@@ -501,7 +495,7 @@ def _raw_live_group_for_model(live_df: pd.DataFrame, model_name: str) -> pd.Data
 
 def _current_suggestion_for_boundary(boundary: Mapping[str, Any], sample_insufficient: bool) -> str:
     if sample_insufficient:
-        return "样本数不足，暂不形成判断"
+        return "样本不足，暂不形成判断"
     value = _text(boundary.get("boundary"))
     if value == BOUNDARY_REFERENCE:
         return "可作为初稿参考"
@@ -541,57 +535,42 @@ def _main_issues_for_model(
     return _dedupe(issues)[:4]
 
 
-def _affected_cases(scores: pd.DataFrame, high_errors: pd.DataFrame) -> list[str]:
-    cases: list[str] = []
-    if isinstance(high_errors, pd.DataFrame) and not high_errors.empty and "case_id" in high_errors.columns:
-        cases.extend(high_errors["case_id"].dropna().astype(str).tolist())
-    if isinstance(scores, pd.DataFrame) and not scores.empty and {"case_id", "total_score"}.issubset(scores.columns):
-        score_values = pd.to_numeric(scores["total_score"], errors="coerce")
-        cases.extend(scores[score_values < BOUNDARY_PASS_FLOOR]["case_id"].dropna().astype(str).tolist())
-    return _dedupe(cases)[:4]
-
-
-def _detail_items_for_model(
-    *,
-    main_issues: Sequence[str],
-    affected_cases: Sequence[str],
-    weaknesses: Sequence[Mapping[str, Any]],
-    high_errors: pd.DataFrame,
-    current_suggestion: str,
-    sample_insufficient: bool,
-    notes: Sequence[str],
-    rationale_snippets: Sequence[str],
-) -> list[dict[str, str]]:
-    affected = "、".join(affected_cases) if affected_cases else "当前已确认样本"
-    low_dimensions = "、".join(_low_dimension_labels(weaknesses)) or "暂无明显低分维度"
-    high_error_text = "；".join(_high_error_labels(high_errors)) or "暂无高严重度错误"
-    supporting = ""
-    if notes:
-        supporting = "复核说明：" + "；".join(notes[:2])
-    elif rationale_snippets:
-        supporting = "评分依据：" + "；".join(rationale_snippets[:2])
-
-    rows: list[dict[str, str]] = []
-    for issue in main_issues:
-        rows.append(
-            {
-                "主要问题": issue,
-                "涉及样本": affected,
-                "低分维度": low_dimensions,
-                "高严重度错误": high_error_text,
-                "对结论的影响": _impact_text(issue, sample_insufficient),
-                "使用建议": _usage_advice(current_suggestion),
-                "补充依据": supporting or "当前样本内暂无补充说明",
-            }
-        )
-    return rows
-
-
 def _basis_summary_for_model(boundary: Mapping[str, Any], sample_insufficient: bool) -> str:
     reasons = [_rewrite_reason(reason) for reason in list(boundary.get("reasons") or [])]
     if sample_insufficient and not any("样本数不足" in reason for reason in reasons):
         reasons.insert(0, "样本数不足，暂不形成稳定判断")
     return "；".join(_dedupe(reasons)[:3]) or "基于已确认评分的平均分和维度表现判断"
+
+
+def _detail_basis_for_model(
+    *,
+    boundary: Mapping[str, Any],
+    weaknesses: Sequence[Mapping[str, Any]],
+    high_errors: pd.DataFrame,
+    notes: Sequence[str],
+    rationale_snippets: Sequence[str],
+    sample_count: int,
+    sample_insufficient: bool,
+) -> list[str]:
+    reasons: list[str] = []
+    if sample_insufficient:
+        reasons.append(f"当前仅有 {sample_count} 条已确认评分，样本覆盖不足。")
+    for label in _low_dimension_labels(weaknesses)[:2]:
+        reasons.append(f"{label} 得分偏低。")
+    for label in _high_error_labels(high_errors)[:2]:
+        reasons.append(f"存在高严重度错误：{label}。")
+    if not reasons:
+        for reason in list(boundary.get("reasons") or [])[:2]:
+            text = _rewrite_reason(reason)
+            if text:
+                reasons.append(text)
+    if len(reasons) < 3:
+        for note in list(notes)[:2]:
+            reasons.append(f"复核说明：{note}")
+    if len(reasons) < 3:
+        for rationale in list(rationale_snippets)[:2]:
+            reasons.append(f"评分依据：{rationale}")
+    return _dedupe(reasons)[:4] or ["基于已确认评分的平均分和维度表现判断。"]
 
 
 def _rewrite_reason(reason: Any) -> str:
@@ -657,22 +636,12 @@ def _texts_indicate_caution(values: Sequence[str]) -> bool:
     return bool(text and any(keyword in text for keyword in (*_CAUTION_NOTE_KEYWORDS, "不足", "缺少", "遗漏", "未能")))
 
 
-def _impact_text(issue: str, sample_insufficient: bool) -> str:
-    if sample_insufficient or "样本数不足" in issue:
-        return "当前样本量不足，不能代表模型整体水平。"
-    if "高严重度错误" in issue or "高风险" in issue:
-        return "会降低当前模型建议的可信度，确认前需重点复核。"
-    if "偏弱" in issue:
-        return "相关维度会限制回答作为尽调判断依据的稳定性。"
-    return "当前影响有限，仍需结合具体任务人工判断。"
-
-
 def _usage_advice(current_suggestion: str) -> str:
     if current_suggestion == "可作为初稿参考":
         return "可作为初稿参考，仍需结合底稿材料人工确认。"
     if current_suggestion == "必须人工复核后使用":
         return "仅建议在人工复核后使用，重点检查低分维度和复核说明。"
-    if current_suggestion == "样本数不足，暂不形成判断":
+    if current_suggestion == "样本不足，暂不形成判断":
         return "请补充更多已确认样本后再形成稳定判断。"
     return "当前暂不建议作为判断依据，应先复核问题或补充样本。"
 
