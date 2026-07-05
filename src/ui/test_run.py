@@ -59,7 +59,7 @@ _SILICONFLOW_LABEL = "硅基流动"
 _EVAL_TEMPERATURE = 0.1
 _EVAL_MAX_TOKENS = 2048
 _MODEL_OPTION_LIMIT = 30
-_ANSWER_PREVIEW_LIMIT = 1200
+_ANSWER_PREVIEW_LIMIT = 1500
 _RUN_STATE_KEY = "test_run_run_state"
 _PARTIAL_OUTCOMES_KEY = "test_run_partial_outcomes"
 _LAST_RUN_STATUS_KEY = "test_run_last_run_status"
@@ -178,6 +178,25 @@ def build_run_queue_items(model_ids: list[str], selected_tasks: list[dict]) -> l
                 "task": task,
             })
     return items
+
+
+def build_outcome_view_options(outcomes: list[er.RunOutcome]) -> list[dict[str, int | str]]:
+    """Build selector options for reviewing one model answer at a time."""
+    return [
+        {
+            "index": index,
+            "label": _outcome_option_label(outcome),
+        }
+        for index, outcome in enumerate(outcomes or [])
+    ]
+
+
+def default_outcome_view_index(outcomes: list[er.RunOutcome]) -> int:
+    """Prefer the first successful answer; otherwise show the first failure."""
+    for index, outcome in enumerate(outcomes or []):
+        if outcome.success:
+            return index
+    return 0
 
 
 def build_remaining_queue_items(queue_items: list[dict], outcomes: list[er.RunOutcome]) -> list[dict]:
@@ -872,13 +891,13 @@ def _render_results(provider_name: str, temperature, max_tokens) -> None:
     if run_status in {"running", "interrupted", "failed"}:
         _render_partial_run_notice(result, provider_name, temperature, max_tokens)
     if summary.total and summary.success == 0:
-        st.caption("本次运行没有成功回答，失败原因见下方结果卡片。")
+        st.caption("本次运行没有成功回答，默认展示第一条失败原因。")
+    elif failed:
+        st.caption("失败项不会进入评分草稿。")
     if er.is_mock_result(result):
         st.caption("本次为模拟回退模式运行，回答为模拟生成。")
 
-    st.markdown("**模型回答**")
-    for index, outcome in enumerate(result.outcomes, start=1):
-        _render_run_outcome_card(outcome, index)
+    _render_answer_viewer(result)
 
     if st.button("查看技术明细", key="test_run_technical_details", type="tertiary"):
         _render_technical_details_dialog(result)
@@ -1033,27 +1052,48 @@ def _render_answer_viewer(result) -> None:
         st.caption("暂无回答可查看。")
         return
 
-    options = list(range(len(outcomes)))
-
-    def _fmt(idx: int) -> str:
-        o = outcomes[idx]
-        return f"{o.case_id} · {o.model_id}"
-
-    selected = st.selectbox("任务 · 模型", options, format_func=_fmt, key="test_run_view_outcome")
-    outcome = outcomes[selected]
-
-    st.markdown(
-        f"状态：{_status_label(outcome.run_status)} · 耗时："
-        f"{'—' if outcome.latency_ms is None else f'{outcome.latency_ms} ms'} · "
-        f"Token：{_n(outcome.input_tokens)}/{_n(outcome.output_tokens)}/{_n(outcome.total_tokens)}"
+    options = build_outcome_view_options(outcomes)
+    selected = st.selectbox(
+        "查看回答",
+        options=[int(item["index"]) for item in options],
+        index=default_outcome_view_index(outcomes),
+        format_func=lambda idx: str(options[idx]["label"]),
+        key=f"test_run_view_outcome_{_safe_key(getattr(result, 'run_id', 'current'))}",
     )
-    if outcome.trace_id:
-        st.caption(f"trace_id：{outcome.trace_id}")
+    _render_selected_outcome_detail(outcomes[int(selected)])
 
-    if outcome.success and outcome.answer_text:
-        render_text_block("模型回答", outcome.answer_text)
-    else:
-        st.error(outcome.error_message or "本题未获得有效回答。")
+
+def _render_selected_outcome_detail(outcome: er.RunOutcome) -> None:
+    status = _outcome_display_status(outcome)
+    elapsed = "—" if outcome.latency_ms is None else f"{outcome.latency_ms} ms"
+    with st.container(border=True):
+        if outcome.success:
+            st.markdown("**模型回答**")
+            st.caption(
+                f"模型：{outcome.model_id} · 任务：{outcome.case_id} · "
+                f"状态：{status} · 耗时：{elapsed}"
+            )
+            answer = outcome.answer_text or "—"
+            st.markdown(_answer_preview(answer))
+            if len(answer) > _ANSWER_PREVIEW_LIMIT:
+                if st.button(
+                    "查看全文",
+                    key=f"test_run_selected_full_answer_{_safe_key(outcome.model_id)}_{_safe_key(outcome.case_id)}",
+                    type="tertiary",
+                ):
+                    _render_full_answer_dialog(outcome)
+            return
+
+        st.markdown("**未获得有效回答**")
+        st.caption(
+            f"模型：{outcome.model_id} · 任务：{outcome.case_id} · "
+            f"状态：{status} · 耗时：{elapsed}"
+        )
+        st.markdown(f"错误码：`{_dash(outcome.error_code)}`")
+        st.markdown(f"错误信息：{_short(outcome.error_message, 220)}")
+        guidance = _failure_guidance(outcome)
+        if guidance:
+            st.caption(guidance)
 
 
 def _render_scoring(base, provider_name: str, task_records: list[dict]) -> None:
@@ -1162,6 +1202,14 @@ def _mode_label(value) -> str:
 def _status_label(value) -> str:
     label, _ = _STATUS_BADGE.get(str(value or "").strip().lower(), (value or "未知", "neutral"))
     return str(label)
+
+
+def _outcome_option_label(outcome: er.RunOutcome) -> str:
+    return f"{outcome.case_id} · {outcome.model_id} · {_outcome_display_status(outcome)}"
+
+
+def _outcome_display_status(outcome: er.RunOutcome) -> str:
+    return "已完成" if outcome.success else "未获得有效回答"
 
 
 def _review_status_label(value) -> str:

@@ -8,6 +8,7 @@ from app.services import dataset_service as ds
 from app.services import eval_runner as er
 from app.services import scorer as sc
 from src.ui.test_run import (
+    build_outcome_view_options,
     build_model_selection_options,
     build_remaining_queue_items,
     build_run_plan_summary,
@@ -15,6 +16,7 @@ from src.ui.test_run import (
     build_sample_options,
     build_sample_selection_rows,
     build_score_summary_rows,
+    default_outcome_view_index,
     filter_sample_selection_options,
     get_advanced_setting_items,
     get_test_run_steps,
@@ -99,6 +101,22 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertNotIn('st.expander("查看回答"', source)
         self.assertNotIn('st.expander("查看全部回答"', source)
 
+    def test_run_results_use_selector_for_answer_review(self):
+        source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+        results_source = source[
+            source.index("def _render_results"):
+            source.index("def _render_unfinished_run_without_result")
+        ]
+
+        self.assertIn("build_outcome_view_options", source)
+        self.assertIn("default_outcome_view_index", source)
+        self.assertIn('st.selectbox(\n        "查看回答"', source)
+        self.assertIn("_render_selected_outcome_detail", source)
+        self.assertIn("失败项不会进入评分草稿", source)
+        self.assertIn("默认展示第一条失败原因", source)
+        self.assertNotIn("for index, outcome in enumerate(result.outcomes", results_source)
+        self.assertNotIn("_render_run_outcome_card(outcome, index)", results_source)
+
     def test_model_selection_options_are_bounded_and_searchable(self):
         models = [
             ModelInfo(
@@ -154,6 +172,49 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIsNone(_siliconflow_balance_text(_NoBalanceProvider()))
         self.assertIsNone(_siliconflow_balance_text(_EmptyBalanceProvider()))
         self.assertEqual("¥12.35", _siliconflow_balance_text(_NumericBalanceProvider()))
+
+    def test_outcome_view_options_prefer_first_success(self):
+        outcomes = [
+            er.RunOutcome(
+                case_id="A",
+                task_type="analysis",
+                provider="siliconflow",
+                model_id="Model-Failed",
+                run_status="failed",
+                success=False,
+                error_code="timeout",
+                error_message="timeout",
+            ),
+            er.RunOutcome(
+                case_id="B",
+                task_type="analysis",
+                provider="siliconflow",
+                model_id="Model-Success",
+                run_status="success",
+                success=True,
+                answer_text="ok",
+            ),
+        ]
+
+        options = build_outcome_view_options(outcomes)
+
+        self.assertEqual(1, default_outcome_view_index(outcomes))
+        self.assertEqual("A · Model-Failed · 未获得有效回答", options[0]["label"])
+        self.assertEqual("B · Model-Success · 已完成", options[1]["label"])
+
+    def test_outcome_view_defaults_to_first_failure_when_no_success(self):
+        outcomes = [
+            er.RunOutcome(
+                case_id="A",
+                task_type="analysis",
+                provider="siliconflow",
+                model_id="Model-Failed",
+                run_status="failed",
+                success=False,
+            )
+        ]
+
+        self.assertEqual(0, default_outcome_view_index(outcomes))
 
 
 class SampleSelectionTests(unittest.TestCase):
