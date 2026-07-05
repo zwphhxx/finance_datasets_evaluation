@@ -227,9 +227,11 @@ class UIUXAuditFixesTests(unittest.TestCase):
     def test_review_seed_mode_hides_confirm_archive(self):
         source = Path("src/ui/review.py").read_text(encoding="utf-8")
         self.assertIn("score_run_id", source)
-        self.assertIn("if not score_run_id:", source)
-        self.assertIn('if review_status != "pending":', source)
         self.assertIn('"确认生效"', source)
+        self.assertIn('@st.dialog("确认生效"', source)
+        self.assertIn('@st.dialog("修订后确认"', source)
+        self.assertIn('@st.dialog("暂不采用"', source)
+        self.assertNotIn("def _render_case_review", source)
 
     def test_conclusions_does_not_render_card_classes(self):
         source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")

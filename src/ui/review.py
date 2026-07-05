@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import json
 import re
-from html import escape
-
 import pandas as pd
 import streamlit as st
 
@@ -33,8 +31,6 @@ from src.ui.components import (
     render_empty_state,
     render_inline_status,
     render_numbered_section,
-    render_text_block,
-    render_two_column_panel,
 )
 from src.ui.page_config import get_page_config
 from src.ui.tasks import (
@@ -59,15 +55,12 @@ _DEFAULT_DIMENSION_BASIS = {
 SEVERITY_BADGE = {"高": "danger", "中": "warning", "低": "neutral"}
 REVIEW_SECTIONS = [
     "待确认评分",
-    "当前评分详情",
+    "当前评分摘要",
     "评分依据",
-    "风险与红线",
     "确认处理",
 ]
 REVIEW_FILTER_OPTIONS = ["全部", "建议确认", "建议复核", "不建议采用", "已确认"]
 BULK_REVIEW_NOTE = "低风险评分草稿，经人工批量确认生效。"
-
-ANSWER_SUMMARY_LIMIT = 220
 
 RECOMMEND_CONFIRM_FLOOR = 85.0
 RECOMMEND_REVIEW_FLOOR = 60.0
@@ -165,6 +158,40 @@ def build_review_scoring_matrix_rows(
             "扣分原因": deduction,
             "对应错误标签": labels,
         })
+    return rows
+
+
+def build_review_basis_rows(
+    score_row: pd.Series | dict | None,
+    errors_df: pd.DataFrame | None,
+    rubric_dimensions: list[dict] | None = None,
+) -> list[dict[str, str]]:
+    """Build the compact score-basis table used on the review main page."""
+    row = score_row if isinstance(score_row, pd.Series) else pd.Series(score_row or {})
+    dimensions = rubric_dimensions if rubric_dimensions is not None else _get_rubric()
+    output_id = row.get("output_id")
+    errors_by_field = _errors_by_dimension_field(errors_df, output_id, dimensions)
+    rows: list[dict[str, str]] = []
+    for dim in dimensions or []:
+        field = str(dim.get("field") or dim.get("dimension_field") or "").strip()
+        if not field:
+            continue
+        name = _text(dim.get("name") or dim.get("dimension"), field)
+        full = _as_float(dim.get("full_mark"))
+        score = _as_float(row.get(field))
+        if full:
+            score_text = f"{_number_text(score)} / {_number_text(full)}" if score is not None else f"待补充 / {_number_text(full)}"
+        else:
+            score_text = "待补充"
+        attention = _dimension_attention(field, score, full, dim, errors_by_field.get(field, []))
+        rows.append(
+            {
+                "维度": name,
+                "得分": score_text,
+                "评分依据": _rationale_for_field(row, field),
+                "需关注点": attention,
+            }
+        )
     return rows
 
 
@@ -362,13 +389,6 @@ def _normalize_text(value) -> str:
     return re.sub(r"\s+", "", str(value))
 
 
-def _has_red_line(errors_df, output_id) -> bool:
-    errors = get_errors_for_output(errors_df, output_id)
-    if errors.empty or "severity" not in errors.columns:
-        return False
-    return any(_text(value) == "高" for value in errors["severity"].tolist())
-
-
 def detect_redline_hits(errors_df, output_id, gold) -> list[str]:
     errors = get_errors_for_output(errors_df, output_id)
     hits: list[str] = []
@@ -528,16 +548,12 @@ def render_review_page(data_bundle: dict) -> None:
     verdict = build_case_verdict(output_row, errors_df, gold, task_info)
 
     render_numbered_section("02", REVIEW_SECTIONS[1], "确认这条评分对应的样本、模型、总分和建议处理。")
-    _render_score_detail(item, verdict)
+    _render_score_summary(item, verdict, errors_df, optimizations_df)
 
-    render_numbered_section("03", REVIEW_SECTIONS[2], "按 Rubric 维度查看得分、评分依据、Gold 要求和错误标签。")
-    _render_scoring_matrix(output_row, errors_df)
+    render_numbered_section("03", REVIEW_SECTIONS[2], "按 Rubric 维度查看得分、评分依据和需关注点。")
+    _render_scoring_basis(output_row, errors_df)
 
-    render_numbered_section("04", REVIEW_SECTIONS[3], "查看高严重度错误、红线、低分维度和任务风险等级。")
-    _render_redline_panel(verdict, gold, output_row, errors_df, task_info)
-    _render_error_attribution(output_row, errors_df, optimizations_df)
-
-    render_numbered_section("05", REVIEW_SECTIONS[4], "人工确认生效、修订后确认，或暂不采用。")
+    render_numbered_section("04", REVIEW_SECTIONS[3], "人工确认生效、修订后确认，或暂不采用。")
     _render_confirmation_actions(item)
 
 
@@ -808,7 +824,7 @@ def _render_bulk_confirmation(
     blocked_items: list[dict],
 ) -> None:
     if blocked_items:
-        st.caption("建议复核、不建议采用或已确认的评分不能批量确认，请进入当前评分详情逐条处理。")
+        st.caption("建议复核、不建议采用或已确认的评分不能批量确认，请进入当前评分摘要逐条处理。")
 
     count = len(eligible_items)
     prompt = f"将确认 {count} 条低风险评分草稿，确认后纳入正式结论。" if count else ""
@@ -824,7 +840,7 @@ def _render_bulk_confirmation(
         if confirmed:
             st.success(f"已批量确认 {confirmed} 条评分草稿。")
         if failed:
-            st.warning(f"{failed} 条评分未能确认，请进入当前评分详情逐条处理。")
+            st.warning(f"{failed} 条评分未能确认，请进入当前评分摘要逐条处理。")
         if confirmed:
             st.rerun()
 
@@ -853,184 +869,110 @@ def _review_item_label(item: dict) -> str:
     )
 
 
-def _render_score_detail(item: dict, verdict: dict) -> None:
+def _render_score_summary(item: dict, verdict: dict, errors_df: pd.DataFrame, optimization_df: pd.DataFrame) -> None:
     row = item["output_row"]
-    task_info = item["task_info"]
     recommendation = item["recommendation"]
     reasons = recommendation.get("reasons") or ["暂无原因"]
     model_id = item["model_name"]
     summary_rows = [
-        ("样本", f"{item['case_id']}｜{summarize_text(task_info.get('question'), 24)}"),
+        ("样本", item["case_id"]),
         ("模型", item["display_model"]),
         ("完整模型 ID", model_id),
-        ("总分", _score_text(row.get("total_score"))),
-        ("裁判模型", md.display_model_name(row.get("judge_model") or sc.DEFAULT_JUDGE_MODEL)),
-        ("评分状态", _display_review_status(row.get("review_status"), item["source"])),
-        ("生成时间", _format_datetime(item.get("created_at"))),
+        ("总分", f"{_score_text(row.get('total_score'))} / 100"),
+        ("建议处理", str(recommendation.get("recommendation") or "待判断")),
+        ("主要原因", summarize_text("；".join(reasons[:3]), 96)),
     ]
     render_inline_status(summary_rows)
-    _render_recommendation_note(recommendation)
-    st.caption("主要原因：" + "；".join(reasons[:4]))
 
-    answer = _text(row.get("answer_text"), "暂无回答内容。")
-    render_text_block("任务摘要", summarize_text(task_info.get("question"), 180))
-    render_text_block("模型回答摘要", summarize_text(answer, ANSWER_SUMMARY_LIMIT))
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        if st.button("查看任务与标准详情", type="tertiary", key=f"review_task_detail::{item['case_id']}"):
-            _render_task_and_gold_dialog(task_info, item["gold"])
-    with col2:
-        if st.button(
-            "查看完整模型回答",
-            type="tertiary",
-            key=f"review_answer_detail::{item['case_id']}::{_safe_key(model_id)}",
-            disabled=not bool(answer.strip()),
-        ):
-            _render_full_answer_dialog(item["display_model"], item["case_id"], answer)
-    _render_inline_verdict(verdict)
+    attention = _attention_items(row, errors_df, item["gold"], item["task_info"], item.get("rubric_rows") or [])
+    if attention:
+        st.markdown("**需要关注**")
+        _render_markdown_bullets(attention)
+    else:
+        st.caption("当前摘要未发现需额外关注的低分维度或红线提示。")
+
+    if st.button(
+        "查看评分材料",
+        type="tertiary",
+        key=f"review_materials::{item['case_id']}::{_safe_key(model_id)}",
+    ):
+        _render_score_materials_dialog(item, verdict, errors_df, optimization_df)
 
 
-def _render_recommendation_note(recommendation: dict) -> None:
-    title = str(recommendation.get("recommendation") or "待判断")
-    st.markdown(f"**建议处理：** {title}")
-    st.caption("该建议只辅助人工判断，不会自动生效。")
+@st.dialog("评分材料", width="large")
+def _render_score_materials_dialog(
+    item: dict,
+    verdict: dict,
+    errors_df: pd.DataFrame,
+    optimization_df: pd.DataFrame,
+) -> None:
+    row = item["output_row"]
+    task_info = item["task_info"]
+    gold = item["gold"]
+    st.caption(f"样本：{item['case_id']} · 模型：{item['display_model']}")
 
-
-@st.dialog("任务与标准详情", width="large")
-def _render_task_and_gold_dialog(task_info, gold) -> None:
-    st.markdown("#### 任务内容")
-    _render_task_context(task_info)
-    _render_task_brief(task_info)
-    st.markdown("#### 理想回复标准 / Gold Answer")
-    _render_gold_standard(gold)
-
-
-@st.dialog("模型回答详情", width="large")
-def _render_full_answer_dialog(model_name: str, case_id: str, answer: str) -> None:
-    st.caption(f"样本：{case_id} · 模型：{model_name}")
-    st.markdown(answer or "暂无回答内容。")
-
-
-def _render_task_context(task_info: pd.Series) -> None:
-    domain = display_label(task_info.get("domain"), DOMAIN_LABELS)
-    task_type = display_label(task_info.get("task_type"), TASK_TYPE_LABELS)
-    difficulty = DIFFICULTY_LABELS.get(_text(task_info.get("difficulty")), _text(task_info.get("difficulty")))
-    risk = RISK_LABELS.get(_text(task_info.get("risk_level")), _text(task_info.get("risk_level")))
-    requirement = _text(task_info.get("question"), _text(task_info.get("scenario"), "暂无任务要求"))
-    capability = _text(task_info.get("expected_capability"), "暂无考察能力说明")
-
-    render_text_block("任务要求", requirement)
+    st.markdown("**任务背景**")
     render_inline_status([
-        ("领域", domain),
-        ("类型", task_type),
-        ("难度", difficulty),
-        ("风险", risk),
-        ("考察能力", capability),
+        ("领域", display_label(task_info.get("domain"), DOMAIN_LABELS)),
+        ("类型", display_label(task_info.get("task_type"), TASK_TYPE_LABELS)),
+        ("难度", DIFFICULTY_LABELS.get(_text(task_info.get("difficulty")), _text(task_info.get("difficulty")))),
+        ("风险", RISK_LABELS.get(_text(task_info.get("risk_level")), _text(task_info.get("risk_level")))),
+    ])
+    st.markdown(_text(task_info.get("context"), "暂无背景材料"))
+    st.markdown("**任务题**")
+    st.markdown(_text(task_info.get("question"), _text(task_info.get("scenario"), "暂无任务题")))
+
+    st.markdown("**理想回复标准 / Gold Answer**")
+    if isinstance(gold, dict):
+        render_inline_status([
+            ("核心结论", field_text(gold, "core_conclusion", "待补充")),
+            ("关键依据", field_text(gold, "key_evidence", "待补充")),
+            ("边界条件", field_text(gold, "boundary_conditions", "待补充")),
+        ])
+        must_points = field_list(gold, "must_have_points")
+        red_lines = field_list(gold, "unacceptable_errors")
+        if must_points:
+            st.markdown("**必须覆盖点**")
+            render_clean_list(must_points)
+        if red_lines:
+            st.markdown("**不可接受错误**")
+            render_clean_list(red_lines)
+    else:
+        st.caption("该任务暂无理想回复标准 / Gold Answer。")
+
+    st.markdown("**模型回答**")
+    st.markdown(_text(row.get("answer_text"), "暂无回答内容。"))
+
+    st.markdown("**Rubric 原始要求**")
+    rubric_rows = _rubric_material_rows(ds.get_rubric_dimensions())
+    if rubric_rows:
+        st.dataframe(pd.DataFrame(rubric_rows), hide_index=True, use_container_width=True)
+    else:
+        st.caption("暂无 Rubric 评分标准。")
+
+    st.markdown("**错误标签**")
+    error_rows = build_error_attribution_rows(errors_df, optimization_df, row.get("output_id"))
+    if error_rows:
+        st.dataframe(pd.DataFrame(error_rows), hide_index=True, use_container_width=True)
+    else:
+        st.caption("暂无错误标签。")
+
+    st.markdown("**技术明细**")
+    render_inline_status([
+        ("评分批次", _text(row.get("score_run_id"), "—")),
+        ("运行批次", _text(row.get("run_id"), "—")),
+        ("裁判模型", md.display_model_name(row.get("judge_model") or sc.DEFAULT_JUDGE_MODEL)),
+        ("裁判状态", _text(row.get("judge_status"), "—")),
+        ("耗时", f"{_number_text(row.get('latency_ms'))} ms" if has_value(row.get("latency_ms")) else "—"),
+        ("使用边界", verdict.get("title") or "待判断"),
     ])
 
 
-def _render_task_brief(task_info: pd.Series) -> None:
-    background = _text(task_info.get("context"), "暂无背景材料")
-    requirement = _text(task_info.get("question"), _text(task_info.get("scenario"), "暂无任务要求"))
-    capability = _text(task_info.get("expected_capability"), "暂无考察能力说明")
-
-    left = (
-        f'<div class="text-block"><div class="text-block-label">任务背景</div>'
-        f'<div class="text-block-body">{escape(background)}</div></div>'
-        f'<div class="text-block"><div class="text-block-label">考察能力</div>'
-        f'<div class="text-block-body">{escape(capability)}</div></div>'
-    )
-    right = (
-        f'<div class="text-block"><div class="text-block-label">任务要求</div>'
-        f'<div class="text-block-body">{escape(requirement)}</div></div>'
-    )
-    render_two_column_panel(left, right)
-
-
-def _render_gold_standard(gold: dict | None) -> None:
-    if not isinstance(gold, dict):
-        render_empty_state("该任务暂无理想回复标准 / Gold Answer 记录。")
-        return
-
-    from src.gold_quality import evaluate_gold_quality
-    quality = evaluate_gold_quality(gold)
-    st.markdown(f"**Gold Answer 状态：** {quality['status']}")
-
-    core = field_text(gold, "core_conclusion", "需进一步补充")
-    evidence = field_text(gold, "key_evidence", "待补充依据")
-    boundary = field_text(gold, "boundary_conditions", "待补充边界")
-
-    left = (
-        f'<div class="text-block"><div class="text-block-label">标准结论</div>'
-        f'<div class="text-block-body">{escape(core)}</div></div>'
-        f'<div class="text-block"><div class="text-block-label">关键依据</div>'
-        f'<div class="text-block-body">{escape(evidence)}</div></div>'
-    )
-    right = (
-        f'<div class="text-block"><div class="text-block-label">边界条件</div>'
-        f'<div class="text-block-body">{escape(boundary)}</div></div>'
-    )
-    render_two_column_panel(left, right)
-
-    must_points = field_list(gold, "must_have_points")
-    red_lines = field_list(gold, "unacceptable_errors")
-
-    col_left, col_right = st.columns(2)
-    with col_left:
-        render_text_block("必须覆盖点", "")
-        if must_points:
-            render_clean_list(must_points)
-        else:
-            st.caption("暂无")
-    with col_right:
-        render_text_block("不可接受错误（红线）", "")
-        if red_lines:
-            render_clean_list(red_lines)
-        else:
-            st.caption("暂无")
-
-    review = quality["manual_review"]
-    if review:
-        st.caption(f"人工复核提示：{review}")
-
-
-def _render_inline_verdict(verdict: dict) -> None:
-    redline_count = len(verdict.get("redline_hits") or [])
-    redline_text = f"红线命中 {redline_count} 项" if redline_count else "未命中红线"
-    st.markdown(f"**使用边界：** {verdict['title']}")
-    st.caption(f"总分 {verdict['score_text']} · {redline_text}。{verdict['reason']}")
-
-
-def _render_model_answer(output_row: pd.Series | None, gold) -> None:
-    if output_row is None:
-        render_empty_state("该任务暂无模型回答记录。")
-        return
-
-    answer = _text(output_row.get("answer_text"), "暂无回答内容。")
-    render_text_block("回答摘要", summarize_text(answer, ANSWER_SUMMARY_LIMIT))
-    if len(answer) > ANSWER_SUMMARY_LIMIT:
-        with st.expander("查看完整模型回答"):
-            st.write(answer)
-
-    must_points = field_list(gold, "must_have_points") if isinstance(gold, dict) else []
-    if must_points:
-        covered, missed = build_point_coverage(must_points, answer)
-        with st.expander("要点覆盖", expanded=False):
-            st.caption("基于关键词近似匹配，仅供对照参考。")
-            col1, col2 = st.columns(2)
-            with col1:
-                render_text_block("已覆盖要点", "")
-                render_clean_list(covered if covered else ["未识别到明确覆盖"])
-            with col2:
-                render_text_block("遗漏要点", "")
-                render_clean_list(missed if missed else ["未识别到明显遗漏"])
-
-
-def _render_scoring_matrix(output_row: pd.Series | None, errors_df) -> None:
+def _render_scoring_basis(output_row: pd.Series | None, errors_df) -> None:
     if output_row is None:
         render_empty_state("暂无可展示数据")
         return
-    rows = build_review_scoring_matrix_rows(output_row, errors_df)
+    rows = build_review_basis_rows(output_row, errors_df)
     if not rows:
         render_empty_state("当前模型回答尚未配置 Rubric 评分标准。")
         return
@@ -1039,29 +981,11 @@ def _render_scoring_matrix(output_row: pd.Series | None, errors_df) -> None:
         hide_index=True,
         use_container_width=True,
         column_config={
-            "评分维度": st.column_config.TextColumn("维度", width="small"),
-            "模型得分": st.column_config.TextColumn("得分", width="small"),
-            "满分": st.column_config.TextColumn("满分", width="small"),
+            "维度": st.column_config.TextColumn("维度", width="small"),
+            "得分": st.column_config.TextColumn("得分", width="small"),
             "评分依据": st.column_config.TextColumn("评分依据", width="large"),
-            "理想回复要求 / Gold 要求": st.column_config.TextColumn("Gold / Rubric 要求", width="large"),
-            "扣分原因": st.column_config.TextColumn("扣分规则", width="medium"),
-            "对应错误标签": st.column_config.TextColumn("对应错误标签", width="medium"),
+            "需关注点": st.column_config.TextColumn("需关注点", width="large"),
         },
-    )
-
-
-def _render_error_attribution(output_row: pd.Series | None, errors_df, optimization_df) -> None:
-    if output_row is None:
-        render_empty_state("该任务暂无模型回答记录，暂无错误归因。")
-        return
-    rows = build_error_attribution_rows(errors_df, optimization_df, output_row.get("output_id"))
-    if not rows:
-        render_empty_state("暂无错误标签。")
-        return
-    st.dataframe(
-        pd.DataFrame(rows),
-        hide_index=True,
-        use_container_width=True,
     )
 
 
@@ -1102,6 +1026,53 @@ def _errors_by_dimension_field(errors_df, output_id, dimensions: list[dict] | No
             continue
         by_field.setdefault(field, []).append(error_type)
     return {field: _dedupe_texts(labels) for field, labels in by_field.items()}
+
+
+def _dimension_attention(field: str, score: float | None, full: float | None, dim: dict, labels: list[str]) -> str:
+    notes: list[str] = []
+    if full and score is not None and score / full < RECOMMEND_LOW_DIM_RATIO:
+        notes.append("低分维度")
+    if labels:
+        notes.append("错误标签：" + "、".join(labels[:2]))
+    deduction = _clean(dim.get("deduction_rules"))
+    if deduction:
+        notes.append("扣分规则：" + summarize_text(deduction, 48))
+    return "；".join(_dedupe_texts(notes)) or "暂无特别关注点"
+
+
+def _attention_items(
+    row: pd.Series,
+    errors_df: pd.DataFrame,
+    gold,
+    task_info,
+    rubric_rows: list[dict],
+) -> list[str]:
+    items: list[str] = []
+    for rubric in rubric_rows or []:
+        full = _as_float(rubric.get("full"))
+        score = _as_float(rubric.get("score"))
+        if full and score is not None and score / full < RECOMMEND_LOW_DIM_RATIO:
+            items.append(f"{rubric.get('dimension')}：{score:.0f} / {full:.0f}")
+    for hit in detect_redline_hits(errors_df if isinstance(errors_df, pd.DataFrame) else pd.DataFrame(), row.get("output_id"), gold):
+        items.append(hit)
+    risk = _text(task_info.get("risk_level"), "") if task_info is not None else ""
+    if risk == "高":
+        items.append("任务风险等级较高，确认前需复核评分依据。")
+    return _dedupe_texts(items)[:5]
+
+
+def _rubric_material_rows(dimensions: list[dict]) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for dim in dimensions or []:
+        rows.append(
+            {
+                "维度": _text(dim.get("name") or dim.get("dimension"), "未标注维度"),
+                "满分": _number_text(dim.get("full_mark"), "待补充"),
+                "满分标准": _text(dim.get("full_mark_standard"), "待补充"),
+                "扣分规则": _text(dim.get("deduction_rules"), "暂无规则"),
+            }
+        )
+    return rows
 
 
 def _rubric_requirement(field: str, dim: dict) -> str:
@@ -1148,15 +1119,6 @@ def _optimization_lookup(optimization_df: pd.DataFrame | None) -> dict[str, dict
         if error_type:
             lookup[error_type] = row.to_dict()
     return lookup
-
-
-def _labels_html(value: str) -> str:
-    if not value or value == "暂无错误标签":
-        return '<span class="status-badge status-muted">暂无错误标签</span>'
-    return "".join(
-        f'<span class="status-badge status-neutral">{escape(label)}</span>'
-        for label in [item.strip() for item in value.split("；") if item.strip()]
-    )
 
 
 def _number_text(value, fallback: str = "—") -> str:
@@ -1216,70 +1178,6 @@ def _dedupe_texts(items: list[str]) -> list[str]:
             seen.add(text)
             result.append(text)
     return result
-
-
-def _render_redline_panel(verdict: dict, gold, output_row: pd.Series | None, errors_df, task_info) -> None:
-    row = output_row if isinstance(output_row, pd.Series) else pd.Series(output_row or {})
-    output_id = row.get("output_id")
-    errors = get_errors_for_output(errors_df if isinstance(errors_df, pd.DataFrame) else pd.DataFrame(), output_id)
-    rendered = False
-
-    redline_hits = [str(item) for item in (verdict.get("redline_hits") or []) if str(item).strip()]
-    if redline_hits:
-        st.markdown("### 命中红线")
-        _render_markdown_bullets(redline_hits)
-        rendered = True
-
-    high_errors = []
-    if not errors.empty:
-        for _, error in errors.iterrows():
-            if _text(error.get("severity"), "") == "高":
-                high_errors.append(
-                    f"{_text(error.get('error_type'), '未分类错误')}："
-                    f"{_text(error.get('error_description'), '暂无错误表现')}"
-                )
-    if high_errors:
-        st.markdown("### 高严重度错误")
-        _render_markdown_bullets(_dedupe_texts(high_errors))
-        rendered = True
-
-    weak_rows = [
-        {"维度": r["dimension"], "得分": f"{r['score']:.0f} / {r['full']}"}
-        for r in build_rubric_rows(row)
-        if r["full"] and r["score"] / r["full"] < VERDICT_WEAK_RATIO
-    ]
-    if weak_rows:
-        st.markdown("### 关键维度低分")
-        st.dataframe(
-            pd.DataFrame(weak_rows),
-            hide_index=True,
-            use_container_width=True,
-            column_config={
-                "维度": st.column_config.TextColumn("维度", width="medium"),
-                "得分": st.column_config.TextColumn("得分", width="small"),
-            },
-        )
-        rendered = True
-
-    risk = _text(task_info.get("risk_level"), "") if task_info is not None else ""
-    if risk:
-        st.markdown("### 任务风险等级")
-        risk_label = RISK_LABELS.get(risk, risk)
-        if risk == "高":
-            _render_markdown_bullets([f"当前任务风险等级为{risk_label}，确认前需复核评分依据。"])
-        else:
-            _render_markdown_bullets([f"当前任务风险等级为{risk_label}。"])
-        rendered = True
-
-    red_lines = field_list(gold, "unacceptable_errors") if isinstance(gold, dict) else []
-    if red_lines:
-        st.markdown("### Gold Answer 中的不可接受错误")
-        _render_markdown_bullets([str(item) for item in red_lines])
-        rendered = True
-
-    if not rendered:
-        st.markdown("### 当前未发现红线提示")
-        _render_markdown_bullets(["未发现高严重度错误或关键维度低分。"])
 
 
 def _render_markdown_bullets(items: list[str]) -> None:
@@ -1441,62 +1339,6 @@ def _confirm_review(row_id: int, edited: dict[str, int], note: str, requires_not
         st.rerun()
     else:
         st.warning("确认失败：请确认 SQLite 数据层已初始化。")
-
-
-def _render_case_review(output_row: pd.Series | None, eval_status: dict) -> None:
-    """在当前 (case, model) 评分处于待确认草稿时，提供就地确认表单。"""
-    if output_row is None:
-        render_empty_state("该任务暂无模型回答记录，不能进行人工确认。")
-        return
-    score_run_id = eval_status.get("score_run_id")
-    if not score_run_id:
-        st.caption("当前展示的是会话内结果；只有待确认的评分草稿可在此确认生效。")
-        return
-    case_id = str(output_row.get("case_id") or "")
-    model_name = str(output_row.get("model_name") or "")
-    row = sc.load_score_row_for_case(score_run_id, case_id, model_name)
-    if row is None:
-        st.caption("未找到可确认的评分草稿。")
-        return
-    review_status = str(row.get("review_status") or "pending")
-    if review_status == "confirmed":
-        st.caption("本条评分已确认。")
-        return
-    if review_status != "pending":
-        st.caption(f"本条评分状态为 {_review_status_label(review_status)}，仅待确认草稿可在此确认。")
-        return
-
-    dimensions = ds.get_rubric_dimensions()
-    st.caption("请对照理想回复标准 / Gold Answer、模型回答和评分矩阵确认建议分；确认后才进入正式结论。")
-    cols = st.columns(len(dimensions))
-    edited: dict[str, int] = {}
-    for i, dim in enumerate(dimensions):
-        field_name = dim["field"]
-        full_mark = int(dim.get("full_mark") or 0)
-        current = row.get(field_name)
-        value = int(current) if current is not None and str(current) != "nan" else 0
-        edited[field_name] = cols[i].number_input(
-            dim["name"], min_value=0, max_value=full_mark, value=min(value, full_mark),
-            step=1, key=f"review_score::{row['id']}::{field_name}",
-        )
-    note = st.text_area(
-        "复核说明", value=str(row.get("review_note") or ""), key=f"review_note::{row['id']}"
-    )
-    if st.button("确认生效", type="primary", key=f"review_confirm::{row['id']}"):
-        if sc.confirm_score_review(int(row["id"]), edited, note):
-            st.success("已确认生效；该评分将纳入正式结论。")
-            st.rerun()
-        else:
-            st.warning("确认失败：请确认 SQLite 数据层已初始化。")
-
-
-def _domain_by_case(tasks_df: pd.DataFrame) -> dict[str, str]:
-    if tasks_df.empty or "case_id" not in tasks_df:
-        return {}
-    return {
-        str(row.get("case_id")): display_label(row.get("domain"), DOMAIN_LABELS)
-        for _, row in tasks_df.iterrows()
-    }
 
 
 def _review_status_label(status: str) -> str:

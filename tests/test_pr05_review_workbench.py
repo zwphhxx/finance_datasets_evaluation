@@ -44,9 +44,8 @@ class ReviewStructureTests(unittest.TestCase):
         self.assertEqual(
             [
                 "待确认评分",
-                "当前评分详情",
+                "当前评分摘要",
                 "评分依据",
-                "风险与红线",
                 "确认处理",
             ],
             review.get_review_sections(),
@@ -70,11 +69,36 @@ class ReviewStructureTests(unittest.TestCase):
     def test_review_page_does_not_use_risk_note_cards(self):
         source = Path("src/ui/review.py").read_text(encoding="utf-8")
         self.assertNotIn("review-risk-note", source)
-        self.assertIn('st.markdown("### 命中红线")', source)
-        self.assertIn('st.markdown("### 关键维度低分")', source)
+        self.assertNotIn('st.markdown("### 命中红线")', source)
+        self.assertNotIn('st.markdown("### 关键维度低分")', source)
+        self.assertIn('@st.dialog("评分材料"', source)
+        self.assertIn('"查看评分材料"', source)
 
 
 class ReviewMatrixTests(unittest.TestCase):
+    def test_review_basis_rows_keep_main_table_compact(self):
+        dimensions = [
+            {
+                "field": "accuracy_score",
+                "name": "准确性",
+                "full_mark": 30,
+                "deduction_rules": "事实错误扣分",
+            },
+            {
+                "field": "coverage_score",
+                "name": "覆盖度",
+                "full_mark": 20,
+                "deduction_rules": "",
+            },
+        ]
+
+        rows = review.build_review_basis_rows(_score_row(), pd.DataFrame(), dimensions)
+
+        self.assertEqual(["维度", "得分", "评分依据", "需关注点"], list(rows[0].keys()))
+        self.assertEqual("18 / 30", rows[0]["得分"])
+        self.assertEqual("未返回明确依据", rows[0]["评分依据"])
+        self.assertIn("扣分规则", rows[0]["需关注点"])
+
     def test_scoring_matrix_rows_use_dynamic_rubric_and_error_labels(self):
         dimensions = [
             {
