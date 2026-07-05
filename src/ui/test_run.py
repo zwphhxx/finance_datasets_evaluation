@@ -21,6 +21,7 @@ from app.models.registry import get_text_provider
 from app.services import dataset_service as ds
 from app.services import eval_runner as er
 from app.services import eval_state
+from app.services import model_display as md
 from app.services import scorer as sc
 from src.ui.components import (
     render_compact_hero,
@@ -272,7 +273,8 @@ def build_score_summary_rows(score_result, dimensions) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     for outcome in sorted(score_result.outcomes, key=lambda o: (0 if o.ok else 1, -(o.total_score or 0))):
         row = {
-            "模型": str(outcome.eval_model),
+            "模型": _model_short_name(outcome.eval_model),
+            "模型ID": str(outcome.eval_model),
             "样本": str(outcome.case_id),
             "总分": _n(outcome.total_score),
             "裁判状态": _score_status_label(outcome),
@@ -417,7 +419,7 @@ def _selected_sample_summary(selected_tasks: list[dict]) -> str:
 def _selected_model_summary(model_ids: list[str]) -> str:
     if not model_ids:
         return "未选择"
-    labels = model_ids[:2]
+    labels = [_model_short_name(model_id) for model_id in model_ids[:2]]
     suffix = f" 等 {len(model_ids)} 个" if len(model_ids) > 2 else f"（{len(model_ids)} 个）"
     return "；".join(labels) + suffix
 
@@ -660,7 +662,9 @@ def _render_model_selection_dialog() -> None:
         for index, model_id in enumerate(chosen_models):
             col1, col2 = st.columns([4, 1])
             with col1:
-                st.markdown(f"- `{model_id}`")
+                st.markdown(f"- {_model_short_name(model_id)}")
+                if _model_short_name(model_id) != model_id:
+                    st.caption(f"模型 ID：{model_id}")
             with col2:
                 if st.button("移除", key=f"test_run_remove_model_{index}", type="tertiary", use_container_width=True):
                     st.session_state["test_run_model_dialog_selected"] = [
@@ -1129,7 +1133,7 @@ def _render_live_run_queue(
         if current:
             st.markdown(
                 f"已完成 {done} / {total} · 正在生成："
-                f"{current['model_id']} · 任务 {current['case_id']}"
+                f"{_model_short_name(current['model_id'])} · 任务 {current['case_id']}"
             )
         else:
             st.markdown(f"已完成 {done} / {total} · 正在汇总结果")
@@ -1140,7 +1144,7 @@ def _render_live_run_queue(
                 _render_run_outcome_card(outcome, index, compact=True)
         if waiting:
             waiting_text = "；".join(
-                f"{item['case_id']} · {item['model_id']}" for item in waiting[:5]
+                f"{item['case_id']} · {_model_short_name(item['model_id'])}" for item in waiting[:5]
             )
             suffix = f" 等 {len(waiting)} 条" if len(waiting) > 5 else ""
             st.caption(f"等待中：{waiting_text}{suffix}")
@@ -1301,7 +1305,7 @@ def _render_run_outcome_card(
     with st.container(border=True):
         status = "已完成" if outcome.success else "未获得有效回答"
         elapsed = "—" if outcome.latency_ms is None else f"{outcome.latency_ms} ms"
-        st.markdown(f"**{index}. {outcome.model_id}**")
+        st.markdown(f"**{index}. {_model_short_name(outcome.model_id)}**")
         st.caption(f"任务编号：{outcome.case_id} · 状态：{status} · 耗时：{elapsed}")
         if outcome.success:
             answer = outcome.answer_text or "—"
@@ -1642,7 +1646,7 @@ def _render_score_compare_table(score_result, dimensions) -> None:
         for o in score_result.outcomes
     }
     for row in rows:
-        outcome = outcome_by_key.get((row["模型"], row["样本"]))
+        outcome = outcome_by_key.get((row.get("模型ID", row["模型"]), row["样本"]))
         level = _score_status_level(outcome) if outcome is not None else "neutral"
         dim_cells = "".join(f'<td class="check-count">{escape(row[str(d["name"])])}</td>' for d in dimensions)
         body += (
@@ -1731,10 +1735,7 @@ def _sample_title_summary(
 
 
 def _model_short_name(model_id: str) -> str:
-    value = str(model_id or "").strip()
-    if not value:
-        return "—"
-    return value.rstrip("/").rsplit("/", 1)[-1] or value
+    return md.display_model_name(model_id)
 
 
 def _outcome_display_status(outcome: er.RunOutcome) -> str:

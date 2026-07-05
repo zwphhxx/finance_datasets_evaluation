@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from html import escape
 
+import pandas as pd
 import streamlit as st
 
 from app.services import conclusions as cc
@@ -40,45 +41,47 @@ def render_conclusions_page(data_bundle: dict) -> None:
         question=config.question,
     )
 
-    _render_formal_conclusions(seed_scores, confirmed_live, seed_errors)
-    _render_model_boundaries(seed_scores, confirmed_live, seed_errors, tasks)
+    _render_formal_conclusions(confirmed_live)
+    _render_model_boundaries(confirmed_live, tasks)
+    _render_seed_baseline(seed_scores, seed_errors)
     _render_drafts(pending_live, responses)
 
 
 # --------------------------------------------------------------------------- #
 # 01 正式评测结论
 # --------------------------------------------------------------------------- #
-def _render_formal_conclusions(seed_scores, confirmed_live, seed_errors) -> None:
+def _render_formal_conclusions(confirmed_live) -> None:
     render_numbered_section(
         "01",
-        "正式评测结论",
-        "只统计已沉淀结论与已复核归档结论，不含待复核草稿。",
+        "当前真实评测结论",
+        "只统计已复核归档的真实运行评分，不含待复核草稿和示例历史评价。",
     )
 
-    summary = cc.summarize_formal(seed_scores, confirmed_live)
+    empty_seed = pd.DataFrame()
+    summary = cc.summarize_formal(empty_seed, confirmed_live)
     if summary["total_rows"] == 0:
         render_text_block(
-            "暂无正式结论",
-            "当前没有可纳入正式结论的评分。运行一次真实评测并经人工复核归档后，结论会在这里汇总。",
+            "当前尚无真实模型评测结论",
+            "请先在发起测试页选择模型并运行，评分草稿经人工复核归档后，结论会在这里汇总。",
         )
         return
 
     avg_text = f"{summary['avg_total']:.1f}" if summary['avg_total'] is not None else "—"
     st.markdown(
         f"纳入 **{summary['model_count']}** 个模型 · 平均总分 **{avg_text}** · "
-        f"已沉淀评分 **{summary['seed_rows']}** 条 · 已复核归档 **{summary['confirmed_rows']}** 条"
+        f"已复核归档 **{summary['confirmed_rows']}** 条"
     )
 
-    conclusions = cc.build_formal_conclusions(seed_scores, confirmed_live)
+    conclusions = cc.build_formal_conclusions(empty_seed, confirmed_live)
     for item in conclusions:
         st.markdown(
             f"- **{item['display_name']}**：平均总分 {item['avg_total']:.1f}，"
             f"样本 {item['sample_count']} 条"
         )
 
-    combined = cc.combine_formal_scores(seed_scores, confirmed_live)
+    combined = cc.combine_formal_scores(empty_seed, confirmed_live)
     all_notes = [note for item in conclusions for note in item.get("review_notes", [])]
-    issues = cc.summarize_frequent_issues(combined, seed_errors, all_notes)
+    issues = cc.summarize_frequent_issues(combined, pd.DataFrame(), all_notes)
     if issues:
         with st.expander("高频问题归纳", expanded=False):
             for issue in issues:
@@ -88,18 +91,18 @@ def _render_formal_conclusions(seed_scores, confirmed_live, seed_errors) -> None
 # --------------------------------------------------------------------------- #
 # 02 模型使用边界
 # --------------------------------------------------------------------------- #
-def _render_model_boundaries(seed_scores, confirmed_live, seed_errors, tasks) -> None:
+def _render_model_boundaries(confirmed_live, tasks) -> None:
     render_numbered_section(
         "02",
         "模型使用边界",
-        "综合平均分、红线错误、关键维度短板、高风险任务和样本数量判断。",
+        "基于已复核归档的真实运行评分，综合平均分、关键维度短板、高风险任务和样本数量判断。",
     )
 
-    boundaries = cc.build_model_boundaries(seed_scores, confirmed_live, seed_errors, tasks)
+    boundaries = cc.build_model_boundaries(pd.DataFrame(), confirmed_live, pd.DataFrame(), tasks)
     if not boundaries:
         render_text_block(
             "暂无边界数据",
-            "运行评测并经人工复核后，此处按当前样本生成三类使用边界。",
+            "当前尚无真实模型评测结论。请先在发起测试页选择模型并运行，经人工复核归档后再查看边界。",
         )
         return
 
@@ -140,6 +143,39 @@ def _render_model_boundaries(seed_scores, confirmed_live, seed_errors, tasks) ->
     )
 
 
+def _render_seed_baseline(seed_scores, seed_errors) -> None:
+    render_numbered_section(
+        "03",
+        "示例历史评价",
+        "seed 样例用于演示评分、错误归因和数据优化方法，不代表当前实际选择模型。",
+    )
+    conclusions = cc.build_formal_conclusions(seed_scores, pd.DataFrame())
+    if not conclusions:
+        st.caption("暂无示例历史评价。")
+        return
+    rows = ""
+    for item in conclusions:
+        rows += (
+            "<tr>"
+            f"<td><strong>{escape(str(item.get('display_name') or item.get('model_name')))}</strong></td>"
+            f"<td>{escape(str(item.get('source_label') or '示例历史评价'))}</td>"
+            f"<td>{float(item.get('avg_total') or 0):.1f}</td>"
+            f"<td>{int(item.get('sample_count') or 0)} 条</td>"
+            "</tr>"
+        )
+    render_evidence_panel(
+        "示例基准",
+        (
+            '<table class="check-table"><thead><tr>'
+            "<th>示例模型</th><th>来源</th><th>平均分</th><th>样本数</th>"
+            f"</tr></thead><tbody>{rows}</tbody></table>"
+        ),
+    )
+    issues = cc.summarize_frequent_issues(cc.combine_formal_scores(seed_scores, pd.DataFrame()), seed_errors)
+    if issues:
+        st.caption("示例历史评价中的高频问题：" + "；".join(issues[:3]))
+
+
 def _format_weaknesses(weaknesses: list[dict]) -> str:
     if not weaknesses:
         return "暂无明显短板"
@@ -159,7 +195,7 @@ def _format_weaknesses(weaknesses: list[dict]) -> str:
 # --------------------------------------------------------------------------- #
 def _render_drafts(pending_live, responses) -> None:
     render_numbered_section(
-        "03",
+        "04",
         "草稿评测（待复核）",
         "现场新增评测先进入草稿，未进入正式结论；经人工复核确认后才会归档计入。",
     )
@@ -198,7 +234,7 @@ def _session_draft_rows() -> list[dict]:
             {
                 "row_id": None,
                 "model_name": str(getattr(outcome, "eval_model", "")),
-                "display_name": cc.display_model_name(getattr(outcome, "eval_model", "")),
+                "display_name": cc.display_model_name(getattr(outcome, "eval_model", ""), source="live"),
                 "case_id": str(getattr(outcome, "case_id", "")),
                 "total_score": _num(getattr(outcome, "total_score", None)),
                 "dimensions": {field: _num(scores.get(field)) for field in cc.DIMENSION_FIELDS},

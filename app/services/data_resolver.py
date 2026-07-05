@@ -27,6 +27,7 @@ def resolve_active_data(base) -> tuple[Any, dict[str, Any]]:
     if run is None:
         return empty_results_evaluation_data(base), {
             "live": False,
+            "result_source": "seed",
             "scored": 0,
             "confirmed": 0,
             "pending": 0,
@@ -41,6 +42,7 @@ def resolve_active_data(base) -> tuple[Any, dict[str, Any]]:
     confirmed = sum(1 for r in success_rows if str(r.get("review_status")) == "confirmed")
     status = {
         "live": True,
+        "result_source": "live",
         "scored": len(success_rows),
         "confirmed": confirmed,
         "pending": len(success_rows) - confirmed,

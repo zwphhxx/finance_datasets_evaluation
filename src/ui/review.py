@@ -13,6 +13,7 @@ import pandas as pd
 import streamlit as st
 
 from app.services import dataset_service as ds
+from app.services import model_display as md
 from app.services import scorer as sc
 from src.gold_quality import field_list, field_text
 from src.metrics import (
@@ -403,8 +404,8 @@ def render_review_page(data_bundle: dict) -> None:
         render_empty_state("暂无可展示的任务样本。")
         return
 
-    # 数据来源：默认已沉淀评价；有真实运行时可切换查看本次结果
-    data = _resolve_source(seed_data, live_data, live)
+    # 数据来源：有真实运行时默认查看本次结果；seed 示例仅作为历史评价对照。
+    data, result_source = _resolve_source(seed_data, live_data, live)
 
     # 选择样本
     domain_by_case = _domain_by_case(seed_data.tasks)
@@ -440,8 +441,14 @@ def render_review_page(data_bundle: dict) -> None:
             model_totals.append((model, float(total) if has_value(total) else None))
         model_totals.sort(key=lambda x: (x[1] is None, -(x[1] or 0.0), x[0]))
         selected_model = st.selectbox(
-            "选择模型", [m for m, _ in model_totals], key="review_model_select"
+            "选择模型",
+            [m for m, _ in model_totals],
+            key="review_model_select",
+            format_func=lambda model: md.display_model_name(model, source=result_source),
         )
+        st.caption(f"数据来源：{md.source_label(result_source)}")
+        if result_source != "seed" and md.display_model_name(selected_model, source=result_source) != selected_model:
+            st.caption(f"模型 ID：{selected_model}")
         output_row = get_output_row(merged, selected_model)
     else:
         st.selectbox("选择模型", ["暂无模型回答"], disabled=True, key="review_model_select")
@@ -468,19 +475,19 @@ def render_review_page(data_bundle: dict) -> None:
 
 def _resolve_source(seed_data, live_data, live: bool):
     if not live:
-        st.caption("当前展示已沉淀评价。运行评测后可在此切换查看本次结果。")
-        return seed_data
+        st.caption("当前尚无本次运行结果，展示示例历史评价。")
+        return seed_data, "seed"
     choice = st.radio(
-        "样本来源",
-        ["已沉淀评价", "本次运行结果"],
+        "数据来源",
+        ["本次运行结果", "示例历史评价"],
         horizontal=True,
-        help="默认展示已沉淀评价；本次运行结果仅供对照，不会覆盖正式结论。",
+        help="默认展示本次运行结果；示例历史评价仅用于对照数据方法。",
     )
     if choice == "本次运行结果":
-        st.caption("正在查看本次运行结果；已沉淀评价不受影响。")
-        return live_data
-    st.caption("正在查看已沉淀评价。")
-    return seed_data
+        st.caption("正在查看本次运行结果；待复核评分不会直接进入正式结论。")
+        return live_data, "live"
+    st.caption("正在查看示例历史评价；这些结果不是当前选择模型生成。")
+    return seed_data, "seed"
 
 
 def _render_task_context(task_info: pd.Series) -> None:
