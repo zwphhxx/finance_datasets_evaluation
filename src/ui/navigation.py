@@ -41,12 +41,13 @@ def _set_current_page(page_key: str) -> None:
 
 
 def render_top_navigation() -> None:
-    """Render a sticky top nav bar with the brand and real page buttons."""
+    """Render a lightweight tab-style top navigation."""
     current = st.session_state.get("current_page", DEFAULT_PAGE_KEY)
     render_html(
-        f"""
+        """
         <div class="top-nav">
-            <div class="top-nav-brand">FinDueEval</div>
+            <span class="top-nav-kicker">尽调评测工作台</span>
+            <span class="top-nav-flow">样本库 → 测试 → 复核 → 结论</span>
         </div>
         """
     )
@@ -56,7 +57,7 @@ def render_top_navigation() -> None:
             if st.button(
                 label,
                 key=f"top_nav_{page_key}",
-                type="primary" if current == page_key else "secondary",
+                type="secondary" if current == page_key else "tertiary",
                 use_container_width=True,
             ):
                 st.session_state.current_page = page_key

@@ -67,6 +67,60 @@ class UIUXAuditFixesTests(unittest.TestCase):
         # 侧边栏不再渲染页面按钮，避免与顶部导航重复。
         self.assertNotIn("st.sidebar.button", navigation_source)
 
+    def test_top_navigation_is_lightweight_not_primary_cta(self):
+        navigation_source = Path("src/ui/navigation.py").read_text(encoding="utf-8")
+        components_source = Path("src/ui/components.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("top-nav-brand", navigation_source)
+        self.assertNotIn('type="primary" if current == page_key else "secondary"', navigation_source)
+        self.assertIn('"tertiary"', navigation_source)
+        self.assertIn(".top-nav .stButton > button", components_source)
+        self.assertIn("border-bottom: 2px solid var(--fde-ink)", components_source)
+
+    def test_primary_buttons_are_not_used_for_navigation(self):
+        navigation_source = Path("src/ui/navigation.py").read_text(encoding="utf-8")
+        self.assertNotIn('type="primary"', navigation_source)
+
+        case_study_source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
+        self.assertEqual(1, case_study_source.count('type="primary"'))
+
+    def test_main_pages_do_not_repeat_brand_eyebrow(self):
+        for file_path in [
+            "src/ui/case_study.py",
+            "src/ui/samples.py",
+            "src/ui/test_run.py",
+            "src/ui/review.py",
+            "src/ui/conclusions.py",
+        ]:
+            source = Path(file_path).read_text(encoding="utf-8")
+            self.assertNotIn('eyebrow="FinDueEval"', source, file_path)
+
+    def test_current_pages_avoid_overpromising_copy(self):
+        banned = [
+            "可直接使用",
+            "赋能",
+            "智能",
+            "一键",
+            "自动洞察",
+            "深度解析",
+            "精准判断",
+            "模型能力全景",
+            "革命性",
+            "草稿发布",
+        ]
+        for file_path in [
+            "src/ui/page_config.py",
+            "src/ui/case_study.py",
+            "src/ui/samples.py",
+            "src/ui/test_run.py",
+            "src/ui/review.py",
+            "src/ui/conclusions.py",
+            "README.md",
+        ]:
+            source = Path(file_path).read_text(encoding="utf-8")
+            for word in banned:
+                self.assertNotIn(word, source, f"{file_path} contains {word}")
+
     def test_no_emoji_in_checklist(self):
         components_source = Path("src/ui/components.py").read_text(encoding="utf-8")
         self.assertNotIn("✅", components_source)
@@ -78,7 +132,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
         buttons = re.findall(r"st\.button\(", source)
         self.assertEqual(2, len(buttons), "项目说明页应提供样本库与发起测试两个入口")
         self.assertIn('进入样本库', source)
-        self.assertIn('发起测试', source)
+        self.assertIn('发起一次测试', source)
 
     def test_test_run_has_at_most_two_primary_buttons(self):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")

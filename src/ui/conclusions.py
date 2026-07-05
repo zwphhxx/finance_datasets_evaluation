@@ -35,7 +35,7 @@ def render_conclusions_page(data_bundle: dict) -> None:
 
     config = get_page_config("conclusions")
     render_compact_hero(
-        eyebrow="FinDueEval",
+        eyebrow="正式结论",
         title=config.title,
         question=config.question,
     )
@@ -174,7 +174,7 @@ def _render_drafts(pending_live, responses) -> None:
         return
 
     st.markdown(f"当前有 **{count}** 条待复核草稿。")
-    if st.button("去评测复核 →", type="primary", key="conc_to_review"):
+    if st.button("进入评测复核", key="conc_to_review"):
         st.session_state.current_page = "review"
         st.rerun()
 

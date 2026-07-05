@@ -448,7 +448,7 @@ def render_samples_page(data_bundle: dict) -> None:
         (str(int(domain_count)), "专业领域"),
     ]
     render_compact_hero(
-        eyebrow="FinDueEval",
+        eyebrow="样本维护",
         title=config.title,
         question=config.question,
         stats=hero_stats,
@@ -484,6 +484,14 @@ def render_samples_page(data_bundle: dict) -> None:
 
     render_numbered_section("03", "选中样本详情", "按评测资产结构查看样本内容、标准、评分依据和入库检查。")
     _render_sample_detail(filtered, readiness_map, task_records, gold_map, rubric_dimensions)
+
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        if st.button("进入发起测试", key="samples_to_test_run", use_container_width=True):
+            st.session_state.current_page = "test_run"
+            st.rerun()
+    with col2:
+        st.caption("发起测试页只展示已入库且通过完整度校验的样本。")
 
     with st.expander("样本管理", expanded=False):
         _render_sample_management()
@@ -741,7 +749,7 @@ def _render_create_form() -> None:
         improvement_suggestions = st.text_area("优化建议（每行一条）", height=80)
         reviewer_note = st.text_area("复核备注", height=60)
         status = st.selectbox("状态 *", sr.SAMPLE_STATUSES, key="samples_create_status")
-        submitted = st.form_submit_button("新增样本", type="primary")
+        submitted = st.form_submit_button("新增样本")
 
     if submitted:
         try:
@@ -810,7 +818,7 @@ def _render_edit_form() -> None:
             index=sr.SAMPLE_STATUSES.index(sample.status),
             key="samples_edit_status",
         )
-        save = st.form_submit_button("保存修改", type="primary")
+        save = st.form_submit_button("保存修改")
 
     if save:
         try:

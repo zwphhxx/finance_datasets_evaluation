@@ -130,7 +130,7 @@ def render_test_run_page(data_bundle: dict) -> None:
 
     config = get_page_config("test_run")
     render_compact_hero(
-        eyebrow="FinDueEval",
+        eyebrow="评测执行",
         title=config.title,
         question=config.question,
     )

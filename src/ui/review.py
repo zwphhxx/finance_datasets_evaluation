@@ -388,7 +388,7 @@ def render_review_page(data_bundle: dict) -> None:
 
     config = get_page_config("review")
     render_compact_hero(
-        eyebrow="FinDueEval",
+        eyebrow="人工复核",
         title=config.title,
         question=config.question,
     )

@@ -100,7 +100,7 @@ def render_case_study_page(data_bundle: dict) -> None:
     config = get_page_config("case_study")
 
     render_compact_hero(
-        eyebrow="FinDueEval",
+        eyebrow="项目概览",
         title=config.title,
         question=config.question,
         stats=_build_home_stats(base, eval_status),
@@ -109,14 +109,14 @@ def render_case_study_page(data_bundle: dict) -> None:
     render_story_section(
         title="项目定位",
         paragraphs=[
-            "FinDueEval 是一个面试 MVP，用脱敏尽调样本评估模型回答的可参考程度、复核需求和使用边界。",
-            "项目不是模型排行榜，也不替代专业判断；它把“看起来专业”的回答拆回理想回复标准 / Gold Answer、Rubric 评分标准和人工复核记录。",
+            "这是一个面试 MVP，用脱敏尽调样本评估模型回答的可参考程度、复核需求和使用边界。",
+            "项目不是模型排行榜，也不替代专业判断；它把模型回答拆回理想回复标准 / Gold Answer、Rubric 评分标准和人工复核记录。",
         ],
         index="01",
     )
 
     render_story_section(
-        title="评测闭环",
+        title="评测流程",
         paragraphs=[
             "主线从样本状态开始，到测试、评分草稿、人工复核和正式结论结束。只有已入库样本可进入测试，只有已复核评分进入正式结论。",
         ],
@@ -176,7 +176,7 @@ def render_case_study_page(data_bundle: dict) -> None:
             st.session_state.current_page = "samples"
             st.rerun()
     with col2:
-        if st.button("发起测试", key="case_study_try"):
+        if st.button("发起一次测试", key="case_study_try"):
             st.session_state.current_page = "test_run"
             st.rerun()
 
@@ -272,7 +272,7 @@ def get_methodology_items() -> list[tuple[str, str]]:
         (
             "红线错误",
             "重大风险遗漏、无依据定性、错误适用规则等触碰红线的回答，"
-            "再高分也不能直接使用，必须人工复核或判为不可用。",
+            "再高分也只能作为初稿参考，必须人工复核或判为不可用。",
         ),
         (
             "人工复核归档",
