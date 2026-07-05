@@ -1,12 +1,12 @@
 """评测结论汇总服务（PR-B）。
 
-把三类来源的评测结果归一为「正式结论 / 草稿 / 已复核归档」三层，供「评测结论」页取数：
+把三类来源的评测结果归一为「正式结论 / 草稿 / 已确认评分」三层，供「评测结论」页取数：
 
   - 已有结论（seed）：seed 的 model_outputs / score_records / review_note，视为已人工沉淀的基准；
   - 草稿评测（draft）：live_run_scores 中 review_status != confirmed 的现场评分，未进入正式结论；
-  - 已复核归档（confirmed）：live_run_scores 中 review_status == confirmed 的评分，可计入正式结论。
+  - 已确认评分（confirmed）：live_run_scores 中 review_status == confirmed 的评分，可计入正式结论。
 
-正式结论 = seed 已有结论 + 已复核归档 live 结论，**绝不包含 pending 草稿**。
+正式结论 = seed 已有结论 + 已确认 live 结论，**绝不包含 pending 草稿**。
 
 本模块为纯函数 + 只读数据库访问，不依赖 Streamlit 渲染上下文，便于单元测试；任何数据库
 异常都吞掉并回退为空，保证 SQLite 不可用时仍可只用 seed 数据展示。绝不回写 data/ 下 seed 文件。
@@ -146,9 +146,9 @@ def _normalize_live_scores(live_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def combine_formal_scores(seed_scores: pd.DataFrame, confirmed_live: pd.DataFrame) -> pd.DataFrame:
-    """合并 seed 已有结论与已复核归档 live 结论为统一打分表（带 source 列）。
+    """合并 seed 已有结论与已确认 live 结论为统一打分表（带 source 列）。
 
-    只接受已复核 live；pending 草稿不在此出现，从源头保证不计入正式结论。
+    只接受已确认 live；pending 草稿不在此出现，从源头保证不计入正式结论。
     """
     frames: list[pd.DataFrame] = []
     if isinstance(seed_scores, pd.DataFrame) and not seed_scores.empty and "total_score" in seed_scores.columns:

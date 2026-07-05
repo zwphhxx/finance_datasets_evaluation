@@ -219,6 +219,25 @@ class ScorePersistenceTests(unittest.TestCase):
         self.assertEqual(int(after["total_score"]), 75)
         self.assertEqual(after["review_note"], "复核已调整")
 
+    def test_bulk_confirm_only_pending_success_scores(self):
+        provider = get_provider("mock")
+        compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(2))
+        tasks_by_case = {str(r["case_id"]): r for r in _sample_tasks(2)}
+        result = sc.score_compare(_FakeJudge(), compare, {}, tasks_by_case, _DIMENSIONS, judge_model_id="judge/x")
+
+        self.assertTrue(sc.persist_score_result(result, db_path=_DB_PATH))
+        rows = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)
+        row_ids = [int(row["id"]) for row in rows]
+        note = "低风险评分草稿，经人工批量确认归档。"
+
+        outcome = sc.confirm_score_reviews_bulk(row_ids, note, db_path=_DB_PATH)
+
+        self.assertEqual(len(row_ids), outcome["confirmed"])
+        self.assertEqual([], outcome["failed"])
+        after = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)
+        self.assertTrue(all(row["review_status"] == "confirmed" for row in after))
+        self.assertTrue(all(row["review_note"] == note for row in after))
+
     def test_persist_returns_false_without_database(self):
         provider = get_provider("mock")
         compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(1))

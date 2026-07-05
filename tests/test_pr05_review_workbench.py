@@ -167,6 +167,49 @@ class RecommendationTests(unittest.TestCase):
         self.assertTrue(any("高严重度错误" in reason for reason in recommendation["reasons"]))
 
 
+class ReviewQueueTests(unittest.TestCase):
+    def _item(self, recommendation: str, status: str = "pending", source: str = "live"):
+        return {
+            "case_id": f"CASE-{recommendation}",
+            "model_name": "provider/model-x",
+            "display_model": "model-x",
+            "source": source,
+            "output_row": _score_row(review_status=status),
+            "recommendation": {"recommendation": recommendation, "level": "success", "reasons": ["依据充分"]},
+        }
+
+    def test_queue_stats_separate_pending_recommendations_and_confirmed(self):
+        items = [
+            self._item("建议确认"),
+            self._item("建议复核"),
+            self._item("不建议归档"),
+            self._item("建议确认", status="confirmed"),
+            self._item("建议确认", source="seed"),
+        ]
+
+        stats = review.build_review_queue_stats(items)
+
+        self.assertEqual(3, stats["pending"])
+        self.assertEqual(1, stats["confirm"])
+        self.assertEqual(1, stats["review"])
+        self.assertEqual(1, stats["reject"])
+        self.assertEqual(1, stats["confirmed"])
+
+    def test_queue_filter_and_bulk_eligibility(self):
+        confirm_item = self._item("建议确认")
+        review_item = self._item("建议复核")
+        confirmed_item = self._item("建议确认", status="confirmed")
+        seed_item = self._item("建议确认", source="seed")
+        items = [confirm_item, review_item, confirmed_item, seed_item]
+
+        self.assertEqual([confirm_item, seed_item], review.filter_review_queue_items(items, "建议确认"))
+        self.assertEqual([confirmed_item], review.filter_review_queue_items(items, "已确认"))
+        self.assertTrue(review.is_bulk_confirm_eligible(confirm_item))
+        self.assertFalse(review.is_bulk_confirm_eligible(review_item))
+        self.assertFalse(review.is_bulk_confirm_eligible(confirmed_item))
+        self.assertFalse(review.is_bulk_confirm_eligible(seed_item))
+
+
 class ErrorAttributionTests(unittest.TestCase):
     def test_error_attribution_rows_include_fix_and_data_action(self):
         errors = _errors(

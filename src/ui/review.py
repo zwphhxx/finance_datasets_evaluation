@@ -66,6 +66,8 @@ REVIEW_SECTIONS = [
     "风险与红线",
     "确认处理",
 ]
+REVIEW_FILTER_OPTIONS = ["全部", "建议确认", "建议复核", "不建议归档", "已确认"]
+BULK_REVIEW_NOTE = "低风险评分草稿，经人工批量确认归档。"
 
 ANSWER_SUMMARY_LIMIT = 220
 
@@ -509,15 +511,18 @@ def render_review_page(data_bundle: dict) -> None:
         render_empty_state("暂无可确认的评分记录。请先在发起测试页生成评分草稿。")
         return
 
-    render_numbered_section("01", REVIEW_SECTIONS[0], "选择一条评分草稿，先看建议处理，再决定确认或修订。")
-    _render_review_queue(items)
+    render_numbered_section("01", REVIEW_SECTIONS[0], "低风险评分可批量确认，高风险评分需逐条查看。")
+    visible_items = _render_review_queue(items, eval_status, result_source)
+    if not visible_items:
+        render_empty_state("当前筛选条件下暂无评分记录。")
+        return
     selected_index = st.selectbox(
         "当前评分",
-        list(range(len(items))),
-        format_func=lambda index: _review_item_label(items[index]),
+        list(range(len(visible_items))),
+        format_func=lambda index: _review_item_label(visible_items[index]),
         key="review_score_select",
     )
-    item = items[int(selected_index)]
+    item = visible_items[int(selected_index)]
     output_row = item["output_row"]
     task_info = item["task_info"]
     gold = item["gold"]
@@ -607,31 +612,177 @@ def _build_review_items(data, result_source: str) -> list[dict]:
     return items
 
 
-def _render_review_queue(items: list[dict]) -> None:
-    headers = ["样本编号", "模型", "总分", "复核状态", "建议处理", "主要原因"]
-    header = "".join(f"<th>{escape(name)}</th>" for name in headers)
-    body = ""
-    for item in items:
-        row = item["output_row"]
-        recommendation = item["recommendation"]
-        reasons = "；".join(recommendation.get("reasons") or []) or "暂无原因"
-        status = _display_review_status(row.get("review_status"), item["source"])
-        body += (
-            "<tr>"
-            f"<td class=\"check-key\">{escape(item['case_id'])}</td>"
-            f"<td>{escape(item['display_model'])}</td>"
-            f"<td class=\"check-count\">{escape(_score_text(row.get('total_score')))}</td>"
-            f"<td>{escape(status)}</td>"
-            f"<td><span class=\"status-badge status-{escape(str(recommendation.get('level', 'neutral')))}\">"
-            f"{escape(str(recommendation.get('recommendation', '待判断')))}</span></td>"
-            f"<td>{escape(summarize_text(reasons, 56))}</td>"
-            "</tr>"
-        )
-    render_evidence_panel(
-        "评分草稿列表",
-        f'<table class="check-table"><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>',
+def _render_review_queue(items: list[dict], eval_status: dict, result_source: str) -> list[dict]:
+    stats = build_review_queue_stats(items)
+    render_inline_status(
+        [
+            ("待确认", str(stats["pending"])),
+            ("建议确认", str(stats["confirm"])),
+            ("建议复核", str(stats["review"])),
+            ("不建议归档", str(stats["reject"])),
+            ("已确认", str(stats["confirmed"])),
+        ]
     )
-    st.caption("列表优先显示待人工确认的本次运行评分；示例历史评价只用于对照方法。")
+
+    filter_value = st.selectbox(
+        "筛选",
+        REVIEW_FILTER_OPTIONS,
+        key="review_queue_filter",
+        help="按建议处理或确认状态筛选待确认队列。",
+    )
+    visible_items = filter_review_queue_items(items, filter_value)
+    if not visible_items:
+        return []
+
+    table_rows = [_review_queue_row(item) for item in visible_items]
+    frame = pd.DataFrame(table_rows)
+    edited = st.data_editor(
+        frame,
+        hide_index=True,
+        use_container_width=True,
+        disabled=["样本编号", "模型", "总分", "建议处理", "主要原因", "复核状态"],
+        column_order=["选择", "样本编号", "模型", "总分", "建议处理", "主要原因", "复核状态"],
+        column_config={
+            "选择": st.column_config.CheckboxColumn("选择", help="仅建议确认且待人工复核的评分可批量确认。"),
+            "样本编号": st.column_config.TextColumn("样本编号", width="small"),
+            "模型": st.column_config.TextColumn("模型", width="medium"),
+            "总分": st.column_config.TextColumn("总分", width="small"),
+            "建议处理": st.column_config.TextColumn("建议处理", width="small"),
+            "主要原因": st.column_config.TextColumn("主要原因", width="large"),
+            "复核状态": st.column_config.TextColumn("复核状态", width="small"),
+        },
+        key=f"review_queue_editor::{result_source}::{filter_value}",
+    )
+    selected_positions: list[int] = []
+    if isinstance(edited, pd.DataFrame) and "选择" in edited:
+        for index, row in edited.iterrows():
+            if not bool(row.get("选择")):
+                continue
+            try:
+                selected_positions.append(int(index))
+            except (TypeError, ValueError):
+                continue
+    selected_items = [
+        visible_items[index]
+        for index in selected_positions
+        if 0 <= index < len(visible_items)
+    ]
+    eligible_items = [item for item in selected_items if is_bulk_confirm_eligible(item)]
+    blocked_items = [item for item in selected_items if not is_bulk_confirm_eligible(item)]
+    _render_bulk_confirmation(eligible_items, blocked_items, eval_status, result_source)
+    st.caption("队列用于确认评分草稿；示例历史评价只用于对照方法，不进入当前批量确认。")
+    return visible_items
+
+
+def build_review_queue_stats(items: list[dict]) -> dict[str, int]:
+    """统计评分确认队列；示例历史评价不计入待确认与已确认口径。"""
+    stats = {"pending": 0, "confirm": 0, "review": 0, "reject": 0, "confirmed": 0}
+    for item in items:
+        if item.get("source") == "seed":
+            continue
+        status = str(item["output_row"].get("review_status") or "pending").strip().lower()
+        if status == "confirmed":
+            stats["confirmed"] += 1
+            continue
+        stats["pending"] += 1
+        recommendation = str(item["recommendation"].get("recommendation") or "")
+        if recommendation == "建议确认":
+            stats["confirm"] += 1
+        elif recommendation == "不建议归档":
+            stats["reject"] += 1
+        else:
+            stats["review"] += 1
+    return stats
+
+
+def filter_review_queue_items(items: list[dict], filter_value: str) -> list[dict]:
+    if filter_value == "全部":
+        return items
+    if filter_value == "已确认":
+        return [item for item in items if _review_status_value(item) == "confirmed" and item.get("source") != "seed"]
+    return [
+        item for item in items
+        if _review_status_value(item) != "confirmed"
+        and str(item["recommendation"].get("recommendation") or "") == filter_value
+    ]
+
+
+def is_bulk_confirm_eligible(item: dict) -> bool:
+    return (
+        item.get("source") != "seed"
+        and _review_status_value(item) == "pending"
+        and str(item["recommendation"].get("recommendation") or "") == "建议确认"
+    )
+
+
+def _review_queue_row(item: dict) -> dict[str, object]:
+    row = item["output_row"]
+    recommendation = item["recommendation"]
+    reasons = "；".join(recommendation.get("reasons") or []) or "暂无原因"
+    return {
+        "选择": False,
+        "样本编号": item["case_id"],
+        "模型": item["display_model"],
+        "总分": _score_text(row.get("total_score")),
+        "建议处理": str(recommendation.get("recommendation") or "待判断"),
+        "主要原因": summarize_text(reasons, 64),
+        "复核状态": _display_review_status(row.get("review_status"), item["source"]),
+    }
+
+
+def _render_bulk_confirmation(
+    eligible_items: list[dict],
+    blocked_items: list[dict],
+    eval_status: dict,
+    result_source: str,
+) -> None:
+    if result_source == "seed":
+        st.caption("当前为示例历史评价，不提供批量确认。")
+        return
+    if blocked_items:
+        st.caption("建议复核、不建议归档或已确认的评分不能批量确认，请进入当前评分详情逐条处理。")
+
+    count = len(eligible_items)
+    prompt = f"将确认 {count} 条低风险评分草稿，确认后进入正式结论。" if count else ""
+    st.caption(f"已选择 {count} 条可批量确认评分。" + (f" {prompt}" if prompt else ""))
+    if st.button(
+        "批量确认归档",
+        type="primary",
+        disabled=count == 0,
+        key="review_bulk_confirm",
+        use_container_width=False,
+    ):
+        confirmed, failed = _confirm_low_risk_items(eligible_items, eval_status)
+        if confirmed:
+            st.success(f"已批量确认 {confirmed} 条评分草稿。")
+        if failed:
+            st.warning(f"{failed} 条评分未能确认，请进入当前评分详情逐条处理。")
+        if confirmed:
+            st.rerun()
+
+
+def _confirm_low_risk_items(items: list[dict], eval_status: dict) -> tuple[int, int]:
+    score_run_id = eval_status.get("score_run_id")
+    if not score_run_id:
+        return 0, len(items)
+
+    row_ids: list[int] = []
+    for item in items:
+        row = sc.load_score_row_for_case(
+            str(score_run_id),
+            str(item["case_id"]),
+            str(item["model_name"]),
+        )
+        if row is not None and str(row.get("review_status") or "pending").lower() == "pending":
+            row_ids.append(int(row["id"]))
+    result = sc.confirm_score_reviews_bulk(row_ids, BULK_REVIEW_NOTE)
+    confirmed = int(result.get("confirmed", 0) or 0)
+    failed = len(items) - confirmed
+    return confirmed, max(0, failed)
+
+
+def _review_status_value(item: dict) -> str:
+    return str(item["output_row"].get("review_status") or "pending").strip().lower()
 
 
 def _review_item_label(item: dict) -> str:
@@ -1059,7 +1210,7 @@ def _render_confirmation_actions(item: dict, eval_status: dict, result_source: s
 
     review_status = str(row.get("review_status") or "pending")
     if review_status == "confirmed":
-        st.caption("本条评分已复核归档，已可进入正式结论。")
+        st.caption("本条评分已确认归档，已可进入正式结论。")
         return
     if review_status != "pending":
         st.caption(f"本条评分状态为 {_review_status_label(review_status)}，仅待复核草稿可在此归档。")
@@ -1136,7 +1287,7 @@ def _render_case_review(output_row: pd.Series | None, eval_status: dict) -> None
         return
     review_status = str(row.get("review_status") or "pending")
     if review_status == "confirmed":
-        st.caption("本条评分已复核归档。")
+        st.caption("本条评分已确认归档。")
         return
     if review_status != "pending":
         st.caption(f"本条评分状态为 {_review_status_label(review_status)}，仅待复核草稿可在此归档。")
@@ -1160,7 +1311,7 @@ def _render_case_review(output_row: pd.Series | None, eval_status: dict) -> None
     )
     if st.button("确认并归档", type="primary", key=f"review_confirm::{row['id']}"):
         if sc.confirm_score_review(int(row["id"]), edited, note):
-            st.success("已复核归档；该评分可进入正式结论。")
+            st.success("已确认归档；该评分可进入正式结论。")
             st.rerun()
         else:
             st.warning("归档失败：请确认 SQLite 数据层已初始化。")

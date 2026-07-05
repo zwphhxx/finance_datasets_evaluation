@@ -1,6 +1,6 @@
 """评测结论页面。
 
-- 已沉淀结论 + 已复核归档结论计入正式结论。
+- 已沉淀结论 + 已确认评分计入正式结论。
 - 待复核草稿不进入正式结论。
 - 展示当前样本内的模型均值与审慎使用边界。
 """
@@ -54,7 +54,7 @@ def _render_formal_conclusions(confirmed_live) -> None:
     render_numbered_section(
         "01",
         "当前真实评测结论",
-        "只统计已复核归档的真实运行评分，不含待复核草稿和示例历史评价。",
+        "基于已确认评分汇总真实运行结果，不含待复核草稿和示例历史评价。",
     )
 
     empty_seed = pd.DataFrame()
@@ -62,14 +62,14 @@ def _render_formal_conclusions(confirmed_live) -> None:
     if summary["total_rows"] == 0:
         render_text_block(
             "当前尚无真实模型评测结论",
-            "请先在发起测试页选择模型并运行，评分草稿经人工复核归档后，结论会在这里汇总。",
+            "请先在发起测试页选择模型并运行，评分草稿经人工确认归档后，结论会在这里汇总。",
         )
         return
 
     avg_text = f"{summary['avg_total']:.1f}" if summary['avg_total'] is not None else "—"
     st.markdown(
         f"纳入 **{summary['model_count']}** 个模型 · 平均总分 **{avg_text}** · "
-        f"已复核归档 **{summary['confirmed_rows']}** 条"
+        f"已确认评分 **{summary['confirmed_rows']}** 条"
     )
 
     conclusions = cc.build_formal_conclusions(empty_seed, confirmed_live)
@@ -95,14 +95,14 @@ def _render_model_boundaries(confirmed_live, tasks) -> None:
     render_numbered_section(
         "02",
         "模型使用边界",
-        "基于已复核归档的真实运行评分，综合平均分、关键维度短板、高风险任务和样本数量判断。",
+        "基于已确认评分，综合平均分、关键维度短板、高风险任务和样本数量判断。",
     )
 
     boundaries = cc.build_model_boundaries(pd.DataFrame(), confirmed_live, pd.DataFrame(), tasks)
     if not boundaries:
         render_text_block(
             "暂无边界数据",
-            "当前尚无真实模型评测结论。请先在发起测试页选择模型并运行，经人工复核归档后再查看边界。",
+            "当前尚无真实模型评测结论。请先在发起测试页选择模型并运行，经人工确认归档后再查看边界。",
         )
         return
 

@@ -372,6 +372,61 @@ def confirm_score_review(
         return False
 
 
+def confirm_score_reviews_bulk(
+    row_ids: Sequence[int],
+    review_note: str = "",
+    *,
+    db_path: Path | None = None,
+) -> dict[str, Any]:
+    """批量确认低风险评分草稿；仅处理 live_run_scores 中仍为 pending 的记录。"""
+    unique_ids: list[int] = []
+    for row_id in row_ids:
+        try:
+            numeric_id = int(row_id)
+        except (TypeError, ValueError):
+            continue
+        if numeric_id not in unique_ids:
+            unique_ids.append(numeric_id)
+    if not unique_ids:
+        return {"confirmed": 0, "failed": []}
+
+    try:
+        from app.services.dataset_service import database_ready, get_db_path
+        from app.db.repository import Repository
+
+        path = db_path or get_db_path()
+        if not database_ready(path):
+            return {"confirmed": 0, "failed": unique_ids}
+        repo = Repository(path)
+        rows = repo.list_df("live_run_scores")
+        if rows.empty or "id" not in rows.columns:
+            return {"confirmed": 0, "failed": unique_ids}
+
+        id_set = set(unique_ids)
+        valid_ids: list[int] = []
+        for _, row in rows.iterrows():
+            try:
+                row_id = int(row.get("id"))
+            except (TypeError, ValueError):
+                continue
+            if row_id not in id_set:
+                continue
+            judge_status = str(row.get("judge_status") or "").strip().lower()
+            review_status = str(row.get("review_status") or "pending").strip().lower()
+            if judge_status == STATUS_SUCCESS and review_status == "pending":
+                valid_ids.append(row_id)
+
+        changes: dict[str, Any] = {"review_status": "confirmed"}
+        if review_note:
+            changes["review_note"] = review_note
+        for row_id in valid_ids:
+            repo.update("live_run_scores", row_id, changes)
+        failed = [row_id for row_id in unique_ids if row_id not in set(valid_ids)]
+        return {"confirmed": len(valid_ids), "failed": failed}
+    except Exception:
+        return {"confirmed": 0, "failed": unique_ids}
+
+
 def is_mock_score(result: ScoreResult) -> bool:
     return result.mode == "mock" or any(o.judge_status == STATUS_MOCK for o in result.outcomes)
 
