@@ -808,6 +808,74 @@ header,
     color: var(--fde-muted);
     line-height: 1.55;
 }
+.sample-index-scroll {
+    width: 100%;
+    overflow-x: auto;
+}
+.sample-index-table {
+    table-layout: fixed;
+    min-width: 860px;
+    margin: 0.2rem 0;
+    font-size: 0.84rem;
+}
+.sample-index-table .sample-col-id { width: 11%; }
+.sample-index-table .sample-col-title { width: 36%; }
+.sample-index-table .sample-col-scenario { width: 18%; }
+.sample-index-table .sample-col-status { width: 11%; }
+.sample-index-table .sample-col-difficulty { width: 10%; }
+.sample-index-table .sample-col-date { width: 14%; }
+.sample-index-table th,
+.sample-index-table td {
+    padding: 0.38rem 0.5rem;
+    border-bottom: 1px solid #edf0f4;
+    vertical-align: middle;
+}
+.sample-index-table thead th {
+    background: #f7f8fa;
+    color: var(--fde-muted);
+    font-size: 0.74rem;
+    font-weight: 650;
+    line-height: 1.25;
+    white-space: nowrap;
+}
+.sample-index-table tbody tr:hover {
+    background: #fafbfc;
+}
+.sample-id-cell {
+    color: var(--fde-ink);
+    font-weight: 720;
+    white-space: nowrap;
+}
+.sample-title-cell span {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    color: var(--fde-text);
+    line-height: 1.35;
+}
+.sample-scenario-cell span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--fde-muted);
+    white-space: nowrap;
+}
+.sample-cell-nowrap {
+    white-space: nowrap;
+    color: var(--fde-muted);
+}
+.sample-date-cell {
+    font-variant-numeric: tabular-nums;
+}
+.sample-status-badge {
+    border-radius: 6px;
+    padding: 0.08rem 0.4rem;
+    font-size: 0.72rem;
+    font-weight: 620;
+    line-height: 1.35;
+    white-space: nowrap;
+}
 /* Redline verdict banner: a single low-saturation statement strip. */
 .redline-verdict {
     display: flex;

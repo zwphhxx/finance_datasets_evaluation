@@ -154,6 +154,17 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn("_build_sample_scope_text", source)
         self.assertIn("已脱敏抽象为可评测任务", source)
 
+    def test_sample_index_table_is_compact(self):
+        samples_source = Path("src/ui/samples.py").read_text(encoding="utf-8")
+        components_source = Path("src/ui/components.py").read_text(encoding="utf-8")
+
+        self.assertIn("sample-index-table", samples_source)
+        self.assertIn('"测试状态"', samples_source)
+        self.assertNotIn('"缺失项摘要"', samples_source)
+        self.assertIn(".sample-title-cell span", components_source)
+        self.assertIn("-webkit-line-clamp: 2", components_source)
+        self.assertIn(".sample-status-badge", components_source)
+
     def test_test_run_has_at_most_two_primary_buttons(self):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
         primary_buttons = re.findall(r'type\s*=\s*"primary"', source)

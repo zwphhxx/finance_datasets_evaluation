@@ -37,13 +37,39 @@ class SampleListSummaryTests(unittest.TestCase):
         rows = build_sample_table_rows([sample], {"CASE-1": readiness})
 
         self.assertEqual(
-            ["样本编号", "标题", "场景", "状态", "完整度", "缺失项摘要", "难度", "更新时间"],
+            ["样本编号", "任务标题", "场景", "测试状态", "难度", "更新时间"],
             list(rows[0].keys()),
         )
+        self.assertEqual("可测试", rows[0]["测试状态"])
+        self.assertEqual("2026-07-05", rows[0]["更新时间"])
+        self.assertNotIn("状态", rows[0])
+        self.assertNotIn("完整度", rows[0])
+        self.assertNotIn("缺失项摘要", rows[0])
         self.assertNotIn("task_prompt", rows[0])
         self.assertNotIn("gold_answer", rows[0])
         self.assertNotIn("rubric", rows[0])
         self.assertNotIn("error_tags", rows[0])
+
+    def test_sample_table_rows_merge_readiness_states(self):
+        sample = sr.Sample(
+            sample_id="CASE-2",
+            title="待补充样本",
+            scenario="场景",
+            task_prompt="任务题",
+            status="已入库",
+            difficulty="Medium",
+            updated_at="",
+        )
+        readiness = ds.assess_sample_readiness(
+            {"case_id": "CASE-2", "question": "题", "context": "", "scenario": "场景", "status": "active"},
+            {},
+            [],
+        )
+
+        rows = build_sample_table_rows([sample], {"CASE-2": readiness})
+
+        self.assertEqual("待补充", rows[0]["测试状态"])
+        self.assertEqual("—", rows[0]["更新时间"])
 
 
 class GoldAnswerDisplayTests(unittest.TestCase):

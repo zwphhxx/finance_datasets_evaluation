@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import re
 from html import escape
 
 import streamlit as st
@@ -34,14 +35,8 @@ from src.ui.tasks import (
 )
 
 
-_STATUS_LEVEL = {
-    "待复核": "warning",
-    "已入库": "success",
-    "需优化": "danger",
-    "已归档": "neutral",
-}
-_READINESS_LEVEL = {
-    "完整，可测试": "success",
+_TEST_STATUS_LEVEL = {
+    "可测试": "success",
     "待补充": "warning",
     "不可测试": "neutral",
     "已归档": "neutral",
@@ -71,14 +66,29 @@ def _difficulty_label(value) -> str:
     return DIFFICULTY_LABELS.get(str(value).strip(), str(value).strip() or "未标注")
 
 
-def _status_badge(status: str) -> str:
-    level = _STATUS_LEVEL.get(status, "neutral")
-    return f'<span class="status-badge status-{level}">{escape(status)}</span>'
+def _test_status_label(sample: sr.Sample, readiness: ds.SampleReadiness) -> str:
+    if sample.status == "已归档" or readiness.label == "已归档":
+        return "已归档"
+    if readiness.is_testable:
+        return "可测试"
+    if readiness.missing_items:
+        return "待补充"
+    return "不可测试"
 
 
-def _readiness_badge(readiness: ds.SampleReadiness) -> str:
-    level = _READINESS_LEVEL.get(readiness.label, "neutral")
-    return f'<span class="status-badge status-{level}">{escape(readiness.label)}</span>'
+def _test_status_badge(status: str) -> str:
+    level = _TEST_STATUS_LEVEL.get(status, "neutral")
+    return f'<span class="status-badge sample-status-badge status-{level}">{escape(status)}</span>'
+
+
+def _format_date(value) -> str:
+    text = _clean_text(value, fallback="")
+    if not text:
+        return "—"
+    match = re.search(r"\d{4}-\d{2}-\d{2}", text)
+    if match:
+        return match.group(0)
+    return text.replace("T", " ").split()[0] if text.split() else "—"
 
 
 def _missing_summary(readiness: ds.SampleReadiness, limit: int = 3) -> str:
@@ -160,15 +170,14 @@ def build_sample_table_rows(
     rows: list[dict[str, str]] = []
     for sample in samples:
         readiness = readiness_map.get(sample.sample_id) or ds.assess_sample_readiness(None, None, [])
+        test_status = _test_status_label(sample, readiness)
         rows.append({
             "样本编号": sample.sample_id or "待补充",
-            "标题": _truncate(sample.title, 32),
+            "任务标题": _truncate(sample.title, 56),
             "场景": _truncate(sample.scenario, 24),
-            "状态": sample.status or "待复核",
-            "完整度": readiness.label,
-            "缺失项摘要": _missing_summary(readiness),
+            "测试状态": test_status,
             "难度": _difficulty_label(sample.difficulty),
-            "更新时间": sample.updated_at or "未标注",
+            "更新时间": _format_date(sample.updated_at),
         })
     return rows
 
@@ -518,22 +527,35 @@ def _render_filters(samples: list[sr.Sample]) -> tuple[str, str, str, str, str]:
 
 def _render_samples_table(samples: list[sr.Sample], readiness_map: dict[str, ds.SampleReadiness]) -> None:
     rows = build_sample_table_rows(samples, readiness_map)
-    headers = ["样本编号", "标题", "场景", "状态", "完整度", "缺失项摘要", "难度", "更新时间"]
+    headers = ["样本编号", "任务标题", "场景", "测试状态", "难度", "更新时间"]
     body = "".join(
         (
-            f'<tr><td class="check-key">{escape(row["样本编号"])}</td>'
-            f'<td>{escape(row["标题"])}</td>'
-            f'<td>{escape(row["场景"])}</td>'
-            f'<td>{_status_badge(row["状态"])}</td>'
-            f'<td><span class="status-badge status-{_READINESS_LEVEL.get(row["完整度"], "neutral")}">{escape(row["完整度"])}</span></td>'
-            f'<td>{escape(row["缺失项摘要"])}</td>'
-            f'<td>{escape(row["难度"])}</td>'
-            f'<td>{escape(row["更新时间"])}</td></tr>'
+            f'<tr><td class="sample-id-cell">{escape(row["样本编号"])}</td>'
+            f'<td class="sample-title-cell"><span>{escape(row["任务标题"])}</span></td>'
+            f'<td class="sample-scenario-cell"><span>{escape(row["场景"])}</span></td>'
+            f'<td class="sample-cell-nowrap">{_test_status_badge(row["测试状态"])}</td>'
+            f'<td class="sample-cell-nowrap">{escape(row["难度"])}</td>'
+            f'<td class="sample-cell-nowrap sample-date-cell">{escape(row["更新时间"])}</td></tr>'
         )
         for row in rows
     )
     header_cells = "".join(f"<th>{escape(name)}</th>" for name in headers)
-    table_html = f'<table class="check-table"><thead><tr>{header_cells}</tr></thead><tbody>{body}</tbody></table>'
+    colgroup = (
+        "<colgroup>"
+        '<col class="sample-col-id">'
+        '<col class="sample-col-title">'
+        '<col class="sample-col-scenario">'
+        '<col class="sample-col-status">'
+        '<col class="sample-col-difficulty">'
+        '<col class="sample-col-date">'
+        "</colgroup>"
+    )
+    table_html = (
+        '<div class="sample-index-scroll">'
+        f'<table class="check-table sample-index-table">{colgroup}<thead><tr>{header_cells}</tr></thead>'
+        f'<tbody>{body}</tbody></table>'
+        '</div>'
+    )
     render_evidence_panel("样本列表", table_html)
 
 
