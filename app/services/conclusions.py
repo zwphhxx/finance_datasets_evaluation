@@ -18,7 +18,7 @@ from typing import Any, Mapping, Sequence
 
 import pandas as pd
 
-from src.metrics import SCORE_DIMENSIONS, get_dimension_gap_ranking
+from src.metrics import SCORE_DIMENSION_FULL_MARKS, SCORE_DIMENSIONS, get_dimension_gap_ranking
 
 # Rubric 维度字段与中文标签，统一取自 metrics（不在此另立第二份口径）。
 DIMENSION_FIELDS: list[str] = [field for field, _ in SCORE_DIMENSIONS]
@@ -30,6 +30,31 @@ _FORMAL_COLUMNS = ["model_name", "case_id", *DIMENSION_FIELDS, "total_score", "r
 # 模型展示名映射：键为原始 model_name，值为对外展示名。默认空——没有映射时一律使用原名，
 # 不在代码里硬编码任何具体模型/策略名称。
 MODEL_DISPLAY_NAMES: dict[str, str] = {}
+
+BOUNDARY_REFERENCE = "可作为初稿参考"
+BOUNDARY_REVIEW = "必须人工复核"
+BOUNDARY_NOT_EVIDENCE = "不可作为依据"
+
+BOUNDARY_REFERENCE_FLOOR = 85.0
+BOUNDARY_PASS_FLOOR = 60.0
+MIN_BOUNDARY_SAMPLE_COUNT = 2
+WEAK_DIMENSION_ATTAINMENT = 0.60
+SEVERE_DIMENSION_ATTAINMENT = 0.35
+HIGH_RISK_REVIEW_FLOOR = 70.0
+
+_BOUNDARY_LEVELS = {
+    BOUNDARY_REFERENCE: "success",
+    BOUNDARY_REVIEW: "warning",
+    BOUNDARY_NOT_EVIDENCE: "danger",
+}
+_BOUNDARY_RANK = {
+    BOUNDARY_REFERENCE: 0,
+    BOUNDARY_REVIEW: 1,
+    BOUNDARY_NOT_EVIDENCE: 2,
+}
+_RANK_BOUNDARY = {rank: boundary for boundary, rank in _BOUNDARY_RANK.items()}
+_NOT_EVIDENCE_NOTE_KEYWORDS = ("不可采信", "不可作为依据", "不能采信", "不应采信", "重大遗漏", "重大错误")
+_CAUTION_NOTE_KEYWORDS = ("谨慎", "需复核", "需进一步", "证据不足", "不足", "风险")
 
 
 def display_model_name(name: Any, mapping: Mapping[str, str] | None = None) -> str:
@@ -174,6 +199,105 @@ def build_formal_conclusions(
     return results
 
 
+def build_model_boundaries(
+    seed_scores: pd.DataFrame,
+    confirmed_live: pd.DataFrame,
+    errors_df: pd.DataFrame | None = None,
+    tasks_df: pd.DataFrame | None = None,
+    *,
+    mapping: Mapping[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    """Classify model usage boundaries from formal conclusions and risk signals.
+
+    The input scope is the same as formal conclusions: seed scores plus confirmed
+    live scores. Pending scores must be split out before this function is called.
+    """
+    combined = combine_formal_scores(seed_scores, confirmed_live)
+    if combined.empty or "model_name" not in combined.columns or "total_score" not in combined.columns:
+        return []
+
+    risk_lookup = _case_risk_lookup(tasks_df)
+    rows: list[dict[str, Any]] = []
+    for model_name, group in combined.groupby("model_name", dropna=False):
+        model = str(model_name)
+        scores = group.copy()
+        scores["total_score"] = pd.to_numeric(scores["total_score"], errors="coerce")
+        scores = scores[scores["total_score"].notna()]
+        if scores.empty:
+            continue
+
+        avg_total = float(scores["total_score"].mean())
+        sample_count = int(len(scores))
+        source_counts = scores["source"].value_counts().to_dict() if "source" in scores.columns else {}
+        model_errors = _errors_for_model_group(errors_df, scores, model)
+        high_errors = _high_severity_errors(model_errors)
+        high_risk_cases = _high_risk_cases(scores, risk_lookup)
+        high_risk_issue_count = _high_risk_issue_count(scores, high_errors, high_risk_cases)
+        weaknesses = _model_dimension_weaknesses(scores)
+        notes = _collect_notes(scores.get("review_note"))
+
+        rank, reasons = _base_boundary_from_average(avg_total)
+        sample_insufficient = sample_count < MIN_BOUNDARY_SAMPLE_COUNT
+        if sample_insufficient:
+            rank = max(rank, _BOUNDARY_RANK[BOUNDARY_REVIEW])
+            reasons.append(f"样本数量不足（{sample_count}/{MIN_BOUNDARY_SAMPLE_COUNT}），结论仅作观察")
+
+        if not high_errors.empty:
+            rank = max(rank, _BOUNDARY_RANK[BOUNDARY_REVIEW])
+            reasons.append(f"存在高严重度错误 {len(high_errors)} 条")
+            if high_risk_issue_count > 0:
+                rank = _BOUNDARY_RANK[BOUNDARY_NOT_EVIDENCE]
+                reasons.append("高风险任务中出现高严重度错误")
+
+        high_risk_low_scores = _high_risk_low_scores(scores, high_risk_cases, BOUNDARY_PASS_FLOOR)
+        if high_risk_low_scores:
+            rank = _BOUNDARY_RANK[BOUNDARY_NOT_EVIDENCE]
+            reasons.append("高风险任务中出现明显低分")
+        elif _high_risk_low_scores(scores, high_risk_cases, HIGH_RISK_REVIEW_FLOOR):
+            rank = max(rank, _BOUNDARY_RANK[BOUNDARY_REVIEW])
+            reasons.append("高风险任务表现不足，需人工复核")
+
+        if weaknesses:
+            severe = [item for item in weaknesses if item["attainment"] < SEVERE_DIMENSION_ATTAINMENT]
+            rank = max(rank, _BOUNDARY_RANK[BOUNDARY_REVIEW])
+            main = "、".join(item["dimension"] for item in weaknesses[:2])
+            reasons.append(f"关键维度短板：{main}")
+            if severe:
+                rank = _BOUNDARY_RANK[BOUNDARY_NOT_EVIDENCE]
+                reasons.append("关键维度严重低分")
+
+        note_rank = _note_risk_rank(notes)
+        if note_rank:
+            rank = max(rank, note_rank)
+            reasons.append("人工复核说明提示需谨慎" if note_rank == 1 else "人工复核说明提示不可采信")
+
+        boundary = _RANK_BOUNDARY[rank]
+        rows.append(
+            {
+                "model_name": model,
+                "display_name": display_model_name(model, mapping),
+                "boundary": boundary,
+                "boundary_level": _BOUNDARY_LEVELS[boundary],
+                "avg_total": avg_total,
+                "sample_count": sample_count,
+                "seed_count": int(source_counts.get("seed", 0)),
+                "confirmed_count": int(source_counts.get("confirmed_live", 0)),
+                "major_weaknesses": weaknesses[:3],
+                "has_high_severity_error": bool(not high_errors.empty),
+                "high_severity_count": int(len(high_errors)),
+                "high_risk_case_count": int(len(high_risk_cases)),
+                "high_risk_issue_count": int(high_risk_issue_count),
+                "sample_insufficient": bool(sample_insufficient),
+                "review_notes": notes,
+                "reasons": _dedupe(reasons),
+                "basis_summary": "；".join(_dedupe(reasons)[:3]),
+            }
+        )
+
+    rows.sort(key=lambda item: (_BOUNDARY_RANK.get(item["boundary"], 9), -item["avg_total"], item["display_name"]))
+    return rows
+
+
 def summarize_formal(seed_scores: pd.DataFrame, confirmed_live: pd.DataFrame) -> dict[str, Any]:
     """正式结论首屏统计：纳入条数、模型数、平均总分与来源构成。"""
     combined = combine_formal_scores(seed_scores, confirmed_live)
@@ -259,6 +383,138 @@ def summarize_frequent_issues(
 # --------------------------------------------------------------------------- #
 # 内部工具
 # --------------------------------------------------------------------------- #
+def _base_boundary_from_average(avg_total: float) -> tuple[int, list[str]]:
+    if avg_total >= BOUNDARY_REFERENCE_FLOOR:
+        return _BOUNDARY_RANK[BOUNDARY_REFERENCE], [f"平均分较高（{avg_total:.1f}）"]
+    if avg_total >= BOUNDARY_PASS_FLOOR:
+        return _BOUNDARY_RANK[BOUNDARY_REVIEW], [f"平均分处于中间区间（{avg_total:.1f}）"]
+    return _BOUNDARY_RANK[BOUNDARY_NOT_EVIDENCE], [f"平均分明显偏低（{avg_total:.1f}）"]
+
+
+def _case_risk_lookup(tasks_df: pd.DataFrame | None) -> dict[str, str]:
+    if not isinstance(tasks_df, pd.DataFrame) or tasks_df.empty:
+        return {}
+    if "case_id" not in tasks_df.columns or "risk_level" not in tasks_df.columns:
+        return {}
+    lookup: dict[str, str] = {}
+    for _, row in tasks_df.iterrows():
+        case_id = _text(row.get("case_id"))
+        if case_id:
+            lookup[case_id] = _text(row.get("risk_level"))
+    return lookup
+
+
+def _errors_for_model_group(errors_df: pd.DataFrame | None, group: pd.DataFrame, model_name: str) -> pd.DataFrame:
+    if not isinstance(errors_df, pd.DataFrame) or errors_df.empty:
+        return pd.DataFrame()
+    errors = errors_df.copy()
+    mask = pd.Series([True] * len(errors), index=errors.index)
+    if "model_name" in errors.columns:
+        mask &= errors["model_name"].astype(str) == str(model_name)
+    if "case_id" in errors.columns and "case_id" in group.columns:
+        cases = set(group["case_id"].dropna().astype(str))
+        if cases:
+            mask &= errors["case_id"].astype(str).isin(cases)
+    if "output_id" in errors.columns and "output_id" in group.columns:
+        output_ids = set(group["output_id"].dropna().astype(str))
+        if output_ids:
+            mask &= errors["output_id"].astype(str).isin(output_ids)
+    return errors[mask].reset_index(drop=True)
+
+
+def _high_severity_errors(errors: pd.DataFrame) -> pd.DataFrame:
+    if not isinstance(errors, pd.DataFrame) or errors.empty or "severity" not in errors.columns:
+        return pd.DataFrame()
+    severity = errors["severity"].map(_severity_rank)
+    return errors[severity >= 3].reset_index(drop=True)
+
+
+def _severity_rank(value: Any) -> int:
+    text = _text(value).lower()
+    mapping = {"高": 3, "high": 3, "严重": 3, "中": 2, "medium": 2, "低": 1, "low": 1}
+    return mapping.get(text, 0)
+
+
+def _high_risk_cases(group: pd.DataFrame, risk_lookup: Mapping[str, str]) -> set[str]:
+    if not risk_lookup or "case_id" not in group.columns:
+        return set()
+    case_ids = set(group["case_id"].dropna().astype(str))
+    return {case_id for case_id in case_ids if _is_high_risk(risk_lookup.get(case_id))}
+
+
+def _is_high_risk(value: Any) -> bool:
+    text = _text(value).lower()
+    return text in {"高", "高风险", "high"} or "high" in text
+
+
+def _high_risk_issue_count(group: pd.DataFrame, high_errors: pd.DataFrame, high_risk_cases: set[str]) -> int:
+    if not high_risk_cases:
+        return 0
+    count = 0
+    if not high_errors.empty and "case_id" in high_errors.columns:
+        count += int(high_errors["case_id"].astype(str).isin(high_risk_cases).sum())
+    count += len(_high_risk_low_scores(group, high_risk_cases, BOUNDARY_PASS_FLOOR))
+    return count
+
+
+def _high_risk_low_scores(group: pd.DataFrame, high_risk_cases: set[str], floor: float) -> list[str]:
+    if not high_risk_cases or "case_id" not in group.columns or "total_score" not in group.columns:
+        return []
+    rows = group[group["case_id"].astype(str).isin(high_risk_cases)]
+    if rows.empty:
+        return []
+    scores = pd.to_numeric(rows["total_score"], errors="coerce")
+    return rows[scores < floor]["case_id"].dropna().astype(str).tolist()
+
+
+def _model_dimension_weaknesses(group: pd.DataFrame) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for field, label in SCORE_DIMENSIONS:
+        full_mark = SCORE_DIMENSION_FULL_MARKS.get(field)
+        if not full_mark or field not in group.columns:
+            continue
+        scores = pd.to_numeric(group[field], errors="coerce").dropna()
+        if scores.empty:
+            continue
+        avg_score = float(scores.mean())
+        attainment = avg_score / float(full_mark)
+        if attainment < WEAK_DIMENSION_ATTAINMENT:
+            rows.append(
+                {
+                    "field": field,
+                    "dimension": label,
+                    "avg_score": avg_score,
+                    "full_mark": float(full_mark),
+                    "attainment": attainment,
+                    "gap": float(full_mark) - avg_score,
+                }
+            )
+    rows.sort(key=lambda item: (item["attainment"], -item["gap"], item["dimension"]))
+    return rows
+
+
+def _note_risk_rank(notes: Sequence[str]) -> int:
+    text = " ".join(notes)
+    if not text:
+        return 0
+    if any(keyword in text for keyword in _NOT_EVIDENCE_NOTE_KEYWORDS):
+        return _BOUNDARY_RANK[BOUNDARY_NOT_EVIDENCE]
+    if any(keyword in text for keyword in _CAUTION_NOTE_KEYWORDS):
+        return _BOUNDARY_RANK[BOUNDARY_REVIEW]
+    return 0
+
+
+def _dedupe(values: Sequence[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for value in values:
+        text = _text(value)
+        if text and text not in seen:
+            seen.add(text)
+            ordered.append(text)
+    return ordered
+
+
 def _index_answers(responses_df: pd.DataFrame | None) -> dict[tuple[str, str, str], str]:
     answers: dict[tuple[str, str, str], str] = {}
     if not isinstance(responses_df, pd.DataFrame) or responses_df.empty:

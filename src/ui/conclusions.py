@@ -3,10 +3,12 @@
 Replaces evaluation_conclusions, merges capabilities from model_diagnosis, model_boundary, overview.
 - 已沉淀结论 + 已复核归档结论计入正式结论。
 - 待复核草稿不进入正式结论。
-- 展示当前样本内的模型均值与使用边界。
+- 展示当前样本内的模型均值与审慎使用边界。
 """
 
 from __future__ import annotations
+
+from html import escape
 
 import streamlit as st
 
@@ -15,7 +17,8 @@ from app.services import eval_state
 from src.ui.page_config import get_page_config
 from src.ui.components import (
     render_compact_hero,
-    render_key_value_list,
+    render_evidence_panel,
+    render_html,
     render_numbered_section,
     render_text_block,
 )
@@ -25,6 +28,7 @@ def render_conclusions_page(data_bundle: dict) -> None:
     base = data_bundle.get("base") or data_bundle["data"]
     seed_scores = getattr(base, "scores", None)
     seed_errors = getattr(base, "errors", None)
+    tasks = getattr(base, "tasks", None)
 
     live_scores = cc.load_live_scores()
     confirmed_live, pending_live = cc.split_live_scores(live_scores)
@@ -38,7 +42,7 @@ def render_conclusions_page(data_bundle: dict) -> None:
     )
 
     _render_formal_conclusions(seed_scores, confirmed_live, seed_errors)
-    _render_model_boundaries(seed_scores, confirmed_live, seed_errors)
+    _render_model_boundaries(seed_scores, confirmed_live, seed_errors, tasks)
     _render_drafts(pending_live, responses)
 
 
@@ -85,59 +89,70 @@ def _render_formal_conclusions(seed_scores, confirmed_live, seed_errors) -> None
 # --------------------------------------------------------------------------- #
 # 02 模型使用边界
 # --------------------------------------------------------------------------- #
-def _render_model_boundaries(seed_scores, confirmed_live, seed_errors) -> None:
+def _render_model_boundaries(seed_scores, confirmed_live, seed_errors, tasks) -> None:
     render_numbered_section(
         "02",
         "模型使用边界",
-        "按风险等级、能力下限与红线错误，将模型归入三类使用边界。",
+        "综合平均分、红线错误、关键维度短板、高风险任务和样本数量判断。",
     )
 
-    combined = cc.combine_formal_scores(seed_scores, confirmed_live)
-    if combined.empty or "total_score" not in combined.columns:
+    boundaries = cc.build_model_boundaries(seed_scores, confirmed_live, seed_errors, tasks)
+    if not boundaries:
         render_text_block(
             "暂无边界数据",
             "运行评测并经人工复核后，此处按当前样本生成三类使用边界。",
         )
         return
 
-    draft_reference_count = 0
-    review_count = 0
-    not_evidence_count = 0
-    draft_reference_models = []
-    review_models = []
-    not_evidence_models = []
+    body = ""
+    for item in boundaries:
+        weakness = _format_weaknesses(item.get("major_weaknesses") or [])
+        high_errors = f"{int(item.get('high_severity_count', 0))} 条" if item.get("has_high_severity_error") else "无"
+        sample_text = f"{int(item.get('sample_count', 0))} 条"
+        if item.get("sample_insufficient"):
+            sample_text += "（观察不足）"
+        body += (
+            "<tr>"
+            f"<td><strong>{escape(str(item.get('display_name') or item.get('model_name') or '未标注模型'))}</strong></td>"
+            f"<td><span class=\"status-badge status-{escape(str(item.get('boundary_level', 'neutral')))}\">"
+            f"{escape(str(item.get('boundary') or '待判断'))}</span></td>"
+            f"<td>{float(item.get('avg_total') or 0):.1f}</td>"
+            f"<td>{escape(sample_text)}</td>"
+            f"<td>{escape(weakness)}</td>"
+            f"<td>{escape(high_errors)}</td>"
+            f"<td>{escape(str(item.get('basis_summary') or '当前样本内暂无足够判断依据'))}</td>"
+            "</tr>"
+        )
 
-    for model_name, group in combined.groupby("model_name"):
-        avg = float(group["total_score"].mean())
-        if avg >= 85:
-            draft_reference_count += 1
-            draft_reference_models.append((model_name, avg))
-        elif avg >= 60:
-            review_count += 1
-            review_models.append((model_name, avg))
-        else:
-            not_evidence_count += 1
-            not_evidence_models.append((model_name, avg))
-
-    boundaries = [
-        ("可作为初稿参考", draft_reference_models, "总分 ≥85，当前样本内表现稳健，仍需结合业务材料确认。"),
-        ("必须人工复核", review_models, "总分 60–85，存在维度短板。"),
-        ("不可作为依据", not_evidence_models, "总分 <60 或触发红线。"),
-    ]
-
-    rows = []
-    for title, models, desc in boundaries:
-        if not models:
-            detail = "当前样本中暂无归入此类的模型。"
-        else:
-            model_list = "、".join(f"{m}（{a:.1f}）" for m, a in models[:3])
-            detail = f"{model_list} 等 {len(models)} 个模型。{desc}"
-        rows.append((title, detail))
-    render_key_value_list(rows)
-
-    st.caption(
-        "红线错误一票否决；边界结论来自当前样本内观察，不代表模型整体能力。"
+    render_evidence_panel(
+        "边界判断明细",
+        (
+            '<table class="check-table"><thead><tr>'
+            "<th>模型</th><th>边界分类</th><th>平均分</th><th>样本数</th>"
+            "<th>主要短板</th><th>高严重度错误</th><th>判断依据摘要</th>"
+            f"</tr></thead><tbody>{body}</tbody></table>"
+        ),
     )
+    render_html(
+        '<div class="review-risk-note review-risk-note-muted">'
+        "<strong>使用边界</strong>"
+        "<span>模型边界不是排行榜；待复核草稿不进入正式结论，结论仅代表当前样本内观察。</span>"
+        "</div>"
+    )
+
+
+def _format_weaknesses(weaknesses: list[dict]) -> str:
+    if not weaknesses:
+        return "暂无明显短板"
+    parts = []
+    for item in weaknesses[:2]:
+        dimension = str(item.get("dimension") or "未标注维度")
+        attainment = item.get("attainment")
+        if isinstance(attainment, (int, float)):
+            parts.append(f"{dimension}（达成率 {attainment:.0%}）")
+        else:
+            parts.append(dimension)
+    return "、".join(parts)
 
 
 # --------------------------------------------------------------------------- #

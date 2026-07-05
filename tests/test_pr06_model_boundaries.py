@@ -1,0 +1,177 @@
+"""PR-06 tests: model usage boundaries are service-level, risk-aware conclusions."""
+
+import unittest
+
+import pandas as pd
+
+from app.services import conclusions as cc
+
+
+def _score(case_id: str, model: str, total: int, output_id: str | None = None, **dims):
+    row = {
+        "output_id": output_id or f"{case_id}-{model}",
+        "case_id": case_id,
+        "model_name": model,
+        "accuracy_score": 27,
+        "reasoning_score": 18,
+        "coverage_score": 18,
+        "evidence_score": 13,
+        "expression_score": 13,
+        "total_score": total,
+        "review_note": "",
+    }
+    row.update(dims)
+    return row
+
+
+def _live(case_id: str, model: str, status: str, total: int, **dims):
+    row = {
+        "id": abs(hash((case_id, model, status))) % 100000,
+        "run_id": "RUN-PR06",
+        "case_id": case_id,
+        "eval_model": model,
+        "judge_status": "success",
+        "review_status": status,
+        "status": "active",
+        "accuracy_score": 27,
+        "reasoning_score": 18,
+        "coverage_score": 18,
+        "evidence_score": 13,
+        "expression_score": 13,
+        "total_score": total,
+        "review_note": "",
+    }
+    row.update(dims)
+    return row
+
+
+def _tasks(*rows):
+    return pd.DataFrame(rows, columns=["case_id", "risk_level"])
+
+
+def _errors(*rows):
+    return pd.DataFrame(
+        rows,
+        columns=["output_id", "case_id", "model_name", "error_type", "severity", "error_description"],
+    )
+
+
+def _boundary_by_model(rows):
+    return {row["model_name"]: row for row in rows}
+
+
+class ModelBoundaryClassificationTests(unittest.TestCase):
+    def test_high_average_without_redline_or_weakness_can_be_reference(self):
+        scores = pd.DataFrame([
+            _score("C1", "model-high", 92),
+            _score("C2", "model-high", 90),
+        ])
+
+        result = cc.build_model_boundaries(scores, pd.DataFrame(), pd.DataFrame(), _tasks())
+        row = _boundary_by_model(result)["model-high"]
+
+        self.assertEqual("可作为初稿参考", row["boundary"])
+        self.assertEqual(2, row["sample_count"])
+        self.assertFalse(row["has_high_severity_error"])
+
+    def test_medium_average_requires_human_review(self):
+        scores = pd.DataFrame([
+            _score("C1", "model-mid", 78),
+            _score("C2", "model-mid", 72),
+        ])
+
+        row = _boundary_by_model(cc.build_model_boundaries(scores, pd.DataFrame(), pd.DataFrame(), _tasks()))["model-mid"]
+
+        self.assertEqual("必须人工复核", row["boundary"])
+        self.assertTrue(any("平均分处于中间区间" in reason for reason in row["reasons"]))
+
+    def test_low_average_is_not_evidence(self):
+        scores = pd.DataFrame([
+            _score("C1", "model-low", 58),
+            _score("C2", "model-low", 55),
+        ])
+
+        row = _boundary_by_model(cc.build_model_boundaries(scores, pd.DataFrame(), pd.DataFrame(), _tasks()))["model-low"]
+
+        self.assertEqual("不可作为依据", row["boundary"])
+        self.assertTrue(any("平均分明显偏低" in reason for reason in row["reasons"]))
+
+    def test_high_severity_error_downgrades_high_average(self):
+        scores = pd.DataFrame([
+            _score("C1", "model-risk", 92, output_id="O1"),
+            _score("C2", "model-risk", 90, output_id="O2"),
+        ])
+        errors = _errors({"output_id": "O1", "case_id": "C1", "model_name": "model-risk",
+                          "error_type": "风险遗漏", "severity": "高", "error_description": "遗漏关键风险"})
+
+        row = _boundary_by_model(cc.build_model_boundaries(scores, pd.DataFrame(), errors, _tasks()))["model-risk"]
+
+        self.assertEqual("必须人工复核", row["boundary"])
+        self.assertTrue(row["has_high_severity_error"])
+        self.assertTrue(any("高严重度错误" in reason for reason in row["reasons"]))
+
+    def test_high_risk_task_with_severe_error_is_not_evidence(self):
+        scores = pd.DataFrame([
+            _score("C1", "model-high-risk", 90, output_id="O1"),
+            _score("C2", "model-high-risk", 88, output_id="O2"),
+        ])
+        errors = _errors({"output_id": "O1", "case_id": "C1", "model_name": "model-high-risk",
+                          "error_type": "风险遗漏", "severity": "高", "error_description": "遗漏关键风险"})
+        tasks = _tasks({"case_id": "C1", "risk_level": "高"}, {"case_id": "C2", "risk_level": "中"})
+
+        row = _boundary_by_model(cc.build_model_boundaries(scores, pd.DataFrame(), errors, tasks))["model-high-risk"]
+
+        self.assertEqual("不可作为依据", row["boundary"])
+        self.assertTrue(any("高风险任务" in reason for reason in row["reasons"]))
+
+    def test_weak_dimension_is_reported_in_reasons(self):
+        scores = pd.DataFrame([
+            _score("C1", "model-weak", 86, coverage_score=8),
+            _score("C2", "model-weak", 88, coverage_score=9),
+        ])
+
+        row = _boundary_by_model(cc.build_model_boundaries(scores, pd.DataFrame(), pd.DataFrame(), _tasks()))["model-weak"]
+
+        self.assertEqual("必须人工复核", row["boundary"])
+        self.assertTrue(row["major_weaknesses"])
+        self.assertTrue(any("风险覆盖" in weakness["dimension"] for weakness in row["major_weaknesses"]))
+
+    def test_small_sample_count_limits_conclusion_strength(self):
+        scores = pd.DataFrame([_score("C1", "model-single", 94)])
+
+        row = _boundary_by_model(cc.build_model_boundaries(scores, pd.DataFrame(), pd.DataFrame(), _tasks()))["model-single"]
+
+        self.assertEqual("必须人工复核", row["boundary"])
+        self.assertTrue(row["sample_insufficient"])
+        self.assertTrue(any("样本数量不足" in reason for reason in row["reasons"]))
+
+    def test_pending_live_scores_do_not_enter_boundaries(self):
+        live = pd.DataFrame([
+            _live("C1", "pending-model", "pending", 95),
+            _live("C1", "confirmed-model", "confirmed", 91),
+            _live("C2", "confirmed-model", "confirmed", 90),
+        ])
+        confirmed, pending = cc.split_live_scores(live)
+
+        result = cc.build_model_boundaries(pd.DataFrame(), confirmed, pd.DataFrame(), _tasks())
+        by_model = _boundary_by_model(result)
+
+        self.assertEqual(1, len(pending))
+        self.assertNotIn("pending-model", by_model)
+        self.assertIn("confirmed-model", by_model)
+
+    def test_missing_error_and_risk_columns_do_not_crash(self):
+        scores = pd.DataFrame([
+            _score("C1", "model-plain", 89),
+            _score("C2", "model-plain", 88),
+        ])
+
+        result = cc.build_model_boundaries(scores, pd.DataFrame(), pd.DataFrame([{"case_id": "C1"}]), pd.DataFrame())
+        row = _boundary_by_model(result)["model-plain"]
+
+        self.assertEqual("可作为初稿参考", row["boundary"])
+        self.assertFalse(row["has_high_severity_error"])
+
+
+if __name__ == "__main__":
+    unittest.main()
