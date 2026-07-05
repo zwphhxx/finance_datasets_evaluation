@@ -11,7 +11,9 @@ from src.ui.test_run import (
     build_model_selection_options,
     build_run_plan_summary,
     build_sample_options,
+    build_sample_selection_rows,
     build_score_summary_rows,
+    filter_sample_selection_options,
     get_advanced_setting_items,
     get_test_run_steps,
     _siliconflow_balance_text,
@@ -33,6 +35,10 @@ class TestRunFlowStructureTests(unittest.TestCase):
 
         self.assertIn('@st.dialog("选择样本"', source)
         self.assertIn('@st.dialog("选择模型"', source)
+        self.assertIn("st.data_editor", source)
+        self.assertIn('CheckboxColumn("选择"', source)
+        self.assertIn("关键词搜索", source)
+        self.assertIn("当前没有符合条件的可测样本", source)
         self.assertIn("模型服务：", source)
         self.assertIn("硅基流动", source)
         self.assertIn('st.text_input(\n            "搜索模型"', source)
@@ -43,8 +49,9 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("移除", source)
         self.assertIn("test_run_selected_cases", source)
         self.assertIn("test_run_selected_models", source)
-        self.assertIn("test_run_cases_dialog", source)
+        self.assertIn("test_run_cases_dialog_selected", source)
         self.assertNotIn('render_numbered_section("04"', source)
+        self.assertNotIn("st.multiselect(", source)
         self.assertNotIn('st.multiselect(\n        "选择样本"', source)
         self.assertNotIn('st.multiselect("选择对比模型"', source)
         self.assertNotIn("st.checkbox", source)
@@ -156,6 +163,60 @@ class SampleSelectionTests(unittest.TestCase):
         self.assertLessEqual(len(options[0]["label"]), 90)
         self.assertNotIn("Gold", options[0]["label"])
         self.assertNotIn("Rubric", options[0]["label"])
+
+    def test_sample_dialog_filters_use_search_scene_and_difficulty(self):
+        sample_options = [
+            {
+                "case_id": "A",
+                "title": "收入确认风险",
+                "scenario": "财务尽调",
+                "difficulty": "中等",
+                "task": {"question": "识别收入确认问题", "context": "合同背景"},
+            },
+            {
+                "case_id": "B",
+                "title": "诉讼风险",
+                "scenario": "法律审核",
+                "difficulty": "困难",
+                "task": {"question": "核查重大诉讼", "context": "法律背景"},
+            },
+        ]
+
+        self.assertEqual(["A"], [
+            item["case_id"]
+            for item in filter_sample_selection_options(sample_options, "合同", "全部", "全部")
+        ])
+        self.assertEqual(["B"], [
+            item["case_id"]
+            for item in filter_sample_selection_options(sample_options, "", "法律审核", "困难")
+        ])
+        self.assertEqual([], filter_sample_selection_options(sample_options, "不存在", "全部", "全部"))
+
+    def test_sample_selection_rows_are_compact_and_mark_selected(self):
+        sample_options = [
+            {
+                "case_id": "A",
+                "title": "收入确认风险",
+                "scenario": "财务尽调",
+                "difficulty": "中等",
+                "task": {"question": "不应展示完整题干"},
+            },
+            {
+                "case_id": "B",
+                "title": "诉讼风险",
+                "scenario": "法律审核",
+                "difficulty": "困难",
+                "task": {"question": "不应展示完整题干"},
+            },
+        ]
+
+        rows = build_sample_selection_rows(sample_options, ["B"])
+
+        self.assertEqual(["选择", "样本编号", "任务标题", "场景", "难度", "测试状态"], list(rows[0].keys()))
+        self.assertFalse(rows[0]["选择"])
+        self.assertTrue(rows[1]["选择"])
+        self.assertEqual("可测试", rows[0]["测试状态"])
+        self.assertNotIn("不应展示完整题干", str(rows))
 
 
 class RunPlanTests(unittest.TestCase):

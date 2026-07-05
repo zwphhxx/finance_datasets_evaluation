@@ -97,6 +97,59 @@ def build_sample_options(
     return options
 
 
+def filter_sample_selection_options(
+    sample_options: list[dict],
+    keyword: str = "",
+    scenario: str = "全部",
+    difficulty: str = "全部",
+) -> list[dict]:
+    """Filter testable sample options for the dialog table."""
+    query = str(keyword or "").strip().lower()
+    scenario_value = str(scenario or "全部")
+    difficulty_value = str(difficulty or "全部")
+    filtered: list[dict] = []
+    for item in sample_options:
+        task = item.get("task") or {}
+        searchable = " ".join(
+            str(value or "")
+            for value in [
+                item.get("case_id"),
+                item.get("title"),
+                item.get("scenario"),
+                item.get("difficulty"),
+                task.get("title"),
+                task.get("question"),
+                task.get("context"),
+                task.get("expected_capability"),
+            ]
+        ).lower()
+        if query and query not in searchable:
+            continue
+        if scenario_value != "全部" and str(item.get("scenario") or "") != scenario_value:
+            continue
+        if difficulty_value != "全部" and str(item.get("difficulty") or "") != difficulty_value:
+            continue
+        filtered.append(item)
+    return filtered
+
+
+def build_sample_selection_rows(sample_options: list[dict], selected_case_ids: list[str]) -> list[dict]:
+    """Build compact rows for selecting testable samples in a data editor."""
+    selected = set(selected_case_ids or [])
+    rows: list[dict] = []
+    for item in sample_options:
+        case_id = str(item.get("case_id") or "").strip()
+        rows.append({
+            "选择": case_id in selected,
+            "样本编号": case_id,
+            "任务标题": item.get("title") or "待补充",
+            "场景": item.get("scenario") or "待补充",
+            "难度": item.get("difficulty") or "待补充",
+            "测试状态": "可测试",
+        })
+    return rows
+
+
 def build_run_plan_summary(model_ids: list[str], selected_tasks: list[dict]) -> dict[str, int | bool]:
     """Summarize the planned model-answer run before execution."""
     model_count = len(_dedupe(model_ids))
@@ -207,6 +260,9 @@ def _ensure_default_selected_cases(sample_options: list[dict]) -> None:
         for case_id in st.session_state.get("test_run_selected_cases", [])
         if case_id in option_ids
     ]
+    if "test_run_selected_cases" in st.session_state:
+        st.session_state["test_run_selected_cases"] = current
+        return
     if current:
         st.session_state["test_run_selected_cases"] = current
         return
@@ -273,7 +329,7 @@ def _render_configuration_panel(
     col1, col2, col3 = st.columns([1, 1, 1.2])
     with col1:
         if st.button("选择样本", key="test_run_open_samples", type="secondary", use_container_width=True):
-            st.session_state["test_run_dialog"] = "samples"
+            _open_sample_dialog(sample_options)
     with col2:
         if st.button("选择模型", key="test_run_open_models", type="secondary", use_container_width=True):
             _open_model_dialog(provider_name)
@@ -289,6 +345,20 @@ def _render_configuration_panel(
         )
     if not run_plan["can_run"]:
         st.caption("请选择样本和模型后运行。")
+
+
+def _open_sample_dialog(sample_options: list[dict]) -> None:
+    option_ids = [item["case_id"] for item in sample_options]
+    current = [
+        case_id
+        for case_id in st.session_state.get("test_run_selected_cases", [])
+        if case_id in option_ids
+    ]
+    st.session_state["test_run_dialog"] = "samples"
+    st.session_state["test_run_cases_dialog_selected"] = current or option_ids[:1]
+    st.session_state.pop("test_run_sample_search", None)
+    st.session_state.pop("test_run_sample_scenario", None)
+    st.session_state.pop("test_run_sample_difficulty", None)
 
 
 def _open_model_dialog(provider_name: str) -> None:
@@ -317,51 +387,89 @@ def _render_sample_selection_dialog(sample_options: list[dict]) -> None:
             st.rerun()
         return
 
-    rows = [
-        {
-            "样本编号": item["case_id"],
-            "场景": item["scenario"],
-            "任务标题": item["title"],
-            "难度": item["difficulty"],
-        }
-        for item in sample_options
-    ]
-    st.dataframe(
-        pd.DataFrame(rows),
-        hide_index=True,
-        width="stretch",
-        height=min(320, max(118, 42 + len(rows) * 35)),
-        column_config={
-            "样本编号": st.column_config.TextColumn("样本编号", width="small"),
-            "场景": st.column_config.TextColumn("场景", width="medium"),
-            "任务标题": st.column_config.TextColumn("任务标题", width="large"),
-            "难度": st.column_config.TextColumn("难度", width="small"),
-        },
-    )
     by_case = {item["case_id"]: item for item in sample_options}
-    option_ids = [item["case_id"] for item in sample_options]
-    current = [
+    all_case_ids = set(by_case)
+    selected_cases = [
         case_id
-        for case_id in st.session_state.get("test_run_selected_cases", option_ids[:1])
-        if case_id in by_case
-    ] or option_ids[:1]
-    dialog_cases = [
-        case_id
-        for case_id in st.session_state.get("test_run_cases_dialog", current)
-        if case_id in by_case
+        for case_id in st.session_state.get("test_run_cases_dialog_selected", [])
+        if case_id in all_case_ids
     ]
-    st.session_state["test_run_cases_dialog"] = dialog_cases or current
-    chosen = st.multiselect(
-        "可测样本",
-        option_ids,
-        format_func=lambda case_id: by_case[case_id]["label"],
-        key="test_run_cases_dialog",
+    st.session_state["test_run_cases_dialog_selected"] = selected_cases
+
+    scenes = ["全部"] + sorted({
+        str(item.get("scenario") or "")
+        for item in sample_options
+        if str(item.get("scenario") or "").strip() and str(item.get("scenario") or "") != "—"
+    })
+    difficulties = ["全部"] + sorted({
+        str(item.get("difficulty") or "")
+        for item in sample_options
+        if str(item.get("difficulty") or "").strip() and str(item.get("difficulty") or "") != "—"
+    })
+
+    filter_cols = st.columns([2.2, 1, 1])
+    with filter_cols[0]:
+        keyword = st.text_input(
+            "关键词搜索",
+            key="test_run_sample_search",
+            placeholder="输入样本编号、标题或背景关键词",
+        )
+    with filter_cols[1]:
+        scenario = st.selectbox("场景", scenes, key="test_run_sample_scenario")
+    with filter_cols[2]:
+        difficulty = st.selectbox("难度", difficulties, key="test_run_sample_difficulty")
+
+    filtered_options = filter_sample_selection_options(sample_options, keyword, scenario, difficulty)
+    if not filtered_options:
+        st.caption("当前没有符合条件的可测样本。")
+        edited_rows: list[dict] = []
+    else:
+        rows = build_sample_selection_rows(filtered_options, selected_cases)
+        editor_key = "test_run_cases_editor_" + "_".join(str(item["case_id"]) for item in filtered_options)[:120]
+        edited_df = st.data_editor(
+            pd.DataFrame(rows),
+            hide_index=True,
+            width="stretch",
+            height=min(330, max(140, 44 + len(rows) * 36)),
+            column_order=["选择", "样本编号", "任务标题", "场景", "难度", "测试状态"],
+            column_config={
+                "选择": st.column_config.CheckboxColumn("选择", width="small"),
+                "样本编号": st.column_config.TextColumn("样本编号", width="small"),
+                "任务标题": st.column_config.TextColumn("任务标题", width="large"),
+                "场景": st.column_config.TextColumn("场景", width="medium"),
+                "难度": st.column_config.TextColumn("难度", width="small"),
+                "测试状态": st.column_config.TextColumn("测试状态", width="small"),
+            },
+            disabled=["样本编号", "任务标题", "场景", "难度", "测试状态"],
+            key=editor_key,
+        )
+        edited_rows = edited_df.to_dict("records") if hasattr(edited_df, "to_dict") else list(edited_df)
+
+    visible_ids = {str(item.get("case_id") or "") for item in filtered_options}
+    checked_visible = [
+        str(row.get("样本编号") or "")
+        for row in edited_rows
+        if bool(row.get("选择")) and str(row.get("样本编号") or "") in by_case
+    ]
+    selected_cases = _dedupe([
+        *[case_id for case_id in selected_cases if case_id not in visible_ids],
+        *checked_visible,
+    ])
+    st.session_state["test_run_cases_dialog_selected"] = selected_cases
+    st.caption(
+        f"已选样本：{len(selected_cases)} 个。仅展示已入库且通过完整度校验的样本；"
+        "被测模型不会看到 Gold Answer 或 Rubric。"
     )
-    st.caption("仅展示已入库且通过完整度校验的样本。被测模型不会看到 Gold Answer 或 Rubric。")
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("确认选择", key="test_run_sample_dialog_confirm", type="secondary", use_container_width=True):
-            st.session_state["test_run_selected_cases"] = list(chosen)
+        if st.button(
+            "确认选择",
+            key="test_run_sample_dialog_confirm",
+            type="primary",
+            disabled=not selected_cases,
+            use_container_width=True,
+        ):
+            st.session_state["test_run_selected_cases"] = selected_cases
             _clear_dialog_state()
             st.rerun()
     with col2:

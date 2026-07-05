@@ -211,14 +211,16 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn("查询样本、样本列表、当前样本。", page_config_source)
         self.assertNotIn("新增和编辑会同步任务题", samples_source)
 
-    def test_test_run_has_at_most_two_primary_buttons(self):
+    def test_test_run_keeps_primary_buttons_for_confirmation_and_execution(self):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
         primary_buttons = re.findall(r'type\s*=\s*"primary"', source)
-        self.assertEqual(3, len(primary_buttons), "运行、评分和模型弹窗确认可使用 Primary")
+        self.assertEqual(4, len(primary_buttons), "样本确认、模型确认、运行和评分可使用 Primary")
         self.assertIn('"运行模型回答", type="primary"', source)
         self.assertIn('"生成评分草稿", type="primary"', source)
         self.assertIn('"确认选择"', source)
+        self.assertIn('key="test_run_sample_dialog_confirm"', source)
         self.assertIn('key="test_run_model_dialog_confirm"', source)
+        self.assertIn('disabled=not selected_cases', source)
         self.assertIn('disabled=not chosen_models', source)
 
     def test_review_seed_mode_hides_confirm_archive(self):
