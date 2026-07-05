@@ -1,395 +1,65 @@
-# 项目笔记
+# 面试展示说明
 
-本文件记录 Finance Model Evaluation MVP 开发过程中的关键决策、假设与注意事项。
+本文用于面试或代码走查时快速说明 FinDueEval 的展示路径、核心边界和常见追问。它不是开发日志。
 
-## 设计原则
+## 一句话定位
 
-- **最小可运行**：本原型仅使用五道样板题和三种模拟模型，目的是验证数据结构和评测流程的可行性，而非建立完整系统。
-- **专业表达**：回答和评分遵循尽调报告风格，避免营销化和口号化表述，遇到资料不足时明确指出“需补充依据”或“待人工复核”。
-- **结构化数据**：所有任务、答案、模型输出、评分、错误标签和优化建议都以 CSV 或 JSON 形式存储，便于后续分析与扩展。
-- **闭环迭代**：通过汇总错误标签生成优化计划，为下一步数据采集和提示词改进提供方向。
+FinDueEval 是面向金融尽调场景的模型评测样本库 MVP：通过样本 CRUD、完整度校验、模型对比、Gold Answer、Rubric、错误归因和人工复核，形成当前样本内的正式结论与使用边界。
 
-## 注意事项
+## 推荐展示路径
 
-- 本项目不包含具体法规条文、上市公司案例或真实财务数据。所有描述均为示例，使用时需补充权威依据。
-- 评分采用五维度加权模式，满分 100 分，可根据实际业务需求调整。
-- 错误标签和优化计划示例旨在展示方法论，不代表真实模型表现。
-- Streamlit Demo 在简单的展示基础上提供基础交互，未来可扩展为多页应用、图表和筛选功能。
+1. 打开“项目说明”页，说明项目定位、评测闭环和当前 MVP 边界。
+2. 进入“样本库”，展示样本列表、选中样本详情和完整度检查。
+3. 展开“样本管理”，说明新增 / 编辑样本会在 SQLite 可用时同步正式评测资产。
+4. 选择已入库且完整的样本，进入“发起测试”。
+5. 选择多个模型，说明模型列表来自模型服务适配层，不硬编码模型名称。
+6. 运行模型回答，说明被测模型只看到任务题、业务背景和输出要求。
+7. 生成评分草稿，说明裁判模型才读取 Gold Answer 和 Rubric。
+8. 进入“评测复核”，查看评分矩阵、错误归因、红线提示和人工复核入口。
+9. 人工确认或修订后归档，说明归档后才进入正式结论。
+10. 进入“评测结论”，说明当前样本内的模型使用边界。
 
-## 模块拆分记录
+展示不要依赖固定样本、固定模型或固定分数。
 
-- PR-03 将 `app.py` 中的页面渲染、指标计算和图表展示拆分到 `src` 模块。
-- `app.py` 仅保留页面配置、数据加载、数据质量校验、导航和路由。
-- `src/metrics.py` 负责指标和筛选计算，`src/charts.py` 负责图表渲染，`src/ui/` 负责四个 Streamlit 页面。
-- 本次拆分不改变 CSV/JSON 数据结构、评分口径或页面业务内容。
+## 关键讲解点
 
-## 评测批次与偏好样本
+### 样本库不是普通题库
 
-- PR-04 新增 `evaluation_runs.csv`，用于记录模型版本、提示词版本、评测范围和运行日期，便于追踪同一批种子任务的评测来源。
-- PR-04 新增 `preference_pairs.csv`，用于记录同一案例下两个模型回答的偏好判断、偏好维度和改进指令。
-- 偏好样本只作为回答对比和数据优化输入，不改变现有 rubric 评分口径。
+样本包含任务题、业务背景、理想回复标准 / Gold Answer、Rubric、错误标签、优化建议和状态。完整且已入库的样本才能进入测试。
 
-## 单题深度评测页
+### 被测模型与裁判模型隔离
 
-- PR-05 将单题详情页升级为样板题深度评测页，按题目与 Gold Answer、模型回答与评分、错误与优化建议、Preference Pair 四个层次组织。
-- 页面展示扣分说明、错误标签、偏好理由和后续数据补充建议，用于呈现“为什么扣分、偏好哪个回答、后续补什么数据”的闭环。
-- 本次升级仅调整展示组织和轻量查询辅助函数，不改变评分口径、不新增模型调用、不引入外部服务。
+被测模型看不到 Gold Answer、必须覆盖点、不可接受错误或 Rubric。裁判评分链路才读取这些评判标准。裁判分数是建议分，不是最终结论。
 
-## 模型能力诊断页
+### 人工复核是正式结论前置条件
 
-- PR-06 新增“模型能力诊断”页面，用于按综合得分、分维度得分、错误类型、领域/场景和诊断摘要观察模型短板。
-- 页面结论仅基于当前种子评测集，不作为模型采购建议或通用能力排名。
-- 本次新增只复用现有评分、错误标签和任务字段，不改变评分权重或数据结构。
+评分草稿必须在“评测复核”页确认或修订后才进入正式结论。待复核草稿不会被结论页统计。
 
-## PR-07 错误归因与数据补强动作
+### 结论不是排行榜
 
-错误分析页已升级为“错误归因与数据优化”页面。页面先按 `error_type` 汇总错误次数、严重程度、涉及模型和题目，再将错误类型关联到 `optimization_plan` 中的可能原因、数据补强动作、样本格式、预期效果、验证指标和状态。
+模型使用边界只代表当前样本内观察。边界判断不只看平均分，还结合红线错误、关键维度短板、高风险任务表现、样本数量和人工复核说明。
 
-`optimization_plan` 兼容旧字段 `frequent_error`、`likely_cause`、`optimization_action`、`data_sample_format`，也支持 `action_id`、`error_type`、`root_cause`、`data_action`、`sample_format`、`priority`、`expected_effect`、`validation_metric`、`status`。当某类错误暂无匹配优化计划时，页面保留错误样本并显示克制提示，便于后续补充数据建设任务。
+边界表达统一为：
 
-## PR-09 信息架构与产品叙事
+- 可作为初稿参考；
+- 必须人工复核；
+- 不可作为依据。
 
-PR-09 将侧边栏和页面说明调整为“模型评测与数据优化闭环”叙事：评测项目总览、专业任务集、样板题深度评测、模型能力诊断、错误归因与数据补强、优化验证。
+## 数据与运行边界
 
-每个页面顶部统一说明“本页回答什么问题、当前数据边界、页面核心看点”。首页从单纯指标展示调整为项目定位、三个核心问题、闭环流程和核心数据资产，便于先理解评测集目标，再进入单题、模型诊断、错误归因和优化验证。
+- 默认可从 `data/` 种子文件运行。
+- SQLite 初始化后，正式评测资产优先从 SQLite 读取。
+- `samples.json` 保留为轻量管理视图、导入导出和兼容备份。
+- 未配置模型密钥时进入模拟回退模式。
+- 模拟回退不代表真实模型结果。
+- 不要提交 API Key，也不要在页面、日志或错误信息中展示认证请求头。
 
-## PR-10 UI 组件化与视觉层级
+## 可回答的技术问题
 
-PR-10 新增 `src/ui/components.py`，统一页面标题、指标卡片、信息提示、空状态、分数标签、状态标签和模型回答卡片。侧边栏导航改为按钮式导航，页面状态存放在 `st.session_state.current_page`，并继续保持 PR-09 的评测闭环顺序。
-
-本次调整只影响 UI 组件复用、视觉层级和导航体验，不改变数据表结构、评分权重、模型调用方式或数据库方案。
-
-## PR-18 样本扩展模板与数据集建设文档
-
-PR-18 新增 `templates/new_case_template.yml` 作为新增专业任务题的标准模板，并补充三份文档：
-`docs/dataset_building_guide.md`（八步建设流程）、`docs/dataset_quality_standard.md`（入库质量门槛）、
-`docs/extension_roadmap.md`（MVP 到 v1.0 扩展路线）。README 增加“如何扩展数据集”小节，指向模板、
-文档与 `scripts/validate_dataset.py`。
-
-本次仅新增模板与文档，不新增业务样本、不改动数据结构、评分口径或页面逻辑，应用运行不受影响。
-
-## PR-19 全局信息减法与视觉基线整改
-
-PR-19 收敛全局视觉与页面信息密度，不改动任何业务数据、评分口径或页面功能。
-
-- 页面顶部由「本页回答什么问题 / 当前数据边界 / 页面核心看点」三卡片，统一压缩为一行轻量边界条
-  （`render_boundary_bar`），展示 MVP 样本 / 脱敏任务 / 模拟模型回答 / 仅用于样本内观察等定性边界。
-- 精简各页开场说明：移除总览页、数据集质量页与优化验证页中与正文重复的大段引导，正文优先呈现
-  数据、边界、评分、错误与补强动作。
-- 统一低饱和配色：错误用浅玫瑰底+深色文字、警示用米色底+棕色文字、改善用浅绿底+墨绿文字；
-  去除大面积渐变与重投影，卡片、表格、标签、标题与弱化文字共用 `--fde-*` 设计变量。
-- 侧边栏导航保持简洁：全宽按钮，当前页浅蓝底+左侧蓝条，去除每项下方的补充说明文案。
-- 所有 HTML 片段（context-item、loop-step、boundary-row、answer-boundary-panel 等）继续经
-  `render_html` 归一化渲染，避免源码以代码块形式泄露。
-
-边界条文案为项目级定性声明，不含样本数、模型名称、分数或结论，未硬编码任何业务指标。
-
-## PR-20 首页改为数据集概览
-
-PR-20 将首页从项目简介式布局改为「FinDueEval 数据集概览」，让首屏直接呈现数据集内容与评测边界。
-
-- 首屏展示 4 个核心指标卡（任务样本、覆盖领域、模型回答、错误标签），数值全部由数据文件动态计算。
-- 首屏保留一条清晰边界说明：MVP 样本、脱敏任务、模拟模型回答，结论仅用于样本内观察，不代表
-  真实模型采购或业务决策。
-- 主体改为左右结构：左侧为按领域统计的任务覆盖摘要，右侧为模型表现摘要（平均总分、最弱维度、
-  高频错误），均动态计算（`build_model_performance_summary`）。
-- 新增「进入样板题评测」轻量入口（普通按钮，切换到样板题深度评测页），无营销文案。
-- 原项目定位与评测闭环说明收纳到页面底部折叠区，不再占据首屏主体。
-
-不新增假数据、不伪造结论，文案不写死样本数、模型数或分数；指标卡与摘要展示的数值均为实时计算结果。
-
-## PR-21 重构任务样本页
-
-PR-21 将「专业任务集」页重构为「任务样本」浏览页，重点呈现任务覆盖、质量与回答覆盖，而非说明文字或原始字段表。
-
-- 顶部仅保留轻量筛选区：领域、任务类型、难度、是否有 Gold Answer、是否有模型回答。
-- 主体为紧凑任务表（`build_case_overview_rows`），列为任务编号、领域、任务类型、难度、考察能力、
-  Gold Answer 状态、模型回答数、错误标签数；难度与 Gold Answer 状态使用 PR-19 低饱和标签。
-- 长场景与背景文本移出主表，统一收纳到「选中任务详情」区域，展示任务场景、任务背景、任务要求、
-  Gold Answer 摘要、评测边界与已覆盖模型回答。
-- Gold Answer 状态、模型回答数、错误标签数均由 `model_outputs`、`error_labels`、`gold_answers`
-  按 `case_id` 关联动态计算，不为展示效果硬编码。
-
-不新增样本、不伪造 Gold Answer、不改评分逻辑；`build_task_records` 与 `build_task_table` 等既有
-纯函数保留以兼容现有测试。
-
-## PR-22 重构样板题深度评测页
-
-PR-22 将「样板题深度评测」页重构为任务与模型的左右对照视图，让一屏看清任务要求、模型表现，
-再逐层对照 Gold Answer、模型回答与扣分矩阵。
-
-- 页面顶部只保留两个选择器：选择任务、选择模型；移除大段说明。
-- 第一屏左右对称：左栏「任务题」（任务背景 / 任务要求 / 考察能力 / 数据边界），右栏「模型表现」
-  （总分 / 维度短板 / 主要扣分原因 / 是否触发红线错误）。红线错误依据该回答是否带有「高」严重度
-  错误标签动态判断。
-- 第二屏左右对称：左栏「Gold Answer / 评测标准」（标准结论 / 判断依据 / 风险边界 / 必须覆盖点 /
-  不可接受错误），右栏「模型回答」（回答摘要 / 已覆盖要点 / 遗漏要点 / 错误标签）。要点覆盖采用
-  关键词近似匹配并明确标注「仅供对照参考」，不写死覆盖结论。
-- 第三屏为单张评分矩阵：评分维度 | 权重 | Gold 要求 | 模型得分 | 扣分原因 | 对应错误标签。错误标签
-  按 `ERROR_TYPE_TO_DIMENSION`（依据 `label_taxonomy.yml` 定义）归入对应维度，未匹配标签以脚注
-  列出，不丢失数据。
-- Gold Answer、模型回答、错误标签、评分矩阵均随任务与模型选择动态变化；所有 HTML 片段统一经
-  `render_html` / `render_card` / `render_answer_boundary_panel` 渲染，避免源码泄露。
-- 标签配色沿用 PR-19 低饱和方案，红线错误仅用浅玫瑰底+深色文字。
-
-`RUBRIC`、`get_case_models`、`get_output_row`、`build_rubric_rows`、`build_error_attribution`、
-`build_data_fix_actions` 等纯函数保持原有契约以兼容既有测试，仅重写渲染层。
-
-## PR-23 收口模型诊断 / 错误补强 / 优化验证三页
-
-PR-23 将三页从「说明型」收口为「证据与动作型」，并把错误标签到评分维度的映射统一到
-`src/metrics.py:ERROR_TYPE_TO_DIMENSION`（依据 `label_taxonomy.yml`），供样板题页与错误页共用。
-
-- 模型诊断：顶部以一张模型对比表替代长摘要，字段为模型 / 平均分 / 最强维度 / 最弱维度 /
-  高频错误 / 适用边界；新增「维度得分矩阵」（行=模型、列=评分维度，单元格用低饱和达成率色块，
-  ≥85% 浅绿、60–85% 米色、<60% 浅玫瑰）；顶部边界条直接显示样本量、模拟回答与仅当前评测集观察。
-  对比行、维度强弱、高频错误、适用边界均按当前评分动态计算（`build_model_comparison_rows`、
-  `build_dimension_matrix`）。
-- 错误与补强：主体改为「错误标签 → 数据补强动作」表，字段为错误标签 / 出现次数 / 影响维度 /
-  典型表现 / 可能数据原因 / 补强动作 / 验证指标，按影响优先级与出现次数排序
-  （`build_error_improvement_table`）；低优先级不使用强烈颜色；保留错误路径表与重点错误样本。
-- 优化验证：顶部只展示关键指标变化（平均总分 / 依据可靠性 / 幻觉率 / 红线错误率），中部为
-  Baseline 与数据补强对比表及指标趋势图，底部新增「仍未解决的问题」（红线/幻觉残留、样本量小、
-  尚未接入真实模型 API、部分错误标签样本不足），均由数据动态计算（`build_open_issues`），不解释
-  RAG/Prompt 概念。
-
-所有指标、排序、矩阵颜色均从现有数据动态计算，不新增样本、不伪造结果；标签与矩阵配色沿用
-PR-19 低饱和体系。`build_diagnosis`、`build_key_change_cards`、`build_validation_conclusion`、
-`build_error_action_path` 等被既有测试钉住的纯函数保持契约不变。
-
-## PR-24 全局 QA 与页面细节打磨
-
-PR-24 对七个页面做一次全站级别的视觉 / 文案 / 布局 / 数据边界 QA，不新增功能、样本或依赖，
-仅做页面、样式与文案级别的收口。核查结论与改动如下：
-
-- HTML 源码泄露：全部 HTML 片段经 `render_html`（逐行 strip、丢空行）渲染，七页用 `AppTest`
-  实跑确认 0 异常、无源码以文本形式泄露。
-- 英文工程字段名：用户可见的表头与卡片均为中文业务名（任务编号 / 案例编号 / 领域 / 模型 等），
-  `st.dataframe` 列名已统一 rename；仅「数据集质量与扩展框架」页的扩展接入说明保留 CSV 字段名，
-  因其用于指导按真实文件格式补充数据。
-- 配色：标签与矩阵单元格仅使用低饱和 `--fde-*` 色（红线/低达成率为浅玫瑰底+深色文字），无大红大黄。
-- 表格对齐：模型诊断「模型对比」表由居中的 matrix-table 改为左对齐 check-table，避免长文本
-  （适用边界、高频错误）居中撑版；维度矩阵保留 matrix-table 的居中色块。
-- 文案：移除冗余标题（任务样本页「任务样本表」改为「任务清单」）；全站无营销化/AI 味词；可见
-  指标（样本数、模型数、平均分等）均由数据动态计算，无写死数字。
-
-本次为收口性打磨，git diff 仅含页面样式与文案调整及对应说明，未改动数据结构、评分口径或纯函数契约。
-
-## PR-26 数据集 Schema 与质量校验
-
-PR-26 在不新增业务样本的前提下，补齐数据集的「可读结构 + 可校验质量」两件事，让后续扩展有据可依。
-
-- `data/label_taxonomy.yml`：每个错误标签新增 `impacted_dimension`（影响维度），取值须为
-  `dataset_manifest.yml` 中声明的某个 Rubric 维度名称，把错误标签与评分维度显式对齐。
-- `docs/dataset_schema.md`：新增 Schema 文档，将 7 个逻辑对象（task_cases / gold_answers /
-  rubrics / model_responses / score_records / error_annotations / improvement_actions）映射到物理
-  文件，列出各对象字段、主键/外键与关联关系，并给出校验与扩展说明。
-- `scripts/validate_dataset.py`：新增 `_check_taxonomy_impacted_dimensions` 校验——错误标签声明的
-  影响维度若缺失则告警、若越出 Rubric 维度范围则报错；校验结果区分通过 / 警告 / 错误三类，
-  而非单一布尔值，便于定位具体问题。
-- 全部校验项均依据 manifest 与 taxonomy 动态读取数据文件，不硬编码样本数、模型名称或评分结果；
-  不新增假样本、不伪造模型回答、不接入真实模型 API。
-
-校验脚本对当前数据集输出「通过 17 项 · 警告 0 项 · 错误 0 项」，七个页面照常渲染，应用启动正常。
-
-## PR-27 Gold Answer 质量治理
-
-PR-27 把 Gold Answer 从「能作为标准答案展示」推进到「可治理、可校验的评测资产」，并将质量判断
-口径统一到一个模块，供页面与校验脚本共用。
-
-- 结构化字段：`gold_answers.json` 规范为 `core_conclusion`（核心结论）、`key_evidence`（关键依据）、
-  `boundary_conditions`（边界条件）、`must_have_points`（必须覆盖点）、`unacceptable_errors`
-  （不可接受错误），并新增 `manual_review_notes`（人工复核提示）。无法确认处写成「需进一步核验 /
-  待补充依据」，不伪造法规、公告或财务数据。
-- 单一口径：新增 `src/gold_quality.py`，集中定义字段别名（兼容历史 `conclusion`/`basis`/
-  `risk_boundary`/`red_line_errors`）、字段解析与 `evaluate_gold_quality`。质量状态（满足 /
-  部分满足评测使用条件）由字段完整度动态推导，不在数据中存储固定结论。
-- 页面展示：数据集概览新增「Gold Answer 质量」摘要（满足 / 部分满足的任务数与部分满足案例）；
-  数据集质量页的检查表增加「质量状态」列；样板题页 Gold Answer 区清晰展示标准结论、判断依据、
-  边界条件、必须覆盖点与不可接受错误，并显示质量状态徽标与人工复核提示，与模型回答左右对照。
-- 校验逻辑：`validate_dataset.py` 新增 `_check_gold_answer_completeness`，逐条评估结构化要素完整度，
-  缺失则告警并列出缺失要素，齐备则计入通过项；必备字段检查改用别名解析，对历史字段名仍然鲁棒。
-
-所有展示与统计均从数据动态读取，不硬编码单个案例；文案使用专业评测口吻，避免「标准答案完美」
-「权威答案」等夸张表述。校验脚本输出「通过 18 项 · 警告 0 项 · 错误 0 项」，受影响页面均渲染无异常。
-
-## PR-28 扩充投行 / 财务 / 法律任务样本
-
-PR-28 将 active 任务样本扩充到投行业务、财务尽调、法律合规与并购交易方向，并把非该范围的
-历史样本以「停用」方式隔离，使统计、评测、错误归因与优化验证只面向当前 active 范围。
-
-- 样本扩充：`tasks.csv` 在原有基础上新增多道专业任务，覆盖毛利率分析、应收回款风险、现金流分析、
-  关联方资金核查、重大合同审阅、关联交易合规、控制权变更审查、业绩承诺与补偿、IPO 问询回复评估、
-  并购交易分析，active 任务共 14 道，领域收敛为 Capital Markets / Financial / Legal。每道任务同步补齐
-  结构化 Gold Answer（核心结论、关键依据、边界条件、必须覆盖点、不可接受错误）、模型回答、Rubric
-  评分与错误标签，错误标签仍覆盖全部六类错误类型。
-- 停用而非删除：`tasks.csv` 新增 `status` 列，非投行 / 财务 / 法律范围的历史样本（如 `MED-001`）标记为
-  `inactive`。过滤在 `data_service` 数据加载层统一执行——`active_case_ids` 解析 active 主键后，任务、
-  模型回答、评分、错误标签、偏好对照均按 active 主键过滤，各页面与应用内校验自动只见 active 数据，
-  无需逐页改动。
-- 范围校验：`dataset_manifest.yml` 的 `scope.domains` 收敛为 Capital Markets / Financial / Legal，并补全新增
-  任务类型；`label_taxonomy.yml` 不含医学 / 临床 / 行业研究类标签。`validate_dataset.py` 改为状态感知——
-  先校验 active 样本的 domain 是否落在 manifest 声明范围内（越界则报错），再对 active 子集执行既有一致性
-  校验。
-- 数据边界：新增样本均为脱敏 / 抽象 / 模拟情景，不含真实客户信息，不伪造公司公告、真实交易金额或
-  真实法律意见；无法确认处写「需进一步核验」，不杜撰来源；属 MVP 样例规模，不代表生产结论。
-
-校验脚本输出「通过 19 项 · 警告 0 项 · 错误 0 项」，七个页面在 active-only 数据下渲染无异常，应用启动正常；
-新增 `tests/test_pr28_task_expansion.py` 覆盖 active 范围、停用隔离、Gold Answer 完整度与范围校验。
-
-## PR-29 模型边界报告
-
-PR-29 新增「模型边界报告」页面，把评分与错误标签从「打分排行」重构为「可用边界」，
-明确模型在金融专业任务中的可用场景、需人工复核场景与不可直接使用场景，避免项目被
-理解成单纯的模型打分 Demo。
-
-- 数据边界：页面顶部展示当前样本量、数据集版本、模型回答来源（模拟生成，未接入真实
-  模型 API）与结论适用范围，全部由数据与 manifest 动态读取。
-- 三类使用边界：`src/model_boundary.py` 按「风险等级 + 能力下限 + 是否触发高严重度红线类
-  错误」逐任务判定——高风险任务（最终投资判断 / 法律结论 / 交易定价）归入「不可直接使用」；
-  中风险任务中最弱模型也达到及格下限且未触发红线错误的，归入「可直接使用（结构化辅助）」；
-  其余归入「需人工复核」。每类的任务数、分数区间、任务类型与红线触发情况均由数据填充，
-  阈值仅作为公开的判定口径，不写死模型结论。
-- 高频风险与数据补强方向：高频风险按错误标签出现次数排序，并关联受影响的 Rubric 维度；
-  数据补强方向由高频错误关联到既有优化计划中的补强动作与验证指标，形成「风险 → 补强」闭环。
-- 模型维度矩阵：在事实依据、推理完整性、风险识别、专业表达四个 Rubric 维度之外，额外用
-  红线类错误（风险遗漏、依据错误）频率推导「边界意识」，频率越低越稳健；配色沿用低饱和
-  浅绿 / 米色 / 浅玫瑰，不使用大红大黄。
-- 同时修正 optimization_plan.csv 中「推理不足」一行残留的临床试验描述，使其回到投行 / 财务
-  / 法律语境，避免非 active 领域内容出现在页面。
-
-新增 `tests/test_pr29_model_boundary.py` 覆盖数据边界、使用边界判定、高频风险排序、补强方向
-无越域内容与维度矩阵推导。校验脚本输出「通过 19 项 · 警告 0 项 · 错误 0 项」，八个页面渲染
-无异常，应用启动正常。文案保持专业克制，明确保留人工复核与合规终审边界。
-
-## PR-30 SQLite 数据层与数据迁移
-
-PR-30 在不引入复杂后端的前提下，为项目增加一个可选的 SQLite 数据层，使后续 CRUD、
-真实评测接入与运行记录留存有结构化承载，同时保留 `data/` 种子文件、页面展示结果不变。
-
-- 数据表结构：`app/db/schema.sql` 定义八张核心表——task_cases、gold_answers、rubrics、
-  model_responses、score_records、error_annotations、improvement_actions、evaluation_runs。
-  各表业务列与现有 CSV/JSON、manifest 字段一一对应，并统一附带 status、created_at、
-  updated_at；任务题、Gold Answer、Rubric 等核心对象额外保留 version 以便版本追踪。
-- 初始化与迁移：`app/db/init_db.py` 从 `data/` 种子文件导入数据，导入行数与种子文件一一
-  对应（不新增、不伪造任何数据），默认不覆盖已存在的数据库，`--force` 可重建；现有数据
-  文件保持不变，继续作为 seed。
-- 仓储与服务分层：`app/db/repository.py` 封装 list/get/insert/update/delete 等基础读写，
-  避免在页面中散落 SQL；`app/services/dataset_service.py` 作为页面读取入口——数据库已
-  初始化时读库并投影回原始列结构，未初始化时回退到种子文件加载，活跃样本过滤与
-  EvaluationData 结构复用 src.data_service，保证两条路径展示结果完全一致。
-- Gold Answer 迁移：结构化字段单列存储便于查询，同时保留 raw_json 原始条目作为页面重建
-  的权威来源，确保含列表字段（必须覆盖点、不可接受错误）的内容无损还原。
-- 应用接入：app.py 改为通过 dataset_service 读取数据，页面代码不变；数据库缺失时自动回退，
-  保证全新检出即可运行。数据层仅使用标准库 sqlite3，不新增第三方依赖（requirements 不变）。
-
-新增 `tests/test_pr30_sqlite_layer.py` 覆盖初始化行数与种子一致、基础字段与 version 列、
-仓储 CRUD、以及读库与读种子的 EvaluationData 一致性。八个页面在「读库」与「读种子」两种
-模式下均渲染无异常，校验脚本输出「通过 19 项 · 警告 0 项 · 错误 0 项」，应用启动正常。
-生成的数据库文件作为构建产物纳入 .gitignore，可随时由种子重新初始化。
-
-## PR-31 任务题 / Gold Answer / Rubric 最小 CRUD
-
-在 PR-30 的 SQLite 数据层之上，新增「数据集管理」页面，把项目从静态展示升级为可维护的
-数据集管理原型。CRUD 只做最小可用，不引入登录、权限、审批流或批量导入导出。
-
-数据源边界（与 PR-30 一致并强化）：
-- CSV/JSON/YAML 继续作为初始化 seed 与版本化、可审阅的样本源；
-- SQLite 为运行时数据层；
-- CRUD 仅写入 SQLite，不回写 seed 文件；
-- 页面优先读取 SQLite，数据库不存在时回退 seed 文件（管理页此时为只读并提供一键初始化）；
-- 生成的 .db 仍不纳入版本控制。
-
-实现：
-- 服务层 `app/services/dataset_service.py` 新增任务题（create/update/set_status，停用即
-  status=inactive 软删除）、Gold Answer（在原始条目上就地编辑、结构化列与 raw_json 同步更新，
-  无损保留未编辑内容）、Rubric（编辑权重、满分标准、扣分规则）的最小 CRUD，及从 seed 初始化
-  的 ensure_seed_database。所有写入统一经由 repository，写入后清空数据缓存，使任务样本页、
-  样板题评测页在下一次 rerun 即读到最新数据。页面层不出现任何 SQL。
-- `app/db/schema.sql` 的 rubrics 表新增 full_mark_standard、deduction_rules 两个质量治理字段，
-  种子导入时留空，不预置任何编造内容。
-- 页面 `src/ui/dataset_admin.py` 以三个分区（任务题 / Gold Answer / Rubric）提供简洁表单，
-  Rubric 区按 label_taxonomy 的 impacted_dimension 展示关联错误标签，权重合计异常仅提示不阻断；
-  顶部固定说明「当前 CRUD 写入 SQLite；CSV/JSON/YAML 仍为初始化 seed 和可审阅数据资产。」
-- 导航与 page_config 新增 dataset_admin 页（标题「数据集管理」）。
-
-新增 `tests/test_pr31_dataset_crud.py` 覆盖任务题增改停（软删除、可重新启用）、新增去重与空
-编号校验、Gold Answer 可见编辑与 raw_json 无损、编辑不回写 seed 文件、Rubric 权重/规则编辑、
-种子质量列为空（不伪造）、页面注册与「读库 / seed 回退」两种模式渲染无异常。全量测试 174 项，
-保持既有的 4 项历史失败、0 项新增回归；校验脚本通过；应用启动正常。
-
-## PR-32 错误标签体系与数据补强动作 CRUD
-
-PR-32 让错误标签体系与数据补强动作可维护，体现模型错误能够沉淀为数据集优化动作，而非静态展示。
-
-- 数据源边界：`label_taxonomy.yml` 仍是版本化 seed 标签源，`optimization_plan.csv` 仍是补强动作种子；
-  SQLite 为运行时维护层，CRUD 只写 SQLite，不回写 YAML/CSV/JSON；数据库不存在时页面回退 seed。
-- `app/db/schema.sql` 新增 `error_taxonomy` 表（error_label / definition / typical_symptom /
-  severity_level / related_dimension / suggested_data_action / validation_metric / status），并为
-  `improvement_actions` 扩展 action_id、action_type、expected_effect、validation_method 等治理字段；
-  severity_level、validation_metric、action_type 等 seed 无来源的列初始留空，不预置编造内容。
-- `app/db/init_db.py` 从 label_taxonomy 导入错误标签，从 optimization_plan 导入补强动作并补可读业务
-  编号 `DA-NNN`；`related_error_label` 复用 `frequent_error` 列，因此「错误归因与数据优化」页在下一次
-  rerun 即读到最新配置，无需改动该页。
-- `app/services/dataset_service.py` 新增错误标签与补强动作的列表 / 详情 / 新增 / 编辑 / 停用：错误标签按
-  error_label 唯一校验、停用为软删除；补强动作必须关联到一个已登记（active）的错误标签，否则拒绝写入。
-- `src/error_config.py` 为框架无关的纯校验模块，识别三类配置问题：无效错误标签（缺定义 / 影响维度越界 /
-  标注引用未登记标签）、缺少关联补强动作的高频错误（阈值由错误次数均值动态推导）、related_error_label
-  不存在的补强动作。`scripts/validate_dataset.py` 复用同一规则，在 seed 上保持零错误零警告。
-- 页面 `src/ui/dataset_admin.py` 增加「错误标签管理」「数据补强动作管理」两个分区与「配置校验」面板。
-  错误标签默认低饱和呈现，仅红线 / 高严重度使用浅玫瑰底；文案为数据管理口吻，不使用营销化表达。
-
-新增 `tests/test_pr32_error_taxonomy_crud.py` 覆盖标签来源与空值、增改停（软删除）、新增去重 / 空编号、
-补强动作必须关联有效标签、业务编号递增、配置校验在 seed 上无问题且能识别无效标签 / 孤立动作 / 高频无动作、
-页面渲染无异常；并更新 `tests/test_pr30_sqlite_layer.py` 的种子行数预期纳入 error_taxonomy。全量测试
-187 项，保持既有的 4 项历史失败、0 项新增回归；校验脚本通过；应用启动正常。
-
-## PR-33 SiliconFlow 模型 Provider 接入
-
-PR-33 建立模型适配层，使项目可通过硅基流动选择不同文本对话模型进行真实调用。本 PR 仅完成
-provider 能力，不做真实评测运行页、不做 Gold Answer 对比、不做评分。
-
-- `app/models/base.py` 定义统一接口 `ModelProvider`（`list_models` / `generate_response`）与返回
-  结构 `ModelInfo` / `ModelListResult` / `GenerationResult`，页面层只依赖接口、不感知具体实现。
-- `app/models/siliconflow.py` 仅用标准库 `urllib` 接入：`list_models` 调 `GET /v1/models` 并默认按
-  `type=text`、`sub_type=chat` 过滤；`generate_response` 调 `POST /v1/chat/completions`，请求体含
-  model、messages 及 temperature / max_tokens / top_p / top_k / frequency_penalty / stop，可透传
-  enable_thinking / thinking_budget / reasoning_effort / response_format，`stream` 固定 False。
-  返回解析 response_text、usage（input/output/total tokens）、http_status 与响应头
-  `x-siliconcloud-trace-id`；400/401/403/404/429/503/504 与超时统一映射为结构化错误。
-- 安全：API Key 从 st.secrets / 环境变量 / .env 读取，绝不写入页面、日志或 raw_response；
-  Authorization 头不外泄；不向用户抛供应商异常堆栈。
-- `app/models/mock.py` 在无 API Key 时回退，返回结构一致、`status=mock`，回答明确标注为模拟、
-  不冒充真实模型；`app/models/registry.py` 提供注册与按名获取，`get_text_provider` 在未配置 Key
-  时自动回退 mock，不报错崩溃。
-- 文档：README 增加 SiliconFlow 配置与安全说明，新增 `.env.example`（不含真实 Key），`.gitignore`
-  忽略 `.env`；明确「无 Key 即 mock」「本 PR 仅 provider 层，非完整评测闭环」。
-
-新增 `tests/test_pr33_model_providers.py`（16 项，全部 mock HTTP、无真实外呼）覆盖：mock 列表与
-生成、无 Key 回退、list/chat 解析、trace-id 与 usage、401/403/429/503/504 与超时映射、API Key 不
-泄露、registry 解析。全量测试保持既有 4 项历史失败、0 项新增回归；应用启动正常。
-
-## PR-34 真实模型评测运行页
-
-PR-34 在 PR-33 provider 层之上新增「真实模型评测」页，支持从数据集选择任务样本与硅基流动
-模型，生成真实（或 mock）模型回答。本页只负责运行与展示，不做评分、不做模型排名、不输出
-「哪个模型最好」。
-
-- `app/services/eval_runner.py` 承载运行编排：构造 prompt、生成 run_id、顺序运行单题或批量、
-  汇总为统一 RunOutcome/RunResult；页面不含模型调用细节、不构造 prompt。Prompt 仅暴露任务
-  场景、题干与必要背景，**绝不发送 Gold Answer / 必须覆盖点 / 不可接受错误**；不让模型自评，
-  提示其说明依据与核查边界，不引导虚假确定结论。
-- 结果优先写入 SQLite 独立表 `live_run_responses`（schema 新增，不来自任何 seed），与承载评分的
-  seed `model_responses` 分离，避免污染既有分析页，可供后续 Gold Answer 对比复用；数据库未
-  初始化时结果暂存于页面会话仍可查看。落库为尽力而为，失败不致页面崩溃。
-- `src/ui/live_eval.py` 提供页面：数据集版本、任务范围（单题 / 批量）、Provider 与模型选择
-  （模型列表按钮触发实时加载、不硬编码，可手动填写模型 ID）、生成参数（temperature、max_tokens）、
-  运行结果表（任务编号 / 任务类型 / 模型 / 状态 / 耗时 / 回答长度 / 是否成功 / 查看回答）与模型
-  回答查看。mock 模式明确标注；页面固定显示评测边界提示；请求失败以结构化错误展示不崩溃。
-- `app/services/dataset_service.py` 新增 `list_dataset_versions`；导航与 page_config 新增 live_eval 页。
-
-新增 `tests/test_pr34_live_eval.py`（10 项，无真实外呼）覆盖：prompt 不外泄 Gold Answer、系统
-提示不自评且要求说明依据、mock 运行、失败不崩溃且标记未成功、单题运行、落库写入独立表且不触碰
-seed model_responses、无库回退、版本读取与页面注册。同时修正 PR-33 `test_falls_back_to_mock_without_key`
-的打桩目标（改打 registry 命名空间），使其与本地 .env Key 无关地稳定通过。全量测试 213 项，保持
-既有 4 项历史失败、0 项新增回归；校验脚本通过；应用启动正常；未提交 .env / 真实 Key / .db。
+| 问题 | 回答要点 |
+| --- | --- |
+| 为什么需要 Gold Answer？ | 它是裁判评分和人工复核的评判锚点，被测模型不可见。 |
+| 为什么需要 Rubric？ | 它把专业判断拆成可复核的维度和扣分规则。 |
+| 为什么需要人工复核？ | 金融尽调场景不能把裁判模型建议分直接当正式结论。 |
+| 为什么不是排行榜？ | 样本规模和任务范围只支持当前样本内观察，不能代表模型整体能力。 |
+| SQLite 与文件是什么关系？ | SQLite 可用时作为正式数据层；文件保留为种子数据、版本化资产和回退机制。 |

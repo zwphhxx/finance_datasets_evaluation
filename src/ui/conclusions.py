@@ -1,6 +1,5 @@
 """评测结论页面。
 
-Replaces evaluation_conclusions, merges capabilities from model_diagnosis, model_boundary, overview.
 - 已沉淀结论 + 已复核归档结论计入正式结论。
 - 待复核草稿不进入正式结论。
 - 展示当前样本内的模型均值与审慎使用边界。

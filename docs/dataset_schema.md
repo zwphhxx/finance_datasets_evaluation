@@ -1,146 +1,123 @@
-# 数据集 Schema 说明（Dataset Schema）
+# 数据结构说明
 
-本文件说明 FinDueEval 评测数据集的数据对象、字段含义与关联关系，配合
-`data/dataset_manifest.yml`（版本与样本范围）、`data/label_taxonomy.yml`（错误标签体系）
-与 `scripts/validate_dataset.py`（质量校验）使用。
+本文说明 FinDueEval 当前使用的数据对象、文件回退口径与 SQLite 正式数据层。页面不应直接依赖某个固定样本、模型或分数，而应通过服务层读取这些对象。
 
-新增任务、模型回答、评分或错误标签时，按本结构补齐字段并保持主键、外键一致，
-即可在不改动页面代码的前提下被页面与校验脚本识别。
+## 读取口径
 
-## 数据对象与物理文件
+- SQLite 已初始化且可用时，`app/services/dataset_service.py` 优先读取 SQLite。
+- SQLite 未初始化时，项目回退读取 `data/` 下的种子文件。
+- 样本 CRUD 在 SQLite 可用时会同步正式评测资产；文件模式仍可浏览种子数据和轻量管理视图。
+- 本项目不引入外部数据库、登录或权限系统。
 
-| 数据对象 | 物理文件 | 主键 | 说明 |
+## 主要数据对象
+
+| 对象 | SQLite 表 | 文件回退 | 说明 |
 | --- | --- | --- | --- |
-| task_cases | `data/tasks.csv` | `case_id` | 专业尽调任务题 |
-| gold_answers | `data/gold_answers.json` | `case_id` | 任务参考答案与评测标准 |
-| rubrics | `data/dataset_manifest.yml`（`rubric`） | `field` | 评分维度、权重与满分定义 |
-| model_responses | `data/model_outputs.csv` | `output_id` | 各模型对任务的回答 |
-| score_records | `data/scores.csv` | `output_id` | 模型回答的分维度评分 |
-| error_annotations | `data/error_labels.csv` | `output_id`+`error_type` | 模型回答的错误标签 |
-| improvement_actions | `data/optimization_plan.csv` | `frequent_error` | 由错误标签收敛的数据补强动作 |
+| task_cases | `task_cases` | `data/tasks.csv` | 任务题、业务背景、场景、难度、风险等级和状态。 |
+| gold_answers | `gold_answers` | `data/gold_answers.json` | 理想回复标准 / Gold Answer。 |
+| rubrics | `rubrics` | `data/dataset_manifest.yml` | Rubric 评分维度、满分、满分标准和扣分规则。 |
+| model responses | `model_responses` / `live_run_responses` | `data/model_outputs.csv` | 种子模型回答与真实运行回答分离保存。 |
+| score records | `score_records` / `live_run_scores` | `data/scores.csv` | 已沉淀评分、评分草稿和已复核归档评分。 |
+| error labels | `error_annotations` | `data/error_labels.csv` | 错误类型、严重程度、错误表现、纠正方向。 |
+| improvement actions | `improvement_actions` | `data/optimization_plan.csv` | 数据补强动作和验证方向。 |
+| samples | `data/samples.json` | `data/samples.json` | 样本库轻量管理视图、导入导出和兼容备份。 |
 
-> 错误标签的类型取值由 `data/label_taxonomy.yml` 约束；其余辅助资产
-> （`preference_pairs.csv`、`optimization_comparison.csv`、`evaluation_runs.csv`）
-> 在 `dataset_manifest.yml` 的 `assets` 中登记。
+辅助对象包括 `evaluation_runs` / `data/evaluation_runs.csv`、错误标签体系 `error_taxonomy` / `data/label_taxonomy.yml`，以及用于扩展分析的 `preference_pairs.csv`、`optimization_comparison.csv`。
 
 ## 字段说明
 
-### task_cases（tasks.csv）
+### task_cases
+
 | 字段 | 含义 |
 | --- | --- |
-| `case_id` | 任务唯一编号，全数据集主键 |
-| `domain` | 所属专业领域 |
-| `scenario` | 任务场景 |
-| `task_type` | 任务类型 |
-| `difficulty` | 难度等级 |
-| `question` | 任务要求 |
-| `context` | 任务背景材料 |
-| `expected_capability` | 考察的核心能力 |
-| `risk_level` | 任务风险等级 |
+| `case_id` | 任务编号，样本不可修改的主键。 |
+| `domain` | 专业领域。 |
+| `scenario` | 业务场景。 |
+| `task_type` | 任务类型。 |
+| `difficulty` | 难度。 |
+| `question` | 任务题。 |
+| `context` | 业务背景。 |
+| `expected_capability` | 考察能力。 |
+| `risk_level` | 任务风险等级。 |
+| `status` | 底层状态：`draft` / `active` / `inactive`。 |
 
-### gold_answers（gold_answers.json）
-列表结构，每条对应一个 `case_id`。质量状态（满足 / 部分满足评测使用条件）由字段完整度
-动态推导，不在数据中存储固定结论。
+样本库页面展示中文业务状态：待复核、已入库、需优化、已归档。它们分别映射到底层状态 `draft`、`active`、`draft`、`inactive`。
+
+### gold_answers
+
 | 字段 | 含义 |
 | --- | --- |
-| `case_id` | 关联的任务编号 |
-| `core_conclusion` | 核心结论（必备） |
-| `key_evidence` | 关键依据或判断口径（必备） |
-| `analysis` | 分析过程 |
-| `materials_to_check` | 需核查的材料清单 |
-| `boundary_conditions` | 适用边界、待核查事项、不能直接下结论的情形 |
-| `must_have_points` | 模型回答必须覆盖的关键点 |
-| `unacceptable_errors` | 不可接受错误或红线错误 |
-| `manual_review_notes` | 人工复核提示（无法确认处写「需进一步核验 / 待补充依据」，不伪造依据） |
+| `case_id` | 关联任务编号。 |
+| `core_conclusion` | 核心结论。 |
+| `key_evidence` | 关键依据。 |
+| `analysis` | 分析过程。 |
+| `materials_to_check` | 需核查材料。 |
+| `boundary_conditions` | 适用边界与待核查事项。 |
+| `must_have_points` | 必须覆盖点，JSON 数组。 |
+| `unacceptable_errors` | 不可接受错误 / 红线错误，JSON 数组。 |
+| `manual_review_notes` | 人工复核提示。 |
+| `raw_json` | Gold Answer 原始结构，用于无损展示和编辑。 |
 
-> 质量门槛：`core_conclusion`、`key_evidence` 为必备字段；`boundary_conditions` 与
-> `unacceptable_errors` 至少具备其一。该门槛由 `dataset_manifest.yml` 的 `gold_answer`
-> 段声明，由校验脚本核对；早期字段名（`conclusion` / `basis` / `risk_boundary` /
-> `red_line_errors`）经 `src/gold_quality.py` 的别名解析仍可识别。
+测试准入至少要求存在核心结论、必须覆盖点和不可接受错误。
 
-### rubrics（dataset_manifest.yml → rubric）
+### rubrics
+
 | 字段 | 含义 |
 | --- | --- |
-| `total` | 满分（各维度权重之和应等于该值） |
-| `total_field` | 记录总分的评分字段名 |
-| `dimensions[].field` | 维度对应 `scores.csv` 中的列名 |
-| `dimensions[].name` | 维度业务名称 |
-| `dimensions[].weight` | 维度权重（即满分） |
+| `dimension_field` | 评分字段。 |
+| `name` | 评分维度名称。 |
+| `weight` / `full_mark` | 维度权重 / 满分。 |
+| `full_mark_standard` | 满分标准。 |
+| `deduction_rules` | 扣分规则。 |
+| `status` | 维度状态。 |
 
-### model_responses（model_outputs.csv）
+维度字段和满分优先复用 `src/metrics.py` 与正式 Rubric 数据层，不在页面硬编码第二套评分维度。
+
+### model responses
+
 | 字段 | 含义 |
 | --- | --- |
-| `output_id` | 回答唯一编号 |
-| `case_id` | 关联任务（外键 → task_cases） |
-| `model_name` | 模型标识（须在 manifest `scope.models` 内） |
-| `answer_text` | 模型回答正文 |
+| `output_id` / `id` | 回答记录编号。 |
+| `run_id` | 真实运行批次编号，仅 live 表存在。 |
+| `case_id` | 任务编号。 |
+| `model_name` | 被测模型标识。 |
+| `answer_text` | 模型回答。 |
+| `run_status` | 真实运行状态：success / failed / mock。 |
 
-### score_records（scores.csv）
+被测模型输入由 `app/services/eval_runner.py` 构造，只包含任务题、业务背景和输出要求，不包含 Gold Answer 或 Rubric。
+
+### score records
+
 | 字段 | 含义 |
 | --- | --- |
-| `output_id` | 关联回答（外键 → model_responses） |
-| `case_id` | 关联任务（外键 → task_cases） |
-| `model_name` | 模型标识 |
-| `accuracy_score` / `reasoning_score` / `coverage_score` / `evidence_score` / `expression_score` | 各 Rubric 维度得分 |
-| `total_score` | 维度合计总分 |
-| `review_note` | 评审扣分说明 |
+| `case_id` | 任务编号。 |
+| `model_name` / `eval_model` | 被测模型。 |
+| Rubric 维度字段 | 各维度得分。 |
+| `total_score` | 总分。 |
+| `review_note` | 裁判或人工复核说明。 |
+| `review_status` | live 评分复核状态：pending / confirmed。 |
+| `judge_status` | 裁判调用状态。 |
 
-### error_annotations（error_labels.csv）
-| 字段 | 含义 |
-| --- | --- |
-| `output_id` | 关联回答（外键 → model_responses） |
-| `case_id` | 关联任务（外键 → task_cases） |
-| `model_name` | 模型标识 |
-| `error_type` | 错误标签（须来自 `label_taxonomy.yml`） |
-| `severity` | 严重程度 |
-| `error_description` | 错误说明 |
-| `correction` | 纠正方向 |
-| `optimization_action` | 对应的数据补强动作 |
+`score_records` 是已沉淀评分；`live_run_scores` 中只有 `review_status=confirmed` 的记录进入正式结论。
 
-### improvement_actions（optimization_plan.csv）
-| 字段 | 含义 |
-| --- | --- |
-| `frequent_error` | 关联的错误标签（外键 → error_annotations.error_type） |
-| `typical_problem` | 典型表现 |
-| `affected_cases` | 涉及任务 |
-| `likely_cause` | 可能的数据原因 |
-| `optimization_action` | 数据补强动作 |
-| `data_sample_format` | 补强样本格式 |
-| `priority` | 优先级 |
+### error labels 与 improvement actions
+
+错误标签记录模型回答的错误类型、严重程度和修正方向。数据优化建议记录针对错误标签的补强动作。复核页和结论页只基于已有数据归因，不编造模型缺陷。
 
 ## 关联关系
 
-```
-task_cases (case_id)
-   ├─ 1:1 ─ gold_answers (case_id)
-   └─ 1:N ─ model_responses (case_id, output_id)
-                ├─ 1:1 ─ score_records (output_id)        ── 维度对应 rubrics.field
-                └─ 1:N ─ error_annotations (output_id, error_type)
-                              └─ N:1 ─ improvement_actions (frequent_error)
-                                            ↑ error_type 受 label_taxonomy 约束
-```
+```text
+task_cases
+  ├─ gold_answers
+  ├─ model_responses / live_run_responses
+  │    ├─ score_records / live_run_scores
+  │    └─ error_annotations
+  └─ samples.json 管理视图
 
-- 每个 `case_id` 必须有且仅有一条 Gold Answer。
-- `model_responses`、`score_records`、`error_annotations` 通过 `case_id` 关联任务，
-  通过 `output_id` 关联回答。
-- `error_annotations.error_type` 必须是 `label_taxonomy.yml` 中已定义的标签，
-  其 `impacted_dimension` 须为某个 Rubric 维度名称。
-- `improvement_actions.frequent_error` 必须关联到已出现的错误标签。
-
-## 校验与扩展
-
-运行质量校验：
-
-```bash
-python scripts/validate_dataset.py
+error_annotations ── improvement_actions
+rubrics ── score dimension fields
 ```
 
-脚本依据 `dataset_manifest.yml` 与 `label_taxonomy.yml` 动态读取数据文件，输出
-通过项、警告项与错误项，可识别 `case_id` 重复、Gold Answer 缺失或要素不全、
-Gold Answer 结构化要素完整度（满足 / 部分满足评测使用条件）、
-Rubric 权重不一致、回答/评分关联缺失、错误标签不合法、影响维度越界、补强动作悬空等问题。
+## 正式结论口径
 
-扩展数据集时：先按本 Schema 补齐字段与关联，再在 `dataset_manifest.yml` 同步样本范围与版本，
-在 `label_taxonomy.yml` 登记新增错误标签，最后运行校验脚本确认无错误项。
-当前数据集为 MVP 样例规模，用于展示数据资产结构、质量门槛、版本边界与可扩展接入方式，
-样本量有限，不代表真实生产环境或大规模实验结论。
+正式结论只统计已沉淀评分和已复核归档评分。待复核草稿不进入正式结论。模型使用边界由 `app/services/conclusions.py` 统一计算，结合平均分、红线错误、关键维度短板、高风险任务表现、样本数量和复核说明。
