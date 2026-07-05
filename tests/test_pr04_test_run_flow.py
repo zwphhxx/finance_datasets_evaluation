@@ -9,6 +9,7 @@ from app.services import eval_runner as er
 from app.services import scorer as sc
 from src.ui.test_run import (
     build_model_selection_options,
+    build_remaining_queue_items,
     build_run_plan_summary,
     build_run_queue_items,
     build_sample_options,
@@ -71,11 +72,19 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("运行队列", source)
         self.assertIn("已完成结果", source)
         self.assertIn("等待中", source)
+        self.assertIn("已完成回答已保留", source)
+        self.assertIn("继续未完成项", source)
+        self.assertIn("放弃本次运行", source)
         self.assertIn("er.run_single", source)
         self.assertIn("er.CompareRunResult", source)
-        self.assertIn("第一条成功回答", source)
-        self.assertIn("第一条失败原因", source)
+        self.assertIn("查看全文", source)
+        self.assertIn('@st.dialog("模型回答全文"', source)
+        self.assertIn("查看技术明细", source)
+        self.assertIn('@st.dialog("技术明细"', source)
+        self.assertIn("仅对已完成回答生成评分草稿", source)
         self.assertNotIn("progress_callback=_on_progress", source)
+        self.assertNotIn('st.expander("查看回答"', source)
+        self.assertNotIn('st.expander("查看全部回答"', source)
 
     def test_model_selection_options_are_bounded_and_searchable(self):
         models = [
@@ -254,6 +263,20 @@ class RunPlanTests(unittest.TestCase):
         self.assertEqual(
             [("m1", "A"), ("m1", "B"), ("m2", "A"), ("m2", "B")],
             [(item["model_id"], item["case_id"]) for item in queue],
+        )
+
+    def test_remaining_queue_items_use_completed_model_case_pairs(self):
+        queue = build_run_queue_items(["m1", "m2"], [{"case_id": "A"}, {"case_id": "B"}])
+        outcomes = [
+            er.RunOutcome("A", "", "mock", "m1", "mock", True, answer_text="ok"),
+            er.RunOutcome("B", "", "mock", "m2", "failed", False, error_code="timeout"),
+        ]
+
+        remaining = build_remaining_queue_items(queue, outcomes)
+
+        self.assertEqual(
+            [("m1", "B"), ("m2", "A")],
+            [(item["model_id"], item["case_id"]) for item in remaining],
         )
 
 

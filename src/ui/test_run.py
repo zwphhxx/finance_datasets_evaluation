@@ -59,6 +59,10 @@ _SILICONFLOW_LABEL = "硅基流动"
 _EVAL_TEMPERATURE = 0.1
 _EVAL_MAX_TOKENS = 2048
 _MODEL_OPTION_LIMIT = 30
+_ANSWER_PREVIEW_LIMIT = 1200
+_RUN_STATE_KEY = "test_run_run_state"
+_PARTIAL_OUTCOMES_KEY = "test_run_partial_outcomes"
+_LAST_RUN_STATUS_KEY = "test_run_last_run_status"
 
 
 def get_test_run_steps() -> list[str]:
@@ -176,6 +180,16 @@ def build_run_queue_items(model_ids: list[str], selected_tasks: list[dict]) -> l
     return items
 
 
+def build_remaining_queue_items(queue_items: list[dict], outcomes: list[er.RunOutcome]) -> list[dict]:
+    """Return queue items that do not yet have an outcome."""
+    completed = {(str(outcome.model_id), str(outcome.case_id)) for outcome in outcomes or []}
+    return [
+        item
+        for item in queue_items or []
+        if (str(item.get("model_id") or ""), str(item.get("case_id") or "")) not in completed
+    ]
+
+
 def build_model_selection_options(models, keyword: str, limit: int = _MODEL_OPTION_LIMIT) -> tuple[list[str], int]:
     """Filter provider models into a bounded selectbox option list."""
     query = str(keyword or "").strip().lower()
@@ -249,7 +263,7 @@ def render_test_run_page(data_bundle: dict) -> None:
     _render_configuration_panel(sample_options, selected_tasks, model_ids, provider_name, run_plan)
 
     render_numbered_section("02", TEST_RUN_STEPS[1])
-    _render_results()
+    _render_results(provider_name, _EVAL_TEMPERATURE, _EVAL_MAX_TOKENS)
 
     render_numbered_section("03", TEST_RUN_STEPS[2])
     _render_scoring(base, provider_name, task_records)
@@ -605,6 +619,177 @@ def eligible_case_ids(task_records: list[dict], gold_map: dict, rubric_dimension
     return eligible
 
 
+def _run_state() -> dict:
+    state = st.session_state.get(_RUN_STATE_KEY)
+    return state if isinstance(state, dict) else {}
+
+
+def _partial_outcomes() -> list[er.RunOutcome]:
+    return list(st.session_state.get(_PARTIAL_OUTCOMES_KEY, []) or [])
+
+
+def _set_run_state(
+    *,
+    status: str,
+    run_id: str,
+    provider: str,
+    model_ids: list[str],
+    mode: str,
+    created_at: str,
+    queue_items: list[dict],
+    outcomes: list[er.RunOutcome],
+    message: str = "",
+) -> None:
+    st.session_state[_RUN_STATE_KEY] = {
+        "status": status,
+        "run_id": run_id,
+        "provider": provider,
+        "model_ids": list(model_ids),
+        "mode": mode,
+        "created_at": created_at,
+        "queue_items": list(queue_items),
+        "message": message,
+    }
+    st.session_state[_PARTIAL_OUTCOMES_KEY] = list(outcomes)
+    st.session_state[_LAST_RUN_STATUS_KEY] = status
+
+
+def _clear_run_state() -> None:
+    st.session_state.pop(_RUN_STATE_KEY, None)
+    st.session_state.pop(_PARTIAL_OUTCOMES_KEY, None)
+    st.session_state.pop(_LAST_RUN_STATUS_KEY, None)
+    st.session_state.pop("test_run_persisted", None)
+
+
+def _compare_result_from_state(state: dict | None = None, outcomes: list[er.RunOutcome] | None = None):
+    state = state or _run_state()
+    outcomes = _partial_outcomes() if outcomes is None else list(outcomes)
+    if not state:
+        return None
+    return er.CompareRunResult(
+        run_id=str(state.get("run_id") or er.generate_run_id()),
+        provider=str(state.get("provider") or ""),
+        model_ids=tuple(_dedupe(list(state.get("model_ids") or []))),
+        mode=str(state.get("mode") or "live"),
+        created_at=str(state.get("created_at") or datetime.now().isoformat(timespec="seconds")),
+        outcomes=tuple(outcomes),
+    )
+
+
+def _finalize_run_result(status: str, state: dict, outcomes: list[er.RunOutcome], message: str = "") -> None:
+    queue_items = list(state.get("queue_items") or [])
+    _set_run_state(
+        status=status,
+        run_id=str(state.get("run_id") or er.generate_run_id()),
+        provider=str(state.get("provider") or ""),
+        model_ids=list(state.get("model_ids") or []),
+        mode=str(state.get("mode") or "live"),
+        created_at=str(state.get("created_at") or datetime.now().isoformat(timespec="seconds")),
+        queue_items=queue_items,
+        outcomes=outcomes,
+        message=message,
+    )
+    result = _compare_result_from_state(_run_state(), outcomes)
+    if result is not None:
+        persisted = er.persist_compare_result(result)
+        eval_state.set_last_run(result)
+        st.session_state["test_run_persisted"] = persisted
+
+
+def _unexpected_failure_outcome(provider, item: dict) -> er.RunOutcome:
+    task = item.get("task") or {}
+    return er.RunOutcome(
+        case_id=str(item.get("case_id") or task.get("case_id") or ""),
+        task_type=str(task.get("task_type") or ""),
+        provider=str(getattr(provider, "name", "")),
+        model_id=str(item.get("model_id") or ""),
+        run_status="failed",
+        success=False,
+        error_code="runtime_error",
+        error_message="运行过程中出现未预期错误，已停止后续任务。",
+    )
+
+
+def _execute_run_queue(
+    provider_name: str,
+    queue_items: list[dict],
+    model_ids: list[str],
+    temperature,
+    max_tokens,
+    *,
+    existing_outcomes: list[er.RunOutcome] | None = None,
+    base_state: dict | None = None,
+) -> None:
+    provider = get_text_provider(prefer=provider_name)
+    existing_outcomes = list(existing_outcomes or [])
+    all_queue = list((base_state or {}).get("queue_items") or queue_items)
+    run_id = str((base_state or {}).get("run_id") or er.generate_run_id())
+    created_at = str((base_state or {}).get("created_at") or datetime.now().isoformat(timespec="seconds"))
+    mode = "mock" if getattr(provider, "name", "") == "mock" else "live"
+    state_provider = str(getattr(provider, "name", ""))
+    model_list = list((base_state or {}).get("model_ids") or _dedupe(model_ids))
+    outcomes = list(existing_outcomes)
+    state = {
+        "run_id": run_id,
+        "provider": state_provider,
+        "model_ids": model_list,
+        "mode": mode,
+        "created_at": created_at,
+        "queue_items": all_queue,
+    }
+    _set_run_state(
+        status="running",
+        run_id=run_id,
+        provider=state_provider,
+        model_ids=model_list,
+        mode=mode,
+        created_at=created_at,
+        queue_items=all_queue,
+        outcomes=outcomes,
+    )
+    queue_slot = st.empty()
+    _render_live_run_queue(queue_slot, all_queue, outcomes, queue_items[0] if queue_items else None, queue_items[1:], mode)
+
+    interrupted = False
+    message = ""
+    for index, item in enumerate(queue_items):
+        waiting = queue_items[index + 1:]
+        _render_live_run_queue(queue_slot, all_queue, outcomes, item, waiting, mode)
+        try:
+            outcome = er.run_single(
+                provider,
+                item["model_id"],
+                item["task"],
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+        except Exception:
+            outcome = _unexpected_failure_outcome(provider, item)
+            interrupted = True
+            message = "本次运行未完成。已保留已完成回答；未完成项可继续运行。"
+        outcomes.append(outcome)
+        _set_run_state(
+            status="running",
+            run_id=run_id,
+            provider=state_provider,
+            model_ids=model_list,
+            mode=mode,
+            created_at=created_at,
+            queue_items=all_queue,
+            outcomes=outcomes,
+            message=message,
+        )
+        next_item = None if interrupted else (waiting[0] if waiting else None)
+        next_waiting = [] if interrupted or not waiting else waiting[1:]
+        _render_live_run_queue(queue_slot, all_queue, outcomes, next_item, next_waiting, mode)
+        if interrupted:
+            break
+
+    status = "interrupted" if interrupted or build_remaining_queue_items(all_queue, outcomes) else "completed"
+    _finalize_run_result(status, state, outcomes, message)
+    st.rerun()
+
+
 def _render_run_button(
     provider_name,
     model_ids,
@@ -617,38 +802,14 @@ def _render_run_button(
 ) -> None:
     disabled = not run_plan["can_run"] or not service_ready
     if st.button("运行模型回答", type="primary", disabled=disabled, key="test_run_run"):
-        provider = get_text_provider(prefer=provider_name)
         queue_items = build_run_queue_items(model_ids, selected_tasks)
-        run_id = er.generate_run_id()
-        mode = "mock" if getattr(provider, "name", "") == "mock" else "live"
-        outcomes: list[er.RunOutcome] = []
-        queue_slot = st.empty()
-        _render_live_run_queue(queue_slot, queue_items, outcomes, 0, mode)
-
-        for index, item in enumerate(queue_items):
-            _render_live_run_queue(queue_slot, queue_items, outcomes, index, mode)
-            outcome = er.run_single(
-                provider,
-                item["model_id"],
-                item["task"],
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
-            outcomes.append(outcome)
-            _render_live_run_queue(queue_slot, queue_items, outcomes, index + 1, mode)
-
-        result = er.CompareRunResult(
-            run_id=run_id,
-            provider=getattr(provider, "name", ""),
-            model_ids=tuple(_dedupe(model_ids)),
-            mode=mode,
-            created_at=datetime.now().isoformat(timespec="seconds"),
-            outcomes=tuple(outcomes),
+        _execute_run_queue(
+            provider_name,
+            queue_items,
+            model_ids,
+            temperature,
+            max_tokens,
         )
-        persisted = er.persist_compare_result(result)
-        eval_state.set_last_run(result)
-        st.session_state["test_run_persisted"] = persisted
-        st.rerun()
 
     if disabled:
         if service_ready:
@@ -657,11 +818,16 @@ def _render_run_button(
             st.caption("当前未配置模型服务密钥，暂不能发起真实调用。")
 
 
-def _render_live_run_queue(slot, queue_items: list[dict], outcomes: list[er.RunOutcome], cursor: int, mode: str) -> None:
+def _render_live_run_queue(
+    slot,
+    queue_items: list[dict],
+    outcomes: list[er.RunOutcome],
+    current: dict | None,
+    waiting: list[dict],
+    mode: str,
+) -> None:
     total = len(queue_items)
     done = len(outcomes)
-    current = queue_items[cursor] if cursor < total else None
-    waiting = queue_items[cursor + 1:] if current else []
     with slot.container():
         st.markdown("**运行队列**")
         st.caption(
@@ -681,7 +847,7 @@ def _render_live_run_queue(slot, queue_items: list[dict], outcomes: list[er.RunO
         if outcomes:
             st.markdown("**已完成结果**")
             for index, outcome in enumerate(outcomes, start=1):
-                _render_run_outcome_preview(outcome, index, expanded=False)
+                _render_run_outcome_card(outcome, index, compact=True)
         if waiting:
             waiting_text = "；".join(
                 f"{item['case_id']} · {item['model_id']}" for item in waiting[:5]
@@ -690,57 +856,150 @@ def _render_live_run_queue(slot, queue_items: list[dict], outcomes: list[er.RunO
             st.caption(f"等待中：{waiting_text}{suffix}")
 
 
-def _render_results() -> None:
+def _render_results(provider_name: str, temperature, max_tokens) -> None:
     result = eval_state.get_last_run()
+    state = _run_state()
+    if result is None and state and _partial_outcomes():
+        result = _compare_result_from_state(state, _partial_outcomes())
     if result is None:
+        if state and state.get("status") in {"running", "interrupted", "failed"}:
+            _render_unfinished_run_without_result(state, provider_name, temperature, max_tokens)
+            return
         render_empty_state("尚未运行模型回答。配置模型与任务后点击「运行模型回答」。")
         return
 
     summary = er.summarize_outcomes(result.outcomes)
     failed = summary.total - summary.success
+    run_status = _run_status_for_result(result)
     st.markdown(
         f"本次运行：样本 {len({o.case_id for o in result.outcomes})} 个 · "
         f"模型 {len(result.model_ids)} 个 · 成功 {summary.success} 条 · 失败 {failed} 条 · "
         f"运行模式：{_mode_label(result.mode)}"
     )
+    if run_status in {"running", "interrupted", "failed"}:
+        _render_partial_run_notice(result, provider_name, temperature, max_tokens)
     if summary.total and summary.success == 0:
-        st.warning("本次运行没有任何成功回答；请查看明细中的错误码与错误信息，或先做连通性检查。")
+        st.caption("本次运行没有成功回答，失败原因见下方结果卡片。")
     if er.is_mock_result(result):
         st.caption("本次为模拟回退模式运行，回答为模拟生成。")
 
-    first_success = next((outcome for outcome in result.outcomes if outcome.success), None)
-    first_failed = next((outcome for outcome in result.outcomes if not outcome.success), None)
-    if first_success is not None:
-        _render_run_outcome_preview(first_success, 1, expanded=False, heading="第一条成功回答")
-    elif first_failed is not None:
-        _render_run_outcome_preview(first_failed, 1, expanded=False, heading="第一条失败原因")
+    st.markdown("**模型回答**")
+    for index, outcome in enumerate(result.outcomes, start=1):
+        _render_run_outcome_card(outcome, index)
 
-    with st.expander("查看全部回答", expanded=False):
-        _render_answer_viewer(result)
-
-    with st.expander("查看运行明细", expanded=False):
-        _render_results_table(result)
+    if st.button("查看技术明细", key="test_run_technical_details", type="tertiary"):
+        _render_technical_details_dialog(result)
 
 
-def _render_run_outcome_preview(
+def _render_unfinished_run_without_result(state: dict, provider_name: str, temperature, max_tokens) -> None:
+    queue_items = list(state.get("queue_items") or [])
+    st.markdown("**本次运行未完成**")
+    st.caption(f"已完成 0 条 · 未完成 {len(queue_items)} 条 · 失败 0 条。未完成项可继续运行。")
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        if st.button(
+            "继续未完成项",
+            key="test_run_resume_empty",
+            type="secondary",
+            disabled=not queue_items,
+            use_container_width=True,
+        ):
+            _execute_run_queue(
+                provider_name,
+                queue_items,
+                list(state.get("model_ids") or []),
+                temperature,
+                max_tokens,
+                existing_outcomes=[],
+                base_state=state,
+            )
+    with col2:
+        if st.button("放弃本次运行", key="test_run_discard_empty", type="tertiary", use_container_width=True):
+            _clear_run_state()
+            eval_state.clear()
+            st.rerun()
+
+
+def _render_partial_run_notice(result, provider_name: str, temperature, max_tokens) -> None:
+    state = _run_state()
+    queue_items = list(state.get("queue_items") or [])
+    outcomes = list(result.outcomes)
+    remaining = build_remaining_queue_items(queue_items, outcomes)
+    failed = sum(1 for outcome in outcomes if not outcome.success)
+    status = _run_status_for_result(result)
+    if status == "completed":
+        return
+    st.markdown("**本次运行未完成**")
+    st.caption(
+        f"已完成 {len(outcomes)} 条 · 未完成 {len(remaining)} 条 · 失败 {failed} 条。"
+        "已完成回答已保留；未完成项可继续运行。"
+    )
+    if state.get("message"):
+        st.caption(str(state.get("message")))
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        if st.button(
+            "继续未完成项",
+            key="test_run_resume",
+            type="secondary",
+            disabled=not remaining,
+            use_container_width=True,
+        ):
+            _execute_run_queue(
+                provider_name,
+                remaining,
+                list(state.get("model_ids") or []),
+                temperature,
+                max_tokens,
+                existing_outcomes=outcomes,
+                base_state=state,
+            )
+    with col2:
+        if st.button("放弃本次运行", key="test_run_discard_partial", type="tertiary", use_container_width=True):
+            _clear_run_state()
+            eval_state.clear()
+            st.rerun()
+
+
+def _render_run_outcome_card(
     outcome: er.RunOutcome,
     index: int,
     *,
-    expanded: bool = False,
-    heading: str | None = None,
+    compact: bool = False,
 ) -> None:
-    title = heading or f"{index}. {outcome.case_id} · {outcome.model_id}"
-    st.markdown(f"**{title}**")
+    with st.container(border=True):
+        status = "已完成" if outcome.success else "未获得有效回答"
+        elapsed = "—" if outcome.latency_ms is None else f"{outcome.latency_ms} ms"
+        st.markdown(f"**{index}. {outcome.model_id}**")
+        st.caption(f"任务编号：{outcome.case_id} · 状态：{status} · 耗时：{elapsed}")
+        if outcome.success:
+            answer = outcome.answer_text or "—"
+            preview = _answer_preview(answer)
+            st.markdown(preview)
+            if len(answer) > _ANSWER_PREVIEW_LIMIT and not compact:
+                if st.button(
+                    "查看全文",
+                    key=f"test_run_full_answer_{index}_{_safe_key(outcome.model_id)}_{_safe_key(outcome.case_id)}",
+                    type="tertiary",
+                ):
+                    _render_full_answer_dialog(outcome)
+        else:
+            st.markdown(f"错误码：`{_dash(outcome.error_code)}`")
+            st.markdown(f"错误信息：{_short(outcome.error_message, 180)}")
+            guidance = _failure_guidance(outcome)
+            if guidance:
+                st.caption(guidance)
+
+
+@st.dialog("模型回答全文", width="large")
+def _render_full_answer_dialog(outcome: er.RunOutcome) -> None:
     st.caption(f"任务编号：{outcome.case_id} · 模型：{outcome.model_id}")
-    if outcome.success:
-        st.markdown(f"回答摘要：{escape(_short(outcome.answer_text, 160))}")
-        with st.expander("查看完整回答", expanded=expanded):
-            render_text_block("模型回答", outcome.answer_text or "—")
-    else:
-        st.warning(
-            f"未获得有效回答。错误码：{_dash(outcome.error_code)}；"
-            f"错误信息：{_short(outcome.error_message, 160)}"
-        )
+    render_text_block("模型回答", outcome.answer_text or "—")
+
+
+@st.dialog("技术明细", width="large")
+def _render_technical_details_dialog(result) -> None:
+    _render_results_table(result)
 
 
 def _render_results_table(result) -> None:
@@ -806,13 +1065,19 @@ def _render_scoring(base, provider_name: str, task_records: list[dict]) -> None:
         st.caption("请先运行模型回答，再生成评分草稿。")
         return
 
-    st.caption("评分草稿需人工复核后才进入正式结论；被测模型未看到 Gold Answer 或 Rubric。")
+    run_status = _run_status_for_result(result)
+    partial_run = run_status in {"running", "interrupted", "failed"}
+    if partial_run:
+        st.caption("本次运行未完成；如生成评分草稿，将仅对已完成且成功的回答评分。")
+    else:
+        st.caption("评分草稿需人工复核后才进入正式结论；被测模型未看到 Gold Answer 或 Rubric。")
     no_success = result.success_count == 0
     if no_success:
         st.warning("本次运行没有成功回答，无法评分。")
 
+    button_label = "仅对已完成回答生成评分草稿" if partial_run else "生成评分草稿"
     if st.button(
-        "生成评分草稿", type="primary", disabled=no_success, key="test_run_score_run"
+        button_label, type="primary", disabled=no_success, key="test_run_score_run"
     ):
         provider = get_text_provider(prefer=provider_name)
         gold_map = getattr(base, "gold_answer_map", {}) or {}
@@ -919,6 +1184,37 @@ def _score_status_level(outcome) -> str:
     return level
 
 
+def _run_status_for_result(result) -> str:
+    state = _run_state()
+    if state and str(state.get("run_id") or "") == str(getattr(result, "run_id", "")):
+        return str(state.get("status") or "completed")
+    return "completed"
+
+
+def _answer_preview(answer: str) -> str:
+    text = str(answer or "").strip() or "—"
+    if len(text) <= _ANSWER_PREVIEW_LIMIT:
+        return text
+    return text[:_ANSWER_PREVIEW_LIMIT].rstrip() + "…"
+
+
+def _failure_guidance(outcome) -> str:
+    code = str(getattr(outcome, "error_code", "") or "").strip().lower()
+    if code in {"missing_api_key", "unauthorized", "forbidden"}:
+        return "请检查 SILICONFLOW_API_KEY、账户权限或模型访问权限。"
+    if code in {"timeout", "gateway_timeout"}:
+        return "模型服务响应超时，可稍后重试或更换模型。"
+    if code == "rate_limited":
+        return "请求触发限流，请稍后重试。"
+    if code == "empty_response":
+        return "模型返回成功但回答为空，建议重试或更换模型。"
+    if code in {"bad_request", "not_found"}:
+        return "请检查模型 ID 或请求参数。"
+    if code == "runtime_error":
+        return "已停止后续任务，已完成回答仍保留。"
+    return ""
+
+
 def _kv_table_html(rows: list[tuple[str, str]]) -> str:
     body = "".join(
         f"<tr><td>{escape(str(key))}</td><td>{escape(str(value))}</td></tr>"
@@ -941,3 +1237,8 @@ def _short(value, limit: int = 40) -> str:
     if not text:
         return "—"
     return text if len(text) <= limit else text[:limit] + "…"
+
+
+def _safe_key(value) -> str:
+    text = "".join(ch if ch.isalnum() else "_" for ch in str(value or ""))
+    return text[:80] or "item"
