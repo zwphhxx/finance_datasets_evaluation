@@ -13,10 +13,14 @@ from src.ui.test_run import (
     build_remaining_queue_items,
     build_run_plan_summary,
     build_run_queue_items,
+    build_score_plan_summary,
+    build_score_queue_items,
     build_sample_options,
     build_sample_selection_rows,
+    build_score_view_options,
     build_score_summary_rows,
     default_outcome_view_index,
+    default_score_view_index,
     filter_sample_selection_options,
     get_advanced_setting_items,
     get_test_run_steps,
@@ -122,6 +126,30 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("默认展示第一条失败原因", source)
         self.assertNotIn("for index, outcome in enumerate(result.outcomes", results_source)
         self.assertNotIn("_render_run_outcome_card(outcome, index)", results_source)
+
+    def test_score_draft_streams_and_shows_rationale_by_default(self):
+        source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+        score_source = source[
+            source.index("def _render_scoring"):
+            source.index("def _render_score_compare_table")
+        ]
+
+        self.assertIn("评分队列", source)
+        self.assertIn("正在评分", source)
+        self.assertIn("已生成评分", source)
+        self.assertIn("跳过失败回答", source)
+        self.assertIn("build_score_queue_items", source)
+        self.assertIn("build_score_view_options", source)
+        self.assertIn("default_score_view_index", source)
+        self.assertIn("sc.score_single", source)
+        self.assertIn("复核提示", source)
+        self.assertIn("维度评分", source)
+        self.assertIn("评分依据", source)
+        self.assertIn("未返回明确依据", source)
+        self.assertIn("查看评分对比表", source)
+        self.assertNotIn("st.spinner", score_source)
+        self.assertNotIn("sc.score_compare(", score_source)
+        self.assertNotIn('st.expander("评分对比表"', source)
 
     def test_model_selection_options_are_bounded_and_searchable(self):
         models = [
@@ -380,6 +408,60 @@ class RunPlanTests(unittest.TestCase):
 
 
 class ScoreDraftTests(unittest.TestCase):
+    def test_score_queue_and_plan_skip_failed_model_answers(self):
+        compare = er.CompareRunResult(
+            run_id="R1",
+            provider="mock",
+            model_ids=("m1", "m2"),
+            mode="mock",
+            created_at="2026-07-05T12:00:00",
+            outcomes=(
+                er.RunOutcome("A", "analysis", "mock", "m1", "success", True, answer_text="回答"),
+                er.RunOutcome("A", "analysis", "mock", "m2", "failed", False, error_message="失败"),
+            ),
+        )
+
+        queue = build_score_queue_items(compare)
+        plan = build_score_plan_summary(compare)
+
+        self.assertEqual([("A", "m1")], [(item.case_id, item.model_id) for item in queue])
+        self.assertEqual(2, plan["total"])
+        self.assertEqual(1, plan["scoreable"])
+        self.assertEqual(1, plan["skipped"])
+        self.assertTrue(plan["can_score"])
+
+    def test_score_view_options_prefer_first_success(self):
+        outcomes = [
+            sc.ScoreOutcome(
+                case_id="A",
+                task_type="analysis",
+                eval_model="vendor/model-failed",
+                judge_provider="judge",
+                judge_model="judge/model",
+                judge_status="failed",
+                scores={},
+                total_score=None,
+                error_code="judge_parse_error",
+            ),
+            sc.ScoreOutcome(
+                case_id="B",
+                task_type="analysis",
+                eval_model="vendor/model-ok",
+                judge_provider="judge",
+                judge_model="judge/model",
+                judge_status="success",
+                scores={"accuracy_score": 20},
+                total_score=78,
+                review_status="pending",
+            ),
+        ]
+
+        options = build_score_view_options(outcomes)
+
+        self.assertEqual(1, default_score_view_index(outcomes))
+        self.assertEqual("A｜model-failed｜未评分｜失败", options[0]["label"])
+        self.assertEqual("B｜model-ok｜78分｜待人工复核", options[1]["label"])
+
     def test_score_summary_rows_use_dynamic_dimensions_and_pending_review(self):
         dimensions = [
             {"field": "accuracy_score", "name": "准确性", "full_mark": 30},

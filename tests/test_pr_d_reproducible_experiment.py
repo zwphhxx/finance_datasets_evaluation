@@ -63,10 +63,12 @@ class PageFramingTests(unittest.TestCase):
         config = PAGE_CONFIG_BY_KEY["test_run"]
         self.assertIn("不看到理想回复标准 / Gold Answer", config.boundary)
 
-    def test_page_keeps_live_run_boundary_in_collapsed_note(self):
+    def test_page_keeps_live_run_boundary_and_auxiliary_details(self):
         self.assertIn("RUN_BOUNDARY_NOTE", _PAGE_SOURCE)
         self.assertIn("不会覆盖正式结论", _PAGE_SOURCE)
-        self.assertIn("st.expander", _PAGE_SOURCE)
+        self.assertIn("查看评分对比表", _PAGE_SOURCE)
+        self.assertIn('@st.dialog("评分对比表"', _PAGE_SOURCE)
+        self.assertNotIn('st.expander("评分对比表"', _PAGE_SOURCE)
 
 
 class ResultsTableColumnsTests(unittest.TestCase):

@@ -64,6 +64,11 @@ _ANSWER_PREVIEW_LIMIT = 1500
 _RUN_STATE_KEY = "test_run_run_state"
 _PARTIAL_OUTCOMES_KEY = "test_run_partial_outcomes"
 _LAST_RUN_STATUS_KEY = "test_run_last_run_status"
+_SCORE_STATE_KEY = "test_run_score_state"
+_PARTIAL_SCORE_OUTCOMES_KEY = "test_run_partial_score_outcomes"
+_LAST_SCORE_STATUS_KEY = "test_run_last_score_status"
+_JUDGE_TEMPERATURE = 0.0
+_JUDGE_MAX_TOKENS = 2048
 
 
 def get_test_run_steps() -> list[str]:
@@ -280,6 +285,45 @@ def build_score_summary_rows(score_result, dimensions) -> list[dict[str, str]]:
     return rows
 
 
+def build_score_queue_items(compare_result) -> list[er.RunOutcome]:
+    """Return successful model answers that can enter judge scoring."""
+    if compare_result is None:
+        return []
+    return [outcome for outcome in getattr(compare_result, "outcomes", []) if outcome.success]
+
+
+def build_score_plan_summary(compare_result) -> dict[str, int | bool]:
+    """Summarize which model answers will enter score draft generation."""
+    outcomes = list(getattr(compare_result, "outcomes", []) or [])
+    scoreable = sum(1 for outcome in outcomes if outcome.success)
+    skipped = len(outcomes) - scoreable
+    return {
+        "total": len(outcomes),
+        "scoreable": scoreable,
+        "skipped": skipped,
+        "can_score": scoreable > 0,
+    }
+
+
+def build_score_view_options(score_outcomes: list[sc.ScoreOutcome]) -> list[dict[str, int | str]]:
+    """Build selector options for reviewing one score draft at a time."""
+    return [
+        {
+            "index": index,
+            "label": _score_option_label(outcome),
+        }
+        for index, outcome in enumerate(score_outcomes or [])
+    ]
+
+
+def default_score_view_index(score_outcomes: list[sc.ScoreOutcome]) -> int:
+    """Prefer the first successful score; otherwise show the first judge failure."""
+    for index, outcome in enumerate(score_outcomes or []):
+        if outcome.ok:
+            return index
+    return 0
+
+
 def render_test_run_page(data_bundle: dict) -> None:
     base = data_bundle["base"]
 
@@ -314,7 +358,7 @@ def render_test_run_page(data_bundle: dict) -> None:
 
     render_numbered_section("03", TEST_RUN_STEPS[2])
     _render_scoring(base, provider_name, task_records)
-    _render_score_results()
+    _render_score_results(task_records)
     _render_pending_dialogs(sample_options)
 
 
@@ -713,6 +757,68 @@ def _clear_run_state() -> None:
     st.session_state.pop("test_run_persisted", None)
 
 
+def _score_state() -> dict:
+    state = st.session_state.get(_SCORE_STATE_KEY)
+    return state if isinstance(state, dict) else {}
+
+
+def _partial_score_outcomes() -> list[sc.ScoreOutcome]:
+    return list(st.session_state.get(_PARTIAL_SCORE_OUTCOMES_KEY, []) or [])
+
+
+def _set_score_state(
+    *,
+    status: str,
+    score_run_id: str,
+    run_id: str,
+    judge_provider: str,
+    judge_model: str,
+    mode: str,
+    created_at: str,
+    queue_items: list[er.RunOutcome],
+    outcomes: list[sc.ScoreOutcome],
+    skipped_count: int,
+    message: str = "",
+) -> None:
+    st.session_state[_SCORE_STATE_KEY] = {
+        "status": status,
+        "score_run_id": score_run_id,
+        "run_id": run_id,
+        "judge_provider": judge_provider,
+        "judge_model": judge_model,
+        "mode": mode,
+        "created_at": created_at,
+        "queue_items": list(queue_items),
+        "skipped_count": int(skipped_count),
+        "message": message,
+    }
+    st.session_state[_PARTIAL_SCORE_OUTCOMES_KEY] = list(outcomes)
+    st.session_state[_LAST_SCORE_STATUS_KEY] = status
+
+
+def _clear_score_state() -> None:
+    st.session_state.pop(_SCORE_STATE_KEY, None)
+    st.session_state.pop(_PARTIAL_SCORE_OUTCOMES_KEY, None)
+    st.session_state.pop(_LAST_SCORE_STATUS_KEY, None)
+    st.session_state.pop("test_run_score_persisted", None)
+
+
+def _score_result_from_state(state: dict | None = None, outcomes: list[sc.ScoreOutcome] | None = None):
+    state = state or _score_state()
+    outcomes = _partial_score_outcomes() if outcomes is None else list(outcomes)
+    if not state:
+        return None
+    return sc.ScoreResult(
+        score_run_id=str(state.get("score_run_id") or sc.generate_score_run_id()),
+        run_id=str(state.get("run_id") or ""),
+        judge_provider=str(state.get("judge_provider") or ""),
+        judge_model=str(state.get("judge_model") or sc.DEFAULT_JUDGE_MODEL),
+        mode=str(state.get("mode") or "live"),
+        created_at=str(state.get("created_at") or datetime.now().isoformat(timespec="seconds")),
+        outcomes=tuple(outcomes),
+    )
+
+
 def _compare_result_from_state(state: dict | None = None, outcomes: list[er.RunOutcome] | None = None):
     state = state or _run_state()
     outcomes = _partial_outcomes() if outcomes is None else list(outcomes)
@@ -745,6 +851,7 @@ def _finalize_run_result(status: str, state: dict, outcomes: list[er.RunOutcome]
     if result is not None:
         persisted = er.persist_compare_result(result)
         eval_state.set_last_run(result)
+        _clear_score_state()
         st.session_state["test_run_persisted"] = persisted
 
 
@@ -842,6 +949,149 @@ def _execute_run_queue(
     st.rerun()
 
 
+def _unexpected_score_failure_outcome(
+    provider,
+    judge_model: str,
+    run_outcome: er.RunOutcome,
+    dimensions,
+) -> sc.ScoreOutcome:
+    return sc.ScoreOutcome(
+        case_id=run_outcome.case_id,
+        task_type=run_outcome.task_type,
+        eval_model=run_outcome.model_id,
+        judge_provider=str(getattr(provider, "name", "")),
+        judge_model=judge_model,
+        judge_status="failed",
+        scores={d["field"]: None for d in dimensions},
+        total_score=None,
+        error_code="runtime_error",
+        error_message="评分过程中出现未预期错误，已停止后续评分。",
+    )
+
+
+def _finalize_score_result(status: str, state: dict, outcomes: list[sc.ScoreOutcome], message: str = "") -> None:
+    queue_items = list(state.get("queue_items") or [])
+    _set_score_state(
+        status=status,
+        score_run_id=str(state.get("score_run_id") or sc.generate_score_run_id()),
+        run_id=str(state.get("run_id") or ""),
+        judge_provider=str(state.get("judge_provider") or ""),
+        judge_model=str(state.get("judge_model") or sc.DEFAULT_JUDGE_MODEL),
+        mode=str(state.get("mode") or "live"),
+        created_at=str(state.get("created_at") or datetime.now().isoformat(timespec="seconds")),
+        queue_items=queue_items,
+        outcomes=outcomes,
+        skipped_count=int(state.get("skipped_count") or 0),
+        message=message,
+    )
+    score_result = _score_result_from_state(_score_state(), outcomes)
+    if score_result is not None and score_result.outcomes:
+        persisted = sc.persist_score_result(score_result)
+        eval_state.set_last_score(score_result)
+        st.session_state["test_run_score_dims"] = list(st.session_state.get("test_run_score_dims") or [])
+        st.session_state["test_run_score_persisted"] = persisted
+
+
+def _execute_score_queue(
+    provider_name: str,
+    compare_result,
+    base,
+    task_records: list[dict],
+    dimensions: list[dict],
+) -> None:
+    st.session_state["test_run_score_dims"] = list(dimensions or [])
+    queue_items = build_score_queue_items(compare_result)
+    skipped_count = build_score_plan_summary(compare_result)["skipped"]
+    if not queue_items:
+        return
+
+    provider = get_text_provider(prefer=provider_name)
+    judge_model = sc.DEFAULT_JUDGE_MODEL
+    score_run_id = sc.generate_score_run_id()
+    created_at = datetime.now().isoformat(timespec="seconds")
+    mode = "mock" if getattr(provider, "name", "") == "mock" else "live"
+    judge_provider = str(getattr(provider, "name", ""))
+    gold_map = getattr(base, "gold_answer_map", {}) or {}
+    tasks_by_case = {str(row.get("case_id") or ""): row for row in task_records}
+    outcomes: list[sc.ScoreOutcome] = []
+    state = {
+        "score_run_id": score_run_id,
+        "run_id": str(getattr(compare_result, "run_id", "")),
+        "judge_provider": judge_provider,
+        "judge_model": judge_model,
+        "mode": mode,
+        "created_at": created_at,
+        "queue_items": queue_items,
+        "skipped_count": int(skipped_count),
+    }
+    _set_score_state(
+        status="running",
+        score_run_id=score_run_id,
+        run_id=state["run_id"],
+        judge_provider=judge_provider,
+        judge_model=judge_model,
+        mode=mode,
+        created_at=created_at,
+        queue_items=queue_items,
+        outcomes=outcomes,
+        skipped_count=int(skipped_count),
+    )
+
+    queue_slot = st.empty()
+    _render_live_score_queue(queue_slot, queue_items, outcomes, queue_items[0], queue_items[1:], skipped_count, mode)
+
+    interrupted = False
+    message = ""
+    for index, run_outcome in enumerate(queue_items):
+        waiting = queue_items[index + 1:]
+        _render_live_score_queue(queue_slot, queue_items, outcomes, run_outcome, waiting, skipped_count, mode)
+        task = tasks_by_case.get(run_outcome.case_id) or {
+            "case_id": run_outcome.case_id,
+            "task_type": run_outcome.task_type,
+        }
+        gold = gold_map.get(run_outcome.case_id) or {}
+        try:
+            score_outcome = sc.score_single(
+                provider,
+                judge_model,
+                task,
+                run_outcome.answer_text,
+                gold,
+                dimensions,
+                eval_model=run_outcome.model_id,
+                temperature=_JUDGE_TEMPERATURE,
+                max_tokens=_JUDGE_MAX_TOKENS,
+            )
+        except Exception:
+            score_outcome = _unexpected_score_failure_outcome(provider, judge_model, run_outcome, dimensions)
+            interrupted = True
+            message = "本次评分未完成。已生成的评分草稿已保留，未完成项可重新评分。"
+        outcomes.append(score_outcome)
+        _set_score_state(
+            status="running",
+            score_run_id=score_run_id,
+            run_id=state["run_id"],
+            judge_provider=judge_provider,
+            judge_model=judge_model,
+            mode=mode,
+            created_at=created_at,
+            queue_items=queue_items,
+            outcomes=outcomes,
+            skipped_count=int(skipped_count),
+            message=message,
+        )
+        next_item = None if interrupted else (waiting[0] if waiting else None)
+        next_waiting = [] if interrupted or not waiting else waiting[1:]
+        _render_live_score_queue(queue_slot, queue_items, outcomes, next_item, next_waiting, skipped_count, mode)
+        if interrupted:
+            break
+
+    remaining = len(queue_items) - len(outcomes)
+    status = "interrupted" if interrupted or remaining else "completed"
+    _finalize_score_result(status, state, outcomes, message)
+    st.rerun()
+
+
 def _render_run_button(
     run_plan,
     *,
@@ -891,6 +1141,43 @@ def _render_live_run_queue(
         if waiting:
             waiting_text = "；".join(
                 f"{item['case_id']} · {item['model_id']}" for item in waiting[:5]
+            )
+            suffix = f" 等 {len(waiting)} 条" if len(waiting) > 5 else ""
+            st.caption(f"等待中：{waiting_text}{suffix}")
+
+
+def _render_live_score_queue(
+    slot,
+    queue_items: list[er.RunOutcome],
+    outcomes: list[sc.ScoreOutcome],
+    current: er.RunOutcome | None,
+    waiting: list[er.RunOutcome],
+    skipped_count: int,
+    mode: str,
+) -> None:
+    total = len(queue_items)
+    done = len(outcomes)
+    with slot.container():
+        st.markdown("**评分队列**")
+        st.caption(
+            f"待评分回答 {total} 条 · 已完成 {done} / {total} · "
+            f"跳过失败回答 {skipped_count} 条 · 裁判模式：{_mode_label(mode)}"
+        )
+        st.progress((done / total) if total else 0.0)
+        if current:
+            st.markdown(
+                f"正在评分：{current.case_id} · {_model_short_name(current.model_id)}"
+            )
+        else:
+            st.markdown(f"已完成 {done} / {total} · 正在汇总评分草稿")
+
+        if outcomes:
+            st.markdown("**已生成评分**")
+            for index, outcome in enumerate(outcomes, start=1):
+                st.caption(_score_compact_line(outcome, index))
+        if waiting:
+            waiting_text = "；".join(
+                f"{item.case_id} · {_model_short_name(item.model_id)}" for item in waiting[:5]
             )
             suffix = f" 等 {len(waiting)} 条" if len(waiting) > 5 else ""
             st.caption(f"等待中：{waiting_text}{suffix}")
@@ -1158,48 +1445,66 @@ def _render_scoring(base, provider_name: str, task_records: list[dict]) -> None:
 
     run_status = _run_status_for_result(result)
     partial_run = run_status in {"running", "interrupted", "failed"}
+    score_plan = build_score_plan_summary(result)
     if partial_run:
         st.caption("本次运行未完成；如生成评分草稿，将仅对已完成且成功的回答评分。")
     else:
         st.caption("评分草稿需人工复核后才进入正式结论；被测模型未看到 Gold Answer 或 Rubric。")
-    no_success = result.success_count == 0
+    st.caption(
+        f"可评分回答：{score_plan['scoreable']} 条 · "
+        f"跳过失败回答：{score_plan['skipped']} 条。失败回答不会进入评分草稿。"
+    )
+    no_success = not score_plan["can_score"]
     if no_success:
-        st.warning("本次运行没有成功回答，无法评分。")
+        st.warning("没有成功回答，无法生成评分草稿。")
+        failed = next((outcome for outcome in result.outcomes if not outcome.success), None)
+        if failed is not None:
+            _render_selected_outcome_detail(failed, _task_lookup_for_result(result, task_records))
+        return
 
     button_label = "仅对已完成回答生成评分草稿" if partial_run else "生成评分草稿"
     if st.button(
         button_label, type="primary", disabled=no_success, key="test_run_score_run"
     ):
-        provider = get_text_provider(prefer=provider_name)
-        gold_map = getattr(base, "gold_answer_map", {}) or {}
-        tasks_by_case = {str(r.get("case_id")): r for r in task_records}
         dimensions = ds.get_rubric_dimensions()
-        with st.spinner("裁判模型正在评分……"):
-            score_result = sc.score_compare(
-                provider, result, gold_map, tasks_by_case, dimensions,
-            )
-        sc.persist_score_result(score_result)
-        eval_state.set_last_score(score_result)
         st.session_state["test_run_score_dims"] = dimensions
-        st.rerun()
+        _execute_score_queue(provider_name, result, base, task_records, dimensions)
 
 
-def _render_score_results() -> None:
+def _render_score_results(task_records: list[dict]) -> None:
     score_result = eval_state.get_last_score()
+    state = _score_state()
+    if score_result is None and state and _partial_score_outcomes():
+        score_result = _score_result_from_state(state, _partial_score_outcomes())
     if score_result is None:
+        if state and state.get("status") in {"running", "interrupted", "failed"}:
+            _render_unfinished_score_notice(state)
         return
     dimensions = st.session_state.get("test_run_score_dims") or ds.get_rubric_dimensions()
+    state_skipped = int((state or {}).get("skipped_count") or 0)
+    mock_scores = sum(1 for outcome in score_result.outcomes if _is_mock_score_outcome(outcome))
+    failed_scores = sum(
+        1 for outcome in score_result.outcomes
+        if not outcome.ok and not _is_mock_score_outcome(outcome)
+    )
+    pending = sum(1 for outcome in score_result.outcomes if outcome.ok and outcome.review_status == "pending")
 
     st.markdown(
-        f"评分草稿已生成：成功 {score_result.scored_count}/{len(score_result.outcomes)} · "
+        f"评分草稿已生成：成功评分 {score_result.scored_count}/{len(score_result.outcomes)} · "
+        f"待人工复核 {pending} 条 · 跳过失败回答 {state_skipped} 条 · "
+        f"模拟评分 {mock_scores} 条 · 评分失败 {failed_scores} 条 · "
         f"裁判模式：{_mode_label(score_result.mode)}"
     )
-    st.info("评分草稿已生成，需在评测复核页确认或修订后才会进入正式结论。")
+    st.caption("评分草稿需人工复核后才进入正式结论。")
+    if state and state.get("status") in {"running", "interrupted", "failed"}:
+        _render_partial_score_notice(score_result, state)
     if sc.is_mock_score(score_result):
         st.caption("本次为模拟回退模式：未产生真实评分，各维度留空。")
 
-    with st.expander("评分对比表", expanded=False):
-        _render_score_compare_table(score_result, dimensions)
+    _render_score_result_list(score_result, dimensions)
+    _render_score_detail_viewer(score_result, dimensions)
+    if st.button("查看评分对比表", key="test_run_score_compare_details", type="tertiary"):
+        _render_score_compare_dialog(score_result, dimensions)
 
     if ds.database_ready():
         if st.button("进入评测复核", key="test_run_to_review", type="secondary"):
@@ -1207,6 +1512,124 @@ def _render_score_results() -> None:
             st.rerun()
     else:
         st.caption("SQLite 数据层未初始化，评分草稿仅在当前会话展示，暂不能进入复核页归档。")
+
+
+def _render_unfinished_score_notice(state: dict) -> None:
+    queue_items = list(state.get("queue_items") or [])
+    skipped = int(state.get("skipped_count") or 0)
+    st.markdown("**本次评分未完成**")
+    st.caption(
+        f"已评分 0 条 · 未评分 {len(queue_items)} 条 · 失败 0 条 · "
+        f"跳过失败回答 {skipped} 条。页面刷新或连接中断可能导致未完成评分丢失。"
+    )
+
+
+def _render_partial_score_notice(score_result, state: dict) -> None:
+    queue_items = list(state.get("queue_items") or [])
+    remaining = max(0, len(queue_items) - len(score_result.outcomes))
+    failed = sum(1 for outcome in score_result.outcomes if not outcome.ok)
+    st.markdown("**本次评分未完成**")
+    st.caption(
+        f"已评分 {len(score_result.outcomes)} 条 · 未评分 {remaining} 条 · 失败 {failed} 条。"
+        "已生成的评分草稿已保留，未完成项可重新评分。"
+    )
+    if state.get("message"):
+        st.caption(str(state.get("message")))
+
+
+def _render_score_result_list(score_result, dimensions) -> None:
+    if not score_result.outcomes:
+        st.caption("暂无评分草稿。")
+        return
+    headers = ["模型", "样本", "总分", "状态"]
+    header_html = "".join(f"<th>{escape(item)}</th>" for item in headers)
+    rows = ""
+    for outcome in score_result.outcomes:
+        rows += (
+            f"<tr><td>{escape(_model_short_name(outcome.eval_model))}</td>"
+            f"<td>{escape(outcome.case_id)}</td>"
+            f'<td class="check-count">{escape(_score_total_label(outcome, dimensions))}</td>'
+            f"<td>{escape(_score_status_label(outcome))}</td></tr>"
+        )
+    render_evidence_panel(
+        "评分结果",
+        f'<table class="check-table"><thead><tr>{header_html}</tr></thead><tbody>{rows}</tbody></table>',
+    )
+
+
+def _render_score_detail_viewer(score_result, dimensions) -> None:
+    outcomes = list(score_result.outcomes)
+    if not outcomes:
+        return
+    options = build_score_view_options(outcomes)
+    selected = st.selectbox(
+        "当前评分详情",
+        options=[int(item["index"]) for item in options],
+        index=default_score_view_index(outcomes),
+        format_func=lambda idx: str(options[idx]["label"]),
+        key=f"test_run_score_view_{_safe_key(getattr(score_result, 'score_run_id', 'current'))}",
+    )
+    _render_score_detail(outcomes[int(selected)], dimensions)
+
+
+def _render_score_detail(outcome: sc.ScoreOutcome, dimensions) -> None:
+    with st.container(border=True):
+        st.markdown("**当前评分详情**")
+        summary_items = [
+            ("样本", outcome.case_id),
+            ("模型", _model_short_name(outcome.eval_model)),
+            ("总分", _score_total_label(outcome, dimensions)),
+            ("裁判模型", _model_short_name(outcome.judge_model)),
+            ("复核状态", _score_status_label(outcome)),
+        ]
+        _render_answer_summary(
+            summary_items,
+            outcome.eval_model if outcome.eval_model != _model_short_name(outcome.eval_model) else "",
+        )
+        if outcome.ok:
+            st.markdown("#### 复核提示")
+            st.caption(outcome.review_note or "未返回明确复核提示。")
+            st.markdown("#### 维度评分")
+            _render_score_dimensions_table(outcome, dimensions)
+            return
+
+        if _is_mock_score_outcome(outcome):
+            st.markdown("#### 模拟评分")
+            st.caption(outcome.review_note or "未配置模型服务密钥，未产生真实评分。")
+            return
+
+        st.markdown("#### 评分失败")
+        st.markdown(f"错误码：`{_dash(outcome.error_code)}`")
+        st.markdown(f"错误信息：{_short(outcome.error_message, 220)}")
+        guidance = _score_failure_guidance(outcome)
+        if guidance:
+            st.caption(guidance)
+
+
+def _render_score_dimensions_table(outcome: sc.ScoreOutcome, dimensions) -> None:
+    header = "".join(f"<th>{escape(name)}</th>" for name in ["维度", "得分", "满分", "评分依据"])
+    body = ""
+    for dim in dimensions or []:
+        field = str(dim.get("field") or "")
+        name = str(dim.get("name") or field)
+        full_mark = _n(dim.get("full_mark"))
+        score = _n((outcome.scores or {}).get(field))
+        rationale = str((outcome.rationale or {}).get(field) or "").strip() or "未返回明确依据"
+        body += (
+            f"<tr><td>{escape(name)}</td>"
+            f'<td class="check-count">{escape(score)}</td>'
+            f'<td class="check-count">{escape(full_mark)}</td>'
+            f"<td>{escape(rationale)}</td></tr>"
+        )
+    render_evidence_panel(
+        "维度评分",
+        f'<table class="check-table"><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>',
+    )
+
+
+@st.dialog("评分对比表", width="large")
+def _render_score_compare_dialog(score_result, dimensions) -> None:
+    _render_score_compare_table(score_result, dimensions)
 
 
 def _render_score_compare_table(score_result, dimensions) -> None:
@@ -1354,11 +1777,52 @@ def _score_status_label(outcome) -> str:
     return _status_label(getattr(outcome, "judge_status", ""))
 
 
+def _score_option_label(outcome: sc.ScoreOutcome) -> str:
+    return (
+        f"{outcome.case_id}｜"
+        f"{_model_short_name(outcome.eval_model)}｜"
+        f"{_score_option_total_label(outcome)}｜"
+        f"{_score_status_label(outcome)}"
+    )
+
+
+def _score_option_total_label(outcome: sc.ScoreOutcome) -> str:
+    return "未评分" if outcome.total_score is None else f"{outcome.total_score}分"
+
+
+def _score_total_label(outcome: sc.ScoreOutcome, dimensions=None) -> str:
+    if outcome.total_score is None:
+        return "未评分"
+    full = _dimension_total_full_mark(dimensions)
+    return f"{outcome.total_score} / {full}" if full else str(outcome.total_score)
+
+
+def _score_compact_line(outcome: sc.ScoreOutcome, index: int) -> str:
+    return (
+        f"{index}. {outcome.case_id} · {_model_short_name(outcome.eval_model)} · "
+        f"{_score_option_total_label(outcome)} · {_score_status_label(outcome)}"
+    )
+
+
+def _dimension_total_full_mark(dimensions) -> int:
+    total = 0
+    for dim in dimensions or []:
+        try:
+            total += int(dim.get("full_mark") or 0)
+        except (AttributeError, TypeError, ValueError):
+            continue
+    return total
+
+
 def _score_status_level(outcome) -> str:
     if getattr(outcome, "ok", False):
         return "success" if str(getattr(outcome, "review_status", "")).lower() == "confirmed" else "warning"
     _, level = _STATUS_BADGE.get(str(getattr(outcome, "judge_status", "")).strip().lower(), ("未知", "neutral"))
     return level
+
+
+def _is_mock_score_outcome(outcome) -> bool:
+    return str(getattr(outcome, "judge_status", "")).strip().lower() == "mock"
 
 
 def _run_status_for_result(result) -> str:
@@ -1389,6 +1853,23 @@ def _failure_guidance(outcome) -> str:
         return "请检查模型 ID 或请求参数。"
     if code == "runtime_error":
         return "已停止后续任务，已完成回答仍保留。"
+    return ""
+
+
+def _score_failure_guidance(outcome) -> str:
+    code = str(getattr(outcome, "error_code", "") or "").strip().lower()
+    if code in {"missing_api_key", "unauthorized", "forbidden"}:
+        return "请检查模型服务密钥或账户权限。"
+    if code in {"timeout", "gateway_timeout"}:
+        return "模型服务响应超时，可稍后重试。"
+    if code == "rate_limited":
+        return "请求触发限流，请稍后重试。"
+    if code == "judge_parse_error":
+        return "裁判输出未能解析为评分 JSON，可重试或更换裁判模型。"
+    if code == "empty_response":
+        return "裁判模型返回为空，可重试。"
+    if code == "runtime_error":
+        return "已停止后续评分，已生成的评分草稿仍保留。"
     return ""
 
 
