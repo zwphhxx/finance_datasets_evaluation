@@ -214,7 +214,12 @@ class UIUXAuditFixesTests(unittest.TestCase):
     def test_test_run_has_at_most_two_primary_buttons(self):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
         primary_buttons = re.findall(r'type\s*=\s*"primary"', source)
-        self.assertLessEqual(len(primary_buttons), 2, "Test Run 常驻主按钮不应超过 2 个")
+        self.assertEqual(3, len(primary_buttons), "运行、评分和模型弹窗确认可使用 Primary")
+        self.assertIn('"运行模型回答", type="primary"', source)
+        self.assertIn('"生成评分草稿", type="primary"', source)
+        self.assertIn('"确认选择"', source)
+        self.assertIn('key="test_run_model_dialog_confirm"', source)
+        self.assertIn('disabled=not chosen_models', source)
 
     def test_review_seed_mode_hides_confirm_archive(self):
         source = Path("src/ui/review.py").read_text(encoding="utf-8")

@@ -301,6 +301,15 @@ class SiliconFlowProvider(ModelProvider):
         message = result.error_message or "连接正常。"
         return ConnectivityResult(self.name, reachable=result.ok, mode="live", message=message)
 
+    def get_balance(self) -> str | None:
+        """Return account balance when supported by the adapter.
+
+        The current MVP adapter does not rely on a balance endpoint. Returning
+        None keeps the UI deterministic and avoids guessing provider-specific
+        paths or exposing request details.
+        """
+        return None
+
     # -- 解析与映射 -----------------------------------------------------------
     def _to_model_info(self, item: Mapping[str, Any]) -> ModelInfo:
         # 不假设上下文长度、价格、是否推理模型等字段存在；存在则作为可选 metadata。

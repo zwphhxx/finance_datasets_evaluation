@@ -80,6 +80,10 @@ class SiliconFlowConfigTests(unittest.TestCase):
         self.assertEqual(provider.base_url, sf.DEFAULT_BASE_URL)
         self.assertEqual(provider.timeout_seconds, float(sf.DEFAULT_TIMEOUT_SECONDS))
 
+    def test_balance_is_optional(self):
+        provider = SiliconFlowProvider(api_key="sk-x")
+        self.assertIsNone(provider.get_balance())
+
 
 class SiliconFlowListModelsTests(unittest.TestCase):
     def test_filters_text_chat_and_parses(self):

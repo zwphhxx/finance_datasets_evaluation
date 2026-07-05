@@ -15,7 +15,7 @@ import pandas as pd
 import streamlit as st
 
 from app.models import siliconflow as sf
-from app.models.registry import available_providers, get_text_provider
+from app.models.registry import get_text_provider
 from app.services import dataset_service as ds
 from app.services import eval_runner as er
 from app.services import eval_state
@@ -46,28 +46,17 @@ NO_TESTABLE_SAMPLE_MESSAGE = (
 )
 
 TEST_RUN_STEPS = ["评测配置", "运行结果", "评分草稿"]
-ADVANCED_SETTING_ITEMS = [
-    "模型服务 provider",
-    "连通性检查",
-    "加载 / 刷新模型列表",
-    "手动追加模型 ID",
-    "temperature",
-    "max_tokens",
-    "trace_id",
-    "HTTP 状态码",
-    "错误码和原始错误信息",
-]
-
 _STATUS_BADGE = {
     "success": ("成功", "success"),
     "mock": ("模拟回退", "neutral"),
     "failed": ("失败", "danger"),
 }
 
-_MODE_LABEL = {"mock": "模拟回退", "live": "真实调用"}
+_MODE_LABEL = {"mock": "模拟回退", "live": "真实调用", "unconfigured": "未配置"}
 _REVIEW_STATUS_LABEL = {"pending": "待人工复核", "confirmed": "已复核"}
-_DEFAULT_TEMPERATURE = 0.2
-_DEFAULT_MAX_TOKENS = 1024
+_SILICONFLOW_LABEL = "硅基流动"
+_EVAL_TEMPERATURE = 0.1
+_EVAL_MAX_TOKENS = 2048
 
 
 def get_test_run_steps() -> list[str]:
@@ -76,8 +65,8 @@ def get_test_run_steps() -> list[str]:
 
 
 def get_advanced_setting_items() -> list[str]:
-    """Return technical controls/details that belong in collapsed advanced areas."""
-    return ADVANCED_SETTING_ITEMS[:]
+    """No advanced controls are exposed on the test-run page."""
+    return []
 
 
 def build_sample_options(
@@ -176,20 +165,12 @@ def render_test_run_page(data_bundle: dict) -> None:
 
 
 def _default_provider_name() -> str:
-    providers = available_providers()
-    if sf.is_configured() and "siliconflow" in providers:
-        return "siliconflow"
-    return providers[0] if providers else "mock"
+    return sf.PROVIDER_NAME
 
 
 def _current_provider_name() -> str:
-    providers = available_providers()
-    current = str(st.session_state.get("test_run_provider") or _default_provider_name())
-    if current not in providers and providers:
-        current = _default_provider_name()
+    current = _default_provider_name()
     st.session_state["test_run_provider"] = current
-    st.session_state.setdefault("test_run_temperature", _DEFAULT_TEMPERATURE)
-    st.session_state.setdefault("test_run_max_tokens", _DEFAULT_MAX_TOKENS)
     return current
 
 
@@ -241,8 +222,7 @@ def _selected_model_summary(model_ids: list[str]) -> str:
 
 
 def _current_run_mode(provider_name: str) -> str:
-    provider = get_text_provider(prefer=provider_name)
-    return "mock" if provider.name == "mock" else "live"
+    return "live" if provider_name == sf.PROVIDER_NAME and sf.is_configured() else "unconfigured"
 
 
 def _render_configuration_panel(
@@ -256,12 +236,13 @@ def _render_configuration_panel(
     rows = [
         ("已选样本", _selected_sample_summary(selected_tasks)),
         ("已选模型", _selected_model_summary(model_ids)),
+        ("当前模型服务", _SILICONFLOW_LABEL),
         ("预计模型回答", f"{run_plan['planned_responses']} 条"),
         ("当前运行模式", _mode_label(mode)),
     ]
     render_evidence_panel("评测配置", _kv_table_html(rows))
-    if mode == "mock":
-        st.caption("当前为模拟回退模式：回答为模拟生成，不代表真实模型结果。")
+    if mode == "unconfigured":
+        st.caption("当前未配置模型服务密钥，暂不能发起真实调用。模拟回退仅用于开发兜底，不作为页面可选服务。")
 
     col1, col2, col3 = st.columns([1, 1, 1.2])
     with col1:
@@ -275,9 +256,10 @@ def _render_configuration_panel(
             provider_name,
             model_ids,
             selected_tasks,
-            float(st.session_state.get("test_run_temperature", _DEFAULT_TEMPERATURE)),
-            int(st.session_state.get("test_run_max_tokens", _DEFAULT_MAX_TOKENS)),
+            _EVAL_TEMPERATURE,
+            _EVAL_MAX_TOKENS,
             run_plan,
+            service_ready=(mode == "live"),
         )
     if not run_plan["can_run"]:
         st.caption("请选择样本和模型后运行。")
@@ -285,16 +267,6 @@ def _render_configuration_panel(
 
 def _open_model_dialog(provider_name: str) -> None:
     st.session_state["test_run_dialog"] = "models"
-    st.session_state["test_run_provider_dialog"] = provider_name
-    st.session_state["test_run_temperature_dialog"] = float(
-        st.session_state.get("test_run_temperature", _DEFAULT_TEMPERATURE)
-    )
-    st.session_state["test_run_max_tokens_dialog"] = int(
-        st.session_state.get("test_run_max_tokens", _DEFAULT_MAX_TOKENS)
-    )
-    st.session_state["test_run_models_manual_dialog"] = ",".join(
-        st.session_state.get("test_run_manual_model_ids", [])
-    )
 
 
 def _render_pending_dialogs(sample_options: list[dict]) -> None:
@@ -373,68 +345,40 @@ def _render_sample_selection_dialog(sample_options: list[dict]) -> None:
 
 @st.dialog("选择模型", width="large")
 def _render_model_selection_dialog() -> None:
-    providers = available_providers()
-    if not providers:
-        render_empty_state("当前没有可用模型服务。")
-        return
+    provider = sf.SiliconFlowProvider()
+    st.markdown(f"**模型服务：** {_SILICONFLOW_LABEL}")
+    st.caption(f"账户余额：{_siliconflow_balance_label(provider)}")
+    if not sf.is_configured():
+        st.warning("当前未配置模型服务密钥，暂不能发起真实调用。")
 
-    current_provider = str(st.session_state.get("test_run_provider_dialog") or _current_provider_name())
-    provider_index = providers.index(current_provider) if current_provider in providers else 0
-    provider_name = st.selectbox(
-        "模型服务 provider",
-        providers,
-        index=provider_index,
-        key="test_run_provider_dialog",
-    )
-    _render_provider_mode_notice(provider_name)
-
-    provider = get_text_provider(prefer=provider_name)
-    cache_key = f"test_run_models::{provider.name}"
-    if cache_key not in st.session_state:
-        st.session_state[cache_key] = provider.list_models()
-    result = st.session_state.get(cache_key)
-
-    selected_from_list: list[str] = []
-    if result is not None and result.ok and result.models:
-        model_options = [m.id for m in result.models]
-        current_models = [model for model in st.session_state.get("test_run_selected_models", []) if model in model_options]
-        dialog_models = [
-            model
-            for model in st.session_state.get("test_run_models_select_dialog", current_models)
-            if model in model_options
-        ]
-        st.session_state["test_run_models_select_dialog"] = dialog_models or current_models
-        selected_from_list = st.multiselect(
-            "模型列表",
-            model_options,
-            key="test_run_models_select_dialog",
-        )
+    result = provider.list_models()
+    model_options = [model.id for model in result.models] if result.ok else []
+    chosen_models: list[str] = []
+    st.markdown("**可用模型**")
+    if model_options:
+        current_models = set(st.session_state.get("test_run_selected_models", []))
+        for index, model_id in enumerate(model_options):
+            key = f"test_run_model_check_{index}_{_safe_widget_key(model_id)}"
+            if key not in st.session_state:
+                st.session_state[key] = model_id in current_models
+            if st.checkbox(model_id, key=key):
+                chosen_models.append(model_id)
     else:
-        st.warning("模型列表暂不可用。可刷新模型列表，或在高级设置中手动追加模型 ID。")
+        st.caption("模型列表暂未获取，请检查模型服务配置。")
 
-    with st.expander("高级设置", expanded=False):
-        _render_connectivity_check(provider_name)
-        _render_load_model_list_button(provider_name)
-        manual_ids = _render_manual_model_ids(key="test_run_models_manual_dialog")
-        temperature, max_tokens = _render_parameters(
-            temperature_key="test_run_temperature_dialog",
-            max_tokens_key="test_run_max_tokens_dialog",
-        )
-        st.caption("trace_id、HTTP 状态码、错误码和原始错误信息只在运行明细中展示。")
-    manual_ids = _parse_manual_model_ids(st.session_state.get("test_run_models_manual_dialog", ""))
-    chosen_models = _dedupe(list(selected_from_list) + manual_ids)
+    chosen_models = _dedupe(chosen_models)
+    st.caption(f"已选模型：{len(chosen_models)} 个")
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("确认选择", key="test_run_model_dialog_confirm", type="secondary", use_container_width=True):
-            st.session_state["test_run_provider"] = provider_name
+        if st.button(
+            "确认选择",
+            key="test_run_model_dialog_confirm",
+            type="primary",
+            disabled=not chosen_models,
+            use_container_width=True,
+        ):
+            st.session_state["test_run_provider"] = sf.PROVIDER_NAME
             st.session_state["test_run_selected_models"] = chosen_models
-            st.session_state["test_run_manual_model_ids"] = manual_ids
-            st.session_state["test_run_temperature"] = float(
-                st.session_state.get("test_run_temperature_dialog", _DEFAULT_TEMPERATURE)
-            )
-            st.session_state["test_run_max_tokens"] = int(
-                st.session_state.get("test_run_max_tokens_dialog", _DEFAULT_MAX_TOKENS)
-            )
             _clear_dialog_state()
             st.rerun()
     with col2:
@@ -443,61 +387,21 @@ def _render_model_selection_dialog() -> None:
             st.rerun()
 
 
-def _render_provider_mode_notice(provider_name: str) -> None:
-    effective = get_text_provider(prefer=provider_name)
-    if effective.name == "mock":
-        if provider_name != "mock":
-            st.warning("未配置模型服务密钥，已切换为模拟回退模式：回答为模拟生成。")
-        else:
-            st.caption("当前为模拟回退模式：回答为模拟生成。")
-    else:
-        st.caption("当前为真实调用模式。请确认已在本地配置中提供模型服务密钥。")
+def _siliconflow_balance_label(provider: sf.SiliconFlowProvider) -> str:
+    try:
+        balance = provider.get_balance()
+    except Exception:
+        balance = None
+    if balance is None:
+        return "未获取"
+    if isinstance(balance, (int, float)):
+        return f"¥{balance:.2f}"
+    return str(balance).strip() or "未获取"
 
 
-def _render_connectivity_check(provider_name: str) -> None:
-    if st.button("连通性检查", key="test_run_connectivity"):
-        provider = get_text_provider(prefer=provider_name)
-        key_configured = sf.is_configured() if provider_name == "siliconflow" else (provider.name == "mock")
-        listing = provider.list_models()
-        mode = "模拟回退" if provider.name == "mock" else "真实调用"
-        lines = [
-            f"服务标识：{provider.name}",
-            f"模式：{mode}",
-            f"密钥：{'已配置' if key_configured else '未配置'}",
-            f"模型列表：{'成功' if listing.ok else '失败'}",
-        ]
-        if listing.ok and listing.models:
-            lines.append(f"可用模型数：{len(listing.models)}")
-        if listing.error_code:
-            lines.append(f"错误码：{listing.error_code}")
-        if listing.error_message:
-            lines.append(f"错误信息：{listing.error_message}")
-        report = " ｜ ".join(lines)
-        if listing.ok:
-            st.success(report)
-        else:
-            st.error(report)
-
-
-def _render_load_model_list_button(provider_name: str) -> None:
-    st.caption("模型列表从服务实时获取；加载后可在下方多选。")
-    provider = get_text_provider(prefer=provider_name)
-    cache_key = f"test_run_models::{provider.name}"
-    if st.button("加载 / 刷新模型列表", key="test_run_load_models"):
-        st.session_state[cache_key] = provider.list_models()
-
-
-def _render_manual_model_ids(key: str = "test_run_models_manual") -> list[str]:
-    manual_raw = st.text_input(
-        "手动追加模型 ID（多个用逗号分隔）",
-        key=key,
-        placeholder="输入模型 ID，多个用逗号分隔",
-    )
-    return _parse_manual_model_ids(manual_raw)
-
-
-def _parse_manual_model_ids(value: object) -> list[str]:
-    return [item.strip() for item in str(value or "").split(",") if item.strip()]
+def _safe_widget_key(value: str) -> str:
+    text = "".join(ch if ch.isalnum() else "_" for ch in str(value))
+    return text[:80] or "model"
 
 
 def eligible_case_ids(task_records: list[dict], gold_map: dict, rubric_dimensions: list[dict] | None) -> list[str]:
@@ -513,30 +417,17 @@ def eligible_case_ids(task_records: list[dict], gold_map: dict, rubric_dimension
     return eligible
 
 
-def _render_parameters(
+def _render_run_button(
+    provider_name,
+    model_ids,
+    selected_tasks,
+    temperature,
+    max_tokens,
+    run_plan,
     *,
-    temperature_key: str = "test_run_temperature",
-    max_tokens_key: str = "test_run_max_tokens",
-) -> tuple[float, int]:
-    col1, col2 = st.columns(2)
-    temperature_default = float(st.session_state.get(temperature_key, _DEFAULT_TEMPERATURE))
-    max_tokens_default = int(st.session_state.get(max_tokens_key, _DEFAULT_MAX_TOKENS))
-    temperature = col1.slider("temperature", 0.0, 2.0, temperature_default, 0.1, key=temperature_key)
-    max_tokens = int(
-        col2.number_input(
-            "max_tokens",
-            min_value=64,
-            max_value=8192,
-            value=max_tokens_default,
-            step=64,
-            key=max_tokens_key,
-        )
-    )
-    return temperature, max_tokens
-
-
-def _render_run_button(provider_name, model_ids, selected_tasks, temperature, max_tokens, run_plan) -> None:
-    disabled = not run_plan["can_run"]
+    service_ready: bool = True,
+) -> None:
+    disabled = not run_plan["can_run"] or not service_ready
     if st.button("运行模型回答", type="primary", disabled=disabled, key="test_run_run"):
         provider = get_text_provider(prefer=provider_name)
         total = int(run_plan["planned_responses"])
@@ -568,7 +459,10 @@ def _render_run_button(provider_name, model_ids, selected_tasks, temperature, ma
         st.rerun()
 
     if disabled:
-        st.caption("请先选择至少一个模型与至少一道任务，再运行评测。")
+        if service_ready:
+            st.caption("请先选择至少一个模型与至少一道任务，再运行评测。")
+        else:
+            st.caption("当前未配置模型服务密钥，暂不能发起真实调用。")
 
 
 def _render_results() -> None:

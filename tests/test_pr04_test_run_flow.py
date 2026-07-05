@@ -23,32 +23,29 @@ class TestRunFlowStructureTests(unittest.TestCase):
         )
 
     def test_advanced_settings_keep_technical_controls_collapsed(self):
-        items = get_advanced_setting_items()
-        for expected in [
-            "模型服务 provider",
-            "连通性检查",
-            "加载 / 刷新模型列表",
-            "手动追加模型 ID",
-            "temperature",
-            "max_tokens",
-            "trace_id",
-            "HTTP 状态码",
-            "错误码和原始错误信息",
-        ]:
-            self.assertIn(expected, items)
+        self.assertEqual([], get_advanced_setting_items())
 
     def test_selection_controls_are_dialog_driven(self):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
 
         self.assertIn('@st.dialog("选择样本"', source)
         self.assertIn('@st.dialog("选择模型"', source)
+        self.assertIn("模型服务：", source)
+        self.assertIn("硅基流动", source)
+        self.assertIn("账户余额", source)
         self.assertIn("test_run_selected_cases", source)
         self.assertIn("test_run_selected_models", source)
         self.assertIn("test_run_cases_dialog", source)
-        self.assertIn("test_run_models_select_dialog", source)
+        self.assertIn("test_run_model_check_", source)
         self.assertNotIn('render_numbered_section("04"', source)
         self.assertNotIn('st.multiselect(\n        "选择样本"', source)
         self.assertNotIn('st.multiselect("选择对比模型"', source)
+        self.assertNotIn("模型服务 provider", source)
+        self.assertNotIn('st.expander("高级设置"', source)
+        self.assertNotIn("加载 / 刷新模型列表", source)
+        self.assertNotIn("手动追加模型 ID", source)
+        self.assertNotIn('st.slider("temperature"', source)
+        self.assertNotIn('number_input(\n            "max_tokens"', source)
 
 
 class SampleSelectionTests(unittest.TestCase):
