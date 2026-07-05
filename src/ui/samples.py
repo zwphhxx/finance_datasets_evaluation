@@ -695,7 +695,7 @@ def render_samples_page(data_bundle: dict) -> None:
 
     _render_top_actions()
 
-    render_numbered_section("01", "查询样本")
+    render_numbered_section("01", "查询样本", "用于筛选样本列表。")
     keyword, scenario, test_status, difficulty = _render_filters(samples)
     filtered = _filter_samples_for_index(
         samples,
@@ -706,13 +706,13 @@ def render_samples_page(data_bundle: dict) -> None:
         difficulty=difficulty,
     )
 
-    render_numbered_section("02", "样本列表")
+    render_numbered_section("02", "样本列表", "展示当前查询结果。")
     if not filtered:
         render_empty_state("没有符合当前条件的样本。")
     else:
         _render_samples_table(filtered, readiness_map)
 
-    render_numbered_section("03", "当前样本")
+    render_numbered_section("03", "当前样本", "展示当前选中的样本详情。")
     _render_sample_detail(filtered, readiness_map, task_records, gold_map, rubric_dimensions)
 
     col1, col2 = st.columns([1, 3])
@@ -778,6 +778,7 @@ def _render_samples_table(samples: list[sr.Sample], readiness_map: dict[str, ds.
         selected_row = _selected_dataframe_row_index(selection)
         if selected_row is not None and 0 <= selected_row < len(samples):
             _select_sample(samples[selected_row].sample_id)
+        st.caption("点击表格行可查看当前样本。")
     except TypeError:
         st.dataframe(
             frame,
@@ -786,9 +787,6 @@ def _render_samples_table(samples: list[sr.Sample], readiness_map: dict[str, ds.
             height=_sample_table_height(len(rows)),
             column_config=_sample_table_column_config(),
         )
-        _render_sample_selectbox_fallback(samples)
-
-    _render_selected_sample_actions(samples)
 
 
 def _sample_table_height(row_count: int) -> int:
@@ -831,26 +829,6 @@ def _ensure_selected_sample(samples: list[sr.Sample]) -> sr.Sample | None:
         selected_id = sample_ids[0]
         st.session_state["samples_selected_id"] = selected_id
     return next((sample for sample in samples if sample.sample_id == selected_id), samples[0])
-
-
-def _sample_option_label(sample: sr.Sample) -> str:
-    return f"{sample.sample_id} · {_truncate(sample.title, 28)}"
-
-
-def _render_sample_selectbox_fallback(samples: list[sr.Sample]) -> None:
-    selected = _ensure_selected_sample(samples)
-    if selected is None:
-        return
-    sample_by_id = {sample.sample_id: sample for sample in samples}
-    sample_ids = list(sample_by_id)
-    selected_id = st.selectbox(
-        "选择样本",
-        sample_ids,
-        index=_index_of(sample_ids, selected.sample_id),
-        format_func=lambda sample_id: _sample_option_label(sample_by_id[sample_id]),
-        key="samples_index_select_fallback",
-    )
-    _select_sample(selected_id)
 
 
 def _render_selected_sample_actions(samples: list[sr.Sample]) -> None:
@@ -917,6 +895,7 @@ def _render_sample_detail(
     )
 
     _render_current_sample_summary(sample, readiness)
+    _render_selected_sample_actions(samples)
     with st.expander("任务内容", expanded=False):
         render_html(_task_body_html(sample, task_record))
     with st.expander("理想回复标准 / Gold Answer", expanded=False):
