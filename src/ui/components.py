@@ -29,6 +29,21 @@ STYLE_CSS = """
     --fde-green-soft: #e9f0ea;
     --fde-green-border: #cdddd0;
     --fde-gray-soft: #f1f3f6;
+    --fde-status-neutral-bg: #f4f5f7;
+    --fde-status-neutral-border: #dde2ea;
+    --fde-status-neutral-text: #4f5b6a;
+    --fde-status-muted-bg: #f8f9fb;
+    --fde-status-muted-border: #e5e8ee;
+    --fde-status-muted-text: #6a7686;
+    --fde-status-success-bg: #edf3ef;
+    --fde-status-success-border: #d6e2d9;
+    --fde-status-success-text: #2f5d3f;
+    --fde-status-warning-bg: #f5f0e7;
+    --fde-status-warning-border: #e4d9c6;
+    --fde-status-warning-text: #6f5430;
+    --fde-status-danger-bg: #f5ecec;
+    --fde-status-danger-border: #e1d1d1;
+    --fde-status-danger-text: #7a3f3f;
     --fde-shadow: 0 0 0 transparent;
     /* Portfolio aliases: a single accent + shared radius/spacing scale so the
        case-study layer stays consistent with the existing design system. */
@@ -293,35 +308,44 @@ header,
     border: 1px solid transparent;
 }
 .score-high,
-.status-success,
-.status-low {
-    background: var(--fde-green-soft);
-    color: var(--fde-green);
-    border-color: var(--fde-green-border);
+.status-success {
+    background: var(--fde-status-success-bg);
+    color: var(--fde-status-success-text);
+    border-color: var(--fde-status-success-border);
 }
 .score-mid,
 .status-warning,
 .status-medium {
-    background: var(--fde-orange-soft);
-    color: var(--fde-orange);
-    border-color: var(--fde-orange-border);
+    background: var(--fde-status-warning-bg);
+    color: var(--fde-status-warning-text);
+    border-color: var(--fde-status-warning-border);
 }
 .score-low,
 .status-danger,
 .status-high {
-    background: var(--fde-red-soft);
-    color: var(--fde-red);
-    border-color: var(--fde-red-border);
+    background: var(--fde-status-danger-bg);
+    color: var(--fde-status-danger-text);
+    border-color: var(--fde-status-danger-border);
 }
 .status-neutral {
-    background: var(--fde-gray-soft);
-    color: var(--fde-muted);
-    border-color: var(--fde-line);
+    background: var(--fde-status-neutral-bg);
+    color: var(--fde-status-neutral-text);
+    border-color: var(--fde-status-neutral-border);
+}
+.status-low {
+    background: var(--fde-status-neutral-bg);
+    color: var(--fde-status-neutral-text);
+    border-color: var(--fde-status-neutral-border);
+}
+.status-muted {
+    background: var(--fde-status-muted-bg);
+    color: var(--fde-status-muted-text);
+    border-color: var(--fde-status-muted-border);
 }
 .score-neutral {
-    background: var(--fde-gray-soft);
-    color: var(--fde-muted);
-    border-color: var(--fde-line);
+    background: var(--fde-status-neutral-bg);
+    color: var(--fde-status-neutral-text);
+    border-color: var(--fde-status-neutral-border);
 }
 .model-answer-card h4 {
     margin: 0 0 0.35rem 0;
@@ -1552,6 +1576,53 @@ header,
     line-height: 1.55;
     margin: 0.2rem 0 0.65rem 0;
 }
+.review-risk-note {
+    border: 1px solid var(--fde-status-neutral-border);
+    border-left: 3px solid var(--fde-status-neutral-text);
+    background: #ffffff;
+    border-radius: 8px;
+    padding: 0.72rem 0.9rem;
+    margin: 0.45rem 0 0.8rem 0;
+    color: var(--fde-text);
+}
+.review-risk-note strong {
+    display: block;
+    color: var(--fde-text);
+    font-size: 0.95rem;
+    margin-bottom: 0.2rem;
+}
+.review-risk-note span,
+.review-risk-note p {
+    display: block;
+    margin: 0.1rem 0 0 0;
+    color: var(--fde-muted);
+    font-size: 0.9rem;
+    line-height: 1.55;
+}
+.review-risk-note ul {
+    margin-top: 0.35rem;
+}
+.review-risk-note-success {
+    border-color: var(--fde-status-success-border);
+    border-left-color: var(--fde-status-success-text);
+    background: var(--fde-status-success-bg);
+}
+.review-risk-note-warning {
+    border-color: var(--fde-status-warning-border);
+    border-left-color: var(--fde-status-warning-text);
+    background: var(--fde-status-warning-bg);
+}
+.review-risk-note-danger {
+    border-color: var(--fde-status-danger-border);
+    border-left-color: var(--fde-status-danger-text);
+    background: var(--fde-status-danger-bg);
+}
+.review-risk-note-neutral,
+.review-risk-note-muted {
+    border-color: var(--fde-status-neutral-border);
+    border-left-color: var(--fde-status-neutral-text);
+    background: var(--fde-status-muted-bg);
+}
 .text-block-label {
     color: var(--fde-muted);
     font-size: 0.82rem;
@@ -2039,19 +2110,20 @@ def _score_text_and_level(score) -> tuple[str, str]:
 def _normalize_level(level) -> str:
     level_text = str(level).strip().lower()
     mapping = {
-        "高": "high",
-        "中": "medium",
-        "低": "low",
+        "高": "danger",
+        "中": "warning",
+        "低": "neutral",
         "通过": "success",
         "成功": "success",
         "warning": "warning",
         "danger": "danger",
         "error": "danger",
-        "high": "high",
-        "medium": "medium",
-        "low": "low",
+        "high": "danger",
+        "medium": "warning",
+        "low": "neutral",
         "success": "success",
         "neutral": "neutral",
+        "muted": "muted",
     }
     return mapping.get(level_text, "neutral")
 

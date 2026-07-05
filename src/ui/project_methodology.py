@@ -148,7 +148,7 @@ def render_project_methodology_page(data_bundle: dict) -> None:
         }.get(key, "")
         eval_items.append(f"{label}：{note}")
     render_checklist(eval_items)
-    render_pull_quote("高分不代表可直接使用，红线错误一票否决。")
+    render_pull_quote("高分只能作为初稿参考，红线错误一票否决。")
 
     # --- Section 05: Conclusions ---
     render_story_section(

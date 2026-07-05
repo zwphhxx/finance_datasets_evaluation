@@ -153,9 +153,9 @@ def _render_model_boundaries(seed_scores, confirmed_live, seed_errors) -> None:
             not_direct_models.append((model_name, avg))
 
     boundaries = [
-        ("可直接使用", "success", direct_count, direct_models, "总分 ≥85，当前样本内表现稳健，仍建议人工确认最终结论。"),
+        ("可作为初稿参考", "success", direct_count, direct_models, "总分 ≥85，当前样本内表现稳健，仍需结合业务材料确认。"),
         ("必须人工复核", "warning", review_count, review_models, "总分 60–85，存在维度短板，需人工复核后使用。"),
-        ("不可直接使用", "danger", not_direct_count, not_direct_models, "总分 <60 或触发红线，不建议直接采用。"),
+        ("不可作为依据", "danger", not_direct_count, not_direct_models, "总分 <60 或触发红线，不应作为判断依据。"),
     ]
 
     for title, level, count, models, desc in boundaries:
@@ -166,7 +166,7 @@ def _render_model_boundaries(seed_scores, confirmed_live, seed_errors) -> None:
             detail = f"{model_list} 等 {count} 个模型。{desc}"
         render_info_panel(f"{title} ({count})", detail)
 
-    st.caption("红线错误一票否决：触发高严重度红线错误的模型不计入「可直接使用」。边界结论来自当前样本内观察，不代表模型整体能力。")
+    st.caption("红线错误一票否决：触发高严重度红线错误的模型不计入「可作为初稿参考」。边界结论来自当前样本内观察，不代表模型整体能力。")
 
 
 # --------------------------------------------------------------------------- #

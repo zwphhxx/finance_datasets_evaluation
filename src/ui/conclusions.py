@@ -100,29 +100,29 @@ def _render_model_boundaries(seed_scores, confirmed_live, seed_errors) -> None:
         )
         return
 
-    direct_count = 0
+    draft_reference_count = 0
     review_count = 0
-    not_direct_count = 0
-    direct_models = []
+    not_evidence_count = 0
+    draft_reference_models = []
     review_models = []
-    not_direct_models = []
+    not_evidence_models = []
 
     for model_name, group in combined.groupby("model_name"):
         avg = float(group["total_score"].mean())
         if avg >= 85:
-            direct_count += 1
-            direct_models.append((model_name, avg))
+            draft_reference_count += 1
+            draft_reference_models.append((model_name, avg))
         elif avg >= 60:
             review_count += 1
             review_models.append((model_name, avg))
         else:
-            not_direct_count += 1
-            not_direct_models.append((model_name, avg))
+            not_evidence_count += 1
+            not_evidence_models.append((model_name, avg))
 
     boundaries = [
-        ("可直接使用", direct_models, "总分 ≥85，当前样本内表现稳健。"),
+        ("可作为初稿参考", draft_reference_models, "总分 ≥85，当前样本内表现稳健，仍需结合业务材料确认。"),
         ("必须人工复核", review_models, "总分 60–85，存在维度短板。"),
-        ("不可直接使用", not_direct_models, "总分 <60 或触发红线。"),
+        ("不可作为依据", not_evidence_models, "总分 <60 或触发红线。"),
     ]
 
     rows = []

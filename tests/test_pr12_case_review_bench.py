@@ -105,7 +105,7 @@ class VerdictDerivationTests(unittest.TestCase):
             _output_row(total=92), _errors(), {}, pd.DataFrame(), pd.Series({"risk_level": "中"})
         )
         self.assertEqual("direct", verdict["tier"])
-        self.assertEqual("可直接使用", verdict["title"])
+        self.assertEqual("可作为初稿参考", verdict["title"])
 
     def test_review_when_passing_but_weak_dimension(self):
         verdict = cd.build_case_verdict(

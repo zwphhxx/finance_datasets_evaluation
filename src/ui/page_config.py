@@ -45,10 +45,10 @@ PAGE_CONFIGS = [
     PageConfig(
         page_key="review",
         title="评测复核",
-        subtitle="逐条核对理想回复标准 / Gold Answer、模型回复、建议分与扣分理由，确认后归档。",
-        question="本页用于对评分草稿进行人工复核，必要时修订分数与复核说明。",
-        boundary="单题复核只服务于样本内观察，不代表模型整体能力。",
-        highlights="理想回复标准 / Gold Answer、模型回复、维度建议分、扣分理由、红线触发、人工复核。",
+        subtitle="对照理想回复标准、模型回答、评分矩阵和错误归因，完成人工复核确认。",
+        question="本页用于查看模型回答与 Gold Answer 的差距，核对扣分原因、红线提示并确认评分草稿。",
+        boundary="评分草稿只可作为复核输入；确认归档前不可作为正式结论或业务依据。",
+        highlights="任务与背景、Gold Answer、模型回答摘要、评分矩阵、错误归因、红线提示、人工复核。",
         nav_summary="评测复核",
     ),
     PageConfig(

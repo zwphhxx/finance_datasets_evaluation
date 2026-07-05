@@ -146,7 +146,7 @@ def render_case_study_page(data_bundle: dict) -> None:
     render_story_section(
         title="评分方式",
         paragraphs=[
-            "评分草稿由裁判模型对照理想回复标准 / Gold Answer 和 Rubric 评分标准生成，人工可以修订分数和复核说明。高分不代表可直接使用，红线错误仍需人工判断。",
+            "评分草稿由裁判模型对照理想回复标准 / Gold Answer 和 Rubric 评分标准生成，人工可以修订分数和复核说明。高分只能作为初稿参考，红线错误仍需人工判断。",
         ],
         index="04",
     )
@@ -161,7 +161,7 @@ def render_case_study_page(data_bundle: dict) -> None:
         }.get(key, "")
         eval_items.append(f"{label}：{note}")
     st.markdown("\n".join(f"{i + 1}. {item}" for i, item in enumerate(eval_items)))
-    render_pull_quote("高分不代表可直接使用，红线错误一票否决。")
+    render_pull_quote("高分只能作为初稿参考，红线错误一票否决。")
 
     render_story_section(
         title="下一步",

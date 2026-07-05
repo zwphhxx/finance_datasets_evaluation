@@ -73,9 +73,9 @@ VERDICT_PASS_FLOOR = 60.0
 VERDICT_WEAK_RATIO = 0.6
 
 _VERDICT_TIERS = {
-    "direct": ("可直接使用", "success"),
+    "direct": ("可作为初稿参考", "success"),
     "review": ("必须人工复核", "warning"),
-    "not_direct": ("不可直接使用", "danger"),
+    "not_direct": ("不可作为依据", "danger"),
     "none": ("暂无裁判结论", "neutral"),
 }
 
