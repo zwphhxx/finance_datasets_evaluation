@@ -75,7 +75,7 @@ class ConclusionSourceDisplayTests(unittest.TestCase):
         source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
 
         self.assertIn("当前结论", source)
-        self.assertIn("cc.build_model_boundaries(pd.DataFrame(), confirmed_live", source)
+        self.assertIn("cc.build_model_issue_summaries(confirmed_live", source)
         self.assertNotIn("Model_A_baseline", source)
 
 

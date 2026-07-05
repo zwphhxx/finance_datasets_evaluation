@@ -180,6 +180,37 @@ class FrequentIssuesTests(unittest.TestCase):
         self.assertTrue(any("达成率" in issue for issue in issues))
 
 
+class ModelIssueSummaryTests(unittest.TestCase):
+    def test_model_issue_summaries_are_model_scoped(self):
+        live = pd.DataFrame([
+            _live_row("C1", "vendor/model-a", "confirmed", total=88, coverage_score=8),
+            _live_row("C2", "vendor/model-a", "confirmed", total=86, coverage_score=9),
+            _live_row("C3", "vendor/model-b", "confirmed", total=58, evidence_score=4),
+            _live_row("C4", "vendor/model-b", "confirmed", total=56, evidence_score=5),
+        ])
+        confirmed, _ = cc.split_live_scores(live)
+
+        rows = cc.build_model_issue_summaries(confirmed, pd.DataFrame(), pd.DataFrame())
+        by_model = {row["model_name"]: row for row in rows}
+
+        self.assertIn("vendor/model-a", by_model)
+        self.assertIn("vendor/model-b", by_model)
+        self.assertTrue(any("风险覆盖" in issue for issue in by_model["vendor/model-a"]["main_issues"]))
+        self.assertTrue(any("依据可靠性" in issue for issue in by_model["vendor/model-b"]["main_issues"]))
+        self.assertEqual("model-a", by_model["vendor/model-a"]["display_name"])
+        self.assertEqual("暂不建议作为判断依据", by_model["vendor/model-b"]["current_suggestion"])
+
+    def test_model_issue_summary_marks_insufficient_sample(self):
+        live = pd.DataFrame([_live_row("C1", "vendor/model-single", "confirmed", total=94)])
+        confirmed, _ = cc.split_live_scores(live)
+
+        rows = cc.build_model_issue_summaries(confirmed, pd.DataFrame(), pd.DataFrame())
+
+        self.assertEqual(1, len(rows))
+        self.assertEqual("样本数不足，暂不形成判断", rows[0]["current_suggestion"])
+        self.assertTrue(any("样本数不足" in issue for issue in rows[0]["main_issues"]))
+
+
 class RenderTests(unittest.TestCase):
     def test_page_renders_without_exception(self):
         from streamlit.testing.v1 import AppTest
