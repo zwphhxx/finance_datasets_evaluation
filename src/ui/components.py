@@ -1541,6 +1541,17 @@ header,
 .text-block {
     margin: 0.4rem 0 0.9rem 0;
 }
+.asset-section {
+    border-top: 1px solid var(--fde-line);
+    padding-top: 0.65rem;
+    margin: 0.35rem 0 0.9rem 0;
+}
+.asset-section .check-note {
+    color: var(--fde-muted);
+    font-size: 0.88rem;
+    line-height: 1.55;
+    margin: 0.2rem 0 0.65rem 0;
+}
 .text-block-label {
     color: var(--fde-muted);
     font-size: 0.82rem;

@@ -11,34 +11,26 @@ from __future__ import annotations
 import json
 from html import escape
 
-import pandas as pd
 import streamlit as st
 
 from app.services import dataset_service as ds
 from app.services import sample_repository as sr
 from src.gold_quality import field_list, field_text, field_value
-from src.metrics import get_task_by_case_id, merge_case_outputs_with_scores
 from src.ui.components import (
-    render_clean_list,
     render_compact_hero,
     render_empty_state,
     render_evidence_panel,
     render_html,
-    render_key_value_list,
     render_numbered_section,
-    render_section_title,
     render_tag_cloud,
-    render_text_block,
     render_two_column_panel,
 )
 from src.ui.page_config import get_page_config
 from src.ui.tasks import (
     DIFFICULTY_LABELS,
     DOMAIN_LABELS,
-    RISK_LABELS,
     TASK_TYPE_LABELS,
     display_label,
-    summarize_text,
 )
 
 
@@ -107,17 +99,6 @@ def _parse_lines(text: str) -> list[str]:
     return [line.strip() for line in text.splitlines() if line.strip()]
 
 
-def _format_json_text(text: str) -> str:
-    """If text is valid JSON, pretty-print; otherwise return as-is."""
-    if not text:
-        return ""
-    try:
-        obj = json.loads(text)
-        return json.dumps(obj, ensure_ascii=False, indent=2)
-    except Exception:
-        return text
-
-
 def _searchable_text(sample: sr.Sample) -> str:
     """Return a lower-cased string covering common searchable fields."""
     parts = [
@@ -169,6 +150,194 @@ def build_sample_readiness_map(
             rubric_dimensions,
         )
     return readiness
+
+
+def build_sample_table_rows(
+    samples: list[sr.Sample],
+    readiness_map: dict[str, ds.SampleReadiness],
+) -> list[dict[str, str]]:
+    """构建样本列表摘要行，避免把长文本资产铺在表格里。"""
+    rows: list[dict[str, str]] = []
+    for sample in samples:
+        readiness = readiness_map.get(sample.sample_id) or ds.assess_sample_readiness(None, None, [])
+        rows.append({
+            "样本编号": sample.sample_id or "待补充",
+            "标题": _truncate(sample.title, 32),
+            "场景": _truncate(sample.scenario, 24),
+            "状态": sample.status or "待复核",
+            "完整度": readiness.label,
+            "缺失项摘要": _missing_summary(readiness),
+            "难度": _difficulty_label(sample.difficulty),
+            "更新时间": sample.updated_at or "未标注",
+        })
+    return rows
+
+
+def parse_gold_answer_for_display(value) -> dict:
+    """解析 Gold Answer 为详情页展示结构。JSON 异常时保留原文。"""
+    parsed = value if isinstance(value, dict) else None
+    fallback_text = ""
+    if parsed is None:
+        text = str(value or "").strip()
+        if text:
+            try:
+                loaded = json.loads(text)
+                parsed = loaded if isinstance(loaded, dict) else None
+                if parsed is None:
+                    fallback_text = text
+            except Exception:
+                fallback_text = text
+
+    gold = parsed if isinstance(parsed, dict) else {}
+    return {
+        "parsed": isinstance(parsed, dict),
+        "fields": {
+            "核心结论": field_text(gold, "core_conclusion", "待补充"),
+            "关键依据": field_text(gold, "key_evidence", "待补充"),
+            "边界条件": field_text(gold, "boundary_conditions", "待补充"),
+            "人工复核提示": field_text(gold, "manual_review_notes", "待补充"),
+        },
+        "lists": {
+            "必须覆盖点": field_list(gold, "must_have_points"),
+            "不可接受错误": field_list(gold, "unacceptable_errors"),
+        },
+        "fallback_text": fallback_text,
+    }
+
+
+def _rubric_field(item: dict) -> str:
+    return str(item.get("field") or item.get("dimension_field") or "").strip()
+
+
+def _rubric_overrides(value) -> dict[str, dict]:
+    parsed = None
+    if isinstance(value, dict):
+        parsed = value
+    elif isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except Exception:
+            return {}
+    elif isinstance(value, list):
+        parsed = value
+
+    if isinstance(parsed, dict):
+        items = parsed.get("dimensions") if isinstance(parsed.get("dimensions"), list) else [parsed]
+    elif isinstance(parsed, list):
+        items = parsed
+    else:
+        items = []
+    overrides: dict[str, dict] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        field = _rubric_field(item)
+        if field:
+            overrides[field] = item
+    return overrides
+
+
+def build_rubric_rows_for_display(
+    rubric_dimensions: list[dict] | None,
+    rubric_source=None,
+) -> list[dict[str, str]]:
+    """构建 Rubric 展示矩阵，维度来自正式数据层或统一配置。"""
+    if not rubric_dimensions:
+        return []
+    overrides = _rubric_overrides(rubric_source)
+    rows: list[dict[str, str]] = []
+    for dim in rubric_dimensions:
+        if not isinstance(dim, dict):
+            continue
+        field = _rubric_field(dim)
+        merged = {**dim, **overrides.get(field, {})}
+        rows.append({
+            "评分维度": _clean_text(merged.get("name") or merged.get("dimension"), fallback=field or "待补充"),
+            "满分": _clean_text(merged.get("full_mark") or merged.get("weight"), fallback="待补充"),
+            "满分标准": _clean_text(merged.get("full_mark_standard"), fallback="待补充"),
+            "扣分规则": _clean_text(merged.get("deduction_rules"), fallback="待补充"),
+            "关联错误类型或说明": _clean_text(
+                merged.get("related_error_type")
+                or merged.get("related_dimension")
+                or merged.get("note")
+                or merged.get("description"),
+                fallback="—",
+            ),
+        })
+    return rows
+
+
+def build_sample_asset_sections(
+    *,
+    sample: sr.Sample,
+    readiness: ds.SampleReadiness,
+    task_record: dict | None,
+    gold_display: dict,
+    rubric_rows: list[dict],
+) -> list[dict[str, object]]:
+    """返回样本详情的评测资产分区定义。"""
+    return [
+        {
+            "title": "样本基础信息",
+            "caption": "样本在样本库中的业务状态和基础标识。",
+        },
+        {
+            "title": "任务内容",
+            "caption": "被测模型只看到任务题、业务背景和输出要求，不看到理想回复标准、Rubric 或红线错误。",
+        },
+        {
+            "title": "理想回复标准 / Gold Answer",
+            "caption": "裁判评分链路使用的评判锚点，包含应答方向、关键依据和红线边界。",
+        },
+        {
+            "title": "Rubric 评分标准",
+            "caption": "裁判评分链路使用的维度、满分标准和扣分规则。",
+        },
+        {
+            "title": "错误标签与数据优化建议",
+            "caption": "用于解释常见模型问题，并把错误归因转化为后续数据集改进方向。",
+        },
+        {
+            "title": "状态、完整度与复核记录",
+            "caption": "说明样本为什么可以或不能进入发起测试，并保留人工复核备注。",
+        },
+    ]
+
+
+def _table_html(headers: list[str], rows: list[dict[str, str]]) -> str:
+    header_html = "".join(f"<th>{escape(str(header))}</th>" for header in headers)
+    if not rows:
+        body = f'<tr><td colspan="{len(headers)}">待补充</td></tr>'
+    else:
+        body = "".join(
+            "<tr>" + "".join(f"<td>{escape(str(row.get(header, '待补充')))}</td>" for header in headers) + "</tr>"
+            for row in rows
+        )
+    return f'<table class="check-table"><thead><tr>{header_html}</tr></thead><tbody>{body}</tbody></table>'
+
+
+def _kv_html(items: list[tuple[str, str]]) -> str:
+    return "<dl class=\"kv-list\">" + "".join(
+        f"<dt>{escape(str(label))}</dt><dd>{escape(str(value or '待补充'))}</dd>"
+        for label, value in items
+    ) + "</dl>"
+
+
+def _list_html(items: list[str], fallback: str = "待补充") -> str:
+    values = [str(item).strip() for item in items if str(item).strip()]
+    if not values:
+        return f"<p>{escape(fallback)}</p>"
+    return "<ul class=\"clean-list\">" + "".join(f"<li>{escape(value)}</li>" for value in values) + "</ul>"
+
+
+def _asset_section_html(title: str, caption: str, body_html: str) -> str:
+    return (
+        '<div class="asset-section">'
+        f'<div class="evidence-title">{escape(title)}</div>'
+        f'<p class="check-note">{escape(caption)}</p>'
+        f'{body_html}'
+        '</div>'
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -307,14 +476,14 @@ def render_samples_page(data_bundle: dict) -> None:
         kw = keyword.lower()
         filtered = [s for s in filtered if kw in _searchable_text(s)]
 
-    render_numbered_section("02", "样本清单", "一行一样本，状态用轻量标签标识。")
+    render_numbered_section("02", "样本清单", "列表仅保留选择样本所需的摘要信息。")
     if not filtered:
         render_empty_state("没有符合当前筛选条件的样本。")
     else:
         _render_samples_table(filtered, readiness_map)
 
-    render_numbered_section("03", "选中样本详情", "查看样本的完整信息。")
-    _render_sample_detail(filtered, readiness_map)
+    render_numbered_section("03", "选中样本详情", "按评测资产结构查看样本内容、标准、评分依据和入库检查。")
+    _render_sample_detail(filtered, readiness_map, task_records, gold_map, rubric_dimensions)
 
     with st.expander("样本管理", expanded=False):
         _render_sample_management()
@@ -340,27 +509,33 @@ def _render_filters(samples: list[sr.Sample]) -> tuple[str, str, str, str, str]:
 
 
 def _render_samples_table(samples: list[sr.Sample], readiness_map: dict[str, ds.SampleReadiness]) -> None:
-    header_cells = "".join(
-        f"<th>{escape(name)}</th>"
-        for name in ["样本编号", "标题", "场景", "难度", "状态", "完整度", "缺失项摘要"]
-    )
-    body = ""
-    for sample in samples:
-        readiness = readiness_map.get(sample.sample_id) or ds.assess_sample_readiness(None, None, [])
-        body += (
-            f'<tr><td class="check-key">{escape(sample.sample_id)}</td>'
-            f'<td>{escape(_truncate(sample.title, 32))}</td>'
-            f'<td>{escape(_truncate(sample.scenario, 24))}</td>'
-            f'<td>{escape(_difficulty_label(sample.difficulty))}</td>'
-            f'<td>{_status_badge(sample.status)}</td>'
-            f'<td>{_readiness_badge(readiness)}</td>'
-            f'<td>{escape(_missing_summary(readiness))}</td></tr>'
+    rows = build_sample_table_rows(samples, readiness_map)
+    headers = ["样本编号", "标题", "场景", "状态", "完整度", "缺失项摘要", "难度", "更新时间"]
+    body = "".join(
+        (
+            f'<tr><td class="check-key">{escape(row["样本编号"])}</td>'
+            f'<td>{escape(row["标题"])}</td>'
+            f'<td>{escape(row["场景"])}</td>'
+            f'<td>{_status_badge(row["状态"])}</td>'
+            f'<td><span class="status-badge status-{_READINESS_LEVEL.get(row["完整度"], "neutral")}">{escape(row["完整度"])}</span></td>'
+            f'<td>{escape(row["缺失项摘要"])}</td>'
+            f'<td>{escape(row["难度"])}</td>'
+            f'<td>{escape(row["更新时间"])}</td></tr>'
         )
+        for row in rows
+    )
+    header_cells = "".join(f"<th>{escape(name)}</th>" for name in headers)
     table_html = f'<table class="check-table"><thead><tr>{header_cells}</tr></thead><tbody>{body}</tbody></table>'
     render_evidence_panel("样本列表", table_html)
 
 
-def _render_sample_detail(samples: list[sr.Sample], readiness_map: dict[str, ds.SampleReadiness]) -> None:
+def _render_sample_detail(
+    samples: list[sr.Sample],
+    readiness_map: dict[str, ds.SampleReadiness],
+    task_records: list[dict],
+    gold_map: dict,
+    rubric_dimensions: list[dict] | None,
+) -> None:
     if not samples:
         render_empty_state("没有可查看的样本。")
         return
@@ -372,45 +547,113 @@ def _render_sample_detail(samples: list[sr.Sample], readiness_map: dict[str, ds.
         render_empty_state("未找到该样本记录。")
         return
     readiness = readiness_map.get(sample.sample_id) or ds.assess_sample_readiness(None, None, [])
+    task_by_case = {str(row.get("case_id") or ""): row for row in task_records}
+    task_record = task_by_case.get(sample.sample_id) or {}
+    gold_record = gold_map.get(sample.sample_id) or sample.gold_answer
+    gold_display = parse_gold_answer_for_display(gold_record)
+    rubric_rows = build_rubric_rows_for_display(rubric_dimensions, sample.rubric)
+    sections = build_sample_asset_sections(
+        sample=sample,
+        readiness=readiness,
+        task_record=task_record,
+        gold_display=gold_display,
+        rubric_rows=rubric_rows,
+    )
 
-    col1, col2 = st.columns(2)
-    with col1:
-        render_text_block("标题", sample.title)
-        render_text_block("场景", sample.scenario)
-        render_text_block("任务描述", sample.task_prompt)
-        render_text_block("业务背景", sample.business_context or "未标注")
-    with col2:
-        render_key_value_list([
-            ("样本编号", sample.sample_id),
-            ("难度", _difficulty_label(sample.difficulty)),
-            ("状态", sample.status),
-            ("创建时间", sample.created_at or "—"),
-            ("更新时间", sample.updated_at or "—"),
+    _render_asset_overview(sample, readiness, sections[0])
+    left = _task_section_html(sample, task_record, sections[1])
+    right = _gold_section_html(gold_display, sections[2])
+    render_two_column_panel(left, right)
+    _render_rubric_section(rubric_rows, sections[3])
+    left = _error_optimization_section_html(sample, sections[4])
+    right = _readiness_section_html(readiness, sample, sections[5])
+    render_two_column_panel(left, right)
+
+
+def _render_asset_overview(sample: sr.Sample, readiness: ds.SampleReadiness, section: dict) -> None:
+    rows = [
+        ("样本编号", sample.sample_id or "待补充"),
+        ("标题", sample.title or "待补充"),
+        ("场景", sample.scenario or "待补充"),
+        ("难度", _difficulty_label(sample.difficulty)),
+        ("状态", sample.status or "待复核"),
+        ("完整度", readiness.label),
+        ("更新时间", sample.updated_at or "未标注"),
+    ]
+    render_evidence_panel(
+        section["title"],
+        f'<p class="check-note">{escape(str(section["caption"]))}</p>{_kv_html(rows)}',
+    )
+
+
+def _task_section_html(sample: sr.Sample, task_record: dict, section: dict) -> str:
+    task_prompt = task_record.get("question") or sample.task_prompt or "待补充"
+    context = task_record.get("context") or sample.business_context or "待补充"
+    output_requirement = (
+        task_record.get("expected_capability")
+        or task_record.get("task_type")
+        or "按任务题和业务背景输出尽调判断、依据与需进一步核查事项。"
+    )
+    body = (
+        _kv_html([
+            ("任务题", str(task_prompt)),
+            ("业务背景", str(context)),
+            ("输出要求 / 考察能力", str(output_requirement)),
         ])
-        if sample.reviewer_note:
-            render_text_block("复核备注", sample.reviewer_note)
+    )
+    return _asset_section_html(str(section["title"]), str(section["caption"]), body)
 
-    _render_readiness_panel(readiness)
 
-    gold_formatted = _format_json_text(sample.gold_answer)
-    rubric_formatted = _format_json_text(sample.rubric)
-    col3, col4 = st.columns(2)
-    with col3:
-        render_text_block("理想回复标准 / Gold Answer", gold_formatted or "未填写")
-    with col4:
-        render_text_block("Rubric 评分标准", rubric_formatted or "未填写")
+def _gold_section_html(gold_display: dict, section: dict) -> str:
+    fields = gold_display.get("fields", {})
+    lists = gold_display.get("lists", {})
+    fallback = str(gold_display.get("fallback_text") or "").strip()
+    body = _kv_html([
+        ("核心结论", fields.get("核心结论", "待补充")),
+        ("关键依据", fields.get("关键依据", "待补充")),
+        ("边界条件", fields.get("边界条件", "待补充")),
+        ("人工复核提示", fields.get("人工复核提示", "待补充")),
+    ])
+    body += '<div class="text-block-label">必须覆盖点</div>' + _list_html(lists.get("必须覆盖点", []))
+    body += '<div class="text-block-label">不可接受错误</div>' + _list_html(lists.get("不可接受错误", []))
+    if fallback:
+        body += f'<p class="check-note">未识别为结构化 JSON，以下按原文展示：{escape(fallback)}</p>'
+    return _asset_section_html(str(section["title"]), str(section["caption"]), body)
 
-    if sample.model_answers or sample.error_tags or sample.improvement_suggestions:
-        col5, col6, col7 = st.columns(3)
-        with col5:
-            render_text_block("模型回答", "")
-            render_clean_list(sample.model_answers or ["暂无"])
-        with col6:
-            render_text_block("错误标签", "")
-            render_clean_list(sample.error_tags or ["暂无"])
-        with col7:
-            render_text_block("优化建议", "")
-            render_clean_list(sample.improvement_suggestions or ["暂无"])
+
+def _render_rubric_section(rubric_rows: list[dict[str, str]], section: dict) -> None:
+    table = _table_html(
+        ["评分维度", "满分", "满分标准", "扣分规则", "关联错误类型或说明"],
+        rubric_rows,
+    )
+    render_evidence_panel(
+        str(section["title"]),
+        f'<p class="check-note">{escape(str(section["caption"]))}</p>{table}',
+    )
+
+
+def _error_optimization_section_html(sample: sr.Sample, section: dict) -> str:
+    body = '<div class="text-block-label">错误标签</div>'
+    body += _list_html(sample.error_tags, fallback="暂无关联错误标签")
+    body += '<div class="text-block-label">常见模型问题</div>'
+    body += _list_html(sample.model_answers, fallback="暂无历史模型回答记录")
+    body += '<div class="text-block-label">数据优化建议</div>'
+    body += _list_html(sample.improvement_suggestions, fallback="暂无优化建议")
+    return _asset_section_html(str(section["title"]), str(section["caption"]), body)
+
+
+def _readiness_section_html(readiness: ds.SampleReadiness, sample: sr.Sample, section: dict) -> str:
+    rows = [
+        ("是否可进入测试", "是" if readiness.is_testable else "否"),
+        ("检查结果", readiness.label),
+        ("缺失项", "；".join(readiness.missing_items) if readiness.missing_items else "—"),
+        ("复核备注", sample.reviewer_note or "未填写"),
+        ("创建时间", sample.created_at or "未标注"),
+        ("更新时间", sample.updated_at or "未标注"),
+    ]
+    body = _kv_html(rows)
+    body += '<div class="text-block-label">已满足项</div>' + _list_html(readiness.satisfied_items, fallback="待补充")
+    return _asset_section_html(str(section["title"]), str(section["caption"]), body)
 
 
 def _render_readiness_panel(readiness: ds.SampleReadiness) -> None:

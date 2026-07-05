@@ -636,7 +636,14 @@ def get_rubric_dimensions(db_path: Path | None = None) -> list[dict]:
         if not full_mark:
             full_mark = SCORE_DIMENSION_FULL_MARKS.get(field)
         name = _clean(row.get("name")) or default_name
-        dimensions.append({"field": field, "name": name, "full_mark": full_mark})
+        dimensions.append({
+            "field": field,
+            "name": name,
+            "full_mark": full_mark,
+            "full_mark_standard": _clean(row.get("full_mark_standard")),
+            "deduction_rules": _clean(row.get("deduction_rules")),
+            "related_error_type": _clean(row.get("related_error_type") or row.get("related_dimension")),
+        })
     return dimensions
 
 
