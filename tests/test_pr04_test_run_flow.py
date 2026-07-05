@@ -20,6 +20,8 @@ from src.ui.test_run import (
     filter_sample_selection_options,
     get_advanced_setting_items,
     get_test_run_steps,
+    normalize_answer_markdown,
+    _model_short_name,
     _siliconflow_balance_text,
 )
 
@@ -110,6 +112,10 @@ class TestRunFlowStructureTests(unittest.TestCase):
 
         self.assertIn("build_outcome_view_options", source)
         self.assertIn("default_outcome_view_index", source)
+        self.assertIn("normalize_answer_markdown", source)
+        self.assertIn("_model_short_name", source)
+        self.assertIn("_task_lookup_for_result", source)
+        self.assertIn("answer-viewer-summary", Path("src/ui/components.py").read_text(encoding="utf-8"))
         self.assertIn('st.selectbox(\n        "查看回答"', source)
         self.assertIn("_render_selected_outcome_detail", source)
         self.assertIn("失败项不会进入评分草稿", source)
@@ -196,11 +202,15 @@ class TestRunFlowStructureTests(unittest.TestCase):
             ),
         ]
 
-        options = build_outcome_view_options(outcomes)
+        task_lookup = {
+            "A": {"question": "这是一段用于识别资金占用风险的任务题，需要判断相关方往来是否异常。"},
+            "B": {"expected_capability": "重大资产重组判断"},
+        }
+        options = build_outcome_view_options(outcomes, task_lookup)
 
         self.assertEqual(1, default_outcome_view_index(outcomes))
-        self.assertEqual("A · Model-Failed · 未获得有效回答", options[0]["label"])
-        self.assertEqual("B · Model-Success · 已完成", options[1]["label"])
+        self.assertEqual("A｜这是一段用于识别资金占用风险的任务题，需要判…｜Model-Failed｜未获得有效回答", options[0]["label"])
+        self.assertEqual("B｜重大资产重组判断｜Model-Success｜已完成", options[1]["label"])
 
     def test_outcome_view_defaults_to_first_failure_when_no_success(self):
         outcomes = [
@@ -215,6 +225,21 @@ class TestRunFlowStructureTests(unittest.TestCase):
         ]
 
         self.assertEqual(0, default_outcome_view_index(outcomes))
+
+    def test_model_short_name_uses_last_path_segment(self):
+        self.assertEqual("LongCat-2.0", _model_short_name("meituan-longcat/LongCat-2.0"))
+        self.assertEqual("DeepSeek-V4-Pro", _model_short_name("deepseek-ai/DeepSeek-V4-Pro"))
+        self.assertEqual("plain-model", _model_short_name("plain-model"))
+
+    def test_answer_markdown_headings_are_downgraded(self):
+        text = "# 一级\n## 二级\n### 三级\n- 列表\n```python\n# keep\n```"
+        normalized = normalize_answer_markdown(text)
+
+        self.assertIn("#### 一级", normalized)
+        self.assertIn("#### 二级", normalized)
+        self.assertIn("##### 三级", normalized)
+        self.assertIn("- 列表", normalized)
+        self.assertIn("```python\n# keep\n```", normalized)
 
 
 class SampleSelectionTests(unittest.TestCase):

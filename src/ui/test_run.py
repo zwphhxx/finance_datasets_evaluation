@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from html import escape
+import re
 
 import pandas as pd
 import streamlit as st
@@ -25,8 +26,8 @@ from src.ui.components import (
     render_compact_hero,
     render_empty_state,
     render_evidence_panel,
+    render_html,
     render_numbered_section,
-    render_text_block,
 )
 from src.ui.page_config import get_page_config
 from src.ui.tasks import TASK_TYPE_LABELS, display_label, summarize_text
@@ -180,12 +181,15 @@ def build_run_queue_items(model_ids: list[str], selected_tasks: list[dict]) -> l
     return items
 
 
-def build_outcome_view_options(outcomes: list[er.RunOutcome]) -> list[dict[str, int | str]]:
+def build_outcome_view_options(
+    outcomes: list[er.RunOutcome],
+    task_lookup: dict[str, dict] | None = None,
+) -> list[dict[str, int | str]]:
     """Build selector options for reviewing one model answer at a time."""
     return [
         {
             "index": index,
-            "label": _outcome_option_label(outcome),
+            "label": _outcome_option_label(outcome, task_lookup),
         }
         for index, outcome in enumerate(outcomes or [])
     ]
@@ -197,6 +201,30 @@ def default_outcome_view_index(outcomes: list[er.RunOutcome]) -> int:
         if outcome.success:
             return index
     return 0
+
+
+def normalize_answer_markdown(answer: str) -> str:
+    """Downgrade model-authored Markdown headings so answers do not overpower the page."""
+    lines: list[str] = []
+    in_fence = False
+    for line in str(answer or "").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            in_fence = not in_fence
+            lines.append(line)
+            continue
+        if in_fence:
+            lines.append(line)
+            continue
+        match = re.match(r"^(\s{0,3})(#{1,6})(\s+.+)$", line)
+        if not match:
+            lines.append(line)
+            continue
+        indent, hashes, text = match.groups()
+        level = len(hashes)
+        downgraded = {1: 4, 2: 4, 3: 5, 4: 5, 5: 6, 6: 6}[level]
+        lines.append(f"{indent}{'#' * downgraded}{text}")
+    return "\n".join(lines)
 
 
 def build_remaining_queue_items(queue_items: list[dict], outcomes: list[er.RunOutcome]) -> list[dict]:
@@ -282,7 +310,7 @@ def render_test_run_page(data_bundle: dict) -> None:
     _render_configuration_panel(sample_options, selected_tasks, model_ids, provider_name, run_plan)
 
     render_numbered_section("02", TEST_RUN_STEPS[1])
-    _render_results(provider_name, _EVAL_TEMPERATURE, _EVAL_MAX_TOKENS)
+    _render_results(provider_name, _EVAL_TEMPERATURE, _EVAL_MAX_TOKENS, task_records)
 
     render_numbered_section("03", TEST_RUN_STEPS[2])
     _render_scoring(base, provider_name, task_records)
@@ -868,7 +896,7 @@ def _render_live_run_queue(
             st.caption(f"等待中：{waiting_text}{suffix}")
 
 
-def _render_results(provider_name: str, temperature, max_tokens) -> None:
+def _render_results(provider_name: str, temperature, max_tokens, task_records: list[dict]) -> None:
     result = eval_state.get_last_run()
     state = _run_state()
     if result is None and state and _partial_outcomes():
@@ -897,7 +925,7 @@ def _render_results(provider_name: str, temperature, max_tokens) -> None:
     if er.is_mock_result(result):
         st.caption("本次为模拟回退模式运行，回答为模拟生成。")
 
-    _render_answer_viewer(result)
+    _render_answer_viewer(result, task_records)
 
     if st.button("查看技术明细", key="test_run_technical_details", type="tertiary"):
         _render_technical_details_dialog(result)
@@ -991,7 +1019,7 @@ def _render_run_outcome_card(
         if outcome.success:
             answer = outcome.answer_text or "—"
             preview = _answer_preview(answer)
-            st.markdown(preview)
+            st.markdown(normalize_answer_markdown(preview))
             if len(answer) > _ANSWER_PREVIEW_LIMIT and not compact:
                 if st.button(
                     "查看全文",
@@ -1009,8 +1037,9 @@ def _render_run_outcome_card(
 
 @st.dialog("模型回答全文", width="large")
 def _render_full_answer_dialog(outcome: er.RunOutcome) -> None:
-    st.caption(f"任务编号：{outcome.case_id} · 模型：{outcome.model_id}")
-    render_text_block("模型回答", outcome.answer_text or "—")
+    st.caption(f"任务编号：{outcome.case_id} · 模型：{_model_short_name(outcome.model_id)}")
+    st.markdown("#### 模型回答")
+    st.markdown(normalize_answer_markdown(outcome.answer_text or "—"))
 
 
 @st.dialog("技术明细", width="large")
@@ -1046,13 +1075,14 @@ def _render_results_table(result) -> None:
     render_evidence_panel("运行明细", table_html)
 
 
-def _render_answer_viewer(result) -> None:
+def _render_answer_viewer(result, task_records: list[dict]) -> None:
     outcomes = list(result.outcomes)
     if not outcomes:
         st.caption("暂无回答可查看。")
         return
 
-    options = build_outcome_view_options(outcomes)
+    task_lookup = _task_lookup_for_result(result, task_records)
+    options = build_outcome_view_options(outcomes, task_lookup)
     selected = st.selectbox(
         "查看回答",
         options=[int(item["index"]) for item in options],
@@ -1060,21 +1090,28 @@ def _render_answer_viewer(result) -> None:
         format_func=lambda idx: str(options[idx]["label"]),
         key=f"test_run_view_outcome_{_safe_key(getattr(result, 'run_id', 'current'))}",
     )
-    _render_selected_outcome_detail(outcomes[int(selected)])
+    _render_selected_outcome_detail(outcomes[int(selected)], task_lookup)
 
 
-def _render_selected_outcome_detail(outcome: er.RunOutcome) -> None:
+def _render_selected_outcome_detail(outcome: er.RunOutcome, task_lookup: dict[str, dict]) -> None:
     status = _outcome_display_status(outcome)
-    elapsed = "—" if outcome.latency_ms is None else f"{outcome.latency_ms} ms"
+    elapsed = _latency_label(outcome.latency_ms)
+    sample_label = _outcome_sample_label(outcome, task_lookup)
+    model_short = _model_short_name(outcome.model_id)
     with st.container(border=True):
+        st.markdown("**当前回答**")
+        summary_items = [
+            ("样本", sample_label),
+            ("模型", model_short),
+            ("状态", status),
+            ("耗时", elapsed),
+        ]
         if outcome.success:
-            st.markdown("**模型回答**")
-            st.caption(
-                f"模型：{outcome.model_id} · 任务：{outcome.case_id} · "
-                f"状态：{status} · 耗时：{elapsed}"
-            )
+            summary_items.append(("回答长度", _answer_length_label(outcome)))
+            _render_answer_summary(summary_items, outcome.model_id if outcome.model_id != model_short else "")
             answer = outcome.answer_text or "—"
-            st.markdown(_answer_preview(answer))
+            st.markdown("#### 模型回答")
+            st.markdown(normalize_answer_markdown(_answer_preview(answer)))
             if len(answer) > _ANSWER_PREVIEW_LIMIT:
                 if st.button(
                     "查看全文",
@@ -1084,16 +1121,33 @@ def _render_selected_outcome_detail(outcome: er.RunOutcome) -> None:
                     _render_full_answer_dialog(outcome)
             return
 
-        st.markdown("**未获得有效回答**")
-        st.caption(
-            f"模型：{outcome.model_id} · 任务：{outcome.case_id} · "
-            f"状态：{status} · 耗时：{elapsed}"
-        )
+        _render_answer_summary(summary_items, outcome.model_id if outcome.model_id != model_short else "")
+        st.markdown("#### 未获得有效回答")
         st.markdown(f"错误码：`{_dash(outcome.error_code)}`")
         st.markdown(f"错误信息：{_short(outcome.error_message, 220)}")
         guidance = _failure_guidance(outcome)
         if guidance:
             st.caption(guidance)
+
+
+def _render_answer_summary(items: list[tuple[str, str]], model_id: str = "") -> None:
+    item_html = "".join(
+        f'<div class="answer-viewer-item"><span>{escape(label)}</span><strong>{escape(value)}</strong></div>'
+        for label, value in items
+    )
+    model_html = (
+        f'<div class="answer-viewer-muted">模型 ID：{escape(model_id)}</div>'
+        if model_id
+        else ""
+    )
+    render_html(
+        f"""
+        <div class="answer-viewer-summary">
+            <div class="answer-viewer-grid">{item_html}</div>
+            {model_html}
+        </div>
+        """
+    )
 
 
 def _render_scoring(base, provider_name: str, task_records: list[dict]) -> None:
@@ -1204,12 +1258,90 @@ def _status_label(value) -> str:
     return str(label)
 
 
-def _outcome_option_label(outcome: er.RunOutcome) -> str:
-    return f"{outcome.case_id} · {outcome.model_id} · {_outcome_display_status(outcome)}"
+def _task_lookup_for_result(result, task_records: list[dict]) -> dict[str, dict]:
+    lookup: dict[str, dict] = {}
+    for row in task_records or []:
+        case_id = str(row.get("case_id") or "").strip()
+        if case_id:
+            lookup[case_id] = row
+    state = _run_state()
+    if state and str(state.get("run_id") or "") == str(getattr(result, "run_id", "")):
+        for item in state.get("queue_items") or []:
+            task = item.get("task") or {}
+            case_id = str(item.get("case_id") or task.get("case_id") or "").strip()
+            if case_id and task:
+                lookup[case_id] = task
+    return lookup
+
+
+def _outcome_option_label(
+    outcome: er.RunOutcome,
+    task_lookup: dict[str, dict] | None = None,
+) -> str:
+    return (
+        f"{outcome.case_id}｜"
+        f"{_sample_title_summary(outcome, task_lookup)}｜"
+        f"{_model_short_name(outcome.model_id)}｜"
+        f"{_outcome_display_status(outcome)}"
+    )
+
+
+def _outcome_sample_label(outcome: er.RunOutcome, task_lookup: dict[str, dict] | None = None) -> str:
+    return f"{outcome.case_id}｜{_sample_title_summary(outcome, task_lookup)}"
+
+
+def _sample_title_summary(
+    outcome: er.RunOutcome,
+    task_lookup: dict[str, dict] | None = None,
+    limit: int = 22,
+) -> str:
+    row = (task_lookup or {}).get(str(outcome.case_id), {}) or {}
+    source = (
+        row.get("title")
+        or row.get("expected_capability")
+        or row.get("question")
+        or row.get("scenario")
+        or outcome.task_type
+        or "样本任务"
+    )
+    return summarize_text(source, limit)
+
+
+def _model_short_name(model_id: str) -> str:
+    value = str(model_id or "").strip()
+    if not value:
+        return "—"
+    return value.rstrip("/").rsplit("/", 1)[-1] or value
 
 
 def _outcome_display_status(outcome: er.RunOutcome) -> str:
-    return "已完成" if outcome.success else "未获得有效回答"
+    status = str(outcome.run_status or "").strip().lower()
+    if outcome.success:
+        return "已完成"
+    if status == "running":
+        return "生成中"
+    if status == "waiting":
+        return "等待中"
+    if status == "interrupted":
+        return "已中断"
+    return "未获得有效回答"
+
+
+def _latency_label(value) -> str:
+    if value is None:
+        return "—"
+    try:
+        milliseconds = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if milliseconds >= 1000:
+        return f"{milliseconds / 1000:.1f}s"
+    return f"{int(milliseconds)} ms"
+
+
+def _answer_length_label(outcome: er.RunOutcome) -> str:
+    length = outcome.answer_length or len(outcome.answer_text or "")
+    return f"{length:,} 字"
 
 
 def _review_status_label(value) -> str:

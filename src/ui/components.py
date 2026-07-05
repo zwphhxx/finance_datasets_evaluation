@@ -1745,6 +1745,42 @@ header,
     line-height: 1.65;
     white-space: pre-wrap;
 }
+.answer-viewer-summary {
+    border: 1px solid var(--fde-line);
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 0.72rem 0.85rem;
+    margin: 0.35rem 0 0.8rem 0;
+}
+.answer-viewer-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+    gap: 0.55rem 0.9rem;
+}
+.answer-viewer-item span {
+    display: block;
+    color: var(--fde-muted);
+    font-size: 0.76rem;
+    font-weight: 720;
+    margin-bottom: 0.12rem;
+}
+.answer-viewer-item strong {
+    display: block;
+    color: var(--fde-text);
+    font-size: 0.9rem;
+    font-weight: 650;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+.answer-viewer-muted {
+    border-top: 1px solid var(--fde-line);
+    color: var(--fde-muted);
+    font-size: 0.82rem;
+    line-height: 1.45;
+    margin-top: 0.65rem;
+    padding-top: 0.5rem;
+    overflow-wrap: anywhere;
+}
 .two-col-panel {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
