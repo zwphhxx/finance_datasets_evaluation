@@ -2,8 +2,8 @@
 
 基于 app.services.sample_repository 的样本库数据维护：
 - 支持按关键词、场景、测试状态和难度筛选；
-- 紧凑样本索引用于查看、编辑和归档；
-- 新增与编辑通过弹窗完成，列表和详情保持聚焦。
+- 紧凑样本索引只展示当前查询结果；
+- 当前样本区用于选择、查看、编辑和移出测试。
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ from src.ui.tasks import (
 )
 
 
-_TEST_STATUS_OPTIONS = ["全部", "可测试", "待补充", "不可测试", "已归档"]
+_TEST_STATUS_OPTIONS = ["全部", "可测试", "待补充", "不可测试", "已移出测试"]
 _SAMPLE_TABLE_COLUMNS = ["样本编号", "任务标题", "场景", "测试状态", "难度", "更新时间"]
 
 _DIFFICULTY_OPTIONS = list(DIFFICULTY_LABELS.keys())
@@ -62,12 +62,16 @@ def _difficulty_label(value) -> str:
 
 def _test_status_label(sample: sr.Sample, readiness: ds.SampleReadiness) -> str:
     if sample.status == "已归档" or readiness.label == "已归档":
-        return "已归档"
+        return "已移出测试"
     if readiness.is_testable:
         return "可测试"
     if readiness.missing_items:
         return "待补充"
     return "不可测试"
+
+
+def _sample_status_label(sample: sr.Sample) -> str:
+    return "已移出测试" if sample.status == "已归档" else (sample.status or "待复核")
 
 
 def _format_date(value) -> str:
@@ -693,7 +697,7 @@ def render_samples_page(data_bundle: dict) -> None:
     task_records, gold_map, rubric_dimensions = _page_readiness_inputs(data, samples)
     readiness_map = build_sample_readiness_map(samples, task_records, gold_map, rubric_dimensions)
 
-    render_numbered_section("01", "样本操作")
+    render_numbered_section("01", "查询样本")
     keyword, scenario, test_status, difficulty = _render_filters(samples)
     filtered = _filter_samples_for_index(
         samples,
@@ -703,8 +707,6 @@ def render_samples_page(data_bundle: dict) -> None:
         test_status=test_status,
         difficulty=difficulty,
     )
-    _sync_dataframe_selection_from_state(filtered)
-    _render_sample_operation_actions(filtered)
 
     render_numbered_section("02", "样本列表", "展示当前查询结果。")
     if not filtered:
@@ -712,7 +714,7 @@ def render_samples_page(data_bundle: dict) -> None:
     else:
         _render_samples_table(filtered, readiness_map)
 
-    render_numbered_section("03", "当前样本", "展示当前选中的样本详情。")
+    render_numbered_section("03", "当前样本", "选择、查看和维护一个样本。")
     _render_sample_detail(filtered, readiness_map, task_records, gold_map, rubric_dimensions)
 
     col1, col2 = st.columns([1, 3])
@@ -751,21 +753,15 @@ def _render_samples_table(samples: list[sr.Sample], readiness_map: dict[str, ds.
     rows = build_sample_table_rows(samples, readiness_map)
     frame = pd.DataFrame(rows, columns=_SAMPLE_TABLE_COLUMNS)
     try:
-        selection = st.dataframe(
+        st.dataframe(
             frame,
             hide_index=True,
             width="stretch",
             height=_sample_table_height(len(rows)),
             row_height=34,
-            on_select="rerun",
-            selection_mode="single-row",
             column_config=_sample_table_column_config(),
-            key="samples_index_dataframe",
+            key="samples_index_table",
         )
-        selected_row = _selected_dataframe_row_index(selection)
-        if selected_row is not None and 0 <= selected_row < len(samples):
-            _select_sample(samples[selected_row].sample_id)
-        st.caption("点击表格行可查看当前样本。")
     except TypeError:
         st.dataframe(
             frame,
@@ -774,13 +770,6 @@ def _render_samples_table(samples: list[sr.Sample], readiness_map: dict[str, ds.
             height=_sample_table_height(len(rows)),
             column_config=_sample_table_column_config(),
         )
-
-
-def _sync_dataframe_selection_from_state(samples: list[sr.Sample]) -> None:
-    state = st.session_state.get("samples_index_dataframe")
-    selected_row = _selected_dataframe_row_index(state)
-    if selected_row is not None and 0 <= selected_row < len(samples):
-        _select_sample(samples[selected_row].sample_id)
 
 
 def _sample_table_height(row_count: int) -> int:
@@ -798,22 +787,6 @@ def _sample_table_column_config() -> dict:
     }
 
 
-def _selected_dataframe_row_index(selection) -> int | None:
-    selected = getattr(selection, "selection", None)
-    if selected is None and isinstance(selection, dict):
-        selected = selection.get("selection")
-    if isinstance(selected, dict):
-        rows = selected.get("rows") or []
-    else:
-        rows = getattr(selected, "rows", []) if selected is not None else []
-    if not rows:
-        return None
-    try:
-        return int(rows[0])
-    except (TypeError, ValueError):
-        return None
-
-
 def _ensure_selected_sample(samples: list[sr.Sample]) -> sr.Sample | None:
     if not samples:
         return None
@@ -825,23 +798,12 @@ def _ensure_selected_sample(samples: list[sr.Sample]) -> sr.Sample | None:
     return next((sample for sample in samples if sample.sample_id == selected_id), samples[0])
 
 
-def _render_sample_operation_actions(samples: list[sr.Sample]) -> None:
-    selected = _ensure_selected_sample(samples)
+def _render_current_sample_actions(selected: sr.Sample | None) -> None:
     is_archived = bool(selected and selected.status == "已归档")
     disabled = selected is None
-    selected_label = (
-        f"{selected.sample_id} · {_truncate(selected.title, 36)}"
-        if selected is not None
-        else "无"
-    )
-    render_html(
-        '<div class="sample-operation-selected">'
-        f'<span>当前样本：</span><strong>{escape(selected_label)}</strong>'
-        '</div>'
-    )
-    col1, col2, col3, col4 = st.columns([1, 1.1, 1.2, 2.8])
+    col1, col2, col3, col4 = st.columns([1, 1.1, 1, 2.8])
     with col1:
-        if st.button("新增样本", key="samples_create_open", type="primary", use_container_width=True):
+        if st.button("新增样本", key="samples_create_open", type="secondary", use_container_width=True):
             _open_create_dialog()
     with col2:
         edit_key = f"samples_selected_edit_{selected.sample_id if selected else 'none'}"
@@ -856,7 +818,7 @@ def _render_sample_operation_actions(samples: list[sr.Sample]) -> None:
     with col3:
         archive_key = f"samples_selected_archive_{selected.sample_id if selected else 'none'}"
         if st.button(
-            "归档当前样本",
+            "移出测试",
             key=archive_key,
             type="tertiary",
             disabled=disabled or is_archived,
@@ -868,14 +830,14 @@ def _render_sample_operation_actions(samples: list[sr.Sample]) -> None:
             if not ds.database_ready():
                 st.caption("SQLite 未初始化时，新增或编辑不会进入正式测试。")
             _render_backup_controls()
-            st.caption("删除在本 MVP 中采用归档方式实现，避免破坏历史评测记录。")
+            st.caption("删除在本 MVP 中采用移出测试 / 归档方式实现，避免破坏历史评测记录。")
 
     if selected is None:
-        st.caption("当前查询无结果，无法编辑或归档。")
+        st.caption("当前查询无结果，无法编辑或移出测试。")
     elif is_archived:
-        st.caption("当前样本已归档，不会进入发起测试。")
+        st.caption("该样本已移出测试。")
     else:
-        st.caption("归档是软删除：归档后不会进入发起测试，历史记录仍保留。")
+        st.caption("移出测试是软删除：移出后不会进入发起测试，历史记录仍保留。")
 
 
 def _render_sample_detail(
@@ -886,10 +848,17 @@ def _render_sample_detail(
     rubric_dimensions: list[dict] | None,
 ) -> None:
     if not samples:
-        render_empty_state("没有可查看的样本。")
+        render_empty_state("没有符合当前条件的样本。")
         return
 
-    selected_id = (_ensure_selected_sample(samples) or samples[0]).sample_id
+    selected = _render_current_sample_selector(samples)
+    if selected is None:
+        render_empty_state("没有符合当前条件的样本。")
+        return
+
+    _render_current_sample_actions(selected)
+
+    selected_id = selected.sample_id
     sample = sr.get_sample(str(selected_id))
     if sample is None:
         sample = next((item for item in samples if item.sample_id == selected_id), None)
@@ -902,43 +871,179 @@ def _render_sample_detail(
     gold_record = gold_map.get(sample.sample_id) or sample.gold_answer
     gold_display = parse_gold_answer_for_display(gold_record)
     rubric_rows = build_rubric_rows_for_display(rubric_dimensions, sample.rubric)
-    sections = build_sample_asset_sections(
-        sample=sample,
-        readiness=readiness,
-        task_record=task_record,
-        gold_display=gold_display,
-        rubric_rows=rubric_rows,
+    st.markdown(_sample_document_markdown(sample, readiness, task_record, gold_display))
+    _render_rubric_markdown_table(rubric_rows)
+    st.markdown(_readiness_markdown(sample, readiness))
+    st.markdown(_error_optimization_markdown(sample))
+
+
+def _render_current_sample_selector(samples: list[sr.Sample]) -> sr.Sample | None:
+    selected = _ensure_selected_sample(samples)
+    if selected is None:
+        return None
+    options = [sample.sample_id for sample in samples]
+    selected_id = selected.sample_id
+    if st.session_state.get("samples_current_sample_select") not in options:
+        st.session_state["samples_current_sample_select"] = selected_id
+    selected_id = st.selectbox(
+        "当前样本",
+        options,
+        index=options.index(selected_id),
+        format_func=lambda sample_id: _sample_option_label(sample_id, samples),
+        key="samples_current_sample_select",
     )
-
-    _render_current_sample_summary(sample, readiness)
-    with st.expander("任务内容", expanded=False):
-        render_html(_task_body_html(sample, task_record))
-    with st.expander("理想回复标准 / Gold Answer", expanded=False):
-        render_html(_gold_body_html(gold_display))
-    with st.expander("Rubric 评分标准", expanded=False):
-        render_html(_rubric_body_html(rubric_rows))
-    with st.expander("完整度检查", expanded=False):
-        render_html(_readiness_body_html(readiness, sample))
-    with st.expander("错误标签与优化建议", expanded=False):
-        render_html(_error_optimization_body_html(sample))
+    _select_sample(str(selected_id))
+    return next((sample for sample in samples if sample.sample_id == selected_id), selected)
 
 
-def _render_current_sample_summary(sample: sr.Sample, readiness: ds.SampleReadiness) -> None:
+def _sample_option_label(sample_id: str, samples: list[sr.Sample]) -> str:
+    sample = next((item for item in samples if item.sample_id == sample_id), None)
+    if sample is None:
+        return str(sample_id)
+    return f"{sample.sample_id} · {_truncate(sample.title, 46)}"
+
+
+def _sample_document_markdown(
+    sample: sr.Sample,
+    readiness: ds.SampleReadiness,
+    task_record: dict,
+    gold_display: dict,
+) -> str:
     test_status = _test_status_label(sample, readiness)
-    completeness = "通过" if readiness.is_testable else ("已归档" if test_status == "已归档" else "待补充")
-    render_html(
-        '<div class="current-sample-summary">'
-        '<div class="current-sample-main">'
-        f'<div class="current-sample-id">当前样本：{escape(sample.sample_id or "待补充")}</div>'
-        f'<div class="current-sample-title">{escape(sample.title or "未命名样本")}</div>'
-        '</div>'
-        '<div class="current-sample-meta">'
-        f'<span>测试状态：{escape(test_status)}</span>'
-        f'<span>完整度：{escape(completeness)}</span>'
-        f'<span>更新时间：{escape(_format_date(sample.updated_at))}</span>'
-        '</div>'
-        '</div>'
+    completeness = "通过" if readiness.is_testable else ("已移出测试" if test_status == "已移出测试" else "待补充")
+    task_prompt, business_context, output_requirement = _task_markdown_values(sample, task_record)
+    fields = gold_display.get("fields", {})
+    lists = gold_display.get("lists", {})
+    fallback = str(gold_display.get("fallback_text") or "").strip()
+    fallback_note = (
+        "\n\n> Gold Answer 未识别为结构化 JSON，以下保留原文：\n\n"
+        f"{_md_value(fallback)}"
+        if fallback
+        else ""
     )
+    return f"""
+### 当前样本：{_md_value(sample.sample_id or "待补充")}
+
+- 任务标题：{_md_value(sample.title or "未命名样本")}
+- 场景：{_md_value(sample.scenario or "待补充")}
+- 测试状态：{_md_value(test_status)}
+- 完整度：{_md_value(completeness)}
+- 当前状态：{_md_value(_sample_status_label(sample))}
+- 更新时间：{_md_value(_format_date(sample.updated_at))}
+
+#### 任务内容
+
+**任务题：**
+{_md_value(task_prompt)}
+
+**业务背景：**
+{_md_value(business_context)}
+
+**输出要求：**
+{_md_value(output_requirement)}
+
+#### 理想回复标准 / Gold Answer
+
+**核心结论：**
+{_md_value(fields.get("核心结论", "待补充"))}
+
+**关键依据：**
+{_md_value(fields.get("关键依据", "待补充"))}
+
+**必须覆盖点：**
+
+{_md_list(lists.get("必须覆盖点", []))}
+
+**不可接受错误：**
+
+{_md_list(lists.get("不可接受错误", []))}
+
+**边界条件：**
+{_md_value(fields.get("边界条件", "待补充"))}
+
+**人工复核提示：**
+{_md_value(fields.get("人工复核提示", "待补充"))}{fallback_note}
+""".strip()
+
+
+def _task_markdown_values(sample: sr.Sample, task_record: dict) -> tuple[str, str, str]:
+    task_prompt = task_record.get("question") or sample.task_prompt or "待补充"
+    context = task_record.get("context") or sample.business_context or "待补充"
+    output_requirement = (
+        task_record.get("expected_capability")
+        or task_record.get("task_type")
+        or "按任务题和业务背景输出尽调判断、依据与需进一步核查事项。"
+    )
+    return str(task_prompt), str(context), str(output_requirement)
+
+
+def _render_rubric_markdown_table(rubric_rows: list[dict[str, str]]) -> None:
+    st.markdown("#### Rubric 评分标准")
+    if not rubric_rows:
+        st.markdown("待补充")
+        return
+    frame = pd.DataFrame(rubric_rows)
+    columns = ["评分维度", "满分", "满分标准", "扣分规则"]
+    st.dataframe(
+        frame[[column for column in columns if column in frame.columns]],
+        hide_index=True,
+        width="stretch",
+        height=min(320, max(96, 42 + len(frame) * 40)),
+        column_config={
+            "评分维度": st.column_config.TextColumn("维度", width="medium"),
+            "满分": st.column_config.TextColumn("满分", width="small"),
+            "满分标准": st.column_config.TextColumn("满分标准", width="large"),
+            "扣分规则": st.column_config.TextColumn("扣分规则", width="large"),
+        },
+    )
+
+
+def _readiness_markdown(sample: sr.Sample, readiness: ds.SampleReadiness) -> str:
+    missing_items = "无" if not readiness.missing_items else "；".join(readiness.missing_items)
+    satisfied = readiness.satisfied_items or ["待补充"]
+    return f"""
+#### 完整度检查
+
+- 是否可测试：{"是" if readiness.is_testable else "否"}
+- 当前状态：{_md_value(_sample_status_label(sample))}
+- 检查结果：{_md_value("已移出测试" if readiness.label == "已归档" else readiness.label)}
+- 缺失项：{_md_value(missing_items)}
+- 复核备注：{_md_value(sample.reviewer_note or "未填写")}
+
+**已满足项：**
+
+{_md_list(satisfied)}
+""".strip()
+
+
+def _error_optimization_markdown(sample: sr.Sample) -> str:
+    return f"""
+#### 错误标签与优化建议
+
+**错误标签：**
+
+{_md_list(sample.error_tags, fallback="暂无关联错误标签")}
+
+**常见问题：**
+
+{_md_list(sample.model_answers, fallback="暂无历史模型回答记录")}
+
+**数据优化建议：**
+
+{_md_list(sample.improvement_suggestions, fallback="暂无优化建议")}
+""".strip()
+
+
+def _md_value(value, fallback: str = "待补充") -> str:
+    text = _clean_text(value, fallback=fallback)
+    return text.replace("\n", "\n\n")
+
+
+def _md_list(items: list[str], fallback: str = "待补充") -> str:
+    values = [str(item).strip() for item in items if str(item).strip()]
+    if not values:
+        values = [fallback]
+    return "\n".join(f"- {_md_value(item)}" for item in values)
 
 
 def _render_asset_overview(sample: sr.Sample, readiness: ds.SampleReadiness, section: dict) -> None:
@@ -1336,17 +1441,17 @@ def _render_sample_editor_dialog_body(
     st.rerun()
 
 
-@st.dialog("确认归档", width="small")
+@st.dialog("确认移出测试", width="small")
 def _render_archive_dialog(sample_id: str) -> None:
     sample = sr.get_sample(sample_id)
     if sample is None:
         render_empty_state("未找到该样本。")
     else:
-        st.write("确认归档该样本？归档后不会进入发起测试，但历史记录仍保留。")
+        st.write("确认移出测试？移出后，该样本不会进入发起测试，历史记录仍保留。")
         st.caption(f"{sample.sample_id}｜{sample.title or '未命名样本'}")
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("确认归档", key=f"samples_archive_confirm_{sample_id}", type="primary", use_container_width=True):
+        if st.button("确认移出测试", key=f"samples_archive_confirm_{sample_id}", type="primary", use_container_width=True):
             try:
                 sr.archive_sample(sample_id, db_path=_formal_db_path_for_ui())
             except Exception as exc:
@@ -1354,7 +1459,7 @@ def _render_archive_dialog(sample_id: str) -> None:
                 return
             _select_sample(sample_id)
             _clear_dialog_state()
-            st.success(f"样本 {sample_id} 已归档。")
+            st.success(f"样本 {sample_id} 已移出测试。")
             st.rerun()
     with col2:
         if st.button("取消", key=f"samples_archive_cancel_{sample_id}", type="tertiary", use_container_width=True):

@@ -30,7 +30,7 @@ PAGE_CONFIGS = [
         subtitle="维护正式评测样本，确认哪些样本可进入测试。",
         question="维护正式评测样本。完整且已入库的样本可以进入发起测试。",
         boundary="样本状态和完整度共同决定测试准入；只有已入库且完整度通过的样本才可进入发起测试。",
-        highlights="样本操作、样本列表、当前样本。",
+        highlights="查询样本、样本列表、当前样本。",
         nav_summary="样本库",
     ),
     PageConfig(

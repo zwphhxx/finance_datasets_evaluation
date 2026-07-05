@@ -832,65 +832,6 @@ header,
     color: var(--fde-ink);
     font-weight: 720;
 }
-.sample-operation-selected {
-    border: 1px solid var(--fde-line);
-    background: var(--fde-status-muted-bg);
-    color: var(--fde-muted);
-    border-radius: 8px;
-    padding: 0.45rem 0.65rem;
-    margin: 0.55rem 0 0.35rem 0;
-    font-size: 0.86rem;
-}
-.sample-operation-selected strong {
-    color: var(--fde-ink);
-    margin: 0 0.35rem;
-}
-.current-sample-summary {
-    display: flex;
-    justify-content: space-between;
-    gap: 0.9rem;
-    align-items: flex-start;
-    border: 1px solid var(--fde-line);
-    border-radius: 8px;
-    background: #ffffff;
-    padding: 0.78rem 0.9rem;
-    margin: 0.25rem 0 0.6rem 0;
-}
-.current-sample-main {
-    min-width: 0;
-}
-.current-sample-id {
-    color: var(--fde-muted);
-    font-size: 0.82rem;
-    font-weight: 650;
-    margin-bottom: 0.22rem;
-}
-.current-sample-title {
-    color: var(--fde-ink);
-    font-size: 1rem;
-    font-weight: 760;
-    line-height: 1.35;
-}
-.current-sample-meta {
-    display: flex;
-    gap: 0.55rem;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    color: var(--fde-muted);
-    font-size: 0.82rem;
-    line-height: 1.45;
-}
-.current-sample-meta span {
-    white-space: nowrap;
-}
-@media (max-width: 760px) {
-    .current-sample-summary {
-        flex-direction: column;
-    }
-    .current-sample-meta {
-        justify-content: flex-start;
-    }
-}
 /* Redline verdict banner: a single low-saturation statement strip. */
 .redline-verdict {
     display: flex;
