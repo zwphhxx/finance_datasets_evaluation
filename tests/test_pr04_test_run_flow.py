@@ -68,6 +68,14 @@ class TestRunFlowStructureTests(unittest.TestCase):
 
     def test_run_execution_streams_queue_items_in_page(self):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+        panel_source = source[
+            source.index("def _render_configuration_panel"):
+            source.index("def _open_sample_dialog")
+        ]
+        run_button_source = source[
+            source.index("def _render_run_button"):
+            source.index("def _render_live_run_queue")
+        ]
 
         self.assertIn("运行队列", source)
         self.assertIn("已完成结果", source)
@@ -82,6 +90,11 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("查看技术明细", source)
         self.assertIn('@st.dialog("技术明细"', source)
         self.assertIn("仅对已完成回答生成评分草稿", source)
+        self.assertIn("start_run = _render_run_button(", panel_source)
+        self.assertIn("if start_run:", panel_source)
+        self.assertLess(panel_source.index("with col3:"), panel_source.index("if start_run:"))
+        self.assertLess(panel_source.index("if start_run:"), panel_source.index("_execute_run_queue("))
+        self.assertNotIn("_execute_run_queue(", run_button_source)
         self.assertNotIn("progress_callback=_on_progress", source)
         self.assertNotIn('st.expander("查看回答"', source)
         self.assertNotIn('st.expander("查看全部回答"', source)

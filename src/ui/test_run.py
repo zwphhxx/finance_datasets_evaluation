@@ -362,18 +362,23 @@ def _render_configuration_panel(
     with col2:
         if st.button("选择模型", key="test_run_open_models", type="secondary", use_container_width=True):
             _open_model_dialog(provider_name)
+    start_run = False
     with col3:
-        _render_run_button(
-            provider_name,
-            model_ids,
-            selected_tasks,
-            _EVAL_TEMPERATURE,
-            _EVAL_MAX_TOKENS,
+        start_run = _render_run_button(
             run_plan,
             service_ready=(mode == "live"),
         )
     if not run_plan["can_run"]:
         st.caption("请选择样本和模型后运行。")
+    if start_run:
+        queue_items = build_run_queue_items(model_ids, selected_tasks)
+        _execute_run_queue(
+            provider_name,
+            queue_items,
+            model_ids,
+            _EVAL_TEMPERATURE,
+            _EVAL_MAX_TOKENS,
+        )
 
 
 def _open_sample_dialog(sample_options: list[dict]) -> None:
@@ -791,31 +796,19 @@ def _execute_run_queue(
 
 
 def _render_run_button(
-    provider_name,
-    model_ids,
-    selected_tasks,
-    temperature,
-    max_tokens,
     run_plan,
     *,
     service_ready: bool = True,
-) -> None:
+) -> bool:
     disabled = not run_plan["can_run"] or not service_ready
-    if st.button("运行模型回答", type="primary", disabled=disabled, key="test_run_run"):
-        queue_items = build_run_queue_items(model_ids, selected_tasks)
-        _execute_run_queue(
-            provider_name,
-            queue_items,
-            model_ids,
-            temperature,
-            max_tokens,
-        )
+    clicked = st.button("运行模型回答", type="primary", disabled=disabled, key="test_run_run")
 
     if disabled:
         if service_ready:
             st.caption("请先选择至少一个模型与至少一道任务，再运行评测。")
         else:
             st.caption("当前未配置模型服务密钥，暂不能发起真实调用。")
+    return bool(clicked and not disabled)
 
 
 def _render_live_run_queue(
@@ -895,29 +888,31 @@ def _render_unfinished_run_without_result(state: dict, provider_name: str, tempe
     queue_items = list(state.get("queue_items") or [])
     st.markdown("**本次运行未完成**")
     st.caption(f"已完成 0 条 · 未完成 {len(queue_items)} 条 · 失败 0 条。未完成项可继续运行。")
+    resume_clicked = False
     col1, col2 = st.columns([1, 1])
     with col1:
-        if st.button(
+        resume_clicked = st.button(
             "继续未完成项",
             key="test_run_resume_empty",
             type="secondary",
             disabled=not queue_items,
             use_container_width=True,
-        ):
-            _execute_run_queue(
-                provider_name,
-                queue_items,
-                list(state.get("model_ids") or []),
-                temperature,
-                max_tokens,
-                existing_outcomes=[],
-                base_state=state,
-            )
+        )
     with col2:
         if st.button("放弃本次运行", key="test_run_discard_empty", type="tertiary", use_container_width=True):
             _clear_run_state()
             eval_state.clear()
             st.rerun()
+    if resume_clicked:
+        _execute_run_queue(
+            provider_name,
+            queue_items,
+            list(state.get("model_ids") or []),
+            temperature,
+            max_tokens,
+            existing_outcomes=[],
+            base_state=state,
+        )
 
 
 def _render_partial_run_notice(result, provider_name: str, temperature, max_tokens) -> None:
@@ -936,29 +931,31 @@ def _render_partial_run_notice(result, provider_name: str, temperature, max_toke
     )
     if state.get("message"):
         st.caption(str(state.get("message")))
+    resume_clicked = False
     col1, col2 = st.columns([1, 1])
     with col1:
-        if st.button(
+        resume_clicked = st.button(
             "继续未完成项",
             key="test_run_resume",
             type="secondary",
             disabled=not remaining,
             use_container_width=True,
-        ):
-            _execute_run_queue(
-                provider_name,
-                remaining,
-                list(state.get("model_ids") or []),
-                temperature,
-                max_tokens,
-                existing_outcomes=outcomes,
-                base_state=state,
-            )
+        )
     with col2:
         if st.button("放弃本次运行", key="test_run_discard_partial", type="tertiary", use_container_width=True):
             _clear_run_state()
             eval_state.clear()
             st.rerun()
+    if resume_clicked:
+        _execute_run_queue(
+            provider_name,
+            remaining,
+            list(state.get("model_ids") or []),
+            temperature,
+            max_tokens,
+            existing_outcomes=outcomes,
+            base_state=state,
+        )
 
 
 def _render_run_outcome_card(
