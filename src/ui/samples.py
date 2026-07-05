@@ -113,6 +113,10 @@ def _searchable_text(sample: sr.Sample) -> str:
     return " ".join(str(p) for p in parts if p).lower()
 
 
+def _formal_db_path_for_ui():
+    return ds.get_db_path() if ds.database_ready() else None
+
+
 # --------------------------------------------------------------------------- #
 # Backward-compatible helpers (kept for existing tests)
 # --------------------------------------------------------------------------- #
@@ -233,7 +237,10 @@ def render_samples_page(data_bundle: dict) -> None:
         render_empty_state("暂无可展示的样本。请检查 data/tasks.csv 与 data/gold_answers.json 是否存在。")
         return
 
-    st.caption("数据口径：样本库状态决定能否进入测试；正式评测题干、参考答案和评分量表仍由正式数据层读取。")
+    if ds.database_ready():
+        st.caption("数据口径：样本库是正式评测样本的维护入口；新增和编辑会同步任务题、理想回复标准 / Gold Answer 与 Rubric 评分标准。")
+    else:
+        st.warning("当前未初始化 SQLite 数据层。样本库仍可作为本地管理视图运行，但新增或编辑内容不会进入正式测试。")
 
     render_numbered_section("01", "筛选与搜索", "按状态、场景、难度、错误标签筛选，或使用关键词搜索。")
     status, scenario, difficulty, error_tag, keyword = _render_filters(samples)
@@ -326,9 +333,9 @@ def _render_sample_detail(samples: list[sr.Sample]) -> None:
     rubric_formatted = _format_json_text(sample.rubric)
     col3, col4 = st.columns(2)
     with col3:
-        render_text_block("参考答案", gold_formatted or "未填写")
+        render_text_block("理想回复标准 / Gold Answer", gold_formatted or "未填写")
     with col4:
-        render_text_block("评分量表", rubric_formatted or "未填写")
+        render_text_block("Rubric 评分标准", rubric_formatted or "未填写")
 
     if sample.model_answers or sample.error_tags or sample.improvement_suggestions:
         col5, col6, col7 = st.columns(3)
@@ -344,10 +351,10 @@ def _render_sample_detail(samples: list[sr.Sample]) -> None:
 
 
 def _render_sample_management() -> None:
-    st.caption(
-        "管理区写入本地样本文件；状态变更会在 SQLite 可用且任务编号存在时同步为测试准入状态。"
-        "样本正文不会自动写入正式题干、参考答案或评分量表。"
-    )
+    if ds.database_ready():
+        st.caption("管理区维护正式评测资产，并保留 samples.json 作为轻量视图、导入导出和兼容备份。")
+    else:
+        st.warning("SQLite 未初始化，管理区只能写入本地样本视图；这些记录不能进入发起测试。")
     tab_create, tab_edit, tab_status, tab_backup = st.tabs(["新增样本", "编辑样本", "状态管理", "导入导出"])
     with tab_create:
         _render_create_form()
@@ -380,7 +387,7 @@ def _render_backup_controls() -> None:
             if st.button("确认导入并合并", key="samples_import_confirm"):
                 try:
                     raw = json.loads(uploaded.getvalue().decode("utf-8"))
-                    sr.import_samples(raw)
+                    sr.import_samples(raw, db_path=_formal_db_path_for_ui())
                 except Exception as exc:
                     st.error(str(exc))
                 else:
@@ -402,8 +409,8 @@ def _render_create_form() -> None:
         )
         task_prompt = st.text_area("任务描述", height=110)
         business_context = st.text_area("业务背景", height=80)
-        gold_answer = st.text_area("参考答案 *", height=120, help="可填写文本或 JSON。")
-        rubric = st.text_area("评分量表 *", height=80, help="可填写文本或 JSON。")
+        gold_answer = st.text_area("理想回复标准 / Gold Answer *", height=120, help="可填写文本或 JSON。")
+        rubric = st.text_area("Rubric 评分标准 *", height=80, help="可填写文本或 JSON。")
         col3, col4 = st.columns(2)
         model_answers = col3.text_area("模型回答（每行一条）", height=80)
         error_tags = col4.text_area("错误标签（每行一条）", height=80)
@@ -414,21 +421,24 @@ def _render_create_form() -> None:
 
     if submitted:
         try:
-            sr.create_sample({
-                "sample_id": sample_id,
-                "title": title,
-                "scenario": scenario,
-                "task_prompt": task_prompt,
-                "business_context": business_context,
-                "gold_answer": gold_answer,
-                "rubric": rubric,
-                "model_answers": _parse_lines(model_answers),
-                "error_tags": _parse_lines(error_tags),
-                "improvement_suggestions": _parse_lines(improvement_suggestions),
-                "status": status,
-                "difficulty": difficulty,
-                "reviewer_note": reviewer_note,
-            })
+            sr.create_sample(
+                {
+                    "sample_id": sample_id,
+                    "title": title,
+                    "scenario": scenario,
+                    "task_prompt": task_prompt,
+                    "business_context": business_context,
+                    "gold_answer": gold_answer,
+                    "rubric": rubric,
+                    "model_answers": _parse_lines(model_answers),
+                    "error_tags": _parse_lines(error_tags),
+                    "improvement_suggestions": _parse_lines(improvement_suggestions),
+                    "status": status,
+                    "difficulty": difficulty,
+                    "reviewer_note": reviewer_note,
+                },
+                db_path=_formal_db_path_for_ui(),
+            )
         except Exception as exc:
             st.error(str(exc))
         else:
@@ -461,8 +471,8 @@ def _render_edit_form() -> None:
         )
         task_prompt = st.text_area("任务描述", value=sample.task_prompt, height=110)
         business_context = st.text_area("业务背景", value=sample.business_context, height=80)
-        gold_answer = st.text_area("参考答案 *", value=sample.gold_answer, height=120)
-        rubric = st.text_area("评分量表 *", value=sample.rubric, height=80)
+        gold_answer = st.text_area("理想回复标准 / Gold Answer *", value=sample.gold_answer, height=120)
+        rubric = st.text_area("Rubric 评分标准 *", value=sample.rubric, height=80)
         col3, col4 = st.columns(2)
         model_answers = col3.text_area("模型回答（每行一条）", value=_as_lines(sample.model_answers), height=80)
         error_tags = col4.text_area("错误标签（每行一条）", value=_as_lines(sample.error_tags), height=80)
@@ -496,6 +506,7 @@ def _render_edit_form() -> None:
                     "difficulty": difficulty,
                     "reviewer_note": reviewer_note,
                 },
+                db_path=_formal_db_path_for_ui(),
             )
         except Exception as exc:
             st.error(str(exc))
@@ -529,7 +540,7 @@ def _render_status_transition() -> None:
         with col:
             if st.button(f"设为「{new_status}」", key=f"samples_status_{selected_id}_{new_status}"):
                 try:
-                    sr.set_sample_status(selected_id, new_status)
+                    sr.set_sample_status(selected_id, new_status, db_path=_formal_db_path_for_ui())
                 except Exception as exc:
                     st.error(str(exc))
                 else:
@@ -547,7 +558,7 @@ def _render_archive_form() -> None:
     selected_id = st.selectbox("选择样本归档", sample_ids, key="samples_archive_select")
     if st.button("归档样本", key="samples_archive_btn"):
         try:
-            sr.archive_sample(selected_id)
+            sr.archive_sample(selected_id, db_path=_formal_db_path_for_ui())
         except Exception as exc:
             st.error(str(exc))
         else:

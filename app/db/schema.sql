@@ -23,7 +23,8 @@ DROP TABLE IF EXISTS error_taxonomy;
 DROP TABLE IF EXISTS live_run_responses;
 DROP TABLE IF EXISTS live_run_scores;
 
--- 任务题：对应 data/tasks.csv。status 复用任务的 active/inactive 标记。
+-- 任务题：对应 data/tasks.csv。status 复用任务的 draft/active/inactive 标记，
+-- 由样本库中文状态映射后控制测试准入。
 CREATE TABLE task_cases (
     case_id              TEXT PRIMARY KEY,
     domain               TEXT,

@@ -175,14 +175,7 @@ _GOLD_SCALAR_FIELDS = (
     "boundary_conditions",
     "manual_review_notes",
 )
-_GOLD_EDITABLE_FIELDS = (
-    "core_conclusion",
-    "key_evidence",
-    "boundary_conditions",
-    "manual_review_notes",
-    "must_have_points",
-    "unacceptable_errors",
-)
+_GOLD_EDITABLE_FIELDS = (*_GOLD_SCALAR_FIELDS, *_GOLD_LIST_FIELDS)
 
 # 任务题可维护字段（与 task_cases 业务列对应；元数据列由数据库维护）。
 TASK_EDITABLE_FIELDS = (
@@ -210,6 +203,12 @@ DATA_STATUS_LABELS = {
     ACTIVE_STATUS: "已入库",
     DRAFT_STATUS: "待复核",
     INACTIVE_STATUS: "已归档",
+}
+FORMAL_STATUS_BY_BUSINESS_STATUS = {
+    "待复核": DRAFT_STATUS,
+    "已入库": ACTIVE_STATUS,
+    "需优化": DRAFT_STATUS,
+    "已归档": INACTIVE_STATUS,
 }
 
 
@@ -246,9 +245,31 @@ def sample_status_label(status: str | None) -> str:
     return DATA_STATUS_LABELS.get(normalized, "待复核")
 
 
-def can_enter_formal_testing(task_record: dict | None, gold_record: dict | None) -> bool:
-    """样本是否允许进入正式测试（必须非 draft、非 inactive）。"""
+def has_rubric_criteria(rubric_dimensions: list[dict] | None) -> bool:
+    """检查正式 Rubric 是否具备可用于裁判评分的维度。"""
+    if not rubric_dimensions:
+        return False
+    for dimension in rubric_dimensions:
+        if not isinstance(dimension, dict):
+            return False
+        if not _clean(dimension.get("field")):
+            return False
+        if not _clean(dimension.get("name")):
+            return False
+        if not _as_int(dimension.get("full_mark")):
+            return False
+    return True
+
+
+def can_enter_formal_testing(
+    task_record: dict | None,
+    gold_record: dict | None,
+    rubric_dimensions: list[dict] | None = None,
+) -> bool:
+    """样本是否允许进入正式测试（必须非 draft、非 inactive，且 Rubric 可用）。"""
     status = get_sample_status(task_record, gold_record)
+    if rubric_dimensions is not None and not has_rubric_criteria(rubric_dimensions):
+        return False
     return status not in {DRAFT_STATUS, INACTIVE_STATUS}
 
 
@@ -360,7 +381,77 @@ def get_gold_answer_record(case_id: str, db_path: Path | None = None) -> dict | 
         except (TypeError, json.JSONDecodeError):
             pass
     # raw_json 缺失或异常时退回结构化列，保证仍可编辑。
-    return {key: row.get(key) for key in ("case_id", *_GOLD_SCALAR_FIELDS)}
+    entry = {key: row.get(key) for key in ("case_id", *_GOLD_SCALAR_FIELDS)}
+    for field in _GOLD_LIST_FIELDS:
+        entry[field] = _as_list(row.get(field))
+    return entry
+
+
+def _parse_json_value(value: object) -> object | None:
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except (TypeError, json.JSONDecodeError):
+        return None
+
+
+def _coerce_gold_answer_entry(case_id: str, value: object) -> dict:
+    parsed = _parse_json_value(value)
+    if isinstance(parsed, dict):
+        entry = dict(parsed)
+    elif isinstance(value, dict):
+        entry = dict(value)
+    else:
+        text = _clean(value)
+        entry = {"core_conclusion": text} if text else {}
+    entry["case_id"] = case_id
+    return entry
+
+
+def _gold_payload(case_id: str, value: object) -> dict:
+    """把页面 Gold Answer 输入规整为 gold_answers 的结构化列与 raw_json。"""
+    entry = _coerce_gold_answer_entry(case_id, value)
+    payload: dict[str, object] = {"case_id": case_id}
+    for field in _GOLD_SCALAR_FIELDS:
+        payload[field] = _clean(entry.get(field))
+    for field in _GOLD_LIST_FIELDS:
+        items = _as_list(entry.get(field))
+        entry[field] = items
+        payload[field] = json.dumps(items, ensure_ascii=False) if items else None
+    payload["raw_json"] = json.dumps(entry, ensure_ascii=False)
+    payload["status"] = _clean(entry.get("status")) or ACTIVE_STATUS
+    return payload
+
+
+def create_gold_answer(case_id: str, fields: dict | str, *, db_path: Path | None = None) -> None:
+    """新增 Gold Answer，结构化列与 raw_json 同步写入。"""
+    normalized_case_id = _clean(case_id)
+    if not normalized_case_id:
+        raise DataLoadError("Gold Answer 任务编号（case_id）不能为空。")
+    repository = _repository(db_path)
+    if repository.get("gold_answers", normalized_case_id) is not None:
+        raise DataLoadError(f"Gold Answer 已存在：{normalized_case_id}。")
+    repository.insert("gold_answers", _gold_payload(normalized_case_id, fields))
+    _invalidate_caches()
+
+
+def upsert_gold_answer(case_id: str, fields: dict | str, *, db_path: Path | None = None) -> None:
+    """按 case_id 新增或覆盖 Gold Answer，确保 raw_json 与结构化字段一致。"""
+    normalized_case_id = _clean(case_id)
+    if not normalized_case_id:
+        raise DataLoadError("Gold Answer 任务编号（case_id）不能为空。")
+    repository = _repository(db_path)
+    payload = _gold_payload(normalized_case_id, fields)
+    if repository.get("gold_answers", normalized_case_id) is None:
+        repository.insert("gold_answers", payload)
+    else:
+        changes = {key: value for key, value in payload.items() if key != "case_id"}
+        repository.update("gold_answers", normalized_case_id, changes)
+    _invalidate_caches()
 
 
 def update_gold_answer(case_id: str, fields: dict, *, db_path: Path | None = None) -> None:
@@ -432,7 +523,7 @@ def get_rubric_dimensions(db_path: Path | None = None) -> list[dict]:
 
 def update_rubric(dimension_field: str, changes: dict, *, db_path: Path | None = None) -> None:
     """编辑评分维度的权重、满分标准与扣分规则。"""
-    allowed = {"weight", "full_mark", "full_mark_standard", "deduction_rules"}
+    allowed = {"name", "weight", "full_mark", "full_mark_standard", "deduction_rules", "status"}
     editable: dict[str, object] = {}
     for key, value in changes.items():
         if key not in allowed:
@@ -445,6 +536,111 @@ def update_rubric(dimension_field: str, changes: dict, *, db_path: Path | None =
         return
     _repository(db_path).update("rubrics", dimension_field, editable)
     _invalidate_caches()
+
+
+def _coerce_rubric_dimensions(value: object) -> list[dict]:
+    """把样本管理中的 Rubric 输入规整为可维护的维度列表。
+
+    MVP 继续复用正式数据层的全局 Rubric 表；样本表单若提供 JSON 维度对象，
+    就更新对应维度的满分标准、扣分规则等字段。普通文本仍可保存在样本管理视图，
+    但不会臆造新的 Rubric 维度。
+    """
+    parsed = _parse_json_value(value)
+    raw = parsed if parsed is not None else value
+    if isinstance(raw, dict):
+        if isinstance(raw.get("dimensions"), list):
+            items = raw["dimensions"]
+        elif isinstance(raw.get("rubric"), dict) and isinstance(raw["rubric"].get("dimensions"), list):
+            items = raw["rubric"]["dimensions"]
+        else:
+            items = [raw]
+    elif isinstance(raw, list):
+        items = raw
+    else:
+        return []
+
+    dimensions: list[dict] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        field = _clean(item.get("dimension_field") or item.get("field"))
+        if not field:
+            continue
+        dimension = dict(item)
+        dimension["dimension_field"] = field
+        dimensions.append(dimension)
+    return dimensions
+
+
+def upsert_rubric_dimensions(value: object, *, db_path: Path | None = None) -> int:
+    """新增或更新正式 Rubric 维度，返回实际写入的维度数。"""
+    dimensions = _coerce_rubric_dimensions(value)
+    if not dimensions:
+        return 0
+
+    repository = _repository(db_path)
+    written = 0
+    for dimension in dimensions:
+        field = _clean(dimension.get("dimension_field"))
+        if not field:
+            continue
+        payload = {
+            "dimension_field": field,
+            "name": _clean(dimension.get("name")),
+            "weight": _as_int(dimension.get("weight")),
+            "full_mark": _as_int(dimension.get("full_mark")),
+            "total": _as_int(dimension.get("total")),
+            "full_mark_standard": _clean(dimension.get("full_mark_standard")),
+            "deduction_rules": _clean(dimension.get("deduction_rules")),
+            "status": _clean(dimension.get("status")) or ACTIVE_STATUS,
+        }
+        existing = repository.get("rubrics", field)
+        if existing is None:
+            repository.insert("rubrics", payload)
+        else:
+            changes = {
+                key: value
+                for key, value in payload.items()
+                if key != "dimension_field" and value is not None
+            }
+            if changes:
+                repository.update("rubrics", field, changes)
+        written += 1
+    _invalidate_caches()
+    return written
+
+
+def upsert_sample_assets(sample: dict, *, db_path: Path | None = None) -> None:
+    """将样本库记录写入正式评测资产层。
+
+    `samples.json` 只保留管理视图；任务题、Gold Answer 与结构化 Rubric 在
+    SQLite 可用时以这里写入的数据为准。
+    """
+    path = db_path or get_db_path()
+    if not database_ready(path):
+        raise DataLoadError(f"SQLite 数据库未初始化或不可用：{path}。请先初始化数据库。")
+
+    case_id = _clean(sample.get("sample_id"))
+    if not case_id:
+        raise DataLoadError("样本编号不能为空，无法写入正式任务层。")
+
+    raw_status = _clean(sample.get("formal_status") or sample.get("status")) or ACTIVE_STATUS
+    formal_status = FORMAL_STATUS_BY_BUSINESS_STATUS.get(raw_status, raw_status)
+    task_payload = {
+        "case_id": case_id,
+        "scenario": _clean(sample.get("scenario")),
+        "difficulty": _clean(sample.get("difficulty")),
+        "question": _clean(sample.get("task_prompt")),
+        "context": _clean(sample.get("business_context")),
+        "status": formal_status,
+    }
+    if get_task_case(case_id, path) is None:
+        create_task_case(task_payload, db_path=path)
+    else:
+        update_task_case(case_id, task_payload, db_path=path)
+
+    upsert_gold_answer(case_id, sample.get("gold_answer") or {}, db_path=path)
+    upsert_rubric_dimensions(sample.get("rubric"), db_path=path)
 
 
 # -- 错误标签体系（error taxonomy） ------------------------------------------ #
@@ -627,7 +823,15 @@ def _as_list(value: object) -> list[str]:
     if isinstance(value, (list, tuple, set)):
         items = [str(item).strip() for item in value]
     else:
-        items = [line.strip() for line in str(value).splitlines()]
+        text = str(value).strip()
+        try:
+            parsed = json.loads(text)
+        except (TypeError, json.JSONDecodeError):
+            parsed = None
+        if isinstance(parsed, list):
+            items = [str(item).strip() for item in parsed]
+        else:
+            items = [line.strip() for line in text.splitlines()]
     return [item for item in items if item]
 
 

@@ -1,9 +1,9 @@
 """轻量级样本库数据管理层。
 
 样本库是业务操作视图：待复核、已入库、需优化、已归档只在页面展示中文状态。
-状态会尽量同步到 SQLite `task_cases.status`，用于控制样本是否可进入测试；样本内容
-仍保存在 `data/samples.json`。正式评测的题干、参考答案和评分量表仍来自
-`task_cases` / `gold_answers` / `rubrics`。
+SQLite 可用时，样本库 CRUD 会同步维护正式评测资产：
+`task_cases` / `gold_answers` / `rubrics`。`data/samples.json` 保留为轻量管理视图、
+导入导出与兼容备份，不再作为正式评测内容的唯一来源。
 首次加载时若 JSON 不存在，从现有 `data/tasks.csv` + `data/gold_answers.json` 自动生成初始样本。
 """
 
@@ -263,10 +263,13 @@ def create_sample(values: dict[str, Any], *, db_path: Path | None = None) -> Non
 
     now = _now()
     sample = Sample.from_dict({**values, "created_at": now, "updated_at": now})
+    formal_db_path = _resolve_formal_db_path(db_path)
+    if formal_db_path is not None:
+        _sync_sample_assets_to_formal_layer(sample, db_path=formal_db_path)
+
     samples = load_samples()
     samples.append(sample)
     save_samples(samples)
-    _sync_status_to_formal_layer(sample.sample_id, sample.status, db_path=db_path)
 
 
 def update_sample(sample_id: str, changes: dict[str, Any], *, db_path: Path | None = None) -> None:
@@ -288,10 +291,13 @@ def update_sample(sample_id: str, changes: dict[str, Any], *, db_path: Path | No
     if errors:
         raise ValueError("；".join(errors))
 
-    samples[idx] = Sample.from_dict(updated)
+    updated_sample = Sample.from_dict(updated)
+    formal_db_path = _resolve_formal_db_path(db_path)
+    if formal_db_path is not None:
+        _sync_sample_assets_to_formal_layer(updated_sample, db_path=formal_db_path)
+
+    samples[idx] = updated_sample
     save_samples(samples)
-    if "status" in changes:
-        _sync_status_to_formal_layer(sample_id, samples[idx].status, db_path=db_path)
 
 
 def set_sample_status(sample_id: str, status: str, *, db_path: Path | None = None) -> None:
@@ -307,7 +313,7 @@ def archive_sample(sample_id: str, *, db_path: Path | None = None) -> None:
 
 
 def get_eligible_case_ids() -> list[str]:
-    """返回当前可用于正式测试的样本编号（状态为已入库）。"""
+    """返回本地样本视图中已入库的编号，保留给兼容场景使用。"""
     return [s.sample_id for s in load_samples() if s.status == "已入库"]
 
 
@@ -320,7 +326,7 @@ def export_samples_json() -> str:
     )
 
 
-def import_samples(samples_data: list[dict[str, Any]]) -> list[Sample]:
+def import_samples(samples_data: list[dict[str, Any]], *, db_path: Path | None = None) -> list[Sample]:
     """导入样本数组，按 sample_id 合并或新增，并统一校验。
 
     导入失败时抛出 ValueError，保留原数据不变。
@@ -372,9 +378,12 @@ def import_samples(samples_data: list[dict[str, Any]]) -> list[Sample]:
     if errors:
         raise ValueError("\n".join(errors))
 
+    formal_db_path = _resolve_formal_db_path(db_path)
+    if formal_db_path is not None:
+        for sample in imported:
+            _sync_sample_assets_to_formal_layer(sample, db_path=formal_db_path)
+
     save_samples(samples)
-    for sample in imported:
-        _sync_status_to_formal_layer(sample.sample_id, sample.status)
     return imported
 
 
@@ -457,26 +466,68 @@ def formal_status_for_sample_status(status: str) -> str:
     return FORMAL_STATUS_BY_SAMPLE_STATUS[status]
 
 
+def _resolve_formal_db_path(db_path: Path | None = None) -> Path | None:
+    """返回本次样本 CRUD 应同步的 SQLite 路径。
+
+    测试会把 `_SAMPLES_PATH` 指向临时 JSON；这种情况下未显式传入 db_path 时只验证
+    文件管理视图，避免意外修改开发库。真实应用使用默认 samples.json 且数据库就绪时，
+    会自动同步正式数据层。
+    """
+    try:
+        from app.services import dataset_service as ds
+
+        if db_path is not None:
+            path = Path(db_path)
+            if not ds.database_ready(path):
+                raise ValueError(f"SQLite 数据库未初始化或不可用：{path}。请先初始化数据库。")
+            return path
+
+        default_samples_path = _PROJECT_ROOT / "data" / "samples.json"
+        if _samples_path() != default_samples_path:
+            return None
+
+        path = ds.get_db_path()
+        return path if ds.database_ready(path) else None
+    except ValueError:
+        raise
+    except Exception:
+        return None
+
+
+def _sync_sample_assets_to_formal_layer(sample: Sample, *, db_path: Path) -> bool:
+    """将样本记录写入正式任务、Gold Answer 与 Rubric 数据层。"""
+    from app.services import dataset_service as ds
+
+    payload = sample.to_dict()
+    payload["formal_status"] = formal_status_for_sample_status(sample.status)
+    ds.upsert_sample_assets(payload, db_path=db_path)
+    return True
+
+
 def _sync_status_to_formal_layer(
     sample_id: str,
     sample_status: str,
     *,
     db_path: Path | None = None,
 ) -> bool:
-    """将样本状态同步到 SQLite 任务层。
-
-    只同步已存在于正式任务层的同编号样本；新增样本内容不在这里双写进 task/gold/rubric，
-    避免把自由表单文本误当作正式评测资产。
-    """
-    formal_status = formal_status_for_sample_status(sample_status)
+    """兼容旧调用：优先同步完整样本资产；找不到样本时仅同步状态。"""
     try:
         from app.services import dataset_service as ds
 
-        if not ds.database_ready(db_path):
+        formal_db_path = _resolve_formal_db_path(db_path)
+        if formal_db_path is None:
             return False
-        if ds.get_task_case(sample_id, db_path) is None:
+        sample = get_sample(sample_id)
+        if sample is not None:
+            sample.status = sample_status
+            return _sync_sample_assets_to_formal_layer(sample, db_path=formal_db_path)
+        if ds.get_task_case(sample_id, formal_db_path) is None:
             return False
-        ds.set_task_case_status(sample_id, formal_status, db_path=db_path)
+        ds.set_task_case_status(
+            sample_id,
+            formal_status_for_sample_status(sample_status),
+            db_path=formal_db_path,
+        )
         return True
     except Exception:
         return False

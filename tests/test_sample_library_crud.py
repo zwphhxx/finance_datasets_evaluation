@@ -4,6 +4,7 @@
 所有测试使用临时 JSON 文件，避免污染 data/samples.json。
 """
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -31,8 +32,17 @@ class SampleRepositoryTests(unittest.TestCase):
             "scenario": "某公司拟进行重大资产重组",
             "task_prompt": "请评估该交易是否构成重大资产重组。",
             "business_context": "上市公司现金收购",
-            "gold_answer": '{"core_conclusion": "构成重大资产重组"}',
-            "rubric": '["准确性", "完整性"]',
+            "gold_answer": json.dumps({
+                "case_id": sample_id,
+                "core_conclusion": "构成重大资产重组",
+                "must_have_points": ["测算交易指标比例"],
+                "unacceptable_errors": ["未测算比例即下结论"],
+            }, ensure_ascii=False),
+            "rubric": json.dumps([{
+                "dimension_field": "accuracy_score",
+                "full_mark_standard": "结论需基于明确测算。",
+                "deduction_rules": "缺少关键测算应扣分。",
+            }], ensure_ascii=False),
             "status": "待复核",
             "difficulty": "Hard",
             "reviewer_note": "",
@@ -154,6 +164,86 @@ class SampleRepositoryTests(unittest.TestCase):
 
             sr.archive_sample(case_id, db_path=db_path)
             self.assertEqual(ds.INACTIVE_STATUS, ds.get_task_case(case_id, db_path)["status"])
+
+    def test_create_sample_writes_formal_task_gold_and_rubric_when_db_ready(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "findueval.db"
+            ds.ensure_seed_database(db_path, force=True)
+            values = self._sample_values("PR01-NEW", title="PR01 新增样本")
+            values["status"] = "已入库"
+
+            sr.create_sample(values, db_path=db_path)
+
+            task = ds.get_task_case("PR01-NEW", db_path)
+            self.assertIsNotNone(task)
+            self.assertEqual(values["scenario"], task["scenario"])
+            self.assertEqual(values["task_prompt"], task["question"])
+            self.assertEqual(values["business_context"], task["context"])
+            self.assertEqual(values["difficulty"], task["difficulty"])
+            self.assertEqual(ds.ACTIVE_STATUS, task["status"])
+
+            gold = ds.get_gold_answer_record("PR01-NEW", db_path)
+            self.assertEqual("构成重大资产重组", gold["core_conclusion"])
+            self.assertEqual(["测算交易指标比例"], gold["must_have_points"])
+            self.assertEqual(["未测算比例即下结论"], gold["unacceptable_errors"])
+            self.assertTrue(ds.can_enter_formal_testing(task, gold, ds.get_rubric_dimensions(db_path)))
+
+            rubrics = ds.list_rubrics(db_path)
+            row = rubrics[rubrics["dimension_field"] == "accuracy_score"].iloc[0]
+            self.assertEqual("结论需基于明确测算。", row["full_mark_standard"])
+            self.assertEqual("缺少关键测算应扣分。", row["deduction_rules"])
+
+    def test_update_sample_updates_formal_task_gold_and_rubric_when_db_ready(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "findueval.db"
+            ds.ensure_seed_database(db_path, force=True)
+            values = self._sample_values("PR01-EDIT", title="PR01 编辑样本")
+            values["status"] = "已入库"
+            sr.create_sample(values, db_path=db_path)
+
+            updated_gold = json.dumps({
+                "case_id": "PR01-EDIT",
+                "core_conclusion": "需补充材料后判断",
+                "must_have_points": ["说明待核材料"],
+                "unacceptable_errors": ["把待核事项写成确定结论"],
+            }, ensure_ascii=False)
+            updated_rubric = json.dumps([{
+                "dimension_field": "accuracy_score",
+                "full_mark_standard": "更新后的满分标准。",
+                "deduction_rules": "更新后的扣分规则。",
+            }], ensure_ascii=False)
+
+            sr.update_sample(
+                "PR01-EDIT",
+                {
+                    "scenario": "更新后的场景",
+                    "task_prompt": "更新后的任务题。",
+                    "business_context": "更新后的业务背景",
+                    "difficulty": "Medium",
+                    "gold_answer": updated_gold,
+                    "rubric": updated_rubric,
+                    "status": "需优化",
+                },
+                db_path=db_path,
+            )
+
+            task = ds.get_task_case("PR01-EDIT", db_path)
+            self.assertEqual("更新后的场景", task["scenario"])
+            self.assertEqual("更新后的任务题。", task["question"])
+            self.assertEqual("更新后的业务背景", task["context"])
+            self.assertEqual("Medium", task["difficulty"])
+            self.assertEqual(ds.DRAFT_STATUS, task["status"])
+
+            gold = ds.get_gold_answer_record("PR01-EDIT", db_path)
+            self.assertEqual("需补充材料后判断", gold["core_conclusion"])
+            self.assertEqual(["说明待核材料"], gold["must_have_points"])
+            self.assertEqual(["把待核事项写成确定结论"], gold["unacceptable_errors"])
+
+            rubrics = ds.list_rubrics(db_path)
+            row = rubrics[rubrics["dimension_field"] == "accuracy_score"].iloc[0]
+            self.assertEqual("更新后的满分标准。", row["full_mark_standard"])
+            self.assertEqual("更新后的扣分规则。", row["deduction_rules"])
+            self.assertFalse(ds.can_enter_formal_testing(task, gold, ds.get_rubric_dimensions(db_path)))
 
     def test_export_and_import_samples(self):
         sr.create_sample(self._sample_values("SM-EXP"))

@@ -21,6 +21,7 @@ from app.services import conclusions as cc
 from app.services import eval_runner as er
 from app.services import scorer as sc
 from src.ui.page_config import PAGE_CONFIG_BY_KEY
+from src.ui.test_run import eligible_case_ids
 
 
 _PAGE_SOURCE = Path("src/ui/test_run.py").read_text(encoding="utf-8")
@@ -60,7 +61,7 @@ class PageFramingTests(unittest.TestCase):
 
     def test_boundary_mentions_prompt_separation(self):
         config = PAGE_CONFIG_BY_KEY["test_run"]
-        self.assertIn("不看到参考答案", config.boundary)
+        self.assertIn("不看到理想回复标准 / Gold Answer", config.boundary)
 
     def test_page_keeps_live_run_boundary_in_collapsed_note(self):
         self.assertIn("RUN_BOUNDARY_NOTE", _PAGE_SOURCE)
@@ -73,6 +74,41 @@ class ResultsTableColumnsTests(unittest.TestCase):
         # 结果主表必须展示状态、HTTP 状态、耗时、回答长度、错误码、错误信息、trace_id。
         for column in ("状态", "HTTP状态", "耗时(ms)", "回答长度", "错误码", "错误信息", "trace_id"):
             self.assertIn(column, _PAGE_SOURCE)
+
+
+class FormalSampleEligibilityTests(unittest.TestCase):
+    def test_eligible_case_ids_use_formal_status_gold_and_rubric(self):
+        tasks = [
+            {"case_id": "A", "status": "active"},
+            {"case_id": "B", "status": "draft"},
+            {"case_id": "C", "status": "inactive"},
+            {"case_id": "D", "status": "active"},
+        ]
+        gold_map = {
+            "A": {
+                "core_conclusion": "有结论",
+                "must_have_points": ["要点"],
+                "unacceptable_errors": ["错误"],
+            },
+            "B": {
+                "core_conclusion": "有结论",
+                "must_have_points": ["要点"],
+                "unacceptable_errors": ["错误"],
+            },
+            "C": {
+                "core_conclusion": "有结论",
+                "must_have_points": ["要点"],
+                "unacceptable_errors": ["错误"],
+            },
+            "D": {"core_conclusion": "缺少 Rubric 支撑要素"},
+        }
+        dimensions = [{"field": "accuracy_score", "name": "准确性", "full_mark": 30}]
+
+        self.assertEqual(["A"], eligible_case_ids(tasks, gold_map, dimensions))
+        self.assertEqual([], eligible_case_ids(tasks, gold_map, []))
+
+    def test_test_run_no_longer_depends_on_samples_json_eligibility(self):
+        self.assertNotIn("get_eligible_case_ids", _PAGE_SOURCE)
 
 
 class DraftPendingInvariantTests(unittest.TestCase):

@@ -4,7 +4,7 @@ FinDueEval 是一个面向金融、投行、财务和法律尽调场景的模型
 
 **待复核样本 → 已入库样本 → 发起测试 → 评分草稿 → 人工复核 → 正式结论**
 
-项目不包含真实公司数据。任务、参考答案、评分量表和历史样例默认来自 `data/` 下的版本化文件；也可以初始化本地 SQLite 运行时数据层，用于样本准入、真实模型运行记录、裁判评分和人工复核留存。不引入外部数据库、登录或复杂权限系统。
+项目不包含真实公司数据。任务、理想回复标准 / Gold Answer、Rubric 评分标准和历史样例默认来自 `data/` 下的版本化文件；也可以初始化本地 SQLite 运行时数据层，用于样本 CRUD、测试准入、真实模型运行记录、裁判评分和人工复核留存。不引入外部数据库、登录或复杂权限系统。
 
 ## 项目目标
 
@@ -29,8 +29,8 @@ FinDueEval 是一个面向金融、投行、财务和法律尽调场景的模型
 数据位于 `data/` 目录：
 
 - `tasks.csv`：评测任务。包含 `case_id`、`domain`、`scenario`、`task_type`、`difficulty`、`question`、`context` 等字段。
-- `gold_answers.json`：标准答案。包含 `case_id`、`gold_answer` 或 `conclusion`，并可扩展 `must_have_points`、`red_line_errors`、`evidence`、`optimization_note`。
-- `samples.json`：样本库管理视图，记录中文业务状态、备注和页面管理信息。
+- `gold_answers.json`：理想回复标准 / Gold Answer。包含 `case_id`、核心结论、必须覆盖点、不可接受错误与必要边界。
+- `samples.json`：样本库轻量管理视图，记录中文业务状态、备注和页面管理信息；SQLite 可用时，CRUD 会同步维护正式评测资产。
 - `model_outputs.csv`：模型回答的初始化资产，保留历史样例与列结构。
 - `scores.csv`：Rubric 评分的初始化资产，作为已沉淀结论的一部分。
 - `error_labels.csv`：错误标签。记录 `error_type`、`severity`、`error_description`、`correction`、`optimization_action`。
@@ -90,19 +90,21 @@ streamlit run app.py
 
 ## 样本库与正式评测口径
 
-`data/samples.json` 是样本库页面的管理视图，用中文状态表达业务流转：
+样本库 CRUD 是正式评测样本的维护入口。SQLite 可用时：
 
-- `待复核`：尚未进入测试准入。
-- `已入库`：允许在「发起测试」页选择。
-- `需优化`：暂不进入测试，等待补充或修订。
-- `已归档`：软归档，不参与测试。
+- 新增或编辑样本会写入 `task_cases`，维护任务题、场景、难度、业务背景和底层状态。
+- 理想回复标准 / Gold Answer 会写入 `gold_answers`，并保持 `raw_json` 与结构化字段一致。
+- 结构化 Rubric 输入会写入或更新 `rubrics` 中对应维度的满分标准、扣分规则等字段。
+- `data/samples.json` 继续保留为轻量管理视图、导入导出和兼容备份；正式评测以 SQLite 的 `task_cases`、`gold_answers`、`rubrics` 为准。
 
-正式评测使用的数据仍来自任务、参考答案和评分量表：
+页面只展示中文业务状态：
 
-- 文件模式：`tasks.csv`、`gold_answers.json`、`dataset_manifest.yml`。
-- SQLite 模式：`task_cases`、`gold_answers`、`rubrics`。
+- `待复核`：保存为底层 `draft`，不可进入测试。
+- `已入库`：保存为底层 `active`，且 Gold Answer 与 Rubric 完整后才可测试。
+- `需优化`：保存为底层 `draft`，不可进入测试。
+- `已归档`：保存为底层 `inactive`，不可进入测试。
 
-样本库状态用于控制是否可进入测试。SQLite 可用且任务编号已存在时，样本状态会同步到 `task_cases.status`：已入库对应可测试，待复核/需优化对应草稿，已归档对应停用。样本库中的自由文本不会自动覆盖正式题干、参考答案或评分量表，避免把草稿内容误计入正式评测。
+「发起测试」页只读取正式数据层中状态为已入库、具备完整 Gold Answer 和可用 Rubric 的样本。数据库未初始化时，应用仍可用文件模式展示 seed 数据；样本管理区会提示本地视图不能进入正式测试。
 
 ## 模型调用与评分
 
@@ -142,8 +144,8 @@ API Key、`Authorization` 请求头与完整请求头不会出现在页面、日
 ## 运行与复核边界
 
 - **运行编排**：`app/services/eval_runner.py` 负责多模型运行，结果可写入 `live_run_responses`。
-- **裁判评分**：`app/services/scorer.py` 负责对照参考答案和评分量表生成建议分，评分可写入 `live_run_scores`。
-- **Prompt 边界**：被评测模型只看到任务场景、题干与必要背景，不发送参考答案、必须覆盖点或不可接受错误；裁判模型可见参考答案，这是独立链路。
+- **裁判评分**：`app/services/scorer.py` 负责对照理想回复标准 / Gold Answer 和 Rubric 评分标准生成建议分，评分可写入 `live_run_scores`。
+- **Prompt 边界**：被评测模型只看到任务场景、题干、业务背景与输出要求，不发送 Gold Answer、必须覆盖点、不可接受错误或 Rubric；裁判模型可见这些评判标准，这是独立链路。
 - **人工复核**：评分写入后为待复核草稿，人工可修订各维度分与复核说明，确认后才进入正式结论。
 - **正式结论**：`app/services/conclusions.py` 只统计已沉淀评分和已复核归档评分，不统计待复核草稿。
 - **安全边界**：密钥、认证请求头和完整请求头不会展示在页面或日志；超时、限流和权限错误会转成结构化错误，页面不崩溃。

@@ -3,7 +3,7 @@
 Replaces eval_run_page.
 - 选择可进入测试的样本与被测模型。
 - 裁判模型使用系统默认配置，页面不提供裁判模型输入。
-- 被测模型提示词不包含参考答案。
+- 被测模型提示词不包含理想回复标准 / Gold Answer。
 - 默认仅选择一道样本，降低面试演示时的等待时间。
 """
 
@@ -18,7 +18,6 @@ from app.models.registry import available_providers, get_text_provider
 from app.services import dataset_service as ds
 from app.services import eval_runner as er
 from app.services import eval_state
-from app.services import sample_repository as sr
 from app.services import scorer as sc
 from src.ui.components import (
     render_compact_hero,
@@ -64,7 +63,7 @@ def render_test_run_page(data_bundle: dict) -> None:
     st.info(MAIN_PROMPT)
     with st.expander("运行边界", expanded=False):
         st.write(RUN_BOUNDARY_NOTE)
-        st.caption(f"裁判评分使用系统默认配置；被测模型全程不可见参考答案。")
+        st.caption("裁判评分使用系统默认配置；被测模型全程不可见理想回复标准 / Gold Answer。")
 
     tasks_df = base.tasks
     if tasks_df is None or tasks_df.empty:
@@ -85,7 +84,7 @@ def render_test_run_page(data_bundle: dict) -> None:
     _render_results()
 
     # 02 评分草稿
-    render_numbered_section("02", "评分草稿", "由裁判模型对照参考答案与评分量表给出建议分。")
+    render_numbered_section("02", "评分草稿", "由裁判模型对照理想回复标准 / Gold Answer 与 Rubric 评分标准给出建议分。")
     _render_scoring(base, provider_name, task_records)
     _render_score_results()
 
@@ -176,15 +175,11 @@ def _render_task_selector(task_records: list[dict], gold_map: dict) -> list[dict
         task_type = display_label(row.get("task_type"), TASK_TYPE_LABELS)
         return f"{case_id} · {task_type} · {summarize_text(row.get('question'), 24)}"
 
-    eligible_repo = set(sr.get_eligible_case_ids())
-    eligible = []
-    for case_id, row in by_case.items():
-        gold = gold_map.get(case_id) or {}
-        if ds.can_enter_formal_testing(row, gold) and case_id in eligible_repo:
-            eligible.append(case_id)
+    dimensions = ds.get_rubric_dimensions()
+    eligible = eligible_case_ids(task_records, gold_map, dimensions)
 
     if not eligible:
-        st.warning("当前没有具备完整评判标准且样本库状态为「已入库」的样本可测。请到「样本库」补充完整参考答案和评分量表，并将状态设为已入库。")
+        st.warning("当前没有状态为「已入库」且理想回复标准 / Gold Answer 与 Rubric 评分标准完整的样本可测。请到「样本库」补齐后再发起测试。")
         return []
 
     default_cases = [str(r.get("case_id")) for r in er.default_task_selection(task_records) if str(r.get("case_id")) in by_case]
@@ -193,17 +188,30 @@ def _render_task_selector(task_records: list[dict], gold_map: dict) -> list[dict
         default_cases = eligible[:1]
 
     chosen = st.multiselect(
-        "任务范围（默认仅 1 道活跃任务，可手动多选）",
+        "样本范围（默认仅 1 道已入库样本，可手动多选）",
         eligible,
         default=default_cases,
         format_func=_label,
         key="test_run_cases",
     )
     st.caption(
-        "默认只跑 1 道活跃任务以快速看到结果。实际生成次数 = 模型数 × 任务数。"
-        "仅评判标准完整且样本库状态为「已入库」的样本可进入测试。"
+        "默认只跑 1 道已入库样本以快速看到结果。实际生成次数 = 模型数 × 任务数。"
+        "只有正式数据层中状态为「已入库」且评判标准完整的样本可进入测试。"
     )
     return [by_case[c] for c in chosen]
+
+
+def eligible_case_ids(task_records: list[dict], gold_map: dict, rubric_dimensions: list[dict] | None) -> list[str]:
+    """返回正式数据层中可进入测试的样本编号。"""
+    eligible: list[str] = []
+    for row in task_records:
+        case_id = str(row.get("case_id") or "").strip()
+        if not case_id:
+            continue
+        gold = gold_map.get(case_id) or {}
+        if ds.can_enter_formal_testing(row, gold, rubric_dimensions):
+            eligible.append(case_id)
+    return eligible
 
 
 def _render_parameters() -> tuple[float, int]:

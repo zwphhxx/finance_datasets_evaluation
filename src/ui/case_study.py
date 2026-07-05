@@ -110,7 +110,7 @@ def render_case_study_page(data_bundle: dict) -> None:
         title="项目定位",
         paragraphs=[
             "FinDueEval 是一个面试 MVP，用脱敏尽调样本评估模型回答的可参考程度、复核需求和使用边界。",
-            "项目不是模型排行榜，也不替代专业判断；它把“看起来专业”的回答拆回参考答案、评分量表和人工复核记录。",
+            "项目不是模型排行榜，也不替代专业判断；它把“看起来专业”的回答拆回理想回复标准 / Gold Answer、Rubric 评分标准和人工复核记录。",
         ],
         index="01",
     )
@@ -129,7 +129,7 @@ def render_case_study_page(data_bundle: dict) -> None:
     render_story_section(
         title="样本口径",
         paragraphs=[
-            "样本库用于浏览和维护中文业务状态；正式评测读取任务题、参考答案和评分量表，避免把管理草稿误计入结论。",
+            "样本库是正式评测样本的维护入口；任务题、理想回复标准 / Gold Answer、Rubric 评分标准和状态会共同决定是否可进入测试。",
             "所有样本均从尽调场景脱敏抽象，去除真实公司、交易与敏感数据，保留可评测的专业判断结构。",
         ],
         index="03",
@@ -146,7 +146,7 @@ def render_case_study_page(data_bundle: dict) -> None:
     render_story_section(
         title="评分方式",
         paragraphs=[
-            "评分草稿由裁判模型对照参考答案和评分量表生成，人工可以修订分数和复核说明。高分不代表可直接使用，红线错误仍需人工判断。",
+            "评分草稿由裁判模型对照理想回复标准 / Gold Answer 和 Rubric 评分标准生成，人工可以修订分数和复核说明。高分不代表可直接使用，红线错误仍需人工判断。",
         ],
         index="04",
     )
@@ -208,7 +208,7 @@ def build_dataset_summary_items(data) -> list[tuple[str, str]]:
         ("任务样本", f"{task_count} 道脱敏尽调任务"),
         ("覆盖领域", f"{domain_count} 个专业领域"),
         ("任务类型", f"{task_type_count} 类专业任务"),
-        ("Gold Answer", f"{gold_count}/{task_count} 道已配参考答案"),
+        ("Gold Answer", f"{gold_count}/{task_count} 道已配理想回复标准"),
         ("评价维度", f"{dimension_count} 个 Rubric 维度 + {BOUNDARY_AWARENESS_LABEL}"),
     ]
 
@@ -219,7 +219,7 @@ def get_sample_structure_items() -> list[tuple[str, str]]:
         ("任务题与背景", "每道题给出业务场景、问题与必要背景，对应真实尽调中的一个判断节点。"),
         ("考察能力", "标注这道题主要考察的专业能力，便于按能力维度归类分析。"),
         ("风险等级", "标注任务的风险等级，风险越高的任务，红线判定越严格。"),
-        ("Gold Answer", "人工撰写的参考答案，包含核心结论、关键依据与边界条件。"),
+        ("Gold Answer", "人工撰写的理想回复标准，包含核心结论、关键依据与边界条件。"),
         ("必须覆盖点", "这道题必须命中的要点，遗漏即扣风险覆盖分。"),
         ("不可接受错误", "触碰即触发红线的错误，例如重大风险遗漏或无依据定性。"),
     ]
@@ -240,7 +240,7 @@ def get_project_brief_items() -> list[tuple[str, str]]:
         ),
         (
             "我的方法",
-            "把过往尽调经验脱敏抽象成标准化任务，人工撰写 Gold Answer，"
+            "把过往尽调经验脱敏抽象成标准化任务，人工撰写理想回复标准 / Gold Answer，"
             "再用 Rubric 多维评分 + 红线错误 + 人工复核，量化模型的可用边界。",
         ),
         (
@@ -261,7 +261,7 @@ def get_methodology_items() -> list[tuple[str, str]]:
         ),
         (
             "Gold Answer",
-            "每道题人工撰写参考答案：核心结论、关键依据、边界条件与必须覆盖点，"
+            "每道题人工撰写理想回复标准 / Gold Answer：核心结论、关键依据、边界条件与必须覆盖点，"
             "作为评分和错误归因的锚点。",
         ),
         (
