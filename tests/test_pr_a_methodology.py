@@ -60,7 +60,7 @@ class RegistrationTests(unittest.TestCase):
 
     def test_page_follows_project_explanation_sections(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
-        for section in ("项目定位", "评测闭环", "样本口径", "评分方式", "下一步"):
+        for section in ("项目定位", "评测流程", "样本口径", "评分方式", "下一步"):
             self.assertIn(section, source, section)
         self.assertIn("不是模型排行榜", source)
         self.assertIn("可用边界", source)
@@ -149,7 +149,7 @@ class DynamicStatsTests(unittest.TestCase):
     def test_how_to_read_steps(self):
         steps = get_how_to_read_steps()
         self.assertEqual(
-            ["先检查样本库状态", "再选择已入库样本发起测试", "最后复核评分并归档结论"],
+            ["先检查样本库", "再选择可测样本发起测试", "最后复核评分并归档结论"],
             steps,
         )
 

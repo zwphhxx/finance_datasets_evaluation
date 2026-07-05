@@ -131,8 +131,28 @@ class UIUXAuditFixesTests(unittest.TestCase):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         buttons = re.findall(r"st\.button\(", source)
         self.assertEqual(2, len(buttons), "项目说明页应提供样本库与发起测试两个入口")
-        self.assertIn('进入样本库', source)
-        self.assertIn('发起一次测试', source)
+        self.assertIn('查看样本库', source)
+        self.assertIn('发起测试', source)
+        self.assertEqual(1, source.count('type="primary"'))
+        self.assertIn('type="secondary"', source)
+
+    def test_case_study_does_not_duplicate_top_nav_actions(self):
+        source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
+        button_labels = re.findall(r'st\.button\("([^"]+)"', source)
+
+        self.assertEqual(["查看样本库", "发起测试"], button_labels)
+        for label in ["项目说明", "评测复核", "评测结论"]:
+            self.assertNotIn(label, button_labels)
+
+    def test_case_study_does_not_render_status_or_domain_pills(self):
+        source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("render_tag_cloud", source)
+        self.assertNotIn("render_status_summary", source)
+        for label in ["待复核样本", "已入库样本", "需优化样本", "已复核评分"]:
+            self.assertNotIn(label, source)
+        self.assertIn("_build_sample_scope_text", source)
+        self.assertIn("已脱敏抽象为可评测任务", source)
 
     def test_test_run_has_at_most_two_primary_buttons(self):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")

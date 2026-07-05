@@ -1,11 +1,10 @@
-"""项目说明页：定位、样本口径、评测闭环与主入口。
+"""项目说明页：定位、样本口径、评测流程与主入口。
 """
 
 from __future__ import annotations
 
 import streamlit as st
 
-from app.services import sample_repository as sr
 from src.metrics import SCORE_DIMENSIONS
 from src.model_boundary import BOUNDARY_AWARENESS_LABEL
 from src.ui.components import (
@@ -13,8 +12,6 @@ from src.ui.components import (
     render_process_line,
     render_pull_quote,
     render_story_section,
-    render_status_summary,
-    render_tag_cloud,
 )
 from src.ui.page_config import get_page_config
 
@@ -44,34 +41,35 @@ def _build_meta_line(data) -> str:
     return f"{task_count} 任务 · {domain_count} 领域 · {scored} 已评分 · {dimension_count} 维度"
 
 
-def _sample_library_counts() -> dict[str, int]:
-    try:
-        return sr.count_by_status()
-    except Exception:
-        return {status: 0 for status in sr.SAMPLE_STATUSES}
-
-
 def _build_home_stats(base, eval_status: dict | None) -> list[tuple[str, str]]:
     tasks = getattr(base, "tasks", None)
     task_count = len(tasks) if tasks is not None else 0
-    counts = _sample_library_counts()
-    confirmed = int((eval_status or {}).get("confirmed", 0) or 0)
+    domain_count = _distinct_count(tasks, "domain")
     return [
         (str(task_count), "正式样本"),
-        (str(counts.get("已入库", 0)), "已入库"),
-        (str(confirmed), "已复核评分"),
+        (str(domain_count), "尽调场景"),
         (str(len(SCORE_DIMENSIONS)), "评分维度"),
     ]
 
 
-def _get_domain_tags(data) -> list[str]:
-    """Extract domain tags from tasks, with Chinese labels."""
+def _build_sample_scope_text(data) -> str:
+    """Describe sample scope as plain text instead of homepage tags."""
     from src.ui.tasks import DOMAIN_LABELS, display_label
     tasks = getattr(data, "tasks", None)
     if tasks is None or tasks.empty or "domain" not in tasks.columns:
-        return ["资本市场", "财务尽调", "法律核查", "并购交易"]
-    domains = tasks["domain"].dropna().astype(str).unique()
-    return [display_label(d, DOMAIN_LABELS) for d in domains]
+        return "样本来自金融尽调场景，已脱敏抽象为可评测任务；不包含真实公司、交易或敏感数据。"
+    domains = [
+        display_label(domain, DOMAIN_LABELS)
+        for domain in tasks["domain"].dropna().astype(str).unique()
+    ]
+    domains = [domain for domain in domains if domain and domain != "未标注"]
+    if domains:
+        shown = domains[:4]
+        suffix = "等" if len(domains) > len(shown) else ""
+        domain_text = "、".join(shown) + suffix
+    else:
+        domain_text = "金融尽调"
+    return f"样本来自{domain_text}场景，已脱敏抽象为可评测任务；不包含真实公司、交易或敏感数据。"
 
 
 def _get_formal_conclusions(data) -> list[tuple[str, str]]:
@@ -118,30 +116,22 @@ def render_case_study_page(data_bundle: dict) -> None:
     render_story_section(
         title="评测流程",
         paragraphs=[
-            "主线从样本状态开始，到测试、评分草稿、人工复核和正式结论结束。只有已入库样本可进入测试，只有已复核评分进入正式结论。",
+            "主线从样本维护开始，到测试、评分草稿、人工复核和正式结论结束。只有通过样本库准入检查的样本可进入测试，只有人工复核确认后的分数进入正式结论。",
         ],
         index="02",
     )
     render_process_line([
-        "待复核样本", "已入库样本", "发起测试", "评分草稿", "人工复核", "正式结论"
+        "维护样本", "确认可测", "发起测试", "评分草稿", "人工复核", "正式结论"
     ])
 
     render_story_section(
         title="样本口径",
         paragraphs=[
-            "样本库是正式评测样本的维护入口；任务题、理想回复标准 / Gold Answer、Rubric 评分标准和状态会共同决定是否可进入测试。",
-            "所有样本均从尽调场景脱敏抽象，去除真实公司、交易与敏感数据，保留可评测的专业判断结构。",
+            _build_sample_scope_text(base),
+            "每个可测样本由任务题、业务背景、理想回复标准 / Gold Answer、Rubric 评分标准和状态组成；是否进入测试由样本库中的完整度校验决定。",
         ],
         index="03",
     )
-    render_tag_cloud(_get_domain_tags(base))
-    counts = _sample_library_counts()
-    render_status_summary([
-        ("待复核样本", str(counts.get("待复核", 0)), "warning"),
-        ("已入库样本", str(counts.get("已入库", 0)), "success"),
-        ("需优化样本", str(counts.get("需优化", 0)), "danger"),
-        ("已复核评分", str(int(eval_status.get("confirmed", 0) or 0)), "success"),
-    ])
 
     render_story_section(
         title="评分方式",
@@ -166,17 +156,17 @@ def render_case_study_page(data_bundle: dict) -> None:
     render_story_section(
         title="下一步",
         paragraphs=[
-            "先检查样本库状态，再选择已入库样本发起测试。测试完成后会生成评分草稿，进入人工复核后才形成正式结论。",
+            "先检查样本库，再选择可测样本发起测试。测试完成后会生成评分草稿，进入人工复核后才形成正式结论。",
         ],
         index="05",
     )
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("进入样本库", type="primary", key="case_study_samples"):
+        if st.button("查看样本库", type="primary", key="case_study_samples"):
             st.session_state.current_page = "samples"
             st.rerun()
     with col2:
-        if st.button("发起一次测试", key="case_study_try"):
+        if st.button("发起测试", type="secondary", key="case_study_try"):
             st.session_state.current_page = "test_run"
             st.rerun()
 
@@ -301,8 +291,8 @@ def get_dataset_snapshot_items(data) -> list[tuple[str, str]]:
 def get_how_to_read_steps() -> list[str]:
     """Deprecated: kept for backward compatibility."""
     return [
-        "先检查样本库状态",
-        "再选择已入库样本发起测试",
+        "先检查样本库",
+        "再选择可测样本发起测试",
         "最后复核评分并归档结论",
     ]
 
