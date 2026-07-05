@@ -61,6 +61,8 @@ REVIEW_SECTIONS = [
 ]
 REVIEW_FILTER_OPTIONS = ["待确认", "建议确认", "建议复核", "不建议采用", "已确认", "全部"]
 BULK_REVIEW_NOTE = "低风险评分草稿，经人工批量确认生效。"
+REVIEW_ACTION_RESULT_KEY = "review_action_result"
+REVIEW_AUTO_SWITCH_KEY = "review_auto_switch_pending"
 REVIEW_BULK_RESULT_KEY = "review_bulk_result"
 REVIEW_QUEUE_VERSION_KEY = "review_queue_version"
 
@@ -534,13 +536,33 @@ def render_review_page(data_bundle: dict) -> None:
     render_numbered_section("01", REVIEW_SECTIONS[0], "低风险评分可批量确认，高风险评分需逐条查看。")
     visible_items = _render_review_queue(items, selected_score_run_id)
     if not visible_items:
-        render_empty_state("当前筛选条件下暂无评分记录。")
+        if _should_switch_to_pending_filter(items):
+            st.session_state[REVIEW_AUTO_SWITCH_KEY] = False
+            st.session_state["review_queue_filter"] = "待确认"
+            _bump_review_queue_version()
+            st.rerun()
+        render_empty_state(review_empty_message(items))
         return
+    if should_show_no_pending_after_action(items, bool(st.session_state.get(REVIEW_AUTO_SWITCH_KEY))):
+        st.session_state[REVIEW_AUTO_SWITCH_KEY] = False
+        render_empty_state(review_empty_message(items))
+        return
+    st.session_state[REVIEW_AUTO_SWITCH_KEY] = False
+    action_result = _current_review_action_result()
+    selected_default = select_next_review_index(
+        visible_items,
+        handled_row_id=_as_int(action_result.get("row_id")) if action_result else None,
+    )
+    if selected_default is None:
+        render_empty_state(review_empty_message(items))
+        return
+    version = int(st.session_state.get(REVIEW_QUEUE_VERSION_KEY, 0) or 0)
     selected_index = st.selectbox(
         "当前评分",
         list(range(len(visible_items))),
+        index=selected_default,
         format_func=lambda index: _review_item_label(visible_items[index]),
-        key="review_score_select",
+        key=f"review_score_select::{version}",
     )
     item = visible_items[int(selected_index)]
     output_row = item["output_row"]
@@ -700,7 +722,7 @@ def _live_answer_lookup(responses: pd.DataFrame) -> dict[tuple[str, str, str], s
 
 def _render_review_queue(items: list[dict], selected_score_run_id: str | None) -> list[dict]:
     stats = build_review_queue_stats(items)
-    _render_bulk_review_feedback()
+    _render_review_feedback(items)
     render_inline_status(
         [
             ("待确认", str(stats["pending"])),
@@ -789,6 +811,54 @@ def build_review_queue_stats(items: list[dict]) -> dict[str, int]:
     return stats
 
 
+def has_pending_review_items(items: list[dict]) -> bool:
+    return any(
+        item.get("source") != "seed" and _review_status_value(item) == "pending"
+        for item in items
+    )
+
+
+def review_empty_message(items: list[dict]) -> str:
+    if has_pending_review_items(items):
+        return "当前筛选条件下暂无评分记录。"
+    return "当前批次暂无待确认评分。"
+
+
+def should_show_no_pending_after_action(items: list[dict], action_recent: bool) -> bool:
+    return bool(action_recent) and not has_pending_review_items(items)
+
+
+def select_next_review_index(
+    visible_items: list[dict],
+    *,
+    handled_row_id: int | None = None,
+) -> int | None:
+    if not visible_items:
+        return None
+    for index, item in enumerate(visible_items):
+        if handled_row_id is not None and _as_int(item.get("score_row_id")) == handled_row_id:
+            continue
+        if _review_status_value(item) == "pending":
+            return index
+    return 0
+
+
+def build_review_action_result(action_type: str, row_id: int | None) -> dict[str, object]:
+    messages = {
+        "confirm": "已确认生效，该评分已纳入正式结论。",
+        "revision": "已修订并确认，该评分已纳入正式结论。",
+        "skip": "已暂不采用，该评分未纳入正式结论。",
+    }
+    levels = {"confirm": "success", "revision": "success", "skip": "info"}
+    return {
+        "action_type": action_type,
+        "level": levels.get(action_type, "success"),
+        "message": messages.get(action_type, "操作已完成。"),
+        "row_id": row_id,
+        "show_conclusions_link": action_type in {"confirm", "revision"},
+    }
+
+
 def filter_review_queue_items(items: list[dict], filter_value: str) -> list[dict]:
     live_items = [item for item in items if item.get("source") != "seed"]
     if filter_value == "全部":
@@ -865,9 +935,8 @@ def _render_bulk_confirm_dialog(eligible_items: list[dict], blocked_count: int =
         if st.button("确认生效", type="primary", key="review_bulk_dialog_submit", use_container_width=True):
             result = _confirm_low_risk_items(eligible_items, blocked_count)
             st.session_state[REVIEW_BULK_RESULT_KEY] = result
-            st.session_state[REVIEW_QUEUE_VERSION_KEY] = int(
-                st.session_state.get(REVIEW_QUEUE_VERSION_KEY, 0) or 0
-            ) + 1
+            st.session_state.pop(REVIEW_ACTION_RESULT_KEY, None)
+            _bump_review_queue_version()
             st.session_state["review_queue_filter"] = "待确认"
             st.rerun()
     with col2:
@@ -938,7 +1007,37 @@ def build_bulk_review_message(
     return {"success": success, "warning": " ".join(warning_parts)}
 
 
-def _render_bulk_review_feedback() -> None:
+def _render_review_feedback(items: list[dict]) -> None:
+    _render_review_action_feedback(items)
+    _render_bulk_review_feedback(items)
+
+
+def _render_review_action_feedback(items: list[dict]) -> None:
+    result = _current_review_action_result()
+    if not result:
+        return
+    message = str(result.get("message") or "")
+    level = str(result.get("level") or "success")
+    if level == "warning":
+        st.warning(message)
+    elif level == "info":
+        st.info(message)
+    else:
+        st.success(message)
+    if has_pending_review_items(items):
+        st.caption("已切换到下一条待确认评分。")
+    else:
+        st.caption("当前批次暂无待确认评分。")
+    if result.get("show_conclusions_link") and st.button(
+        "查看评测结论",
+        type="secondary",
+        key="review_action_go_conclusions",
+    ):
+        st.session_state.current_page = "conclusions"
+        st.rerun()
+
+
+def _render_bulk_review_feedback(items: list[dict]) -> None:
     result = st.session_state.get(REVIEW_BULK_RESULT_KEY)
     if not isinstance(result, dict):
         return
@@ -948,9 +1047,40 @@ def _render_bulk_review_feedback() -> None:
         st.success(success)
     if warning:
         st.warning(warning)
+    if success:
+        if has_pending_review_items(items):
+            st.caption("已切换到下一条待确认评分。")
+        else:
+            st.caption("当前批次暂无待确认评分。")
     if success and st.button("查看评测结论", type="secondary", key="review_bulk_go_conclusions"):
         st.session_state.current_page = "conclusions"
         st.rerun()
+
+
+def _record_review_action_result(action_type: str, row_id: int | None) -> None:
+    st.session_state[REVIEW_ACTION_RESULT_KEY] = build_review_action_result(action_type, row_id)
+    st.session_state.pop(REVIEW_BULK_RESULT_KEY, None)
+    st.session_state[REVIEW_AUTO_SWITCH_KEY] = True
+    _bump_review_queue_version()
+
+
+def _current_review_action_result() -> dict:
+    result = st.session_state.get(REVIEW_ACTION_RESULT_KEY)
+    return result if isinstance(result, dict) else {}
+
+
+def _should_switch_to_pending_filter(items: list[dict]) -> bool:
+    return (
+        bool(st.session_state.get(REVIEW_AUTO_SWITCH_KEY))
+        and st.session_state.get("review_queue_filter") != "待确认"
+        and has_pending_review_items(items)
+    )
+
+
+def _bump_review_queue_version() -> None:
+    st.session_state[REVIEW_QUEUE_VERSION_KEY] = int(
+        st.session_state.get(REVIEW_QUEUE_VERSION_KEY, 0) or 0
+    ) + 1
 
 
 def _review_status_value(item: dict) -> str:
@@ -1333,7 +1463,7 @@ def _render_confirm_dialog(item: dict) -> None:
     col1, col2 = st.columns(2)
     with col1:
         if st.button("确认生效", type="primary", key=f"review_confirm_dialog_submit::{row_id}", use_container_width=True):
-            _confirm_review(row_id, _scores_from_row(row, ds.get_rubric_dimensions()), note, required)
+            _confirm_review(row_id, _scores_from_row(row, ds.get_rubric_dimensions()), note, required, "confirm")
     with col2:
         if st.button("取消", type="tertiary", key=f"review_confirm_dialog_cancel::{row_id}", use_container_width=True):
             st.rerun()
@@ -1367,7 +1497,7 @@ def _render_revision_dialog(item: dict) -> None:
     col1, col2 = st.columns(2)
     with col1:
         if st.button("保存并确认", type="primary", key=f"review_revision_submit::{row_id}", use_container_width=True):
-            _confirm_review(row_id, edited, note, True)
+            _confirm_review(row_id, edited, note, True, "revision")
     with col2:
         if st.button("取消", type="tertiary", key=f"review_revision_cancel::{row_id}", use_container_width=True):
             st.rerun()
@@ -1390,10 +1520,10 @@ def _render_skip_dialog(item: dict) -> None:
                 st.warning("请填写暂不采用原因。")
                 return
             if sc.skip_score_review(row_id, f"暂不采用：{cleaned}"):
-                st.info("已暂不采用。该评分草稿仍保留，未纳入正式结论。")
+                _record_review_action_result("skip", row_id)
                 st.rerun()
             else:
-                st.warning("暂不采用操作失败：请确认 SQLite 数据层已初始化。")
+                st.warning("暂不采用失败：请刷新页面后重试，或检查 SQLite 数据层是否已初始化。")
     with col2:
         if st.button("取消", type="tertiary", key=f"review_skip_cancel::{row_id}", use_container_width=True):
             st.rerun()
@@ -1426,15 +1556,21 @@ def _scores_from_row(row: dict | pd.Series, dimensions: list[dict]) -> dict[str,
     return scores
 
 
-def _confirm_review(row_id: int, edited: dict[str, int], note: str, requires_note: bool) -> None:
+def _confirm_review(
+    row_id: int,
+    edited: dict[str, int],
+    note: str,
+    requires_note: bool,
+    action_type: str = "confirm",
+) -> None:
     if requires_note and not _clean(note):
         st.warning("建议复核或不建议采用的评分，需要填写复核说明后再确认。")
         return
     if sc.confirm_score_review(row_id, edited, note):
-        st.success("已确认生效；该评分将纳入正式结论。")
+        _record_review_action_result(action_type, row_id)
         st.rerun()
     else:
-        st.warning("确认失败：请确认 SQLite 数据层已初始化。")
+        st.warning("确认失败：请刷新页面后重试，或检查 SQLite 数据层是否已初始化。")
 
 
 def _review_status_label(status: str) -> str:

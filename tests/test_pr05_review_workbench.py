@@ -274,6 +274,44 @@ class ReviewQueueTests(unittest.TestCase):
         self.assertEqual([10, 12], result["confirmed_ids"])
         self.assertEqual([11], result["failed_ids"])
 
+    def test_action_message_payload_persists_after_rerun(self):
+        payload = review.build_review_action_result("confirm", 42)
+
+        self.assertEqual("success", payload["level"])
+        self.assertEqual(42, payload["row_id"])
+        self.assertEqual("confirm", payload["action_type"])
+        self.assertEqual("已确认生效，该评分已纳入正式结论。", payload["message"])
+        self.assertTrue(payload["show_conclusions_link"])
+
+    def test_revision_and_skip_action_messages_are_specific(self):
+        revision = review.build_review_action_result("revision", 43)
+        skipped = review.build_review_action_result("skip", 44)
+
+        self.assertEqual("已修订并确认，该评分已纳入正式结论。", revision["message"])
+        self.assertEqual("已暂不采用，该评分未纳入正式结论。", skipped["message"])
+
+    def test_next_review_index_skips_handled_row_and_prefers_pending(self):
+        handled = self._item("建议确认", status="confirmed")
+        handled["score_row_id"] = 1
+        next_item = self._item("建议复核")
+        next_item["score_row_id"] = 2
+
+        self.assertEqual(1, review.select_next_review_index([handled, next_item], handled_row_id=1))
+        self.assertEqual(0, review.select_next_review_index([next_item], handled_row_id=1))
+        self.assertIsNone(review.select_next_review_index([], handled_row_id=1))
+
+    def test_pending_queue_helpers_drive_empty_state(self):
+        confirmed_item = self._item("建议确认", status="confirmed")
+        skipped_item = self._item("不建议采用", status="skipped")
+        pending_item = self._item("建议复核")
+
+        self.assertFalse(review.has_pending_review_items([confirmed_item, skipped_item]))
+        self.assertTrue(review.has_pending_review_items([confirmed_item, pending_item]))
+        self.assertEqual("当前批次暂无待确认评分。", review.review_empty_message([confirmed_item, skipped_item]))
+        self.assertEqual("当前筛选条件下暂无评分记录。", review.review_empty_message([confirmed_item, pending_item]))
+        self.assertTrue(review.should_show_no_pending_after_action([confirmed_item, skipped_item], True))
+        self.assertFalse(review.should_show_no_pending_after_action([confirmed_item, pending_item], True))
+
 
 class ErrorAttributionTests(unittest.TestCase):
     def test_error_attribution_rows_include_fix_and_data_action(self):
