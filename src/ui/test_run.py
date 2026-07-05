@@ -9,6 +9,7 @@ Replaces eval_run_page.
 
 from __future__ import annotations
 
+from datetime import datetime
 from html import escape
 
 import pandas as pd
@@ -160,6 +161,19 @@ def build_run_plan_summary(model_ids: list[str], selected_tasks: list[dict]) -> 
         "planned_responses": sample_count * model_count,
         "can_run": bool(sample_count and model_count),
     }
+
+
+def build_run_queue_items(model_ids: list[str], selected_tasks: list[dict]) -> list[dict]:
+    """Build the ordered model x sample queue used during execution."""
+    items: list[dict] = []
+    for model_id in _dedupe(model_ids):
+        for task in selected_tasks or []:
+            items.append({
+                "model_id": model_id,
+                "case_id": str(task.get("case_id") or ""),
+                "task": task,
+            })
+    return items
 
 
 def build_model_selection_options(models, keyword: str, limit: int = _MODEL_OPTION_LIMIT) -> tuple[list[str], int]:
@@ -325,6 +339,7 @@ def _render_configuration_panel(
     render_evidence_panel("评测配置", _kv_table_html(rows))
     if mode == "unconfigured":
         st.caption("当前未配置模型服务密钥，暂不能发起真实调用。模拟回退仅用于开发兜底，不作为页面可选服务。")
+    st.caption("建议首次运行选择 1 个样本和 1 个模型，确认链路后再扩大范围。")
 
     col1, col2, col3 = st.columns([1, 1, 1.2])
     with col1:
@@ -603,29 +618,33 @@ def _render_run_button(
     disabled = not run_plan["can_run"] or not service_ready
     if st.button("运行模型回答", type="primary", disabled=disabled, key="test_run_run"):
         provider = get_text_provider(prefer=provider_name)
-        total = int(run_plan["planned_responses"])
-        st.caption(
-            f"本次选择 {run_plan['sample_count']} 个样本、{run_plan['model_count']} 个模型，"
-            f"预计生成 {run_plan['planned_responses']} 条模型回答。"
-        )
-        progress = st.progress(0.0)
-        status = st.empty()
+        queue_items = build_run_queue_items(model_ids, selected_tasks)
+        run_id = er.generate_run_id()
+        mode = "mock" if getattr(provider, "name", "") == "mock" else "live"
+        outcomes: list[er.RunOutcome] = []
+        queue_slot = st.empty()
+        _render_live_run_queue(queue_slot, queue_items, outcomes, 0, mode)
 
-        def _on_progress(done: int, total_count: int, model_id: str, case_id: str) -> None:
-            ratio = (done / total_count) if total_count else 1.0
-            progress.progress(min(1.0, ratio))
-            if model_id:
-                status.caption(f"已完成 {done}/{total_count} · 正在生成：模型 {model_id} · 任务 {case_id}")
-            else:
-                status.caption(f"已完成 {done}/{total_count} · 正在汇总结果……")
+        for index, item in enumerate(queue_items):
+            _render_live_run_queue(queue_slot, queue_items, outcomes, index, mode)
+            outcome = er.run_single(
+                provider,
+                item["model_id"],
+                item["task"],
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            outcomes.append(outcome)
+            _render_live_run_queue(queue_slot, queue_items, outcomes, index + 1, mode)
 
-        result = er.run_models(
-            provider, model_ids, selected_tasks,
-            temperature=temperature, max_tokens=max_tokens,
-            progress_callback=_on_progress,
+        result = er.CompareRunResult(
+            run_id=run_id,
+            provider=getattr(provider, "name", ""),
+            model_ids=tuple(_dedupe(model_ids)),
+            mode=mode,
+            created_at=datetime.now().isoformat(timespec="seconds"),
+            outcomes=tuple(outcomes),
         )
-        progress.empty()
-        status.empty()
         persisted = er.persist_compare_result(result)
         eval_state.set_last_run(result)
         st.session_state["test_run_persisted"] = persisted
@@ -636,6 +655,39 @@ def _render_run_button(
             st.caption("请先选择至少一个模型与至少一道任务，再运行评测。")
         else:
             st.caption("当前未配置模型服务密钥，暂不能发起真实调用。")
+
+
+def _render_live_run_queue(slot, queue_items: list[dict], outcomes: list[er.RunOutcome], cursor: int, mode: str) -> None:
+    total = len(queue_items)
+    done = len(outcomes)
+    current = queue_items[cursor] if cursor < total else None
+    waiting = queue_items[cursor + 1:] if current else []
+    with slot.container():
+        st.markdown("**运行队列**")
+        st.caption(
+            f"样本 {len({item['case_id'] for item in queue_items})} 个 · "
+            f"模型 {len({item['model_id'] for item in queue_items})} 个 · "
+            f"预计回答 {total} 条 · 运行模式：{_mode_label(mode)}"
+        )
+        st.progress((done / total) if total else 0.0)
+        if current:
+            st.markdown(
+                f"已完成 {done} / {total} · 正在生成："
+                f"{current['model_id']} · 任务 {current['case_id']}"
+            )
+        else:
+            st.markdown(f"已完成 {done} / {total} · 正在汇总结果")
+
+        if outcomes:
+            st.markdown("**已完成结果**")
+            for index, outcome in enumerate(outcomes, start=1):
+                _render_run_outcome_preview(outcome, index, expanded=False)
+        if waiting:
+            waiting_text = "；".join(
+                f"{item['case_id']} · {item['model_id']}" for item in waiting[:5]
+            )
+            suffix = f" 等 {len(waiting)} 条" if len(waiting) > 5 else ""
+            st.caption(f"等待中：{waiting_text}{suffix}")
 
 
 def _render_results() -> None:
@@ -656,11 +708,39 @@ def _render_results() -> None:
     if er.is_mock_result(result):
         st.caption("本次为模拟回退模式运行，回答为模拟生成。")
 
-    with st.expander("查看回答", expanded=False):
+    first_success = next((outcome for outcome in result.outcomes if outcome.success), None)
+    first_failed = next((outcome for outcome in result.outcomes if not outcome.success), None)
+    if first_success is not None:
+        _render_run_outcome_preview(first_success, 1, expanded=False, heading="第一条成功回答")
+    elif first_failed is not None:
+        _render_run_outcome_preview(first_failed, 1, expanded=False, heading="第一条失败原因")
+
+    with st.expander("查看全部回答", expanded=False):
         _render_answer_viewer(result)
 
     with st.expander("查看运行明细", expanded=False):
         _render_results_table(result)
+
+
+def _render_run_outcome_preview(
+    outcome: er.RunOutcome,
+    index: int,
+    *,
+    expanded: bool = False,
+    heading: str | None = None,
+) -> None:
+    title = heading or f"{index}. {outcome.case_id} · {outcome.model_id}"
+    st.markdown(f"**{title}**")
+    st.caption(f"任务编号：{outcome.case_id} · 模型：{outcome.model_id}")
+    if outcome.success:
+        st.markdown(f"回答摘要：{escape(_short(outcome.answer_text, 160))}")
+        with st.expander("查看完整回答", expanded=expanded):
+            render_text_block("模型回答", outcome.answer_text or "—")
+    else:
+        st.warning(
+            f"未获得有效回答。错误码：{_dash(outcome.error_code)}；"
+            f"错误信息：{_short(outcome.error_message, 160)}"
+        )
 
 
 def _render_results_table(result) -> None:

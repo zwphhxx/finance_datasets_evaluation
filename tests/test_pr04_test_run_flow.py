@@ -10,6 +10,7 @@ from app.services import scorer as sc
 from src.ui.test_run import (
     build_model_selection_options,
     build_run_plan_summary,
+    build_run_queue_items,
     build_sample_options,
     build_sample_selection_rows,
     build_score_summary_rows,
@@ -63,6 +64,18 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertNotIn('st.slider("temperature"', source)
         self.assertNotIn('number_input(\n            "max_tokens"', source)
         self.assertNotIn("账户余额：未获取", source)
+
+    def test_run_execution_streams_queue_items_in_page(self):
+        source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+
+        self.assertIn("运行队列", source)
+        self.assertIn("已完成结果", source)
+        self.assertIn("等待中", source)
+        self.assertIn("er.run_single", source)
+        self.assertIn("er.CompareRunResult", source)
+        self.assertIn("第一条成功回答", source)
+        self.assertIn("第一条失败原因", source)
+        self.assertNotIn("progress_callback=_on_progress", source)
 
     def test_model_selection_options_are_bounded_and_searchable(self):
         models = [
@@ -231,6 +244,17 @@ class RunPlanTests(unittest.TestCase):
         self.assertEqual(2, summary["sample_count"])
         self.assertEqual(4, summary["planned_responses"])
         self.assertTrue(summary["can_run"])
+
+    def test_run_queue_items_dedupe_models_and_preserve_order(self):
+        queue = build_run_queue_items(
+            ["m1", "m1", "m2"],
+            [{"case_id": "A"}, {"case_id": "B"}],
+        )
+
+        self.assertEqual(
+            [("m1", "A"), ("m1", "B"), ("m2", "A"), ("m2", "B")],
+            [(item["model_id"], item["case_id"]) for item in queue],
+        )
 
 
 class ScoreDraftTests(unittest.TestCase):
