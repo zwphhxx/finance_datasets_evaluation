@@ -126,7 +126,9 @@ streamlit run app.py
 
 ## SQLite 初始化
 
-项目不初始化数据库也能运行；此时读取 `data/` 种子文件。若要启用样本 CRUD 同步正式数据层、真实运行记录和人工复核归档，可初始化本地 SQLite：
+项目不初始化数据库也能运行；此时读取 `data/` 种子文件。启动时会默认检查本地 SQLite：如果数据库不存在或不可用，会从种子数据自动初始化一次；如果数据库已可用，不会重复覆盖，避免清空运行时样本、评分草稿和人工复核记录。
+
+如需手动初始化或重建，可执行：
 
 ```bash
 python -m app.db.init_db
@@ -141,6 +143,13 @@ export FINDUEVAL_DB_PATH=/path/to/findueval.db
 streamlit run app.py
 ```
 
+如需关闭部署启动时的自动初始化：
+
+```bash
+export FINDUEVAL_AUTO_INIT_DB=0
+streamlit run app.py
+```
+
 SQLite 数据层仅使用标准库 `sqlite3`。相关文件：
 
 - `app/db/schema.sql`：任务题、Gold Answer、Rubric、模型回答、评分、错误标签、优化动作、评测运行和 live 结果表。
@@ -148,6 +157,8 @@ SQLite 数据层仅使用标准库 `sqlite3`。相关文件：
 - `app/db/repository.py`：基础读写封装。
 - `app/services/dataset_service.py`：SQLite 优先、文件回退的数据服务层。
 - `app/services/sample_repository.py`：样本管理视图与正式数据层同步。
+
+当前 SQLite 仅适合单机演示和面试 MVP。Streamlit Cloud 等部署环境的本地文件系统不应被视为长期多人协作数据库；需要多人标注、权限或审计时，应另行设计协作后端。
 
 ## 模型服务与安全
 
@@ -158,6 +169,7 @@ SQLite 数据层仅使用标准库 `sqlite3`。相关文件：
 | `SILICONFLOW_API_KEY` | 模型服务 API Key；缺失时进入模拟回退。 |
 | `SILICONFLOW_BASE_URL` | API Base URL。 |
 | `SILICONFLOW_TIMEOUT_SECONDS` | 请求超时秒数。 |
+| `FINDUEVAL_AUTO_INIT_DB` | 是否在启动时自动初始化 SQLite；默认启用，设为 `0` 可关闭。 |
 
 安全边界：
 
