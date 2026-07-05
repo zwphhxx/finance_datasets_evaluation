@@ -43,13 +43,11 @@ class ReviewStructureTests(unittest.TestCase):
     def test_review_sections_have_required_order(self):
         self.assertEqual(
             [
-                "任务与背景",
-                "理想回复标准 / Gold Answer",
-                "模型回答摘要",
-                "评分矩阵",
-                "错误归因",
-                "红线提示",
-                "人工复核",
+                "待确认评分",
+                "当前评分详情",
+                "评分依据",
+                "风险与红线",
+                "确认处理",
             ],
             review.get_review_sections(),
         )
@@ -57,7 +55,8 @@ class ReviewStructureTests(unittest.TestCase):
     def test_scoring_matrix_is_not_hidden_in_expander(self):
         source = Path("src/ui/review.py").read_text(encoding="utf-8")
         self.assertNotIn('with st.expander("评分矩阵"', source)
-        self.assertIn('render_numbered_section("04", "评分矩阵"', source)
+        self.assertIn('render_numbered_section("03", REVIEW_SECTIONS[2]', source)
+        self.assertIn("build_review_recommendation", source)
 
 
 class ReviewMatrixTests(unittest.TestCase):
@@ -97,6 +96,7 @@ class ReviewMatrixTests(unittest.TestCase):
         self.assertEqual("18 / 30", rows[0]["模型得分"])
         self.assertEqual("结论准确且依据充分", rows[0]["理想回复要求 / Gold 要求"])
         self.assertEqual("事实错误扣分", rows[0]["扣分原因"])
+        self.assertEqual("未返回明确依据", rows[0]["评分依据"])
         self.assertEqual("风险遗漏", rows[1]["对应错误标签"])
         self.assertEqual("暂无规则", rows[1]["扣分原因"])
 
@@ -110,6 +110,61 @@ class ReviewMatrixTests(unittest.TestCase):
         self.assertEqual("待补充", rows[0]["模型得分"])
         self.assertEqual("待补充", rows[0]["理想回复要求 / Gold 要求"])
         self.assertEqual("暂无错误标签", rows[0]["对应错误标签"])
+
+
+class RecommendationTests(unittest.TestCase):
+    def test_high_score_with_rationale_can_be_confirmed(self):
+        row = _score_row(
+            total_score=90,
+            accuracy_score=28,
+            coverage_score=18,
+            answer_text="回答内容",
+            judge_status="success",
+            rationale='{"accuracy_score":"核心结论准确且依据充分","coverage_score":"覆盖主要风险点与核查事项"}',
+            review_note="可确认",
+        )
+
+        recommendation = review.build_review_recommendation(
+            row,
+            pd.DataFrame(),
+            {},
+            pd.Series({"risk_level": "中"}),
+            review.build_rubric_rows(row),
+        )
+
+        self.assertEqual("建议确认", recommendation["recommendation"])
+
+    def test_redline_or_low_score_is_not_recommended_for_archive(self):
+        row = _score_row(
+            total_score=45,
+            answer_text="回答内容",
+            judge_status="success",
+            rationale='{"accuracy_score":"依据不足"}',
+            review_note="需谨慎",
+        )
+        errors = _errors(
+            {
+                "output_id": "OUT-1",
+                "case_id": "CASE-1",
+                "model_name": "model-x",
+                "error_type": "风险遗漏",
+                "severity": "高",
+                "error_description": "未覆盖关键风险",
+                "correction": "补充关键风险判断",
+                "optimization_action": "增加风险覆盖样本",
+            }
+        )
+
+        recommendation = review.build_review_recommendation(
+            row,
+            errors,
+            {"unacceptable_errors": ["未覆盖关键风险"]},
+            pd.Series({"risk_level": "中"}),
+            review.build_rubric_rows(row),
+        )
+
+        self.assertEqual("不建议归档", recommendation["recommendation"])
+        self.assertTrue(any("高严重度错误" in reason for reason in recommendation["reasons"]))
 
 
 class ErrorAttributionTests(unittest.TestCase):

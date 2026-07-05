@@ -328,7 +328,7 @@ class PortfolioNavTests(unittest.TestCase):
         self.assertEqual(5, len(_TOP_NAV_ITEMS))
         labels = [label for label, _ in _TOP_NAV_ITEMS]
         self.assertEqual(
-            ["项目说明", "样本库", "发起测试", "评测复核", "评测结论"],
+            ["项目说明", "样本库", "发起测试", "评分确认", "评测结论"],
             labels,
         )
 

@@ -26,7 +26,7 @@ _TOP_NAV_ITEMS = [
     ("项目说明", "case_study"),
     ("样本库", "samples"),
     ("发起测试", "test_run"),
-    ("评测复核", "review"),
+    ("评分确认", "review"),
     ("评测结论", "conclusions"),
 ]
 

@@ -141,7 +141,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
         button_labels = re.findall(r'st\.button\("([^"]+)"', source)
 
         self.assertEqual(["查看样本库", "发起测试"], button_labels)
-        for label in ["项目说明", "评测复核", "评测结论"]:
+        for label in ["项目说明", "评分确认", "评测结论"]:
             self.assertNotIn(label, button_labels)
 
     def test_case_study_does_not_render_status_or_domain_pills(self):

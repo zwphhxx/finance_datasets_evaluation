@@ -1511,7 +1511,7 @@ def _render_score_results(task_records: list[dict]) -> None:
         _render_score_compare_dialog(score_result, dimensions)
 
     if ds.database_ready():
-        if st.button("进入评测复核", key="test_run_to_review", type="secondary"):
+        if st.button("进入评分确认", key="test_run_to_review", type="secondary"):
             st.session_state.current_page = "review"
             st.rerun()
     else:

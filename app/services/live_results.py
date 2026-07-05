@@ -29,6 +29,7 @@ SCORE_COLUMNS = [
     "output_id", "case_id", "model_name",
     "accuracy_score", "reasoning_score", "coverage_score",
     "evidence_score", "expression_score", "total_score", "review_note",
+    "rationale", "judge_model", "judge_status", "review_status", "error_code", "error_message",
 ]
 _DIMENSION_COLUMNS = (
     "accuracy_score", "reasoning_score", "coverage_score",
@@ -75,6 +76,12 @@ def build_live_evaluation_data(base: EvaluationData, run_result, score_rows: Seq
             "case_id": case_id,
             "model_name": model_name,
             "review_note": _clean(row.get("review_note")),
+            "rationale": _clean(row.get("rationale")),
+            "judge_model": _clean(row.get("judge_model")),
+            "judge_status": _clean(row.get("judge_status")),
+            "review_status": _clean(row.get("review_status")),
+            "error_code": _clean(row.get("error_code")),
+            "error_message": _clean(row.get("error_message")),
         }
         for column in _DIMENSION_COLUMNS:
             record[column] = _as_number(row.get(column))

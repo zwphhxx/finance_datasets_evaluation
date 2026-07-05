@@ -210,7 +210,7 @@ def _render_drafts(pending_live, responses) -> None:
         return
 
     st.markdown(f"当前有 **{count}** 条待复核草稿。")
-    if st.button("进入评测复核", key="conc_to_review"):
+    if st.button("进入评分确认", key="conc_to_review"):
         st.session_state.current_page = "review"
         st.rerun()
 

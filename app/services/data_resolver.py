@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Mapping
 
 from app.services import dataset_service as ds
@@ -69,9 +70,13 @@ def _collect_score_rows(score_result) -> list[dict]:
             "case_id": outcome.case_id,
             "eval_model": outcome.eval_model,
             "judge_status": outcome.judge_status,
+            "judge_model": outcome.judge_model,
             "total_score": outcome.total_score,
+            "rationale": json.dumps(dict(outcome.rationale or {}), ensure_ascii=False) if outcome.rationale else "",
             "review_note": outcome.review_note,
             "review_status": outcome.review_status,
+            "error_code": outcome.error_code,
+            "error_message": outcome.error_message,
         }
         for key, value in (outcome.scores or {}).items():
             record[key] = value
