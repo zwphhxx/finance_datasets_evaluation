@@ -22,7 +22,7 @@ def resolve_active_data(base) -> tuple[Any, dict[str, Any]]:
     """根据会话中的运行 / 评分结果，返回 (EvaluationData, eval_status)。
 
     有运行结果则用真实回答 + 裁判成功评分组装 EvaluationData；否则返回结果类全空的对象，
-    分析页走空状态。eval_status 提供给页面做「建议分 / 待复核」提示。
+    分析页走空状态。eval_status 提供给页面做「建议分 / 待确认」提示。
     """
     run = eval_state.get_last_run()
     if run is None:
@@ -107,9 +107,9 @@ def build_data_context_info(base, eval_status: Mapping[str, Any] | None) -> dict
         confirmed = int(eval_status.get("confirmed", 0) or 0)
         pending = int(eval_status.get("pending", 0) or 0)
         if pending > 0:
-            score_status = f"评分 {scored} 条 · 待复核 {pending}"
+            score_status = f"评分 {scored} 条 · 待确认 {pending}"
         else:
-            score_status = f"评分 {scored} 条 · 已复核 {confirmed}"
+            score_status = f"评分 {scored} 条 · 已确认 {confirmed}"
     else:
         score_status = "未运行评测"
 

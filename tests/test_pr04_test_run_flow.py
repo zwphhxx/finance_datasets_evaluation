@@ -460,7 +460,7 @@ class ScoreDraftTests(unittest.TestCase):
 
         self.assertEqual(1, default_score_view_index(outcomes))
         self.assertEqual("A｜model-failed｜未评分｜失败", options[0]["label"])
-        self.assertEqual("B｜model-ok｜78分｜待人工复核", options[1]["label"])
+        self.assertEqual("B｜model-ok｜78分｜待确认", options[1]["label"])
 
     def test_score_summary_rows_use_dynamic_dimensions_and_pending_review(self):
         dimensions = [
@@ -495,7 +495,7 @@ class ScoreDraftTests(unittest.TestCase):
         self.assertEqual("20", rows[0]["准确性"])
         self.assertEqual("10", rows[0]["覆盖度"])
         self.assertEqual("30", rows[0]["总分"])
-        self.assertEqual("待人工复核", rows[0]["裁判状态"])
+        self.assertEqual("待确认", rows[0]["裁判状态"])
 
 
 class ScoringInputTests(unittest.TestCase):

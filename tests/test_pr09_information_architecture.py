@@ -19,7 +19,7 @@ EXPECTED_PAGE_KEYS = [
 EXPECTED_PAGE_TITLES = [
     "项目说明",
     "样本库",
-    "发起测试",
+    "发起评测",
     "评分确认",
     "评测结论",
 ]

@@ -66,8 +66,8 @@ class SampleReadinessTests(unittest.TestCase):
         task = {**self.task, "status": ds.INACTIVE_STATUS}
         readiness = self._assess(task=task)
         self.assertFalse(readiness.is_testable)
-        self.assertEqual("已归档", readiness.label)
-        self.assertIn("样本已归档", readiness.missing_items)
+        self.assertEqual("已移出测试", readiness.label)
+        self.assertIn("样本已移出测试", readiness.missing_items)
 
     def test_missing_task_fields_are_reported(self):
         task = {**self.task, "question": "", "context": "", "scenario": ""}

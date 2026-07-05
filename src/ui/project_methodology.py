@@ -67,7 +67,7 @@ def _get_formal_conclusions(data) -> list[tuple[str, str]]:
         items.append((text, meta))
     if not items:
         items.append((
-            "当前暂无正式评测结论。运行一次真实评测并经人工复核归档后，结论会在此汇总。",
+            "当前暂无正式评测结论。运行一次真实评测并经人工确认后，结论会在此汇总。",
             ""
         ))
     return items
@@ -88,7 +88,7 @@ def render_project_methodology_page(data_bundle: dict) -> None:
         checklist_items=[
             "经验样本脱敏沉淀",
             "Gold Answer + Rubric 多维评价",
-            "草稿评测经人工复核后归档",
+            "评分草稿经人工确认后生效",
         ],
         meta_line=_build_meta_line(data),
     )
@@ -115,7 +115,7 @@ def render_project_methodology_page(data_bundle: dict) -> None:
         index="02",
     )
     render_process_line([
-        "经验样本", "Gold Answer", "Rubric", "模型回答", "人工复核", "结论归档"
+        "经验样本", "Gold Answer", "Rubric", "模型回答", "评分确认", "正式结论"
     ])
 
     # --- Section 03: Dataset (Dataset Snapshot) ---
@@ -154,7 +154,7 @@ def render_project_methodology_page(data_bundle: dict) -> None:
     render_story_section(
         title="Conclusions",
         paragraphs=[
-            "正式结论只纳入已人工沉淀的基准结论与已复核归档的现场结论。草稿评测未进入正式结论。",
+            "正式结论只纳入已人工确认的现场结论。评分草稿未确认前不进入正式结论。",
         ],
         index="05",
     )
@@ -272,7 +272,7 @@ def get_methodology_items() -> list[tuple[str, str]]:
             "再高分也不能直接使用，必须人工复核或判为不可用。",
         ),
         (
-            "人工复核归档",
+            "评分确认",
             "裁判分数为建议分；现场评测结果默认进入草稿（pending），"
             "经人工复核确认后才计入正式评测结论。",
         ),

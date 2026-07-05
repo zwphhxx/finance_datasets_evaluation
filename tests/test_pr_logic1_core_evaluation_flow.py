@@ -124,10 +124,10 @@ class ReviewStatusConclusionsTests(unittest.TestCase):
         self.assertEqual(0, len(confirmed))
 
         formal = cc.build_formal_conclusions(seed, confirmed)
-        # pending 不进入正式结论，只有 seed 数据
+        # pending 和 seed 示例均不进入正式结论。
         models = {item["model_name"] for item in formal}
         self.assertNotIn("live_m", models)
-        self.assertIn("seed_m", models)
+        self.assertNotIn("seed_m", models)
 
     def test_confirmed_enters_formal_conclusions(self):
         """confirmed 状态的评分进入正式结论。"""
@@ -149,11 +149,11 @@ class ReviewStatusConclusionsTests(unittest.TestCase):
         formal = cc.build_formal_conclusions(seed, confirmed)
         models = {item["model_name"] for item in formal}
         self.assertIn("live_m", models)
-        self.assertIn("seed_m", models)
+        self.assertNotIn("seed_m", models)
 
         summary = cc.summarize_formal(seed, confirmed)
         self.assertEqual(1, summary["confirmed_rows"])
-        self.assertEqual(len(seed) + 1, summary["total_rows"])
+        self.assertEqual(1, summary["total_rows"])
 
 
 class PromptBoundaryTests(unittest.TestCase):
@@ -188,7 +188,7 @@ class NavigationTests(unittest.TestCase):
     def test_top_nav_items_are_core_workflow(self):
         """主导航条目对应核心评测流程。"""
         labels = [label for label, _ in _TOP_NAV_ITEMS]
-        expected = ["项目说明", "样本库", "发起测试", "评分确认", "评测结论"]
+        expected = ["项目说明", "样本库", "发起评测", "评分确认", "评测结论"]
         self.assertEqual(labels, expected)
 
 

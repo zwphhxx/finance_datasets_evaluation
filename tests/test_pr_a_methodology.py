@@ -109,7 +109,7 @@ class DynamicStatsTests(unittest.TestCase):
         items = get_methodology_items()
         labels = [label for label, _ in items]
         self.assertEqual(
-            ["样本脱敏抽象", "Gold Answer", "Rubric 多维评分", "红线错误", "人工复核归档"],
+            ["样本脱敏抽象", "Gold Answer", "Rubric 多维评分", "红线错误", "评分确认"],
             labels,
         )
         for _, note in items:
@@ -149,7 +149,7 @@ class DynamicStatsTests(unittest.TestCase):
     def test_how_to_read_steps(self):
         steps = get_how_to_read_steps()
         self.assertEqual(
-            ["先检查样本库", "再选择可测样本发起测试", "最后复核评分并归档结论"],
+            ["先检查样本库", "再选择可测样本发起评测", "最后确认评分并纳入正式结论"],
             steps,
         )
 

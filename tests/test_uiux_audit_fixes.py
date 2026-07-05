@@ -130,9 +130,9 @@ class UIUXAuditFixesTests(unittest.TestCase):
     def test_case_study_has_single_primary_cta(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         buttons = re.findall(r"st\.button\(", source)
-        self.assertEqual(2, len(buttons), "项目说明页应提供样本库与发起测试两个入口")
+        self.assertEqual(2, len(buttons), "项目说明页应提供样本库与发起评测两个入口")
         self.assertIn('查看样本库', source)
-        self.assertIn('发起测试', source)
+        self.assertIn('发起评测', source)
         self.assertEqual(1, source.count('type="primary"'))
         self.assertIn('type="secondary"', source)
 
@@ -140,7 +140,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         button_labels = re.findall(r'st\.button\("([^"]+)"', source)
 
-        self.assertEqual(["查看样本库", "发起测试"], button_labels)
+        self.assertEqual(["查看样本库", "发起评测"], button_labels)
         for label in ["项目说明", "评分确认", "评测结论"]:
             self.assertNotIn(label, button_labels)
 
@@ -182,7 +182,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn("当前样本", samples_source)
         self.assertIn("编辑当前样本", samples_source)
         self.assertIn("移出测试", samples_source)
-        self.assertIn("删除在本 MVP 中采用移出测试 / 归档方式实现", samples_source)
+        self.assertIn("移出测试是软删除", samples_source)
         self.assertIn("移出测试是软删除", samples_source)
         self.assertNotIn("点击表格行可查看当前样本。", samples_source)
         self.assertNotIn("_render_sample_selectbox_fallback", samples_source)
@@ -207,7 +207,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn("#### 完整度检查", samples_source)
         self.assertNotIn('st.expander("任务内容", expanded=False)', samples_source)
         self.assertNotIn(".current-sample-summary", Path("src/ui/components.py").read_text(encoding="utf-8"))
-        self.assertIn("维护正式评测样本。完整且已入库的样本可以进入发起测试。", page_config_source)
+        self.assertIn("维护正式评测样本。完整且已入库的样本可以进入发起评测。", page_config_source)
         self.assertIn("查询样本、样本列表、当前样本。", page_config_source)
         self.assertNotIn("新增和编辑会同步任务题", samples_source)
 
@@ -229,7 +229,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn("score_run_id", source)
         self.assertIn("if not score_run_id:", source)
         self.assertIn('if review_status != "pending":', source)
-        self.assertIn('"确认并归档"', source)
+        self.assertIn('"确认生效"', source)
 
     def test_conclusions_does_not_render_card_classes(self):
         source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")

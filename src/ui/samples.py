@@ -61,7 +61,7 @@ def _difficulty_label(value) -> str:
 
 
 def _test_status_label(sample: sr.Sample, readiness: ds.SampleReadiness) -> str:
-    if sample.status == "已归档" or readiness.label == "已归档":
+    if sample.status == sr.REMOVED_FROM_TEST_STATUS or readiness.label == "已移出测试":
         return "已移出测试"
     if readiness.is_testable:
         return "可测试"
@@ -71,7 +71,7 @@ def _test_status_label(sample: sr.Sample, readiness: ds.SampleReadiness) -> str:
 
 
 def _sample_status_label(sample: sr.Sample) -> str:
-    return "已移出测试" if sample.status == "已归档" else (sample.status or "待复核")
+    return sample.status or "待复核"
 
 
 def _format_date(value) -> str:
@@ -332,7 +332,7 @@ def build_sample_asset_sections(
         },
         {
             "title": "状态、完整度与复核记录",
-            "caption": "说明样本为什么可以或不能进入发起测试，并保留人工复核备注。",
+            "caption": "说明样本为什么可以或不能进入发起评测，并保留人工复核备注。",
         },
     ]
 
@@ -719,11 +719,11 @@ def render_samples_page(data_bundle: dict) -> None:
 
     col1, col2 = st.columns([1, 3])
     with col1:
-        if st.button("进入发起测试", key="samples_to_test_run", type="secondary", use_container_width=True):
+        if st.button("进入发起评测", key="samples_to_test_run", type="secondary", use_container_width=True):
             st.session_state.current_page = "test_run"
             st.rerun()
     with col2:
-        st.caption("发起测试页只展示已入库且通过完整度校验的样本。")
+        st.caption("发起评测页只展示已入库且通过完整度校验的样本。")
 
     _render_pending_dialogs(rubric_dimensions)
 
@@ -799,7 +799,7 @@ def _ensure_selected_sample(samples: list[sr.Sample]) -> sr.Sample | None:
 
 
 def _render_current_sample_actions(selected: sr.Sample | None) -> None:
-    is_archived = bool(selected and selected.status == "已归档")
+    is_archived = bool(selected and selected.status == sr.REMOVED_FROM_TEST_STATUS)
     disabled = selected is None
     col1, col2, col3, col4 = st.columns([1, 1.1, 1, 2.8])
     with col1:
@@ -830,14 +830,14 @@ def _render_current_sample_actions(selected: sr.Sample | None) -> None:
             if not ds.database_ready():
                 st.caption("SQLite 未初始化时，新增或编辑不会进入正式测试。")
             _render_backup_controls()
-            st.caption("删除在本 MVP 中采用移出测试 / 归档方式实现，避免破坏历史评测记录。")
+            st.caption("删除在本 MVP 中采用移出测试方式实现，避免破坏历史评测记录。")
 
     if selected is None:
         st.caption("当前查询无结果，无法编辑或移出测试。")
     elif is_archived:
         st.caption("该样本已移出测试。")
     else:
-        st.caption("移出测试是软删除：移出后不会进入发起测试，历史记录仍保留。")
+        st.caption("移出测试是软删除：移出后不会进入发起评测，历史记录仍保留。")
 
 
 def _render_sample_detail(
@@ -1006,7 +1006,7 @@ def _readiness_markdown(sample: sr.Sample, readiness: ds.SampleReadiness) -> str
 
 - 是否可测试：{"是" if readiness.is_testable else "否"}
 - 当前状态：{_md_value(_sample_status_label(sample))}
-- 检查结果：{_md_value("已移出测试" if readiness.label == "已归档" else readiness.label)}
+- 检查结果：{_md_value(readiness.label)}
 - 缺失项：{_md_value(missing_items)}
 - 复核备注：{_md_value(sample.reviewer_note or "未填写")}
 
@@ -1447,7 +1447,7 @@ def _render_archive_dialog(sample_id: str) -> None:
     if sample is None:
         render_empty_state("未找到该样本。")
     else:
-        st.write("确认移出测试？移出后，该样本不会进入发起测试，历史记录仍保留。")
+        st.write("确认移出测试？移出后，该样本不会进入发起评测，历史记录仍保留。")
         st.caption(f"{sample.sample_id}｜{sample.title or '未命名样本'}")
     col1, col2 = st.columns(2)
     with col1:

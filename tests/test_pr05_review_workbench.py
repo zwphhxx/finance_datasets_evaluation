@@ -163,7 +163,7 @@ class RecommendationTests(unittest.TestCase):
             review.build_rubric_rows(row),
         )
 
-        self.assertEqual("不建议归档", recommendation["recommendation"])
+        self.assertEqual("不建议采用", recommendation["recommendation"])
         self.assertTrue(any("高严重度错误" in reason for reason in recommendation["reasons"]))
 
 
@@ -182,7 +182,7 @@ class ReviewQueueTests(unittest.TestCase):
         items = [
             self._item("建议确认"),
             self._item("建议复核"),
-            self._item("不建议归档"),
+            self._item("不建议采用"),
             self._item("建议确认", status="confirmed"),
             self._item("建议确认", source="seed"),
         ]
@@ -202,7 +202,7 @@ class ReviewQueueTests(unittest.TestCase):
         seed_item = self._item("建议确认", source="seed")
         items = [confirm_item, review_item, confirmed_item, seed_item]
 
-        self.assertEqual([confirm_item, seed_item], review.filter_review_queue_items(items, "建议确认"))
+        self.assertEqual([confirm_item], review.filter_review_queue_items(items, "建议确认"))
         self.assertEqual([confirmed_item], review.filter_review_queue_items(items, "已确认"))
         self.assertTrue(review.is_bulk_confirm_eligible(confirm_item))
         self.assertFalse(review.is_bulk_confirm_eligible(review_item))

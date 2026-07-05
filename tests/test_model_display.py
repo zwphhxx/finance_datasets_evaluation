@@ -22,11 +22,11 @@ class ModelDisplayTests(unittest.TestCase):
         self.assertEqual("示例历史评价：seed_m", md.display_model_name("seed_m", source="seed"))
         self.assertEqual("示例历史评价", md.source_label("seed"))
         self.assertEqual("本次运行结果", md.source_label("live"))
-        self.assertEqual("已复核归档", md.source_label("confirmed_live"))
+        self.assertEqual("已确认", md.source_label("confirmed_live"))
 
 
 class ConclusionSourceDisplayTests(unittest.TestCase):
-    def test_seed_formal_conclusions_keep_example_source_label(self):
+    def test_seed_formal_conclusions_do_not_enter_current_formal_flow(self):
         seed = pd.DataFrame([
             {
                 "model_name": "Model_A_baseline",
@@ -42,10 +42,7 @@ class ConclusionSourceDisplayTests(unittest.TestCase):
         ])
         rows = cc.build_formal_conclusions(seed, pd.DataFrame())
 
-        self.assertEqual("Model_A_baseline", rows[0]["model_name"])
-        self.assertEqual("示例基线回答", rows[0]["display_name"])
-        self.assertEqual("seed", rows[0]["source"])
-        self.assertEqual("示例历史评价", rows[0]["source_label"])
+        self.assertEqual([], rows)
 
     def test_live_formal_conclusions_show_actual_selected_model_short_name(self):
         live = pd.DataFrame([
@@ -72,15 +69,14 @@ class ConclusionSourceDisplayTests(unittest.TestCase):
         self.assertEqual("vendor/Actual-Model", rows[0]["model_name"])
         self.assertEqual("Actual-Model", rows[0]["display_name"])
         self.assertEqual("confirmed_live", rows[0]["source"])
-        self.assertEqual("已复核归档", rows[0]["source_label"])
+        self.assertEqual("已确认", rows[0]["source_label"])
 
-    def test_conclusions_page_keeps_current_and_seed_views_separate(self):
+    def test_conclusions_page_uses_current_confirmed_results_only(self):
         source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
 
         self.assertIn("当前真实评测结论", source)
-        self.assertIn("示例历史评价", source)
         self.assertIn("cc.build_model_boundaries(pd.DataFrame(), confirmed_live", source)
-        self.assertIn("cc.build_formal_conclusions(seed_scores, pd.DataFrame())", source)
+        self.assertNotIn("Model_A_baseline", source)
 
 
 if __name__ == "__main__":

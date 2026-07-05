@@ -297,8 +297,37 @@ def score_compare(
 def persist_score_result(result: ScoreResult, db_path: Path | None = None) -> bool:
     """尽力将评分结果写入 SQLite live_run_scores；数据库不可用时静默跳过，返回是否成功。
 
-    写入独立的 live_run_scores 表，不触碰 seed 的 score_records。任何异常都不向上抛出。
+    写入独立的 live_run_scores 表，不触碰 seed 的 score_records。已写入的单条评分会按
+    (score_run_id, case_id, eval_model) 去重，避免增量评分和最终汇总重复入库。
     """
+    if not result.outcomes:
+        return False
+    persisted = [
+        persist_score_outcome(
+            result.score_run_id,
+            result.run_id,
+            result.judge_provider,
+            result.judge_model,
+            result.mode,
+            outcome,
+            db_path=db_path,
+        )
+        for outcome in result.outcomes
+    ]
+    return all(persisted)
+
+
+def persist_score_outcome(
+    score_run_id: str,
+    run_id: str,
+    judge_provider: str,
+    judge_model: str,
+    mode: str,
+    outcome: ScoreOutcome,
+    *,
+    db_path: Path | None = None,
+) -> bool:
+    """增量写入单条评分草稿；用于边评分边入库。"""
     try:
         from app.services.dataset_service import database_ready, get_db_path
         from app.db.repository import Repository
@@ -306,39 +335,78 @@ def persist_score_result(result: ScoreResult, db_path: Path | None = None) -> bo
         path = db_path or get_db_path()
         if not database_ready(path):
             return False
-        rows = []
-        for o in result.outcomes:
-            row = {
-                "score_run_id": result.score_run_id,
-                "run_id": result.run_id,
-                "case_id": o.case_id,
-                "task_type": o.task_type,
-                "eval_model": o.eval_model,
-                "judge_provider": o.judge_provider,
-                "judge_model": o.judge_model,
-                "judge_mode": result.mode,
-                "judge_status": o.judge_status,
-                "total_score": o.total_score,
-                "rationale": json.dumps(dict(o.rationale), ensure_ascii=False) if o.rationale else None,
-                "review_note": o.review_note or None,
-                "review_status": o.review_status,
-                "latency_ms": o.latency_ms,
-                "input_tokens": o.input_tokens,
-                "output_tokens": o.output_tokens,
-                "total_tokens": o.total_tokens,
-                "trace_id": o.trace_id,
-                "error_code": o.error_code,
-                "error_message": o.error_message,
-            }
-            for field_name, value in o.scores.items():
-                row[field_name] = value
-            rows.append(row)
-        if not rows:
-            return False
-        Repository(path).bulk_insert("live_run_scores", rows)
+        repo = Repository(path)
+        if _score_outcome_exists(repo, score_run_id, outcome.case_id, outcome.eval_model):
+            return True
+        repo.bulk_insert(
+            "live_run_scores",
+            [
+                _score_outcome_row(
+                    score_run_id,
+                    run_id,
+                    judge_provider,
+                    judge_model,
+                    mode,
+                    outcome,
+                )
+            ],
+        )
         return True
     except Exception:
         return False
+
+
+def _score_outcome_exists(repo, score_run_id: str, case_id: str, eval_model: str) -> bool:
+    try:
+        rows = repo.list_df("live_run_scores")
+        if rows.empty:
+            return False
+        required = {"score_run_id", "case_id", "eval_model"}
+        if not required.issubset(rows.columns):
+            return False
+        matched = rows[
+            (rows["score_run_id"].astype(str) == str(score_run_id))
+            & (rows["case_id"].astype(str) == str(case_id))
+            & (rows["eval_model"].astype(str) == str(eval_model))
+        ]
+        return not matched.empty
+    except Exception:
+        return False
+
+
+def _score_outcome_row(
+    score_run_id: str,
+    run_id: str,
+    judge_provider: str,
+    judge_model: str,
+    mode: str,
+    outcome: ScoreOutcome,
+) -> dict[str, Any]:
+    row = {
+        "score_run_id": score_run_id,
+        "run_id": run_id,
+        "case_id": outcome.case_id,
+        "task_type": outcome.task_type,
+        "eval_model": outcome.eval_model,
+        "judge_provider": outcome.judge_provider or judge_provider,
+        "judge_model": outcome.judge_model or judge_model,
+        "judge_mode": mode,
+        "judge_status": outcome.judge_status,
+        "total_score": outcome.total_score,
+        "rationale": json.dumps(dict(outcome.rationale), ensure_ascii=False) if outcome.rationale else None,
+        "review_note": outcome.review_note or None,
+        "review_status": outcome.review_status or "pending",
+        "latency_ms": outcome.latency_ms,
+        "input_tokens": outcome.input_tokens,
+        "output_tokens": outcome.output_tokens,
+        "total_tokens": outcome.total_tokens,
+        "trace_id": outcome.trace_id,
+        "error_code": outcome.error_code,
+        "error_message": outcome.error_message,
+    }
+    for field_name, value in outcome.scores.items():
+        row[field_name] = value
+    return row
 
 
 def confirm_score_review(
@@ -425,6 +493,29 @@ def confirm_score_reviews_bulk(
         return {"confirmed": len(valid_ids), "failed": failed}
     except Exception:
         return {"confirmed": 0, "failed": unique_ids}
+
+
+def skip_score_review(
+    row_id: int,
+    review_note: str = "",
+    *,
+    db_path: Path | None = None,
+) -> bool:
+    """标记评分草稿为暂不采用；记录保留，但不会进入正式结论。"""
+    try:
+        from app.services.dataset_service import database_ready, get_db_path
+        from app.db.repository import Repository
+
+        path = db_path or get_db_path()
+        if not database_ready(path):
+            return False
+        changes: dict[str, Any] = {"review_status": "skipped"}
+        if review_note:
+            changes["review_note"] = review_note
+        Repository(path).update("live_run_scores", row_id, changes)
+        return True
+    except Exception:
+        return False
 
 
 def is_mock_score(result: ScoreResult) -> bool:

@@ -163,7 +163,7 @@ def _load_from_db(db_path_value: str, _mtime: float) -> EvaluationData:
 # 最小 CRUD（PR-31）
 #
 # 仅写入 SQLite，不回写 data/ 下的 seed 文件；写入后清空缓存，使样本库、
-# 发起测试、评测复核和评测结论在下一次 rerun 立即看到最新数据。所有写入统一经由
+# 发起评测、评分确认和评测结论在下一次 rerun 立即看到最新数据。所有写入统一经由
 # repository，页面层不出现任何 SQL。
 # --------------------------------------------------------------------------- #
 
@@ -204,12 +204,13 @@ DRAFT_STATUS = "draft"
 DATA_STATUS_LABELS = {
     ACTIVE_STATUS: "已入库",
     DRAFT_STATUS: "待复核",
-    INACTIVE_STATUS: "已归档",
+    INACTIVE_STATUS: "已移出测试",
 }
 FORMAL_STATUS_BY_BUSINESS_STATUS = {
     "待复核": DRAFT_STATUS,
     "已入库": ACTIVE_STATUS,
     "需优化": DRAFT_STATUS,
+    "已移出测试": INACTIVE_STATUS,
     "已归档": INACTIVE_STATUS,
 }
 
@@ -327,7 +328,7 @@ def assess_sample_readiness(
     record(has_rubric_criteria(rubric_dimensions), "存在 Rubric 评分标准", "缺少 Rubric 评分标准")
 
     if status == INACTIVE_STATUS:
-        missing.append("样本已归档")
+        missing.append("样本已移出测试")
     elif status == ACTIVE_STATUS:
         satisfied.append("状态为已入库")
     else:
@@ -335,7 +336,7 @@ def assess_sample_readiness(
 
     is_testable = not missing
     if status == INACTIVE_STATUS:
-        label = "已归档"
+        label = "已移出测试"
     elif is_testable:
         label = "完整，可测试"
     elif any(item.startswith("缺少") for item in missing):
@@ -426,7 +427,7 @@ def list_dataset_versions(db_path: Path | None = None) -> list[str]:
     """返回数据集中出现过的版本号（去重、降序）。
 
     数据库可用时取自 task_cases.version；否则回退读取 manifest 声明的版本。
-    供「发起测试」等页面做数据集版本选择。
+    供「发起评测」等页面做数据集版本选择。
     """
     path = db_path or get_db_path()
     if database_ready(path):

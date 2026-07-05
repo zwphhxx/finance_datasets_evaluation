@@ -24,7 +24,7 @@ SOURCE_LABELS: dict[str, str] = {
     LIVE_SOURCE: "本次运行结果",
     "pending_live": "本次运行结果",
     "draft": "本次运行结果",
-    CONFIRMED_LIVE_SOURCE: "已复核归档",
+    CONFIRMED_LIVE_SOURCE: "已确认",
 }
 
 

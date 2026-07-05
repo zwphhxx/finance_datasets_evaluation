@@ -9,9 +9,15 @@ from app.services import conclusions as cc
 
 def _score(case_id: str, model: str, total: int, output_id: str | None = None, **dims):
     row = {
+        "id": abs(hash((case_id, model, total))) % 100000,
+        "run_id": "RUN-PR06",
         "output_id": output_id or f"{case_id}-{model}",
         "case_id": case_id,
+        "eval_model": model,
         "model_name": model,
+        "judge_status": "success",
+        "review_status": "confirmed",
+        "status": "active",
         "accuracy_score": 27,
         "reasoning_score": 18,
         "coverage_score": 18,
@@ -67,7 +73,7 @@ class ModelBoundaryClassificationTests(unittest.TestCase):
             _score("C2", "model-high", 90),
         ])
 
-        result = cc.build_model_boundaries(scores, pd.DataFrame(), pd.DataFrame(), _tasks())
+        result = cc.build_model_boundaries(pd.DataFrame(), scores, pd.DataFrame(), _tasks())
         row = _boundary_by_model(result)["model-high"]
 
         self.assertEqual("可作为初稿参考", row["boundary"])
@@ -80,7 +86,7 @@ class ModelBoundaryClassificationTests(unittest.TestCase):
             _score("C2", "model-mid", 72),
         ])
 
-        row = _boundary_by_model(cc.build_model_boundaries(scores, pd.DataFrame(), pd.DataFrame(), _tasks()))["model-mid"]
+        row = _boundary_by_model(cc.build_model_boundaries(pd.DataFrame(), scores, pd.DataFrame(), _tasks()))["model-mid"]
 
         self.assertEqual("必须人工复核", row["boundary"])
         self.assertTrue(any("平均分处于中间区间" in reason for reason in row["reasons"]))
@@ -91,7 +97,7 @@ class ModelBoundaryClassificationTests(unittest.TestCase):
             _score("C2", "model-low", 55),
         ])
 
-        row = _boundary_by_model(cc.build_model_boundaries(scores, pd.DataFrame(), pd.DataFrame(), _tasks()))["model-low"]
+        row = _boundary_by_model(cc.build_model_boundaries(pd.DataFrame(), scores, pd.DataFrame(), _tasks()))["model-low"]
 
         self.assertEqual("不可作为依据", row["boundary"])
         self.assertTrue(any("平均分明显偏低" in reason for reason in row["reasons"]))
@@ -104,7 +110,7 @@ class ModelBoundaryClassificationTests(unittest.TestCase):
         errors = _errors({"output_id": "O1", "case_id": "C1", "model_name": "model-risk",
                           "error_type": "风险遗漏", "severity": "高", "error_description": "遗漏关键风险"})
 
-        row = _boundary_by_model(cc.build_model_boundaries(scores, pd.DataFrame(), errors, _tasks()))["model-risk"]
+        row = _boundary_by_model(cc.build_model_boundaries(pd.DataFrame(), scores, errors, _tasks()))["model-risk"]
 
         self.assertEqual("必须人工复核", row["boundary"])
         self.assertTrue(row["has_high_severity_error"])
@@ -119,7 +125,7 @@ class ModelBoundaryClassificationTests(unittest.TestCase):
                           "error_type": "风险遗漏", "severity": "高", "error_description": "遗漏关键风险"})
         tasks = _tasks({"case_id": "C1", "risk_level": "高"}, {"case_id": "C2", "risk_level": "中"})
 
-        row = _boundary_by_model(cc.build_model_boundaries(scores, pd.DataFrame(), errors, tasks))["model-high-risk"]
+        row = _boundary_by_model(cc.build_model_boundaries(pd.DataFrame(), scores, errors, tasks))["model-high-risk"]
 
         self.assertEqual("不可作为依据", row["boundary"])
         self.assertTrue(any("高风险任务" in reason for reason in row["reasons"]))
@@ -130,7 +136,7 @@ class ModelBoundaryClassificationTests(unittest.TestCase):
             _score("C2", "model-weak", 88, coverage_score=9),
         ])
 
-        row = _boundary_by_model(cc.build_model_boundaries(scores, pd.DataFrame(), pd.DataFrame(), _tasks()))["model-weak"]
+        row = _boundary_by_model(cc.build_model_boundaries(pd.DataFrame(), scores, pd.DataFrame(), _tasks()))["model-weak"]
 
         self.assertEqual("必须人工复核", row["boundary"])
         self.assertTrue(row["major_weaknesses"])
@@ -139,7 +145,7 @@ class ModelBoundaryClassificationTests(unittest.TestCase):
     def test_small_sample_count_limits_conclusion_strength(self):
         scores = pd.DataFrame([_score("C1", "model-single", 94)])
 
-        row = _boundary_by_model(cc.build_model_boundaries(scores, pd.DataFrame(), pd.DataFrame(), _tasks()))["model-single"]
+        row = _boundary_by_model(cc.build_model_boundaries(pd.DataFrame(), scores, pd.DataFrame(), _tasks()))["model-single"]
 
         self.assertEqual("必须人工复核", row["boundary"])
         self.assertTrue(row["sample_insufficient"])
@@ -166,7 +172,7 @@ class ModelBoundaryClassificationTests(unittest.TestCase):
             _score("C2", "model-plain", 88),
         ])
 
-        result = cc.build_model_boundaries(scores, pd.DataFrame(), pd.DataFrame([{"case_id": "C1"}]), pd.DataFrame())
+        result = cc.build_model_boundaries(pd.DataFrame(), scores, pd.DataFrame([{"case_id": "C1"}]), pd.DataFrame())
         row = _boundary_by_model(result)["model-plain"]
 
         self.assertEqual("可作为初稿参考", row["boundary"])

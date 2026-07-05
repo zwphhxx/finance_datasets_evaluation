@@ -830,7 +830,7 @@ def _render_case_review(output_row: pd.Series | None, eval_status: dict) -> None
         return
     review_status = str(row.get("review_status") or "pending")
     if review_status == "confirmed":
-        render_info_panel("复核状态", "本条评分已复核归档。")
+        render_info_panel("复核状态", "本条评分已确认。")
         return
 
     dimensions = ds.get_rubric_dimensions()
@@ -849,12 +849,12 @@ def _render_case_review(output_row: pd.Series | None, eval_status: dict) -> None
     note = st.text_area(
         "复核说明", value=str(row.get("review_note") or ""), key=f"case_review_note::{row['id']}"
     )
-    if st.button("确认并归档（人工复核通过）", key=f"case_review_confirm::{row['id']}"):
+    if st.button("确认生效（人工复核通过）", key=f"case_review_confirm::{row['id']}"):
         if sc.confirm_score_review(int(row["id"]), edited, note):
-            st.success("已归档为已复核（confirmed）。")
+            st.success("已确认（confirmed）。")
             st.rerun()
         else:
-            st.warning("归档失败：请确认 SQLite 数据层已初始化。")
+            st.warning("确认失败：请确认 SQLite 数据层已初始化。")
 
 
 def _render_preference_section(preference_pairs_df, model_outputs_df, selected_case: str) -> None:

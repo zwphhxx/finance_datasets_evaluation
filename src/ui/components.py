@@ -2020,8 +2020,8 @@ def render_review_caveat(eval_status) -> None:
     scored = int(eval_status.get("scored", 0) or 0)
     confirmed = int(eval_status.get("confirmed", 0) or 0)
     render_html(
-        '<div class="warning-panel">当前评分为裁判模型建议分（如未复核，请在总览页确认归档）。'
-        f"已复核 {confirmed}/{scored}。</div>"
+        '<div class="warning-panel">当前评分为裁判模型建议分（如未确认，请在评分确认页确认生效）。'
+        f"已确认 {confirmed}/{scored}。</div>"
     )
 
 

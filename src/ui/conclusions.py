@@ -1,7 +1,7 @@
 """评测结论页面。
 
 - 已沉淀结论 + 已确认评分计入正式结论。
-- 待复核草稿不进入正式结论。
+- 待确认草稿不进入正式结论。
 - 展示当前样本内的模型均值与审慎使用边界。
 """
 
@@ -26,8 +26,6 @@ from src.ui.components import (
 
 def render_conclusions_page(data_bundle: dict) -> None:
     base = data_bundle.get("base") or data_bundle["data"]
-    seed_scores = getattr(base, "scores", None)
-    seed_errors = getattr(base, "errors", None)
     tasks = getattr(base, "tasks", None)
 
     live_scores = cc.load_live_scores()
@@ -43,7 +41,6 @@ def render_conclusions_page(data_bundle: dict) -> None:
 
     _render_formal_conclusions(confirmed_live)
     _render_model_boundaries(confirmed_live, tasks)
-    _render_seed_baseline(seed_scores, seed_errors)
     _render_drafts(pending_live, responses)
 
 
@@ -54,15 +51,15 @@ def _render_formal_conclusions(confirmed_live) -> None:
     render_numbered_section(
         "01",
         "当前真实评测结论",
-        "基于已确认评分汇总真实运行结果，不含待复核草稿和示例历史评价。",
+        "基于已确认评分汇总真实运行结果，不含待确认草稿和示例评价数据。",
     )
 
     empty_seed = pd.DataFrame()
     summary = cc.summarize_formal(empty_seed, confirmed_live)
     if summary["total_rows"] == 0:
         render_text_block(
-            "当前尚无真实模型评测结论",
-            "请先在发起测试页选择模型并运行，评分草稿经人工确认归档后，结论会在这里汇总。",
+            "当前暂无已确认评分",
+            "请先在评分确认页完成确认；确认后的评分才会纳入正式结论。",
         )
         return
 
@@ -102,7 +99,7 @@ def _render_model_boundaries(confirmed_live, tasks) -> None:
     if not boundaries:
         render_text_block(
             "暂无边界数据",
-            "当前尚无真实模型评测结论。请先在发起测试页选择模型并运行，经人工确认归档后再查看边界。",
+            "当前暂无已确认评分。请先在评分确认页完成确认后再查看边界。",
         )
         return
 
@@ -138,42 +135,9 @@ def _render_model_boundaries(confirmed_live, tasks) -> None:
     render_html(
         '<div class="review-risk-note review-risk-note-muted">'
         "<strong>使用边界</strong>"
-        "<span>模型边界不是排行榜；待复核草稿不进入正式结论，结论仅代表当前样本内观察。</span>"
+        "<span>模型边界不是排行榜；待确认草稿不进入正式结论，结论仅代表当前样本内观察。</span>"
         "</div>"
     )
-
-
-def _render_seed_baseline(seed_scores, seed_errors) -> None:
-    render_numbered_section(
-        "03",
-        "示例历史评价",
-        "seed 样例用于演示评分、错误归因和数据优化方法，不代表当前实际选择模型。",
-    )
-    conclusions = cc.build_formal_conclusions(seed_scores, pd.DataFrame())
-    if not conclusions:
-        st.caption("暂无示例历史评价。")
-        return
-    rows = ""
-    for item in conclusions:
-        rows += (
-            "<tr>"
-            f"<td><strong>{escape(str(item.get('display_name') or item.get('model_name')))}</strong></td>"
-            f"<td>{escape(str(item.get('source_label') or '示例历史评价'))}</td>"
-            f"<td>{float(item.get('avg_total') or 0):.1f}</td>"
-            f"<td>{int(item.get('sample_count') or 0)} 条</td>"
-            "</tr>"
-        )
-    render_evidence_panel(
-        "示例基准",
-        (
-            '<table class="check-table"><thead><tr>'
-            "<th>示例模型</th><th>来源</th><th>平均分</th><th>样本数</th>"
-            f"</tr></thead><tbody>{rows}</tbody></table>"
-        ),
-    )
-    issues = cc.summarize_frequent_issues(cc.combine_formal_scores(seed_scores, pd.DataFrame()), seed_errors)
-    if issues:
-        st.caption("示例历史评价中的高频问题：" + "；".join(issues[:3]))
 
 
 def _format_weaknesses(weaknesses: list[dict]) -> str:
@@ -191,13 +155,13 @@ def _format_weaknesses(weaknesses: list[dict]) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# 03 草稿评测（待复核）
+# 03 待确认评分草稿
 # --------------------------------------------------------------------------- #
 def _render_drafts(pending_live, responses) -> None:
     render_numbered_section(
-        "04",
-        "草稿评测（待复核）",
-        "现场新增评测先进入草稿，未进入正式结论；经人工复核确认后才会归档计入。",
+        "03",
+        "待确认评分草稿",
+        "现场新增评分先进入草稿，未确认前不纳入正式结论。",
     )
 
     draft_rows = cc.build_draft_rows(pending_live, responses)
@@ -206,10 +170,10 @@ def _render_drafts(pending_live, responses) -> None:
 
     count = len(draft_rows)
     if count == 0:
-        st.caption("当前没有待复核的现场评分。发起一次真实评测并评分后，草稿会显示在这里。")
+        st.caption("当前没有待确认评分草稿。发起一次真实评测并评分后，草稿会显示在这里。")
         return
 
-    st.markdown(f"当前有 **{count}** 条待复核草稿。")
+    st.markdown(f"当前有 **{count}** 条待确认评分草稿。")
     if st.button("进入评分确认", key="conc_to_review"):
         st.session_state.current_page = "review"
         st.rerun()
@@ -219,7 +183,7 @@ def _render_drafts(pending_live, responses) -> None:
 # Backward-compatible helpers
 # --------------------------------------------------------------------------- #
 def _session_draft_rows() -> list[dict]:
-    """数据库不可用时，从会话内最近一次评分构造草稿行（仅展示，不能归档）。"""
+    """数据库不可用时，从会话内最近一次评分构造草稿行（仅展示，不能确认）。"""
     score_result = eval_state.get_last_score()
     if score_result is None:
         return []

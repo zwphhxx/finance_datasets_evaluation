@@ -85,7 +85,7 @@ def _get_formal_conclusions(data) -> list[tuple[str, str]]:
         items.append((text, meta))
     if not items:
         items.append((
-            "当前暂无正式评测结论。运行一次真实评测并经人工复核归档后，结论会在此汇总。",
+            "当前暂无正式评测结论。运行一次真实评测并经人工确认后，结论会在此汇总。",
             ""
         ))
     return items
@@ -116,19 +116,19 @@ def render_case_study_page(data_bundle: dict) -> None:
     render_story_section(
         title="评测流程",
         paragraphs=[
-            "主线从样本维护开始，到测试、评分草稿、人工复核和正式结论结束。只有通过样本库准入检查的样本可进入测试，只有人工复核确认后的分数进入正式结论。",
+            "主线从样本维护开始，到评测、评分草稿、评分确认和正式结论结束。只有通过样本库准入检查的样本可进入评测，只有人工确认后的分数进入正式结论。",
         ],
         index="02",
     )
     render_process_line([
-        "维护样本", "确认可测", "发起测试", "评分草稿", "人工复核", "正式结论"
+        "维护样本", "确认可测", "发起评测", "评分草稿", "评分确认", "正式结论"
     ])
 
     render_story_section(
         title="样本口径",
         paragraphs=[
             _build_sample_scope_text(base),
-            "每个可测样本由任务题、业务背景、理想回复标准 / Gold Answer、Rubric 评分标准和状态组成；是否进入测试由样本库中的完整度校验决定。",
+            "每个可测样本由任务题、业务背景、理想回复标准 / Gold Answer、Rubric 评分标准和状态组成；是否进入评测由样本库中的完整度校验决定。",
         ],
         index="03",
     )
@@ -156,7 +156,7 @@ def render_case_study_page(data_bundle: dict) -> None:
     render_story_section(
         title="下一步",
         paragraphs=[
-            "先检查样本库，再选择可测样本发起测试。测试完成后会生成评分草稿，进入人工复核后才形成正式结论。",
+            "先检查样本库，再选择可测样本发起评测。评测完成后会生成评分草稿，进入评分确认后才形成正式结论。",
         ],
         index="05",
     )
@@ -166,7 +166,7 @@ def render_case_study_page(data_bundle: dict) -> None:
             st.session_state.current_page = "samples"
             st.rerun()
     with col2:
-        if st.button("发起测试", type="secondary", key="case_study_try"):
+        if st.button("发起评测", type="secondary", key="case_study_try"):
             st.session_state.current_page = "test_run"
             st.rerun()
 
@@ -265,7 +265,7 @@ def get_methodology_items() -> list[tuple[str, str]]:
             "再高分也只能作为初稿参考，必须人工复核或判为不可用。",
         ),
         (
-            "人工复核归档",
+            "评分确认",
             "裁判分数为建议分；现场评测结果默认进入评分草稿，"
             "经人工复核确认后才计入正式评测结论。",
         ),
@@ -292,8 +292,8 @@ def get_how_to_read_steps() -> list[str]:
     """Deprecated: kept for backward compatibility."""
     return [
         "先检查样本库",
-        "再选择可测样本发起测试",
-        "最后复核评分并归档结论",
+        "再选择可测样本发起评测",
+        "最后确认评分并纳入正式结论",
     ]
 
 

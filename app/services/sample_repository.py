@@ -1,6 +1,7 @@
 """轻量级样本库数据管理层。
 
-样本库是业务操作视图：待复核、已入库、需优化、已归档只在页面展示中文状态。
+样本库是业务操作视图：待复核、已入库、需优化、已移出测试。
+历史 inactive 状态在读取时会规范为已移出测试。
 SQLite 可用时，样本库 CRUD 会同步维护正式评测资产：
 `task_cases` / `gold_answers` / `rubrics`。`data/samples.json` 保留为轻量管理视图、
 导入导出与兼容备份，不再作为正式评测内容的唯一来源。
@@ -18,12 +19,15 @@ from typing import Any
 import pandas as pd
 
 
-SAMPLE_STATUSES = ["待复核", "已入库", "需优化", "已归档"]
+REMOVED_FROM_TEST_STATUS = "已移出测试"
+_LEGACY_ARCHIVED_STATUS = "已归档"
+SAMPLE_STATUSES = ["待复核", "已入库", "需优化", REMOVED_FROM_TEST_STATUS]
 FORMAL_STATUS_BY_SAMPLE_STATUS = {
     "待复核": "draft",
     "已入库": "active",
     "需优化": "draft",
-    "已归档": "inactive",
+    REMOVED_FROM_TEST_STATUS: "inactive",
+    _LEGACY_ARCHIVED_STATUS: "inactive",
 }
 REQUIRED_FIELDS = ["title", "scenario", "task_prompt", "gold_answer", "rubric", "status"]
 
@@ -70,7 +74,7 @@ class Sample:
             model_answers=_as_str_list(data.get("model_answers")),
             error_tags=_as_str_list(data.get("error_tags")),
             improvement_suggestions=_as_str_list(data.get("improvement_suggestions")),
-            status=str(data.get("status", "待复核")),
+            status=normalize_sample_status(data.get("status", "待复核")),
             difficulty=str(data.get("difficulty", "")),
             reviewer_note=str(data.get("reviewer_note", "")),
             created_at=str(data.get("created_at", "")),
@@ -86,6 +90,14 @@ def _as_str_list(value) -> list[str]:
     if isinstance(value, str):
         return [line.strip() for line in value.splitlines() if line.strip()]
     return []
+
+
+def normalize_sample_status(value: Any) -> str:
+    """Normalize historical inactive labels to the current user-facing status."""
+    text = str(value or "").strip()
+    if text == _LEGACY_ARCHIVED_STATUS:
+        return REMOVED_FROM_TEST_STATUS
+    return text if text else "待复核"
 
 
 def _now() -> str:
@@ -302,14 +314,15 @@ def update_sample(sample_id: str, changes: dict[str, Any], *, db_path: Path | No
 
 def set_sample_status(sample_id: str, status: str, *, db_path: Path | None = None) -> None:
     """变更样本状态。"""
+    status = normalize_sample_status(status)
     if status not in SAMPLE_STATUSES:
         raise ValueError(f"无效状态：{status}，可选：{', '.join(SAMPLE_STATUSES)}")
     update_sample(sample_id, {"status": status}, db_path=db_path)
 
 
 def archive_sample(sample_id: str, *, db_path: Path | None = None) -> None:
-    """归档样本（软删除）：状态改为已归档。"""
-    set_sample_status(sample_id, "已归档", db_path=db_path)
+    """移出测试（软删除）：保留历史记录，但不再进入正式评测。"""
+    set_sample_status(sample_id, REMOVED_FROM_TEST_STATUS, db_path=db_path)
 
 
 def get_eligible_case_ids() -> list[str]:
@@ -402,7 +415,7 @@ def validate_sample(values: dict[str, Any], existing_ids: set[str] | None = None
         if value is None or str(value).strip() == "":
             errors.append(f"{field_name} 为必填项")
 
-    status = str(values.get("status", "")).strip()
+    status = normalize_sample_status(values.get("status", ""))
     if status and status not in SAMPLE_STATUSES:
         errors.append(f"status 必须为：{', '.join(SAMPLE_STATUSES)}")
 
@@ -461,9 +474,10 @@ def count_by_status() -> dict[str, int]:
 
 def formal_status_for_sample_status(status: str) -> str:
     """把页面中文业务状态映射为正式任务层状态。"""
-    if status not in FORMAL_STATUS_BY_SAMPLE_STATUS:
-        raise ValueError(f"无效状态：{status}，可选：{', '.join(SAMPLE_STATUSES)}")
-    return FORMAL_STATUS_BY_SAMPLE_STATUS[status]
+    normalized = normalize_sample_status(status)
+    if normalized not in FORMAL_STATUS_BY_SAMPLE_STATUS:
+        raise ValueError(f"无效状态：{normalized}，可选：{', '.join(SAMPLE_STATUSES)}")
+    return FORMAL_STATUS_BY_SAMPLE_STATUS[normalized]
 
 
 def _resolve_formal_db_path(db_path: Path | None = None) -> Path | None:

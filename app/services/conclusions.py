@@ -1,12 +1,11 @@
 """评测结论汇总服务（PR-B）。
 
-把三类来源的评测结果归一为「正式结论 / 草稿 / 已确认评分」三层，供「评测结论」页取数：
+把真实运行结果归一为「正式结论 / 草稿 / 已确认评分」三层，供「评测结论」页取数：
 
-  - 已有结论（seed）：seed 的 model_outputs / score_records / review_note，视为已人工沉淀的基准；
-  - 草稿评测（draft）：live_run_scores 中 review_status != confirmed 的现场评分，未进入正式结论；
+  - 草稿评测（draft）：live_run_scores 中 review_status == pending 的现场评分，未进入正式结论；
   - 已确认评分（confirmed）：live_run_scores 中 review_status == confirmed 的评分，可计入正式结论。
 
-正式结论 = seed 已有结论 + 已确认 live 结论，**绝不包含 pending 草稿**。
+正式结论 = 已确认 live 结论，**绝不包含 pending 草稿或 seed 示例评价**。
 
 本模块为纯函数 + 只读数据库访问，不依赖 Streamlit 渲染上下文，便于单元测试；任何数据库
 异常都吞掉并回退为空，保证 SQLite 不可用时仍可只用 seed 数据展示。绝不回写 data/ 下 seed 文件。
@@ -25,7 +24,7 @@ from src.metrics import SCORE_DIMENSION_FULL_MARKS, SCORE_DIMENSIONS, get_dimens
 DIMENSION_FIELDS: list[str] = [field for field, _ in SCORE_DIMENSIONS]
 DIMENSION_LABELS: dict[str, str] = dict(SCORE_DIMENSIONS)
 
-# 归一后的正式打分表列（seed 与 live 都投影到这里）。
+# 归一后的正式打分表列（仅 confirmed live 投影到这里）。
 _FORMAL_COLUMNS = ["model_name", "case_id", *DIMENSION_FIELDS, "total_score", "review_note", "source"]
 
 # 模型展示名映射：键为原始 model_name，值为对外展示名。默认空；seed 示例模型的
@@ -102,10 +101,10 @@ def _load_live_table(table: str, db_path) -> pd.DataFrame:
 
 
 def split_live_scores(live_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """把 live 评分拆为 (已复核 confirmed, 草稿 pending)，均限定 judge_status=success、未停用。
+    """把 live 评分拆为 (已确认 confirmed, 草稿 pending)，均限定 judge_status=success、未停用。
 
     只有评分成功且人工确认（review_status=confirmed）的行进入 confirmed；其余成功行为草稿。
-    失败 / mock 评分既不进正式结论也不进草稿（无可复核分数）。
+    失败 / mock / 暂不采用评分既不进正式结论也不进草稿。
     """
     empty = pd.DataFrame()
     if not isinstance(live_df, pd.DataFrame) or live_df.empty:
@@ -124,7 +123,7 @@ def split_live_scores(live_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame
     else:
         status = pd.Series(["pending"] * len(df), index=df.index)
     confirmed = df[status == "confirmed"].reset_index(drop=True)
-    pending = df[status != "confirmed"].reset_index(drop=True)
+    pending = df[status == "pending"].reset_index(drop=True)
     return confirmed, pending
 
 
@@ -146,15 +145,11 @@ def _normalize_live_scores(live_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def combine_formal_scores(seed_scores: pd.DataFrame, confirmed_live: pd.DataFrame) -> pd.DataFrame:
-    """合并 seed 已有结论与已确认 live 结论为统一打分表（带 source 列）。
+    """把已确认 live 结论投影为统一打分表（带 source 列）。
 
-    只接受已确认 live；pending 草稿不在此出现，从源头保证不计入正式结论。
+    seed_scores 参数保留用于兼容旧调用，但不再纳入正式结论。
     """
     frames: list[pd.DataFrame] = []
-    if isinstance(seed_scores, pd.DataFrame) and not seed_scores.empty and "total_score" in seed_scores.columns:
-        seed = seed_scores.copy()
-        seed["source"] = "seed"
-        frames.append(seed)
     normalized = _normalize_live_scores(confirmed_live)
     if not normalized.empty:
         frames.append(normalized)
@@ -221,8 +216,8 @@ def build_model_boundaries(
 ) -> list[dict[str, Any]]:
     """Classify model usage boundaries from formal conclusions and risk signals.
 
-    The input scope is the same as formal conclusions: seed scores plus confirmed
-    live scores. Pending scores must be split out before this function is called.
+    The input scope is the same as formal conclusions: confirmed live scores only.
+    Pending scores and seed examples are excluded.
     """
     combined = combine_formal_scores(seed_scores, confirmed_live)
     if combined.empty or "model_name" not in combined.columns or "total_score" not in combined.columns:

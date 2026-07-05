@@ -219,6 +219,47 @@ class ScorePersistenceTests(unittest.TestCase):
         self.assertEqual(int(after["total_score"]), 75)
         self.assertEqual(after["review_note"], "复核已调整")
 
+    def test_incremental_score_persist_dedupes_final_persist(self):
+        provider = get_provider("mock")
+        compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(1))
+        tasks_by_case = {str(r["case_id"]): r for r in _sample_tasks(1)}
+        result = sc.score_compare(_FakeJudge(), compare, {}, tasks_by_case, _DIMENSIONS, judge_model_id="judge/x")
+        outcome = result.outcomes[0]
+
+        self.assertTrue(
+            sc.persist_score_outcome(
+                result.score_run_id,
+                result.run_id,
+                result.judge_provider,
+                result.judge_model,
+                result.mode,
+                outcome,
+                db_path=_DB_PATH,
+            )
+        )
+        self.assertTrue(sc.persist_score_result(result, db_path=_DB_PATH))
+
+        rows = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)
+        self.assertEqual(1, len(rows))
+        self.assertEqual("pending", rows[0]["review_status"])
+        self.assertEqual(outcome.case_id, rows[0]["case_id"])
+        self.assertEqual(outcome.eval_model, rows[0]["eval_model"])
+
+    def test_skip_score_review_marks_not_adopted(self):
+        provider = get_provider("mock")
+        compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(1))
+        tasks_by_case = {str(r["case_id"]): r for r in _sample_tasks(1)}
+        result = sc.score_compare(_FakeJudge(), compare, {}, tasks_by_case, _DIMENSIONS, judge_model_id="judge/x")
+
+        self.assertTrue(sc.persist_score_result(result, db_path=_DB_PATH))
+        row = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)[0]
+
+        self.assertTrue(sc.skip_score_review(int(row["id"]), "暂不采用：需补充材料", db_path=_DB_PATH))
+
+        after = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)[0]
+        self.assertEqual("skipped", after["review_status"])
+        self.assertEqual("暂不采用：需补充材料", after["review_note"])
+
     def test_bulk_confirm_only_pending_success_scores(self):
         provider = get_provider("mock")
         compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(2))
@@ -228,7 +269,7 @@ class ScorePersistenceTests(unittest.TestCase):
         self.assertTrue(sc.persist_score_result(result, db_path=_DB_PATH))
         rows = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)
         row_ids = [int(row["id"]) for row in rows]
-        note = "低风险评分草稿，经人工批量确认归档。"
+        note = "低风险评分草稿，经人工批量确认生效。"
 
         outcome = sc.confirm_score_reviews_bulk(row_ids, note, db_path=_DB_PATH)
 

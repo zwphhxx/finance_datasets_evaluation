@@ -1,6 +1,6 @@
 """样本库 CRUD 测试。
 
-覆盖 sample_repository 的新增、更新、归档、校验、搜索、筛选以及页面冒烟测试。
+覆盖 sample_repository 的新增、更新、移出测试、校验、搜索、筛选以及页面冒烟测试。
 所有测试使用临时 JSON 文件，避免污染 data/samples.json。
 """
 
@@ -100,7 +100,7 @@ class SampleRepositoryTests(unittest.TestCase):
     def test_archive_sets_status(self):
         sr.create_sample(self._sample_values("SM-007"))
         sr.archive_sample("SM-007")
-        self.assertEqual("已归档", sr.get_sample("SM-007").status)
+        self.assertEqual("已移出测试", sr.get_sample("SM-007").status)
 
     def test_search_finds_by_keyword(self):
         sr.create_sample(self._sample_values("SM-SEARCH", title="收入真实性核查"))

@@ -1,4 +1,4 @@
-"""发起测试页面。
+"""发起评测页面。
 
 Replaces eval_run_page.
 - 选择可进入测试的样本与被测模型。
@@ -37,11 +37,11 @@ MAIN_PROMPT = "选择样本和模型，生成模型回答与评分草稿。"
 
 RUN_BOUNDARY_NOTE = (
     "本页运行受密钥、网络、模型版本与限流影响，结果可能波动。新评分默认进入评分草稿，"
-    "不会覆盖正式结论；只有人工复核确认后才会归档。"
+    "不会覆盖正式结论；只有人工确认后才会纳入正式结论。"
 )
 PROMPT_ISOLATION_NOTE = (
     "被测模型只看到任务题、业务背景和输出要求，不看到 Gold Answer、必须覆盖点、不可接受错误或 Rubric；"
-    "裁判评分链路才读取 Gold Answer 和 Rubric。评分结果是建议分，需人工复核后才进入正式结论。"
+    "裁判评分链路才读取 Gold Answer 和 Rubric。评分结果是建议分，需人工确认后才纳入正式结论。"
 )
 NO_TESTABLE_SAMPLE_MESSAGE = (
     "当前没有可测样本。可测样本需同时满足：正式题库存在任务题、"
@@ -56,7 +56,7 @@ _STATUS_BADGE = {
 }
 
 _MODE_LABEL = {"mock": "模拟回退", "live": "真实调用", "unconfigured": "未配置"}
-_REVIEW_STATUS_LABEL = {"pending": "待人工复核", "confirmed": "已复核"}
+_REVIEW_STATUS_LABEL = {"pending": "待确认", "confirmed": "已确认", "skipped": "暂不采用"}
 _SILICONFLOW_LABEL = "硅基流动"
 _EVAL_TEMPERATURE = 0.1
 _EVAL_MAX_TOKENS = 2048
@@ -1071,6 +1071,17 @@ def _execute_score_queue(
             interrupted = True
             message = "本次评分未完成。已生成的评分草稿已保留，未完成项可重新评分。"
         outcomes.append(score_outcome)
+        persisted = sc.persist_score_outcome(
+            score_run_id,
+            state["run_id"],
+            judge_provider,
+            judge_model,
+            mode,
+            score_outcome,
+        )
+        st.session_state["test_run_score_persisted"] = bool(
+            st.session_state.get("test_run_score_persisted") or persisted
+        )
         _set_score_state(
             status="running",
             score_run_id=score_run_id,
@@ -1453,7 +1464,7 @@ def _render_scoring(base, provider_name: str, task_records: list[dict]) -> None:
     if partial_run:
         st.caption("本次运行未完成；如生成评分草稿，将仅对已完成且成功的回答评分。")
     else:
-        st.caption("评分草稿需人工复核后才进入正式结论；被测模型未看到 Gold Answer 或 Rubric。")
+        st.caption("评分草稿需人工确认后才纳入正式结论；被测模型未看到 Gold Answer 或 Rubric。")
     st.caption(
         f"可评分回答：{score_plan['scoreable']} 条 · "
         f"跳过失败回答：{score_plan['skipped']} 条。失败回答不会进入评分草稿。"
@@ -1492,14 +1503,18 @@ def _render_score_results(task_records: list[dict]) -> None:
         if not outcome.ok and not _is_mock_score_outcome(outcome)
     )
     pending = sum(1 for outcome in score_result.outcomes if outcome.ok and outcome.review_status == "pending")
+    persisted = bool(st.session_state.get("test_run_score_persisted"))
 
     st.markdown(
         f"评分草稿已生成：成功评分 {score_result.scored_count}/{len(score_result.outcomes)} · "
-        f"待人工复核 {pending} 条 · 跳过失败回答 {state_skipped} 条 · "
+        f"待确认 {pending} 条 · 跳过失败回答 {state_skipped} 条 · "
         f"模拟评分 {mock_scores} 条 · 评分失败 {failed_scores} 条 · "
         f"裁判模式：{_mode_label(score_result.mode)}"
     )
-    st.caption("评分草稿需人工复核后才进入正式结论。")
+    if persisted:
+        st.caption("评分草稿已写入数据库，待确认后纳入正式结论。")
+    else:
+        st.caption("评分草稿需人工确认后才纳入正式结论。")
     if state and state.get("status") in {"running", "interrupted", "failed"}:
         _render_partial_score_notice(score_result, state)
     if sc.is_mock_score(score_result):
@@ -1515,7 +1530,7 @@ def _render_score_results(task_records: list[dict]) -> None:
             st.session_state.current_page = "review"
             st.rerun()
     else:
-        st.caption("SQLite 数据层未初始化，评分草稿仅在当前会话展示，暂不能进入复核页归档。")
+        st.caption("SQLite 数据层未初始化，评分草稿仅在当前会话展示，暂不能进入评分确认页。")
 
 
 def _render_unfinished_score_notice(state: dict) -> None:
@@ -1584,7 +1599,7 @@ def _render_score_detail(outcome: sc.ScoreOutcome, dimensions) -> None:
             ("模型", _model_short_name(outcome.eval_model)),
             ("总分", _score_total_label(outcome, dimensions)),
             ("裁判模型", _model_short_name(outcome.judge_model)),
-            ("复核状态", _score_status_label(outcome)),
+            ("确认状态", _score_status_label(outcome)),
         ]
         _render_answer_summary(
             summary_items,
@@ -1769,7 +1784,7 @@ def _answer_length_label(outcome: er.RunOutcome) -> str:
 
 
 def _review_status_label(value) -> str:
-    return _REVIEW_STATUS_LABEL.get(str(value or "pending").strip().lower(), "待复核")
+    return _REVIEW_STATUS_LABEL.get(str(value or "pending").strip().lower(), "待确认")
 
 
 def _score_status_label(outcome) -> str:

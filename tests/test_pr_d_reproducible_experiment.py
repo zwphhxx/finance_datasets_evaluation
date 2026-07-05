@@ -147,12 +147,13 @@ class DraftPendingInvariantTests(unittest.TestCase):
 
         formal = cc.build_formal_conclusions(seed, confirmed)
         models = {item["model_name"] for item in formal}
-        # 确认归档的现场模型进入正式结论；待复核草稿不进入。
+        # 已确认的现场模型进入正式结论；待确认草稿和 seed 示例不进入。
         self.assertIn("live_m", models)
+        self.assertNotIn("seed_m", models)
         summary = cc.summarize_formal(seed, confirmed)
         self.assertEqual(1, summary["confirmed_rows"])
         # pending 那条没有被计入任何正式行。
-        self.assertEqual(len(seed) + 1, summary["total_rows"])
+        self.assertEqual(1, summary["total_rows"])
 
 
 if __name__ == "__main__":

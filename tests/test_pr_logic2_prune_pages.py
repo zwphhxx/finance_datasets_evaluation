@@ -69,7 +69,7 @@ class TopNavTests(unittest.TestCase):
     def test_top_nav_labels_are_core_workflow(self):
         """Top nav labels must match the core evaluation workflow."""
         labels = [label for label, _ in _TOP_NAV_ITEMS]
-        expected = ["项目说明", "样本库", "发起测试", "评分确认", "评测结论"]
+        expected = ["项目说明", "样本库", "发起评测", "评分确认", "评测结论"]
         self.assertEqual(labels, expected)
 
     def test_top_nav_keys_match_pages(self):
@@ -139,7 +139,7 @@ class ReviewStatusConclusionsTests(unittest.TestCase):
         formal = cc.build_formal_conclusions(seed, confirmed)
         models = {item["model_name"] for item in formal}
         self.assertNotIn("live_m", models)
-        self.assertIn("seed_m", models)
+        self.assertNotIn("seed_m", models)
 
     def test_confirmed_enters_formal_conclusions(self):
         """confirmed 状态的评分进入正式结论。"""
@@ -161,11 +161,11 @@ class ReviewStatusConclusionsTests(unittest.TestCase):
         formal = cc.build_formal_conclusions(seed, confirmed)
         models = {item["model_name"] for item in formal}
         self.assertIn("live_m", models)
-        self.assertIn("seed_m", models)
+        self.assertNotIn("seed_m", models)
 
         summary = cc.summarize_formal(seed, confirmed)
         self.assertEqual(1, summary["confirmed_rows"])
-        self.assertEqual(len(seed) + 1, summary["total_rows"])
+        self.assertEqual(1, summary["total_rows"])
 
 
 class PromptBoundaryTests(unittest.TestCase):

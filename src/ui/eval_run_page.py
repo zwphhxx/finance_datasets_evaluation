@@ -2,7 +2,7 @@
 
 把原「真实模型评测」控制台从 overview 顶部搬到独立页，按向导式流程组织：
 选 Provider / 模型（可多选）/ 任务 → 运行真实（或 mock）生成 → 裁判对照 Gold + Rubric 打建议分 →
-人工复核归档。运行结果经 data_resolver 组装后注入各分析页。
+评分确认。运行结果经 data_resolver 组装后注入各分析页。
 
 边界：被评测模型只看到任务白名单字段，绝不发送 Gold；裁判可见 Gold（评分必需，链路独立）。
 """
@@ -33,7 +33,7 @@ from src.ui.page_config import get_page_config
 from src.ui.tasks import TASK_TYPE_LABELS, display_label, summarize_text
 
 BOUNDARY_NOTE = (
-    "模型回答仅用于评测，不构成金融、法律或投资建议；评分为裁判模型建议分，需人工复核确认后归档。"
+    "模型回答仅用于评测，不构成金融、法律或投资建议；评分为裁判模型建议分，需人工确认后才纳入正式结论。"
 )
 
 REPRODUCIBILITY_NOTE = (
@@ -399,7 +399,7 @@ def _render_scoring(base, provider_name: str, task_records: list[dict]) -> None:
 
     render_section_title(
         "自动评分（裁判模型）",
-        "由裁判模型对照 Gold Answer 与 Rubric 打出建议分；分数为机器建议，需人工复核确认后归档。",
+        "由裁判模型对照 Gold Answer 与 Rubric 打出建议分；分数为机器建议，需人工确认后才纳入正式结论。",
     )
     st.caption(f"评分模型：{sc.DEFAULT_JUDGE_MODEL}（系统默认）。被评测模型全程不可见 Gold；并列对比不代表最终结论。")
 
@@ -443,7 +443,7 @@ def _render_score_results() -> None:
     if ds.database_ready():
         _render_score_review(score_result, dimensions)
     else:
-        st.caption("评分暂存于当前页面会话；初始化 SQLite 数据层后可改分并归档为已复核。")
+        st.caption("评分暂存于当前页面会话；初始化 SQLite 数据层后可改分并确认生效。")
 
 
 def _render_score_compare_table(score_result, dimensions) -> None:
@@ -488,7 +488,7 @@ def _render_score_review(score_result, dimensions) -> None:
 
     render_section_title(
         "人工复核（批量）",
-        "可逐条修订各维度分与复核说明，确认后归档为已复核；更推荐到「单题深度评测」页对照 Gold 复核。",
+        "可逐条修订各维度分与复核说明，确认后纳入正式结论；更推荐到「单题深度评测」页对照 Gold 复核。",
     )
     for row in reviewable:
         row_id = int(row["id"])
@@ -509,12 +509,12 @@ def _render_score_review(score_result, dimensions) -> None:
             note = st.text_area(
                 "复核说明", value=str(row.get("review_note") or ""), key=f"score_note::{row_id}"
             )
-            if st.button("确认并归档（人工复核通过）", key=f"score_confirm::{row_id}"):
+            if st.button("确认生效（人工复核通过）", key=f"score_confirm::{row_id}"):
                 if sc.confirm_score_review(row_id, edited, note):
-                    st.success("已归档为已复核（confirmed）。")
+                    st.success("已确认（confirmed）。")
                     st.rerun()
                 else:
-                    st.warning("归档失败：请确认 SQLite 数据层已初始化。")
+                    st.warning("确认失败：请确认 SQLite 数据层已初始化。")
 
 
 def _render_completion_cta() -> None:

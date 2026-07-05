@@ -155,7 +155,7 @@ def render_overview_page(data_bundle: dict) -> None:
             "平均分、最弱维度与高频错误。",
         )
 
-    if st.button("发起测试 →", type="primary", key="overview_cta"):
+    if st.button("发起评测 →", type="primary", key="overview_cta"):
         st.session_state.current_page = "test_run"
         st.rerun()
 
@@ -164,7 +164,7 @@ def render_overview_page(data_bundle: dict) -> None:
     render_flow_strip(get_evaluation_loop_steps())
     st.markdown(
         """
-        1. 在“发起测试”页选择模型与任务，裁判对照 Gold + Rubric 打出建议分；
+        1. 在“发起评测”页选择模型与任务，裁判对照 Gold + Rubric 打出建议分；
         2. 在“评测复核”与“评测结论”页看分维度表现、可用边界与单题拆解；
         3. 把高频错误带回样本管理做补强，形成“发现错误 → 补充数据 → 复测验证”的闭环。
         """
@@ -179,7 +179,7 @@ def render_overview_page(data_bundle: dict) -> None:
     render_info_panel(
         "边界与说明",
         "题库与 Gold Answer 为 MVP 脱敏样本；模型回答来自评测控制台的真实运行；"
-        "裁判给出的是建议分，需人工复核确认后归档；所有结论均为样本内观察，"
+        "裁判给出的是建议分，需人工确认后才纳入正式结论；所有结论均为样本内观察，"
         "不构成模型采购或业务决策建议。",
     )
     if not validation_result.is_valid:

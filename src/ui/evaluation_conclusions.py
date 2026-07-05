@@ -2,9 +2,9 @@
 
 把评测结果分成三层呈现，并严格区分「可计入正式结论」与「仅为草稿」：
 
-  - 正式评测结论（首屏）：只统计 seed 已有结论 + 已复核归档（confirmed）的 live 结论；
-  - 草稿评测（待复核）：现场 live run 产生、review_status 仍为 pending 的评分，明确标注「未进入正式结论」；
-  - 人工复核后归档：说明如何修改分数与复核说明、确认后 review_status 置为 confirmed 计入正式结论。
+  - 正式评测结论（首屏）：只统计已确认（confirmed）的 live 结论；
+  - 评分草稿（待确认）：现场 live run 产生、review_status 仍为 pending 的评分，明确标注「未进入正式结论」；
+  - 评分确认：说明如何修改分数与复核说明、确认后 review_status 置为 confirmed 计入正式结论。
 
 本页定位是「当前专业样本内的可用边界观察」，不是模型排行榜。seed 已有结论默认只读，
 新增与复核仅写入 SQLite 运行时数据层；SQLite 不可用时仍可展示 seed 已有结论。
@@ -72,14 +72,14 @@ def _render_formal_conclusions(seed_scores, confirmed_live, seed_errors) -> None
     render_numbered_section(
         "01",
         "正式评测结论",
-        "只统计 seed 已有结论与已复核归档（confirmed）的现场结论，不含待复核草稿。",
+        "只统计已确认（confirmed）的现场结论，不含待确认评分草稿。",
     )
 
     summary = cc.summarize_formal(seed_scores, confirmed_live)
     if summary["total_rows"] == 0:
         render_info_panel(
             "暂无正式结论",
-            "当前没有可纳入正式结论的评分。运行一次真实评测并经人工复核归档后，结论会在这里汇总。",
+            "当前没有可纳入正式结论的评分。运行一次真实评测并经人工确认后，结论会在这里汇总。",
         )
         return
 
@@ -87,8 +87,8 @@ def _render_formal_conclusions(seed_scores, confirmed_live, seed_errors) -> None
     render_status_summary([
         ("纳入模型", str(summary["model_count"]), "accent"),
         ("平均总分", f"{summary['avg_total']:.1f}" if summary['avg_total'] is not None else "—", "neutral"),
-        ("seed 基准", str(summary["seed_rows"]), "success"),
-        ("已复核归档", str(summary["confirmed_rows"]), "success"),
+        ("示例基准", str(summary["seed_rows"]), "muted"),
+        ("已确认", str(summary["confirmed_rows"]), "success"),
     ])
 
     # Editorial list: model + one-sentence judgment + small dimension bars
@@ -216,24 +216,24 @@ def _render_model_capability_fingerprint(seed_scores, confirmed_live, seed_error
 def _render_drafts(pending_live, responses, db_ready: bool) -> None:
     render_numbered_section(
         "04",
-        "草稿评测（待复核）",
-        "现场新增评测先进入草稿，未进入正式结论；经人工复核确认后才会归档计入。",
+        "评分草稿（待确认）",
+        "现场新增评测先进入草稿，未进入正式结论；经人工确认后才会纳入正式结论。",
     )
 
     draft_rows = cc.build_draft_rows(pending_live, responses)
     has_row_ids = bool(draft_rows)
     if not draft_rows:
-        # 数据库无 pending 时，回退展示会话内本次评分（仅展示，归档需 SQLite）。
+        # 数据库无 pending 时，回退展示会话内本次评分（仅展示，确认需 SQLite）。
         draft_rows = _session_draft_rows()
         has_row_ids = False
 
     if not draft_rows:
         if db_ready:
-            st.caption("当前没有待复核的现场评分。发起一次真实评测并评分后，草稿会显示在这里。")
+            st.caption("当前没有待确认的现场评分。发起一次真实评测并评分后，草稿会显示在这里。")
         else:
             render_info_panel(
                 "尚未初始化 SQLite",
-                "初始化 SQLite 运行时数据层后，现场新增评测可在此暂存为草稿并归档；当前仅展示 seed 已有结论。",
+                "初始化 SQLite 运行时数据层后，现场新增评测可在此暂存为草稿并确认生效；当前仅展示示例数据。",
             )
         _render_draft_entries()
         return
@@ -267,7 +267,7 @@ def _render_draft_row(row: dict, can_confirm: bool) -> None:
         if can_confirm and row.get("row_id") is not None:
             _render_inline_confirm(row)
         else:
-            st.caption("如需复核归档，请在已初始化 SQLite 的环境下，从「评测复核」页确认。")
+            st.caption("如需确认生效，请在已初始化 SQLite 的环境下，从「评分确认」页确认。")
 
 
 def _render_inline_confirm(row: dict) -> None:
@@ -285,38 +285,38 @@ def _render_inline_confirm(row: dict) -> None:
             step=1, key=f"conc_edit::{row_id}::{field}",
         )
     note = st.text_area("复核说明", value=row.get("review_note", ""), key=f"conc_note::{row_id}")
-    if st.button("确认并归档（计入正式结论）", key=f"conc_confirm::{row_id}"):
+    if st.button("确认生效（纳入正式结论）", key=f"conc_confirm::{row_id}"):
         if sc.confirm_score_review(row_id, edited, note):
-            st.success("已归档为已复核（confirmed），下次进入正式评测结论汇总。")
+            st.success("已确认（confirmed），下次进入正式评测结论汇总。")
             st.rerun()
         else:
-            st.warning("归档失败：请确认 SQLite 数据层已初始化。")
+            st.warning("确认失败：请确认 SQLite 数据层已初始化。")
 
 
 def _render_draft_entries() -> None:
     render_action_cards([
         ("去评测复核 →", "case_detail"),
-        ("去发起测试 / 批量复核 →", "eval_run"),
+        ("去发起评测 / 批量确认 →", "eval_run"),
     ], key_prefix="conc")
 
 
 # --------------------------------------------------------------------------- #
-# 05 人工复核后归档
+# 05 评分确认
 # --------------------------------------------------------------------------- #
 def _render_archive_explainer(db_ready: bool) -> None:
-    render_numbered_section("05", "人工复核后归档", "把现场草稿转为正式结论的处理方式。")
+    render_numbered_section("05", "评分确认", "把现场草稿转为正式结论的处理方式。")
     render_info_panel(
-        "复核与归档流程",
-        "人工可在草稿条目中修改各维度分数与复核说明；点击「确认并归档」后，该条 review_status "
+        "确认流程",
+        "人工可在草稿条目中修改各维度分数与复核说明；点击「确认生效」后，该条 review_status "
         "变为 confirmed，下次进入正式评测结论汇总。seed 已有结论默认只读，新增与复核结果只写入 "
         "SQLite 运行时数据层，不回写 data/ 下的 seed 文件。",
     )
     if not db_ready:
-        st.caption("当前 SQLite 未初始化：仅可浏览 seed 已有结论；初始化后即可归档现场新增评测。")
+        st.caption("当前 SQLite 未初始化：仅可浏览 seed 已有结论；初始化后即可确认现场新增评测。")
 
 
 def _session_draft_rows() -> list[dict]:
-    """数据库不可用时，从会话内最近一次评分构造草稿行（仅展示，不能归档）。"""
+    """数据库不可用时，从会话内最近一次评分构造草稿行（仅展示，不能确认）。"""
     score_result = eval_state.get_last_score()
     if score_result is None:
         return []

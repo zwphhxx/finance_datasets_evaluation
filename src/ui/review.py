@@ -1,7 +1,7 @@
 """评分确认页面。
 
-- 对裁判模型生成的评分草稿进行人工确认、必要修订和归档。
-- 确认归档后才进入正式结论；未确认结果仅作为机器建议。
+- 只处理真实运行生成并写入 SQLite 的评分草稿。
+- 确认生效后才纳入正式结论；未确认结果仅作为机器建议。
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from html import escape
 import pandas as pd
 import streamlit as st
 
+from app.services import conclusions as cc
 from app.services import dataset_service as ds
 from app.services import model_display as md
 from app.services import scorer as sc
@@ -23,7 +24,6 @@ from src.metrics import (
     get_case_ids,
     get_errors_for_output,
     get_task_by_case_id,
-    merge_case_outputs_with_scores,
     normalize_optimization_plan,
 )
 from src.ui.common import has_value
@@ -31,7 +31,6 @@ from src.ui.components import (
     render_clean_list,
     render_compact_hero,
     render_empty_state,
-    render_evidence_panel,
     render_html,
     render_inline_status,
     render_numbered_section,
@@ -66,8 +65,8 @@ REVIEW_SECTIONS = [
     "风险与红线",
     "确认处理",
 ]
-REVIEW_FILTER_OPTIONS = ["全部", "建议确认", "建议复核", "不建议归档", "已确认"]
-BULK_REVIEW_NOTE = "低风险评分草稿，经人工批量确认归档。"
+REVIEW_FILTER_OPTIONS = ["全部", "建议确认", "建议复核", "不建议采用", "已确认"]
+BULK_REVIEW_NOTE = "低风险评分草稿，经人工批量确认生效。"
 
 ANSWER_SUMMARY_LIMIT = 220
 
@@ -328,7 +327,7 @@ def build_review_recommendation(
         reasons.append("评分依据或复核提示不足")
 
     if danger:
-        recommendation, level = "不建议归档", "danger"
+        recommendation, level = "不建议采用", "danger"
     elif warning:
         recommendation, level = "建议复核", "warning"
     else:
@@ -491,9 +490,10 @@ def get_output_row(merged_outputs: pd.DataFrame, model_name: str) -> pd.Series |
 
 
 def render_review_page(data_bundle: dict) -> None:
-    seed_data = data_bundle.get("base") or data_bundle["data"]
-    live_data = data_bundle["data"]
+    base = data_bundle.get("base") or data_bundle["data"]
     eval_status = data_bundle.get("eval_status") or {}
+    errors_df = getattr(base, "errors", pd.DataFrame())
+    optimizations_df = getattr(base, "optimizations", pd.DataFrame())
 
     config = get_page_config("review")
     render_compact_hero(
@@ -505,14 +505,13 @@ def render_review_page(data_bundle: dict) -> None:
         "本页用于确认评分草稿。确认后的结果才进入正式结论；未确认结果仅作为机器建议。"
     )
 
-    data, result_source = _resolve_source(seed_data, live_data, eval_status)
-    items = _build_review_items(data, result_source)
+    items, selected_score_run_id = _load_live_review_items(base, eval_status)
     if not items:
-        render_empty_state("暂无可确认的评分记录。请先在发起测试页生成评分草稿。")
+        render_empty_state("暂无待确认评分草稿。请先在发起评测页运行模型回答并生成评分草稿。")
         return
 
     render_numbered_section("01", REVIEW_SECTIONS[0], "低风险评分可批量确认，高风险评分需逐条查看。")
-    visible_items = _render_review_queue(items, eval_status, result_source)
+    visible_items = _render_review_queue(items, selected_score_run_id)
     if not visible_items:
         render_empty_state("当前筛选条件下暂无评分记录。")
         return
@@ -527,82 +526,138 @@ def render_review_page(data_bundle: dict) -> None:
     task_info = item["task_info"]
     gold = item["gold"]
     recommendation = item["recommendation"]
-    verdict = build_case_verdict(output_row, data.errors, gold, task_info)
+    verdict = build_case_verdict(output_row, errors_df, gold, task_info)
 
     render_numbered_section("02", REVIEW_SECTIONS[1], "确认这条评分对应的样本、模型、总分和建议处理。")
     _render_score_detail(item, verdict)
 
     render_numbered_section("03", REVIEW_SECTIONS[2], "按 Rubric 维度查看得分、评分依据、Gold 要求和错误标签。")
-    _render_scoring_matrix(output_row, data.errors)
+    _render_scoring_matrix(output_row, errors_df)
 
     render_numbered_section("04", REVIEW_SECTIONS[3], "查看高严重度错误、红线、低分维度和任务风险等级。")
-    _render_redline_panel(verdict, gold, output_row, data.errors, task_info)
-    _render_error_attribution(output_row, data.errors, getattr(data, "optimizations", pd.DataFrame()))
+    _render_redline_panel(verdict, gold, output_row, errors_df, task_info)
+    _render_error_attribution(output_row, errors_df, optimizations_df)
 
-    render_numbered_section("05", REVIEW_SECTIONS[4], "人工确认、修订后归档，或暂不归档。")
-    _render_confirmation_actions(item, eval_status, result_source)
+    render_numbered_section("05", REVIEW_SECTIONS[4], "人工确认生效、修订后确认，或暂不采用。")
+    _render_confirmation_actions(item)
 
 
-def _resolve_source(seed_data, live_data, eval_status: dict):
-    has_score_draft = bool(
-        int(eval_status.get("scored", 0) or 0)
-        or int(eval_status.get("pending", 0) or 0)
-        or int(eval_status.get("confirmed", 0) or 0)
+def _load_live_review_items(base, eval_status: dict) -> tuple[list[dict], str | None]:
+    scores = _filter_live_score_frame(cc.load_live_scores())
+    if scores.empty:
+        return [], None
+    selected_score_run_id = _select_score_run_id(scores, eval_status)
+    if selected_score_run_id:
+        scores = scores[scores["score_run_id"].astype(str) == str(selected_score_run_id)]
+    responses = cc.load_live_responses()
+    items = _build_live_review_items(base, scores, responses)
+    return items, selected_score_run_id
+
+
+def _filter_live_score_frame(scores: pd.DataFrame) -> pd.DataFrame:
+    if not isinstance(scores, pd.DataFrame) or scores.empty:
+        return pd.DataFrame()
+    frame = scores.copy()
+    if "judge_status" in frame:
+        frame = frame[frame["judge_status"].astype(str).str.strip().str.lower() == "success"]
+    if "status" in frame:
+        frame = frame[frame["status"].astype(str).str.strip().str.lower() != "inactive"]
+    if "eval_model" in frame:
+        frame = frame[~frame["eval_model"].apply(md.is_seed_model)]
+    if "score_run_id" not in frame:
+        frame["score_run_id"] = ""
+    if "id" in frame:
+        frame = frame.sort_values("id", ascending=False)
+    return frame.reset_index(drop=True)
+
+
+def _select_score_run_id(scores: pd.DataFrame, eval_status: dict) -> str | None:
+    run_ids = [str(value) for value in scores.get("score_run_id", pd.Series(dtype=str)).dropna().unique().tolist()]
+    run_ids = [value for value in run_ids if value]
+    if not run_ids:
+        return None
+
+    latest = _latest_score_run_id(scores)
+    preferred = str(eval_status.get("score_run_id") or "")
+    default = preferred if preferred in run_ids else latest
+    index = run_ids.index(default) if default in run_ids else 0
+    if len(run_ids) == 1:
+        st.caption(f"评分批次：{_score_run_label(scores, run_ids[0])}")
+        return run_ids[0]
+    selected = st.selectbox(
+        "评分批次",
+        run_ids,
+        index=index,
+        format_func=lambda run_id: _score_run_label(scores, run_id),
+        key="review_score_run_select",
     )
-    if not has_score_draft:
-        st.caption("当前尚无本次评分草稿，展示示例历史评价。")
-        return seed_data, "seed"
-    choice = st.radio(
-        "数据来源",
-        ["本次运行结果", "示例历史评价"],
-        horizontal=True,
-        help="默认展示本次运行结果；示例历史评价仅用于对照数据方法。",
-    )
-    if choice == "本次运行结果":
-        st.caption("正在查看本次运行结果；待复核评分不会直接进入正式结论。")
-        return live_data, "live"
-    st.caption("正在查看示例历史评价；这些结果不是当前选择模型生成。")
-    return seed_data, "seed"
+    return str(selected)
 
 
-def _build_review_items(data, result_source: str) -> list[dict]:
+def _latest_score_run_id(scores: pd.DataFrame) -> str:
+    if scores.empty:
+        return ""
+    if "id" in scores:
+        row = scores.sort_values("id", ascending=False).iloc[0]
+    elif "created_at" in scores:
+        row = scores.sort_values("created_at", ascending=False).iloc[0]
+    else:
+        row = scores.iloc[0]
+    return str(row.get("score_run_id") or "")
+
+
+def _score_run_label(scores: pd.DataFrame, score_run_id: str) -> str:
+    rows = scores[scores["score_run_id"].astype(str) == str(score_run_id)]
+    created = _format_datetime(rows.get("created_at", pd.Series(dtype=str)).dropna().astype(str).max())
+    pending = int((rows.get("review_status", pd.Series(dtype=str)).astype(str).str.lower() == "pending").sum())
+    total = len(rows)
+    suffix = f" · {created}" if created != "—" else ""
+    return f"{score_run_id} · 待确认 {pending}/{total}{suffix}"
+
+
+def _build_live_review_items(base, score_rows: pd.DataFrame, responses: pd.DataFrame) -> list[dict]:
     items: list[dict] = []
-    for case_id in get_case_ids(data.tasks):
-        task_rows = get_task_by_case_id(data.tasks, case_id)
+    answer_lookup = _live_answer_lookup(responses)
+    for _, score_row in score_rows.iterrows():
+        case_id = _clean(score_row.get("case_id"))
+        model_name = _clean(score_row.get("eval_model"))
+        if not case_id or not model_name:
+            continue
+        task_rows = get_task_by_case_id(base.tasks, case_id)
         if task_rows.empty:
             continue
         task_info = task_rows.iloc[0]
-        gold = data.gold_answer_map.get(case_id)
-        merged = merge_case_outputs_with_scores(data.model_outputs, data.scores, case_id)
-        if merged.empty or "model_name" not in merged.columns:
-            continue
-        for _, row in merged.iterrows():
-            model_name = _clean(row.get("model_name"))
-            if not model_name:
-                continue
-            output_row = pd.Series(row)
-            if not has_value(output_row.get("total_score")) and result_source != "seed":
-                continue
-            rubric_rows = build_rubric_rows(output_row)
-            recommendation = build_review_recommendation(
-                output_row,
-                data.errors,
-                gold,
-                task_info,
-                rubric_rows,
-            )
-            items.append({
-                "case_id": case_id,
-                "model_name": model_name,
-                "display_model": md.display_model_name(model_name, source=result_source),
-                "source": result_source,
-                "source_label": md.source_label(result_source),
-                "task_info": task_info,
-                "gold": gold,
-                "output_row": output_row,
-                "rubric_rows": rubric_rows,
-                "recommendation": recommendation,
-            })
+        gold = base.gold_answer_map.get(case_id)
+        run_id = _clean(score_row.get("run_id"))
+        output_data = dict(score_row)
+        output_data["model_name"] = model_name
+        output_data["answer_text"] = answer_lookup.get((run_id, case_id, model_name), "")
+        output_data["output_id"] = f"{run_id}::{model_name}::{case_id}"
+        output_row = pd.Series(output_data)
+        rubric_rows = build_rubric_rows(output_row)
+        recommendation = build_review_recommendation(
+            output_row,
+            pd.DataFrame(),
+            gold,
+            task_info,
+            rubric_rows,
+        )
+        items.append({
+            "case_id": case_id,
+            "model_name": model_name,
+            "display_model": md.display_model_name(model_name, source="live"),
+            "source": "live",
+            "source_label": "真实评分草稿",
+            "score_row_id": _as_int(score_row.get("id")),
+            "score_run_id": _clean(score_row.get("score_run_id")),
+            "created_at": _clean(score_row.get("created_at")),
+            "task_info": task_info,
+            "gold": gold,
+            "output_row": output_row,
+            "score_row": dict(score_row),
+            "rubric_rows": rubric_rows,
+            "recommendation": recommendation,
+        })
     items.sort(key=lambda item: (
         _review_status_rank(item["output_row"].get("review_status"), item["source"]),
         _recommendation_rank(item["recommendation"]),
@@ -612,14 +667,28 @@ def _build_review_items(data, result_source: str) -> list[dict]:
     return items
 
 
-def _render_review_queue(items: list[dict], eval_status: dict, result_source: str) -> list[dict]:
+def _live_answer_lookup(responses: pd.DataFrame) -> dict[tuple[str, str, str], str]:
+    if not isinstance(responses, pd.DataFrame) or responses.empty:
+        return {}
+    lookup: dict[tuple[str, str, str], str] = {}
+    for _, row in responses.iterrows():
+        key = (
+            _clean(row.get("run_id")),
+            _clean(row.get("case_id")),
+            _clean(row.get("model_name")),
+        )
+        lookup[key] = _clean(row.get("answer_text"))
+    return lookup
+
+
+def _render_review_queue(items: list[dict], selected_score_run_id: str | None) -> list[dict]:
     stats = build_review_queue_stats(items)
     render_inline_status(
         [
             ("待确认", str(stats["pending"])),
             ("建议确认", str(stats["confirm"])),
             ("建议复核", str(stats["review"])),
-            ("不建议归档", str(stats["reject"])),
+            ("不建议采用", str(stats["reject"])),
             ("已确认", str(stats["confirmed"])),
         ]
     )
@@ -640,18 +709,19 @@ def _render_review_queue(items: list[dict], eval_status: dict, result_source: st
         frame,
         hide_index=True,
         use_container_width=True,
-        disabled=["样本编号", "模型", "总分", "建议处理", "主要原因", "复核状态"],
-        column_order=["选择", "样本编号", "模型", "总分", "建议处理", "主要原因", "复核状态"],
+        disabled=["样本编号", "模型", "总分", "建议处理", "主要原因", "复核状态", "生成时间"],
+        column_order=["选择", "样本编号", "模型", "总分", "建议处理", "主要原因", "复核状态", "生成时间"],
         column_config={
-            "选择": st.column_config.CheckboxColumn("选择", help="仅建议确认且待人工复核的评分可批量确认。"),
+            "选择": st.column_config.CheckboxColumn("选择", help="仅建议确认且待确认的评分可批量确认。"),
             "样本编号": st.column_config.TextColumn("样本编号", width="small"),
             "模型": st.column_config.TextColumn("模型", width="medium"),
             "总分": st.column_config.TextColumn("总分", width="small"),
             "建议处理": st.column_config.TextColumn("建议处理", width="small"),
             "主要原因": st.column_config.TextColumn("主要原因", width="large"),
             "复核状态": st.column_config.TextColumn("复核状态", width="small"),
+            "生成时间": st.column_config.TextColumn("生成时间", width="medium"),
         },
-        key=f"review_queue_editor::{result_source}::{filter_value}",
+        key=f"review_queue_editor::{selected_score_run_id or 'latest'}::{filter_value}",
     )
     selected_positions: list[int] = []
     if isinstance(edited, pd.DataFrame) and "选择" in edited:
@@ -669,13 +739,13 @@ def _render_review_queue(items: list[dict], eval_status: dict, result_source: st
     ]
     eligible_items = [item for item in selected_items if is_bulk_confirm_eligible(item)]
     blocked_items = [item for item in selected_items if not is_bulk_confirm_eligible(item)]
-    _render_bulk_confirmation(eligible_items, blocked_items, eval_status, result_source)
-    st.caption("队列用于确认评分草稿；示例历史评价只用于对照方法，不进入当前批量确认。")
+    _render_bulk_confirmation(eligible_items, blocked_items)
+    st.caption("队列只包含真实运行生成的评分草稿；未确认评分不会纳入正式结论。")
     return visible_items
 
 
 def build_review_queue_stats(items: list[dict]) -> dict[str, int]:
-    """统计评分确认队列；示例历史评价不计入待确认与已确认口径。"""
+    """统计评分确认队列；只统计真实运行评分。"""
     stats = {"pending": 0, "confirm": 0, "review": 0, "reject": 0, "confirmed": 0}
     for item in items:
         if item.get("source") == "seed":
@@ -684,11 +754,13 @@ def build_review_queue_stats(items: list[dict]) -> dict[str, int]:
         if status == "confirmed":
             stats["confirmed"] += 1
             continue
+        if status == "skipped":
+            continue
         stats["pending"] += 1
         recommendation = str(item["recommendation"].get("recommendation") or "")
         if recommendation == "建议确认":
             stats["confirm"] += 1
-        elif recommendation == "不建议归档":
+        elif recommendation == "不建议采用":
             stats["reject"] += 1
         else:
             stats["review"] += 1
@@ -696,13 +768,14 @@ def build_review_queue_stats(items: list[dict]) -> dict[str, int]:
 
 
 def filter_review_queue_items(items: list[dict], filter_value: str) -> list[dict]:
+    live_items = [item for item in items if item.get("source") != "seed"]
     if filter_value == "全部":
-        return items
+        return live_items
     if filter_value == "已确认":
-        return [item for item in items if _review_status_value(item) == "confirmed" and item.get("source") != "seed"]
+        return [item for item in live_items if _review_status_value(item) == "confirmed"]
     return [
-        item for item in items
-        if _review_status_value(item) != "confirmed"
+        item for item in live_items
+        if _review_status_value(item) not in {"confirmed", "skipped"}
         and str(item["recommendation"].get("recommendation") or "") == filter_value
     ]
 
@@ -727,32 +800,28 @@ def _review_queue_row(item: dict) -> dict[str, object]:
         "建议处理": str(recommendation.get("recommendation") or "待判断"),
         "主要原因": summarize_text(reasons, 64),
         "复核状态": _display_review_status(row.get("review_status"), item["source"]),
+        "生成时间": _format_datetime(item.get("created_at")),
     }
 
 
 def _render_bulk_confirmation(
     eligible_items: list[dict],
     blocked_items: list[dict],
-    eval_status: dict,
-    result_source: str,
 ) -> None:
-    if result_source == "seed":
-        st.caption("当前为示例历史评价，不提供批量确认。")
-        return
     if blocked_items:
-        st.caption("建议复核、不建议归档或已确认的评分不能批量确认，请进入当前评分详情逐条处理。")
+        st.caption("建议复核、不建议采用或已确认的评分不能批量确认，请进入当前评分详情逐条处理。")
 
     count = len(eligible_items)
-    prompt = f"将确认 {count} 条低风险评分草稿，确认后进入正式结论。" if count else ""
+    prompt = f"将确认 {count} 条低风险评分草稿，确认后纳入正式结论。" if count else ""
     st.caption(f"已选择 {count} 条可批量确认评分。" + (f" {prompt}" if prompt else ""))
     if st.button(
-        "批量确认归档",
+        "批量确认生效",
         type="primary",
         disabled=count == 0,
         key="review_bulk_confirm",
         use_container_width=False,
     ):
-        confirmed, failed = _confirm_low_risk_items(eligible_items, eval_status)
+        confirmed, failed = _confirm_low_risk_items(eligible_items)
         if confirmed:
             st.success(f"已批量确认 {confirmed} 条评分草稿。")
         if failed:
@@ -761,20 +830,12 @@ def _render_bulk_confirmation(
             st.rerun()
 
 
-def _confirm_low_risk_items(items: list[dict], eval_status: dict) -> tuple[int, int]:
-    score_run_id = eval_status.get("score_run_id")
-    if not score_run_id:
-        return 0, len(items)
-
+def _confirm_low_risk_items(items: list[dict]) -> tuple[int, int]:
     row_ids: list[int] = []
     for item in items:
-        row = sc.load_score_row_for_case(
-            str(score_run_id),
-            str(item["case_id"]),
-            str(item["model_name"]),
-        )
-        if row is not None and str(row.get("review_status") or "pending").lower() == "pending":
-            row_ids.append(int(row["id"]))
+        row_id = _as_int(item.get("score_row_id"))
+        if row_id is not None and _review_status_value(item) == "pending":
+            row_ids.append(row_id)
     result = sc.confirm_score_reviews_bulk(row_ids, BULK_REVIEW_NOTE)
     confirmed = int(result.get("confirmed", 0) or 0)
     failed = len(items) - confirmed
@@ -802,13 +863,12 @@ def _render_score_detail(item: dict, verdict: dict) -> None:
     summary_rows = [
         ("样本", f"{item['case_id']}｜{summarize_text(task_info.get('question'), 24)}"),
         ("模型", item["display_model"]),
+        ("完整模型 ID", model_id),
         ("总分", _score_text(row.get("total_score"))),
         ("裁判模型", md.display_model_name(row.get("judge_model") or sc.DEFAULT_JUDGE_MODEL)),
         ("评分状态", _display_review_status(row.get("review_status"), item["source"])),
-        ("数据来源", item["source_label"]),
+        ("生成时间", _format_datetime(item.get("created_at"))),
     ]
-    if item["source"] != "seed" and item["display_model"] != model_id:
-        summary_rows.append(("模型 ID", model_id))
     render_inline_status(summary_rows)
     _render_recommendation_note(recommendation)
     st.caption("主要原因：" + "；".join(reasons[:4]))
@@ -838,7 +898,7 @@ def _render_recommendation_note(recommendation: dict) -> None:
         f"""
         <div class="review-risk-note review-risk-note-{escape(level)}">
             <strong>{escape(title)}</strong>
-            <span>该建议只辅助人工判断，不会自动归档。</span>
+            <span>该建议只辅助人工判断，不会自动生效。</span>
         </div>
         """
     )
@@ -989,28 +1049,20 @@ def _render_scoring_matrix(output_row: pd.Series | None, errors_df) -> None:
     if not rows:
         render_empty_state("当前模型回答尚未配置 Rubric 评分标准。")
         return
-
-    header = (
-        "<th>评分维度</th><th>满分</th><th>理想回复要求 / Gold 要求</th>"
-        "<th>模型得分</th><th>评分依据</th><th>扣分原因</th><th>对应错误标签</th>"
+    st.dataframe(
+        pd.DataFrame(rows),
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "评分维度": st.column_config.TextColumn("维度", width="small"),
+            "模型得分": st.column_config.TextColumn("得分", width="small"),
+            "满分": st.column_config.TextColumn("满分", width="small"),
+            "评分依据": st.column_config.TextColumn("评分依据", width="large"),
+            "理想回复要求 / Gold 要求": st.column_config.TextColumn("Gold / Rubric 要求", width="large"),
+            "扣分原因": st.column_config.TextColumn("扣分规则", width="medium"),
+            "对应错误标签": st.column_config.TextColumn("对应错误标签", width="medium"),
+        },
     )
-    body = ""
-    for row in rows:
-        labels = _labels_html(row["对应错误标签"])
-        body += (
-            f'<tr><td><span class="rubric-dim">{escape(row["评分维度"])}</span></td>'
-            f'<td><span class="rubric-gap">{escape(row["满分"])}</span></td>'
-            f'<td><span class="rubric-evidence">{escape(row["理想回复要求 / Gold 要求"])}</span></td>'
-            f'<td><span class="rubric-score">{escape(row["模型得分"])}</span></td>'
-            f'<td><span class="rubric-evidence">{escape(row["评分依据"])}</span></td>'
-            f'<td><span class="rubric-gap">{escape(row["扣分原因"])}</span></td>'
-            f"<td>{labels}</td></tr>"
-        )
-    table_html = (
-        '<table class="rubric-table"><thead><tr>'
-        f"{header}</tr></thead><tbody>{body}</tbody></table>"
-    )
-    render_evidence_panel("维度评分详情", table_html)
 
 
 def _render_error_attribution(output_row: pd.Series | None, errors_df, optimization_df) -> None:
@@ -1021,20 +1073,10 @@ def _render_error_attribution(output_row: pd.Series | None, errors_df, optimizat
     if not rows:
         render_empty_state("暂无错误标签。")
         return
-    headers = ["错误类型", "严重程度", "错误表现", "修正方向", "数据优化建议"]
-    header = "".join(f"<th>{escape(name)}</th>" for name in headers)
-    body = ""
-    for row in rows:
-        body += (
-            f'<tr><td class="check-key">{escape(row["错误类型"])}</td>'
-            f'<td>{escape(row["严重程度"])}</td>'
-            f'<td>{escape(row["错误表现"])}</td>'
-            f'<td>{escape(row["修正方向"])}</td>'
-            f'<td>{escape(row["数据优化建议"])}</td></tr>'
-        )
-    render_evidence_panel(
-        "错误归因明细",
-        f'<table class="check-table"><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>',
+    st.dataframe(
+        pd.DataFrame(rows),
+        hide_index=True,
+        use_container_width=True,
     )
 
 
@@ -1149,6 +1191,30 @@ def _as_float(value) -> float | None:
     return None if pd.isna(number) else number
 
 
+def _as_int(value) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except TypeError:
+        pass
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_datetime(value) -> str:
+    text = _clean(value)
+    if not text:
+        return "—"
+    parsed = pd.to_datetime(text, errors="coerce")
+    if pd.isna(parsed):
+        return text[:19]
+    return parsed.strftime("%Y-%m-%d %H:%M")
+
+
 def _clean(value) -> str:
     if value is None:
         return ""
@@ -1189,45 +1255,38 @@ def _render_redline_panel(verdict: dict, gold, output_row: pd.Series | None, err
     render_html(html)
 
 
-def _render_confirmation_actions(item: dict, eval_status: dict, result_source: str) -> None:
+def _render_confirmation_actions(item: dict) -> None:
     output_row = item["output_row"]
     recommendation = item["recommendation"]
-    if result_source == "seed":
-        st.caption("当前为示例历史评价，不提供归档操作。请在发起测试页生成本次评分草稿后再确认。")
-        return
 
-    score_run_id = eval_status.get("score_run_id")
-    if not score_run_id:
-        st.caption("当前评分草稿尚未落库，暂不能确认归档。SQLite 可用后可在此确认。")
-        return
-
-    case_id = str(output_row.get("case_id") or "")
-    model_name = str(output_row.get("model_name") or "")
-    row = sc.load_score_row_for_case(score_run_id, case_id, model_name)
-    if row is None:
-        st.caption("未找到可归档的评分草稿。")
+    row = item.get("score_row") or {}
+    row_id = _as_int(item.get("score_row_id"))
+    if not row or row_id is None:
+        st.caption("未找到可确认的评分草稿。")
         return
 
     review_status = str(row.get("review_status") or "pending")
     if review_status == "confirmed":
-        st.caption("本条评分已确认归档，已可进入正式结论。")
+        st.caption("本条评分已确认，已纳入正式结论。")
+        return
+    if review_status == "skipped":
+        st.caption("本条评分已暂不采用，未纳入正式结论。")
         return
     if review_status != "pending":
-        st.caption(f"本条评分状态为 {_review_status_label(review_status)}，仅待复核草稿可在此归档。")
+        st.caption(f"本条评分状态为 {_review_status_label(review_status)}，仅待确认草稿可在此确认。")
         return
 
-    row_id = int(row["id"])
     skip_key = f"review_not_archive::{row_id}"
     if st.session_state.get(skip_key):
         render_html(
             '<div class="review-risk-note review-risk-note-muted">'
-            '<strong>已暂不归档</strong>'
+            '<strong>已暂不采用</strong>'
             '<span>该操作不改变数据库状态；评分草稿仍保留，未进入正式结论。</span>'
             '</div>'
         )
 
     dimensions = ds.get_rubric_dimensions()
-    st.caption("可直接确认，也可修订维度分与复核说明后归档。确认后才进入正式结论。")
+    st.caption("可确认生效，也可修订维度分与复核说明后确认。确认后才纳入正式结论。")
     cols = st.columns(len(dimensions))
     edited: dict[str, int] = {}
     original: dict[str, int] = {}
@@ -1248,49 +1307,53 @@ def _render_confirmation_actions(item: dict, eval_status: dict, result_source: s
     requires_note = recommendation.get("recommendation") != "建议确认" or changed
     col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
-        if st.button("确认归档", type="primary", key=f"review_confirm::{row_id}", use_container_width=True):
+        if st.button("确认生效", type="primary", key=f"review_confirm::{row_id}", use_container_width=True):
             _confirm_review(row_id, edited, note, requires_note)
     with col2:
-        if st.button("修订后归档", type="secondary", key=f"review_confirm_edit::{row_id}", use_container_width=True):
+        if st.button("修订后确认", type="secondary", key=f"review_confirm_edit::{row_id}", use_container_width=True):
             _confirm_review(row_id, edited, note, True)
     with col3:
-        if st.button("暂不归档", type="tertiary", key=f"review_skip::{row_id}", use_container_width=True):
-            st.session_state[skip_key] = True
-            st.info("已暂不归档。该评分草稿仍保留，未进入正式结论。")
+        if st.button("暂不采用", type="tertiary", key=f"review_skip::{row_id}", use_container_width=True):
+            skip_note = _clean(note) or "人工标记暂不采用，未纳入正式结论。"
+            if sc.skip_score_review(row_id, skip_note):
+                st.info("已暂不采用。该评分草稿仍保留，未纳入正式结论。")
+                st.rerun()
+            else:
+                st.warning("暂不采用操作失败：请确认 SQLite 数据层已初始化。")
 
 
 def _confirm_review(row_id: int, edited: dict[str, int], note: str, requires_note: bool) -> None:
     if requires_note and not _clean(note):
-        st.warning("建议复核或不建议归档的评分，需要填写复核说明后再归档。")
+        st.warning("建议复核或不建议采用的评分，需要填写复核说明后再确认。")
         return
     if sc.confirm_score_review(row_id, edited, note):
-        st.success("已确认归档；该评分可进入正式结论。")
+        st.success("已确认生效；该评分将纳入正式结论。")
         st.rerun()
     else:
-        st.warning("归档失败：请确认 SQLite 数据层已初始化。")
+        st.warning("确认失败：请确认 SQLite 数据层已初始化。")
 
 
 def _render_case_review(output_row: pd.Series | None, eval_status: dict) -> None:
-    """在当前 (case, model) 评分处于待复核草稿时，提供就地复核表单。"""
+    """在当前 (case, model) 评分处于待确认草稿时，提供就地确认表单。"""
     if output_row is None:
-        render_empty_state("该任务暂无模型回答记录，不能进行人工复核。")
+        render_empty_state("该任务暂无模型回答记录，不能进行人工确认。")
         return
     score_run_id = eval_status.get("score_run_id")
     if not score_run_id:
-        st.caption("当前展示的是已沉淀评价或会话内结果；只有待人工复核的评分草稿可在此确认归档。")
+        st.caption("当前展示的是会话内结果；只有待确认的评分草稿可在此确认生效。")
         return
     case_id = str(output_row.get("case_id") or "")
     model_name = str(output_row.get("model_name") or "")
     row = sc.load_score_row_for_case(score_run_id, case_id, model_name)
     if row is None:
-        st.caption("未找到可归档的评分草稿。")
+        st.caption("未找到可确认的评分草稿。")
         return
     review_status = str(row.get("review_status") or "pending")
     if review_status == "confirmed":
-        st.caption("本条评分已确认归档。")
+        st.caption("本条评分已确认。")
         return
     if review_status != "pending":
-        st.caption(f"本条评分状态为 {_review_status_label(review_status)}，仅待复核草稿可在此归档。")
+        st.caption(f"本条评分状态为 {_review_status_label(review_status)}，仅待确认草稿可在此确认。")
         return
 
     dimensions = ds.get_rubric_dimensions()
@@ -1309,12 +1372,12 @@ def _render_case_review(output_row: pd.Series | None, eval_status: dict) -> None
     note = st.text_area(
         "复核说明", value=str(row.get("review_note") or ""), key=f"review_note::{row['id']}"
     )
-    if st.button("确认并归档", type="primary", key=f"review_confirm::{row['id']}"):
+    if st.button("确认生效", type="primary", key=f"review_confirm::{row['id']}"):
         if sc.confirm_score_review(int(row["id"]), edited, note):
-            st.success("已确认归档；该评分可进入正式结论。")
+            st.success("已确认生效；该评分将纳入正式结论。")
             st.rerun()
         else:
-            st.warning("归档失败：请确认 SQLite 数据层已初始化。")
+            st.warning("确认失败：请确认 SQLite 数据层已初始化。")
 
 
 def _domain_by_case(tasks_df: pd.DataFrame) -> dict[str, str]:
@@ -1327,28 +1390,30 @@ def _domain_by_case(tasks_df: pd.DataFrame) -> dict[str, str]:
 
 
 def _review_status_label(status: str) -> str:
-    return {"pending": "待人工复核", "confirmed": "已复核"}.get(str(status).strip().lower(), "待人工复核")
+    return {
+        "pending": "待确认",
+        "confirmed": "已确认",
+        "skipped": "暂不采用",
+    }.get(str(status).strip().lower(), "待确认")
 
 
 def _display_review_status(status, source: str) -> str:
-    if source == "seed":
-        return "示例历史评价"
     return _review_status_label(str(status or "pending"))
 
 
 def _review_status_rank(status, source: str) -> int:
-    if source == "seed":
-        return 9
     value = str(status or "pending").strip().lower()
     if value == "pending":
         return 0
+    if value == "skipped":
+        return 1
     if value == "confirmed":
         return 2
-    return 1
+    return 3
 
 
 def _recommendation_rank(recommendation: dict) -> int:
-    order = {"不建议归档": 0, "建议复核": 1, "建议确认": 2}
+    order = {"不建议采用": 0, "建议复核": 1, "建议确认": 2}
     return order.get(str(recommendation.get("recommendation") or ""), 3)
 
 

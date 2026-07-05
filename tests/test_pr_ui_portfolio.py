@@ -320,7 +320,7 @@ class PortfolioNavTests(unittest.TestCase):
 
     def test_renamed_titles(self):
         self.assertEqual("样本库", PAGE_CONFIG_BY_KEY["samples"].title)
-        self.assertEqual("发起测试", PAGE_CONFIG_BY_KEY["test_run"].title)
+        self.assertEqual("发起评测", PAGE_CONFIG_BY_KEY["test_run"].title)
         self.assertEqual("评测结论", PAGE_CONFIG_BY_KEY["conclusions"].title)
 
     def test_top_nav_has_five_items(self):
@@ -328,7 +328,7 @@ class PortfolioNavTests(unittest.TestCase):
         self.assertEqual(5, len(_TOP_NAV_ITEMS))
         labels = [label for label, _ in _TOP_NAV_ITEMS]
         self.assertEqual(
-            ["项目说明", "样本库", "发起测试", "评分确认", "评测结论"],
+            ["项目说明", "样本库", "发起评测", "评分确认", "评测结论"],
             labels,
         )
 

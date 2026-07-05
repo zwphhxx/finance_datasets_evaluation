@@ -1,10 +1,10 @@
 """PR-B tests: 评测结论页与结论汇总服务。
 
-覆盖三类数据的区分与正式结论口径：
-  - seed 已有结论计入正式结论；
+覆盖真实运行数据的区分与正式结论口径：
+  - seed 示例评价不计入正式结论；
   - pending live 草稿不计入正式结论；
   - confirmed live 结论计入正式结论；
-  - SQLite 不可用时仍可只用 seed 展示（load_live_scores 回退空表）；
+  - SQLite 不可用时 live 结果回退空表；
   - 模型名变化经展示名映射、字段缺失时不报错。
 
 不执行任何真实外呼；不回写 data/ 下 seed 文件。
@@ -72,16 +72,14 @@ class DisplayNameTests(unittest.TestCase):
 
 
 class FormalConclusionTests(unittest.TestCase):
-    def test_seed_conclusions_enter_formal(self):
+    def test_seed_conclusions_do_not_enter_formal(self):
         seed = _seed_scores()
         conclusions = cc.build_formal_conclusions(seed, pd.DataFrame())
-        self.assertTrue(conclusions)
-        for item in conclusions:
-            self.assertGreater(item["seed_count"], 0)
-            self.assertEqual(item["confirmed_count"], 0)
+        self.assertEqual([], conclusions)
         summary = cc.summarize_formal(seed, pd.DataFrame())
-        self.assertEqual(summary["seed_rows"], len(seed))
+        self.assertEqual(summary["seed_rows"], 0)
         self.assertEqual(summary["confirmed_rows"], 0)
+        self.assertEqual(summary["total_rows"], 0)
 
     def test_pending_live_excluded_from_formal(self):
         live = pd.DataFrame([_live_row("C1", "live-model", "pending", total=30)])
@@ -89,9 +87,9 @@ class FormalConclusionTests(unittest.TestCase):
         self.assertEqual(len(confirmed), 0)
         self.assertEqual(len(pending), 1)
 
-        formal = cc.build_formal_conclusions(_seed_scores(), confirmed)
+        formal = cc.build_formal_conclusions(pd.DataFrame(), confirmed)
         self.assertFalse(any(item["model_name"] == "live-model" for item in formal))
-        summary = cc.summarize_formal(_seed_scores(), confirmed)
+        summary = cc.summarize_formal(pd.DataFrame(), confirmed)
         self.assertEqual(summary["confirmed_rows"], 0)
 
     def test_confirmed_live_enters_formal(self):
@@ -99,15 +97,16 @@ class FormalConclusionTests(unittest.TestCase):
         confirmed, _ = cc.split_live_scores(live)
         self.assertEqual(len(confirmed), 1)
 
-        formal = cc.build_formal_conclusions(_seed_scores(), confirmed, mapping={"live-model": "现场模型"})
+        formal = cc.build_formal_conclusions(pd.DataFrame(), confirmed, mapping={"live-model": "现场模型"})
         live_items = [item for item in formal if item["model_name"] == "live-model"]
         self.assertEqual(len(live_items), 1)
         self.assertEqual(live_items[0]["display_name"], "现场模型")
         self.assertEqual(live_items[0]["confirmed_count"], 1)
 
-        summary = cc.summarize_formal(_seed_scores(), confirmed)
+        summary = cc.summarize_formal(pd.DataFrame(), confirmed)
         self.assertEqual(summary["confirmed_rows"], 1)
-        self.assertEqual(summary["seed_rows"], len(_seed_scores()))
+        self.assertEqual(summary["seed_rows"], 0)
+        self.assertEqual(summary["total_rows"], 1)
 
     def test_mixed_pending_and_confirmed_split(self):
         live = pd.DataFrame([
@@ -152,11 +151,11 @@ class RobustnessTests(unittest.TestCase):
         self.assertEqual(cc.summarize_frequent_issues(pd.DataFrame()), [])
 
     def test_missing_dimension_columns_are_tolerated(self):
-        # 缺少部分维度列的 seed 风格表：仍应聚合 total 并把缺失维度置 None。
+        # 缺少部分维度列的 confirmed live 风格表：仍应聚合 total 并把缺失维度置 None。
         partial = pd.DataFrame([
-            {"model_name": "m", "case_id": "C1", "total_score": 70, "accuracy_score": 20, "review_note": ""}
+            {"eval_model": "m", "case_id": "C1", "total_score": 70, "accuracy_score": 20, "review_note": ""}
         ])
-        formal = cc.build_formal_conclusions(partial, pd.DataFrame())
+        formal = cc.build_formal_conclusions(pd.DataFrame(), partial)
         self.assertEqual(len(formal), 1)
         self.assertIsNotNone(formal[0]["dimensions"]["accuracy_score"])
         self.assertIsNone(formal[0]["dimensions"]["coverage_score"])
@@ -170,7 +169,12 @@ class RobustnessTests(unittest.TestCase):
 class FrequentIssuesTests(unittest.TestCase):
     def test_issues_derived_from_dimensions_and_errors(self):
         data = load_all_data()
-        combined = cc.combine_formal_scores(data.scores, pd.DataFrame())
+        live = pd.DataFrame([
+            _live_row("C1", "live-model", "confirmed", total=55, coverage_score=5),
+            _live_row("C2", "live-model", "confirmed", total=58, coverage_score=6),
+        ])
+        confirmed, _ = cc.split_live_scores(live)
+        combined = cc.combine_formal_scores(data.scores, confirmed)
         issues = cc.summarize_frequent_issues(combined, data.errors, ["回答较笼统"])
         self.assertTrue(issues)
         self.assertTrue(any("达成率" in issue for issue in issues))
