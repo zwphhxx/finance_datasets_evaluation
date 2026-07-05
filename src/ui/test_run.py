@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from html import escape
 
+import pandas as pd
 import streamlit as st
 
 from app.models import siliconflow as sf
@@ -29,7 +30,7 @@ from src.ui.components import (
 from src.ui.page_config import get_page_config
 from src.ui.tasks import TASK_TYPE_LABELS, display_label, summarize_text
 
-MAIN_PROMPT = "本页是评测执行页，请按「选择样本 → 选择对比模型 → 运行模型回答 → 生成评分草稿」完成一次模型对比评测。"
+MAIN_PROMPT = "选择样本和模型，生成模型回答与评分草稿。"
 
 RUN_BOUNDARY_NOTE = (
     "本页运行受密钥、网络、模型版本与限流影响，结果可能波动。新评分默认进入评分草稿，"
@@ -44,7 +45,7 @@ NO_TESTABLE_SAMPLE_MESSAGE = (
     "Gold Answer 具备完整评判标准、Rubric 评分标准存在，且样本状态为已入库。"
 )
 
-TEST_RUN_STEPS = ["选择样本", "选择对比模型", "运行模型回答", "生成评分草稿"]
+TEST_RUN_STEPS = ["评测配置", "运行结果", "评分草稿"]
 ADVANCED_SETTING_ITEMS = [
     "模型服务 provider",
     "连通性检查",
@@ -65,6 +66,8 @@ _STATUS_BADGE = {
 
 _MODE_LABEL = {"mock": "模拟回退", "live": "真实调用"}
 _REVIEW_STATUS_LABEL = {"pending": "待人工复核", "confirmed": "已复核"}
+_DEFAULT_TEMPERATURE = 0.2
+_DEFAULT_MAX_TOKENS = 1024
 
 
 def get_test_run_steps() -> list[str]:
@@ -90,8 +93,17 @@ def build_sample_options(
         task_type = display_label(row.get("task_type"), TASK_TYPE_LABELS)
         title_source = row.get("title") or row.get("expected_capability") or row.get("question")
         summary = summarize_text(title_source, 24)
+        difficulty = _dash(row.get("difficulty"))
         label = f"{case_id} · {scenario} · {task_type} · {summary}"
-        options.append({"case_id": case_id, "label": label, "task": row})
+        options.append({
+            "case_id": case_id,
+            "label": label,
+            "scenario": scenario,
+            "task_type": task_type,
+            "title": summary,
+            "difficulty": difficulty,
+            "task": row,
+        })
     return options
 
 
@@ -134,10 +146,7 @@ def render_test_run_page(data_bundle: dict) -> None:
         title=config.title,
         question=config.question,
     )
-    st.info(MAIN_PROMPT)
-    with st.expander("运行边界", expanded=False):
-        st.write(RUN_BOUNDARY_NOTE)
-        st.caption(PROMPT_ISOLATION_NOTE)
+    st.caption(MAIN_PROMPT)
 
     tasks_df = base.tasks
     if tasks_df is None or tasks_df.empty:
@@ -147,30 +156,291 @@ def render_test_run_page(data_bundle: dict) -> None:
     gold_map = getattr(base, "gold_answer_map", {}) or {}
     testable_dimensions = ds.get_testable_rubric_dimensions()
 
-    render_numbered_section("01", TEST_RUN_STEPS[0], "只展示通过正式完整度校验的样本。")
-    selected_tasks = _render_task_selector(task_records, gold_map, testable_dimensions)
-
-    render_numbered_section("02", TEST_RUN_STEPS[1], "从当前模型服务读取可用模型，并支持多模型对比。")
-    provider_name, temperature, max_tokens, manual_model_ids = _render_advanced_settings()
-    _render_provider_mode_notice(provider_name)
-    model_ids = _render_model_selector(provider_name, manual_model_ids)
-
-    render_numbered_section("03", TEST_RUN_STEPS[2], "确认运行规模后生成模型回答。")
+    sample_options = build_sample_options(task_records, gold_map, testable_dimensions)
+    _ensure_default_selected_cases(sample_options)
+    provider_name = _current_provider_name()
+    selected_tasks = _selected_tasks_from_state(sample_options)
+    model_ids = _selected_model_ids_from_state()
     run_plan = build_run_plan_summary(model_ids, selected_tasks)
-    _render_run_plan(run_plan)
-    _render_run_button(provider_name, model_ids, selected_tasks, temperature, max_tokens, run_plan)
+
+    render_numbered_section("01", TEST_RUN_STEPS[0])
+    _render_configuration_panel(sample_options, selected_tasks, model_ids, provider_name, run_plan)
+
+    render_numbered_section("02", TEST_RUN_STEPS[1])
     _render_results()
 
-    render_numbered_section("04", TEST_RUN_STEPS[3], "由裁判评分链路生成建议分，等待人工复核。")
+    render_numbered_section("03", TEST_RUN_STEPS[2])
     _render_scoring(base, provider_name, task_records)
     _render_score_results()
+    _render_pending_dialogs(sample_options)
 
 
-def _render_config_controls() -> str:
+def _default_provider_name() -> str:
     providers = available_providers()
-    default_index = providers.index("siliconflow") if (sf.is_configured() and "siliconflow" in providers) else 0
-    provider_name = st.selectbox("模型服务 provider", providers, index=default_index, key="test_run_provider")
-    return provider_name
+    if sf.is_configured() and "siliconflow" in providers:
+        return "siliconflow"
+    return providers[0] if providers else "mock"
+
+
+def _current_provider_name() -> str:
+    providers = available_providers()
+    current = str(st.session_state.get("test_run_provider") or _default_provider_name())
+    if current not in providers and providers:
+        current = _default_provider_name()
+    st.session_state["test_run_provider"] = current
+    st.session_state.setdefault("test_run_temperature", _DEFAULT_TEMPERATURE)
+    st.session_state.setdefault("test_run_max_tokens", _DEFAULT_MAX_TOKENS)
+    return current
+
+
+def _ensure_default_selected_cases(sample_options: list[dict]) -> None:
+    option_ids = [item["case_id"] for item in sample_options]
+    current = [
+        case_id
+        for case_id in st.session_state.get("test_run_selected_cases", [])
+        if case_id in option_ids
+    ]
+    if current:
+        st.session_state["test_run_selected_cases"] = current
+        return
+    default_cases = [
+        str(r.get("case_id"))
+        for r in er.default_task_selection([item["task"] for item in sample_options])
+        if str(r.get("case_id")) in option_ids
+    ]
+    st.session_state["test_run_selected_cases"] = default_cases[:1] if default_cases else option_ids[:1]
+
+
+def _selected_tasks_from_state(sample_options: list[dict]) -> list[dict]:
+    by_case = {item["case_id"]: item for item in sample_options}
+    return [
+        by_case[case_id]
+        for case_id in st.session_state.get("test_run_selected_cases", [])
+        if case_id in by_case
+    ]
+
+
+def _selected_model_ids_from_state() -> list[str]:
+    return _dedupe(list(st.session_state.get("test_run_selected_models", [])))
+
+
+def _selected_sample_summary(selected_tasks: list[dict]) -> str:
+    if not selected_tasks:
+        return "未选择"
+    labels = [f'{item["case_id"]} · {item["title"]}' for item in selected_tasks[:2]]
+    suffix = f" 等 {len(selected_tasks)} 个" if len(selected_tasks) > 2 else f"（{len(selected_tasks)} 个）"
+    return "；".join(labels) + suffix
+
+
+def _selected_model_summary(model_ids: list[str]) -> str:
+    if not model_ids:
+        return "未选择"
+    labels = model_ids[:2]
+    suffix = f" 等 {len(model_ids)} 个" if len(model_ids) > 2 else f"（{len(model_ids)} 个）"
+    return "；".join(labels) + suffix
+
+
+def _current_run_mode(provider_name: str) -> str:
+    provider = get_text_provider(prefer=provider_name)
+    return "mock" if provider.name == "mock" else "live"
+
+
+def _render_configuration_panel(
+    sample_options: list[dict],
+    selected_tasks: list[dict],
+    model_ids: list[str],
+    provider_name: str,
+    run_plan: dict[str, int | bool],
+) -> None:
+    mode = _current_run_mode(provider_name)
+    rows = [
+        ("已选样本", _selected_sample_summary(selected_tasks)),
+        ("已选模型", _selected_model_summary(model_ids)),
+        ("预计模型回答", f"{run_plan['planned_responses']} 条"),
+        ("当前运行模式", _mode_label(mode)),
+    ]
+    render_evidence_panel("评测配置", _kv_table_html(rows))
+    if mode == "mock":
+        st.caption("当前为模拟回退模式：回答为模拟生成，不代表真实模型结果。")
+
+    col1, col2, col3 = st.columns([1, 1, 1.2])
+    with col1:
+        if st.button("选择样本", key="test_run_open_samples", type="secondary", use_container_width=True):
+            st.session_state["test_run_dialog"] = "samples"
+    with col2:
+        if st.button("选择模型", key="test_run_open_models", type="secondary", use_container_width=True):
+            _open_model_dialog(provider_name)
+    with col3:
+        _render_run_button(
+            provider_name,
+            model_ids,
+            selected_tasks,
+            float(st.session_state.get("test_run_temperature", _DEFAULT_TEMPERATURE)),
+            int(st.session_state.get("test_run_max_tokens", _DEFAULT_MAX_TOKENS)),
+            run_plan,
+        )
+    if not run_plan["can_run"]:
+        st.caption("请选择样本和模型后运行。")
+
+
+def _open_model_dialog(provider_name: str) -> None:
+    st.session_state["test_run_dialog"] = "models"
+    st.session_state["test_run_provider_dialog"] = provider_name
+    st.session_state["test_run_temperature_dialog"] = float(
+        st.session_state.get("test_run_temperature", _DEFAULT_TEMPERATURE)
+    )
+    st.session_state["test_run_max_tokens_dialog"] = int(
+        st.session_state.get("test_run_max_tokens", _DEFAULT_MAX_TOKENS)
+    )
+    st.session_state["test_run_models_manual_dialog"] = ",".join(
+        st.session_state.get("test_run_manual_model_ids", [])
+    )
+
+
+def _render_pending_dialogs(sample_options: list[dict]) -> None:
+    dialog = st.session_state.get("test_run_dialog")
+    if dialog == "samples":
+        _render_sample_selection_dialog(sample_options)
+    elif dialog == "models":
+        _render_model_selection_dialog()
+
+
+def _clear_dialog_state() -> None:
+    st.session_state.pop("test_run_dialog", None)
+
+
+@st.dialog("选择样本", width="large")
+def _render_sample_selection_dialog(sample_options: list[dict]) -> None:
+    if not sample_options:
+        st.warning(NO_TESTABLE_SAMPLE_MESSAGE)
+        if st.button("关闭", key="test_run_sample_dialog_close", type="tertiary"):
+            _clear_dialog_state()
+            st.rerun()
+        return
+
+    rows = [
+        {
+            "样本编号": item["case_id"],
+            "场景": item["scenario"],
+            "任务标题": item["title"],
+            "难度": item["difficulty"],
+        }
+        for item in sample_options
+    ]
+    st.dataframe(
+        pd.DataFrame(rows),
+        hide_index=True,
+        width="stretch",
+        height=min(320, max(118, 42 + len(rows) * 35)),
+        column_config={
+            "样本编号": st.column_config.TextColumn("样本编号", width="small"),
+            "场景": st.column_config.TextColumn("场景", width="medium"),
+            "任务标题": st.column_config.TextColumn("任务标题", width="large"),
+            "难度": st.column_config.TextColumn("难度", width="small"),
+        },
+    )
+    by_case = {item["case_id"]: item for item in sample_options}
+    option_ids = [item["case_id"] for item in sample_options]
+    current = [
+        case_id
+        for case_id in st.session_state.get("test_run_selected_cases", option_ids[:1])
+        if case_id in by_case
+    ] or option_ids[:1]
+    dialog_cases = [
+        case_id
+        for case_id in st.session_state.get("test_run_cases_dialog", current)
+        if case_id in by_case
+    ]
+    st.session_state["test_run_cases_dialog"] = dialog_cases or current
+    chosen = st.multiselect(
+        "可测样本",
+        option_ids,
+        format_func=lambda case_id: by_case[case_id]["label"],
+        key="test_run_cases_dialog",
+    )
+    st.caption("仅展示已入库且通过完整度校验的样本。被测模型不会看到 Gold Answer 或 Rubric。")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("确认选择", key="test_run_sample_dialog_confirm", type="secondary", use_container_width=True):
+            st.session_state["test_run_selected_cases"] = list(chosen)
+            _clear_dialog_state()
+            st.rerun()
+    with col2:
+        if st.button("取消", key="test_run_sample_dialog_cancel", type="tertiary", use_container_width=True):
+            _clear_dialog_state()
+            st.rerun()
+
+
+@st.dialog("选择模型", width="large")
+def _render_model_selection_dialog() -> None:
+    providers = available_providers()
+    if not providers:
+        render_empty_state("当前没有可用模型服务。")
+        return
+
+    current_provider = str(st.session_state.get("test_run_provider_dialog") or _current_provider_name())
+    provider_index = providers.index(current_provider) if current_provider in providers else 0
+    provider_name = st.selectbox(
+        "模型服务 provider",
+        providers,
+        index=provider_index,
+        key="test_run_provider_dialog",
+    )
+    _render_provider_mode_notice(provider_name)
+
+    provider = get_text_provider(prefer=provider_name)
+    cache_key = f"test_run_models::{provider.name}"
+    if cache_key not in st.session_state:
+        st.session_state[cache_key] = provider.list_models()
+    result = st.session_state.get(cache_key)
+
+    selected_from_list: list[str] = []
+    if result is not None and result.ok and result.models:
+        model_options = [m.id for m in result.models]
+        current_models = [model for model in st.session_state.get("test_run_selected_models", []) if model in model_options]
+        dialog_models = [
+            model
+            for model in st.session_state.get("test_run_models_select_dialog", current_models)
+            if model in model_options
+        ]
+        st.session_state["test_run_models_select_dialog"] = dialog_models or current_models
+        selected_from_list = st.multiselect(
+            "模型列表",
+            model_options,
+            key="test_run_models_select_dialog",
+        )
+    else:
+        st.warning("模型列表暂不可用。可刷新模型列表，或在高级设置中手动追加模型 ID。")
+
+    with st.expander("高级设置", expanded=False):
+        _render_connectivity_check(provider_name)
+        _render_load_model_list_button(provider_name)
+        manual_ids = _render_manual_model_ids(key="test_run_models_manual_dialog")
+        temperature, max_tokens = _render_parameters(
+            temperature_key="test_run_temperature_dialog",
+            max_tokens_key="test_run_max_tokens_dialog",
+        )
+        st.caption("trace_id、HTTP 状态码、错误码和原始错误信息只在运行明细中展示。")
+    manual_ids = _parse_manual_model_ids(st.session_state.get("test_run_models_manual_dialog", ""))
+    chosen_models = _dedupe(list(selected_from_list) + manual_ids)
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("确认选择", key="test_run_model_dialog_confirm", type="secondary", use_container_width=True):
+            st.session_state["test_run_provider"] = provider_name
+            st.session_state["test_run_selected_models"] = chosen_models
+            st.session_state["test_run_manual_model_ids"] = manual_ids
+            st.session_state["test_run_temperature"] = float(
+                st.session_state.get("test_run_temperature_dialog", _DEFAULT_TEMPERATURE)
+            )
+            st.session_state["test_run_max_tokens"] = int(
+                st.session_state.get("test_run_max_tokens_dialog", _DEFAULT_MAX_TOKENS)
+            )
+            _clear_dialog_state()
+            st.rerun()
+    with col2:
+        if st.button("取消", key="test_run_model_dialog_cancel", type="tertiary", use_container_width=True):
+            _clear_dialog_state()
+            st.rerun()
 
 
 def _render_provider_mode_notice(provider_name: str) -> None:
@@ -182,17 +452,6 @@ def _render_provider_mode_notice(provider_name: str) -> None:
             st.caption("当前为模拟回退模式：回答为模拟生成。")
     else:
         st.caption("当前为真实调用模式。请确认已在本地配置中提供模型服务密钥。")
-
-
-def _render_advanced_settings() -> tuple[str, float, int, list[str]]:
-    with st.expander("高级设置", expanded=False):
-        provider_name = _render_config_controls()
-        _render_connectivity_check(provider_name)
-        _render_load_model_list_button(provider_name)
-        manual_ids = _render_manual_model_ids()
-        temperature, max_tokens = _render_parameters()
-        st.caption("trace_id、HTTP 状态码、错误码和原始错误信息只在运行明细折叠区展示。")
-    return provider_name, temperature, max_tokens, manual_ids
 
 
 def _render_connectivity_check(provider_name: str) -> None:
@@ -228,61 +487,17 @@ def _render_load_model_list_button(provider_name: str) -> None:
         st.session_state[cache_key] = provider.list_models()
 
 
-def _render_manual_model_ids() -> list[str]:
+def _render_manual_model_ids(key: str = "test_run_models_manual") -> list[str]:
     manual_raw = st.text_input(
         "手动追加模型 ID（多个用逗号分隔）",
-        key="test_run_models_manual",
+        key=key,
         placeholder="输入模型 ID，多个用逗号分隔",
     )
-    return [item.strip() for item in manual_raw.split(",") if item.strip()]
+    return _parse_manual_model_ids(manual_raw)
 
 
-def _render_model_selector(provider_name: str, manual_ids: list[str] | None = None) -> list[str]:
-    provider = get_text_provider(prefer=provider_name)
-    cache_key = f"test_run_models::{provider.name}"
-    if cache_key not in st.session_state:
-        st.session_state[cache_key] = provider.list_models()
-    result = st.session_state.get(cache_key)
-
-    selected_from_list: list[str] = []
-    if result is not None and result.ok and result.models:
-        model_options = [m.id for m in result.models]
-        selected_from_list = st.multiselect("选择对比模型", model_options, key="test_run_models_select")
-    else:
-        st.warning("模型列表暂不可用。可在高级设置中检查连通性、刷新列表或手动追加模型 ID。")
-    if manual_ids:
-        st.caption(f"已从高级设置追加 {len(manual_ids)} 个模型 ID。")
-    return _dedupe(list(selected_from_list) + list(manual_ids or []))
-
-
-def _render_task_selector(task_records: list[dict], gold_map: dict, rubric_dimensions: list[dict] | None) -> list[dict]:
-    options = build_sample_options(task_records, gold_map, rubric_dimensions)
-    by_case = {item["case_id"]: item for item in options}
-
-    if not options:
-        st.warning(NO_TESTABLE_SAMPLE_MESSAGE)
-        return []
-
-    option_ids = [item["case_id"] for item in options]
-    default_cases = [
-        str(r.get("case_id"))
-        for r in er.default_task_selection([item["task"] for item in options])
-        if str(r.get("case_id")) in by_case
-    ]
-    if not default_cases and option_ids:
-        default_cases = option_ids[:1]
-
-    chosen = st.multiselect(
-        "选择样本",
-        option_ids,
-        default=default_cases,
-        format_func=lambda case_id: by_case[case_id]["label"],
-        key="test_run_cases",
-    )
-    st.caption(
-        "默认选择 1 道可测样本。可测样本需通过正式题库、Gold Answer、Rubric 与状态完整度校验。"
-    )
-    return [by_case[c] for c in chosen]
+def _parse_manual_model_ids(value: object) -> list[str]:
+    return [item.strip() for item in str(value or "").split(",") if item.strip()]
 
 
 def eligible_case_ids(task_records: list[dict], gold_map: dict, rubric_dimensions: list[dict] | None) -> list[str]:
@@ -298,22 +513,26 @@ def eligible_case_ids(task_records: list[dict], gold_map: dict, rubric_dimension
     return eligible
 
 
-def _render_parameters() -> tuple[float, int]:
+def _render_parameters(
+    *,
+    temperature_key: str = "test_run_temperature",
+    max_tokens_key: str = "test_run_max_tokens",
+) -> tuple[float, int]:
     col1, col2 = st.columns(2)
-    temperature = col1.slider("temperature", 0.0, 2.0, 0.2, 0.1, key="test_run_temperature")
+    temperature_default = float(st.session_state.get(temperature_key, _DEFAULT_TEMPERATURE))
+    max_tokens_default = int(st.session_state.get(max_tokens_key, _DEFAULT_MAX_TOKENS))
+    temperature = col1.slider("temperature", 0.0, 2.0, temperature_default, 0.1, key=temperature_key)
     max_tokens = int(
-        col2.number_input("max_tokens", min_value=64, max_value=8192, value=1024, step=64, key="test_run_max_tokens")
+        col2.number_input(
+            "max_tokens",
+            min_value=64,
+            max_value=8192,
+            value=max_tokens_default,
+            step=64,
+            key=max_tokens_key,
+        )
     )
     return temperature, max_tokens
-
-
-def _render_run_plan(summary: dict[str, int | bool]) -> None:
-    rows = [
-        ("已选样本", f"{summary['sample_count']} 个"),
-        ("已选模型", f"{summary['model_count']} 个"),
-        ("预计模型回答", f"{summary['planned_responses']} 条"),
-    ]
-    render_evidence_panel("运行计划", _kv_table_html(rows))
 
 
 def _render_run_button(provider_name, model_ids, selected_tasks, temperature, max_tokens, run_plan) -> None:
@@ -437,10 +656,10 @@ def _render_answer_viewer(result) -> None:
 def _render_scoring(base, provider_name: str, task_records: list[dict]) -> None:
     result = eval_state.get_last_run()
     if result is None:
-        st.caption("请先运行模型回答，再进行裁判评分。")
+        st.caption("请先运行模型回答，再生成评分草稿。")
         return
 
-    st.caption(PROMPT_ISOLATION_NOTE)
+    st.caption("评分草稿需人工复核后才进入正式结论；被测模型未看到 Gold Answer 或 Rubric。")
     no_success = result.success_count == 0
     if no_success:
         st.warning("本次运行没有成功回答，无法评分。")
@@ -476,10 +695,11 @@ def _render_score_results() -> None:
     if sc.is_mock_score(score_result):
         st.caption("本次为模拟回退模式：未产生真实评分，各维度留空。")
 
-    _render_score_compare_table(score_result, dimensions)
+    with st.expander("评分对比表", expanded=False):
+        _render_score_compare_table(score_result, dimensions)
 
     if ds.database_ready():
-        if st.button("进入评测复核", key="test_run_to_review"):
+        if st.button("进入评测复核", key="test_run_to_review", type="secondary"):
             st.session_state.current_page = "review"
             st.rerun()
     else:

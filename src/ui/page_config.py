@@ -37,9 +37,9 @@ PAGE_CONFIGS = [
         page_key="test_run",
         title="发起测试",
         subtitle="执行评测：选择可测样本和对比模型，生成待人工复核的评分草稿。",
-        question="按选择样本、选择模型、运行回答、生成评分草稿完成一次评测执行。",
+        question="选择样本和模型，生成模型回答与评分草稿。",
         boundary="被评测模型只看到任务题、业务背景与输出要求，不看到理想回复标准 / Gold Answer；评分草稿需人工复核后才进入正式结论。",
-        highlights="选择样本、选择模型、运行回答、生成评分草稿。",
+        highlights="评测配置、运行结果、评分草稿。",
         nav_summary="发起测试",
     ),
     PageConfig(

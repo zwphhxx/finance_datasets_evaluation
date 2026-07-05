@@ -1,6 +1,7 @@
 """PR-04 tests: the test-run page behaves like an evaluation execution flow."""
 
 import unittest
+from pathlib import Path
 
 from app.services import dataset_service as ds
 from app.services import eval_runner as er
@@ -17,7 +18,7 @@ from src.ui.test_run import (
 class TestRunFlowStructureTests(unittest.TestCase):
     def test_main_steps_are_execution_flow(self):
         self.assertEqual(
-            ["选择样本", "选择对比模型", "运行模型回答", "生成评分草稿"],
+            ["评测配置", "运行结果", "评分草稿"],
             get_test_run_steps(),
         )
 
@@ -35,6 +36,19 @@ class TestRunFlowStructureTests(unittest.TestCase):
             "错误码和原始错误信息",
         ]:
             self.assertIn(expected, items)
+
+    def test_selection_controls_are_dialog_driven(self):
+        source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+
+        self.assertIn('@st.dialog("选择样本"', source)
+        self.assertIn('@st.dialog("选择模型"', source)
+        self.assertIn("test_run_selected_cases", source)
+        self.assertIn("test_run_selected_models", source)
+        self.assertIn("test_run_cases_dialog", source)
+        self.assertIn("test_run_models_select_dialog", source)
+        self.assertNotIn('render_numbered_section("04"', source)
+        self.assertNotIn('st.multiselect(\n        "选择样本"', source)
+        self.assertNotIn('st.multiselect("选择对比模型"', source)
 
 
 class SampleSelectionTests(unittest.TestCase):
