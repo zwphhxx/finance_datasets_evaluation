@@ -236,6 +236,10 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertNotIn("fingerprint-card", source)
         self.assertNotIn("boundary-card", source)
         self.assertNotIn("render_action_cards", source)
+        self.assertNotIn("status-badge", source)
+        self.assertNotIn("review-risk-note", source)
+        self.assertNotIn("render_evidence_panel", source)
+        self.assertNotIn("st.expander", source)
 
     def test_case_detail_uses_review_workbench_components(self):
         import src.ui.components as components
