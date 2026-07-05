@@ -3,10 +3,12 @@
 import unittest
 from pathlib import Path
 
+from app.models.base import ModelInfo
 from app.services import dataset_service as ds
 from app.services import eval_runner as er
 from app.services import scorer as sc
 from src.ui.test_run import (
+    build_model_selection_options,
     build_run_plan_summary,
     build_sample_options,
     build_score_summary_rows,
@@ -33,6 +35,8 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn('@st.dialog("选择模型"', source)
         self.assertIn("模型服务：", source)
         self.assertIn("硅基流动", source)
+        self.assertIn('st.text_input(\n            "搜索模型"', source)
+        self.assertIn("输入模型名称、厂商或关键词", source)
         self.assertIn('st.selectbox("模型"', source)
         self.assertIn("添加到对比列表", source)
         self.assertIn("test_run_model_dialog_selected", source)
@@ -52,6 +56,45 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertNotIn('st.slider("temperature"', source)
         self.assertNotIn('number_input(\n            "max_tokens"', source)
         self.assertNotIn("账户余额：未获取", source)
+
+    def test_model_selection_options_are_bounded_and_searchable(self):
+        models = [
+            ModelInfo(
+                id=f"Vendor/Model-{idx}",
+                provider="siliconflow",
+                object="model",
+                owned_by="Vendor",
+                raw={"display_name": f"Finance Model {idx}"},
+            )
+            for idx in range(35)
+        ]
+        options, matched_count = build_model_selection_options(models, "")
+
+        self.assertEqual(30, len(options))
+        self.assertEqual(35, matched_count)
+        self.assertEqual("Vendor/Model-0", options[0])
+
+    def test_model_selection_search_uses_id_name_and_owner_case_insensitively(self):
+        models = [
+            ModelInfo(
+                id="Alpha/General",
+                provider="siliconflow",
+                object="model",
+                owned_by="Alpha",
+                raw={"display_name": "General Chat"},
+            ),
+            ModelInfo(
+                id="Beta/Risk",
+                provider="siliconflow",
+                object="model",
+                owned_by="BetaLab",
+                raw={"display_name": "Finance Risk"},
+            ),
+        ]
+
+        self.assertEqual(["Beta/Risk"], build_model_selection_options(models, "finance")[0])
+        self.assertEqual(["Beta/Risk"], build_model_selection_options(models, "betalab")[0])
+        self.assertEqual(["Alpha/General"], build_model_selection_options(models, "alpha/general")[0])
 
     def test_balance_text_is_optional(self):
         class _NoBalanceProvider:

@@ -57,6 +57,7 @@ _REVIEW_STATUS_LABEL = {"pending": "待人工复核", "confirmed": "已复核"}
 _SILICONFLOW_LABEL = "硅基流动"
 _EVAL_TEMPERATURE = 0.1
 _EVAL_MAX_TOKENS = 2048
+_MODEL_OPTION_LIMIT = 30
 
 
 def get_test_run_steps() -> list[str]:
@@ -106,6 +107,31 @@ def build_run_plan_summary(model_ids: list[str], selected_tasks: list[dict]) -> 
         "planned_responses": sample_count * model_count,
         "can_run": bool(sample_count and model_count),
     }
+
+
+def build_model_selection_options(models, keyword: str, limit: int = _MODEL_OPTION_LIMIT) -> tuple[list[str], int]:
+    """Filter provider models into a bounded selectbox option list."""
+    query = str(keyword or "").strip().lower()
+    matched: list[str] = []
+    for model in models or []:
+        model_id = str(getattr(model, "id", "") or "").strip()
+        if not model_id:
+            continue
+        raw = getattr(model, "raw", {}) or {}
+        metadata = getattr(model, "metadata", {}) or {}
+        searchable_parts = [
+            model_id,
+            str(getattr(model, "owned_by", "") or ""),
+            str(raw.get("name", "") or ""),
+            str(raw.get("display_name", "") or ""),
+            str(metadata.get("name", "") or ""),
+            str(metadata.get("display_name", "") or ""),
+        ]
+        haystack = " ".join(searchable_parts).lower()
+        if not query or query in haystack:
+            matched.append(model_id)
+    deduped = _dedupe(matched)
+    return deduped[:limit], len(deduped)
 
 
 def build_score_summary_rows(score_result, dimensions) -> list[dict[str, str]]:
@@ -355,16 +381,35 @@ def _render_model_selection_dialog() -> None:
         st.warning("当前未配置模型服务密钥，暂不能发起真实调用。")
 
     result = provider.list_models()
-    model_options = [model.id for model in result.models] if result.ok else []
+    available_models = list(result.models) if result.ok else []
+    model_options = [str(model.id) for model in available_models if str(model.id).strip()]
     st.markdown("**可用模型**")
     if model_options:
-        if st.session_state.get("test_run_model_select") not in model_options:
-            st.session_state["test_run_model_select"] = model_options[0]
-        st.selectbox("模型", model_options, key="test_run_model_select")
-        if st.button("添加到对比列表", key="test_run_add_model", type="secondary"):
+        search_keyword = st.text_input(
+            "搜索模型",
+            key="test_run_model_search",
+            placeholder="输入模型名称、厂商或关键词",
+        )
+        visible_options, matched_count = build_model_selection_options(
+            available_models, search_keyword, _MODEL_OPTION_LIMIT,
+        )
+        if matched_count > _MODEL_OPTION_LIMIT:
+            st.caption("结果较多，请继续输入关键词缩小范围。")
+        if visible_options:
+            if st.session_state.get("test_run_model_select") not in visible_options:
+                st.session_state["test_run_model_select"] = visible_options[0]
+            st.selectbox("模型", visible_options, key="test_run_model_select")
+        else:
+            st.caption("没有符合当前关键词的模型。")
+        if st.button(
+            "添加到对比列表",
+            key="test_run_add_model",
+            type="secondary",
+            disabled=not visible_options,
+        ):
             selected = str(st.session_state.get("test_run_model_select") or "").strip()
             current = _dedupe(list(st.session_state.get("test_run_model_dialog_selected", [])))
-            if selected and selected not in current:
+            if selected and selected in visible_options and selected not in current:
                 current.append(selected)
             st.session_state["test_run_model_dialog_selected"] = current
             st.rerun()
