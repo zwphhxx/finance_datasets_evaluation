@@ -693,9 +693,7 @@ def render_samples_page(data_bundle: dict) -> None:
     task_records, gold_map, rubric_dimensions = _page_readiness_inputs(data, samples)
     readiness_map = build_sample_readiness_map(samples, task_records, gold_map, rubric_dimensions)
 
-    _render_top_actions()
-
-    render_numbered_section("01", "查询样本", "用于筛选样本列表。")
+    render_numbered_section("01", "样本操作")
     keyword, scenario, test_status, difficulty = _render_filters(samples)
     filtered = _filter_samples_for_index(
         samples,
@@ -705,6 +703,8 @@ def render_samples_page(data_bundle: dict) -> None:
         test_status=test_status,
         difficulty=difficulty,
     )
+    _sync_dataframe_selection_from_state(filtered)
+    _render_sample_operation_actions(filtered)
 
     render_numbered_section("02", "样本列表", "展示当前查询结果。")
     if not filtered:
@@ -724,19 +724,6 @@ def render_samples_page(data_bundle: dict) -> None:
         st.caption("发起测试页只展示已入库且通过完整度校验的样本。")
 
     _render_pending_dialogs(rubric_dimensions)
-
-
-def _render_top_actions() -> None:
-    col1, col2 = st.columns([1, 4])
-    with col1:
-        if st.button("新增样本", key="samples_create_open", type="primary", use_container_width=True):
-            _open_create_dialog()
-    with col2:
-        with st.expander("更多操作", expanded=False):
-            if not ds.database_ready():
-                st.caption("SQLite 未初始化时，新增或编辑不会进入正式测试。")
-            _render_backup_controls()
-            st.caption("导入导出用于备份和兼容迁移；正式测试仍以可用数据层和完整度校验为准。")
 
 
 def _render_filters(
@@ -789,6 +776,13 @@ def _render_samples_table(samples: list[sr.Sample], readiness_map: dict[str, ds.
         )
 
 
+def _sync_dataframe_selection_from_state(samples: list[sr.Sample]) -> None:
+    state = st.session_state.get("samples_index_dataframe")
+    selected_row = _selected_dataframe_row_index(state)
+    if selected_row is not None and 0 <= selected_row < len(samples):
+        _select_sample(samples[selected_row].sample_id)
+
+
 def _sample_table_height(row_count: int) -> int:
     return min(420, max(118, 42 + row_count * 35))
 
@@ -831,35 +825,57 @@ def _ensure_selected_sample(samples: list[sr.Sample]) -> sr.Sample | None:
     return next((sample for sample in samples if sample.sample_id == selected_id), samples[0])
 
 
-def _render_selected_sample_actions(samples: list[sr.Sample]) -> None:
+def _render_sample_operation_actions(samples: list[sr.Sample]) -> None:
     selected = _ensure_selected_sample(samples)
-    if selected is None:
-        return
-    is_archived = selected.status == "已归档"
+    is_archived = bool(selected and selected.status == "已归档")
+    disabled = selected is None
+    selected_label = (
+        f"{selected.sample_id} · {_truncate(selected.title, 36)}"
+        if selected is not None
+        else "无"
+    )
     render_html(
-        '<div class="sample-index-actions">'
-        f'<span>当前选中：</span><strong>{escape(selected.sample_id)}</strong>'
-        f'<span class="sample-index-action-title">{escape(_truncate(selected.title, 36))}</span>'
+        '<div class="sample-operation-selected">'
+        f'<span>当前样本：</span><strong>{escape(selected_label)}</strong>'
         '</div>'
     )
-    col1, col2, col3 = st.columns([1, 1, 4])
+    col1, col2, col3, col4 = st.columns([1, 1.1, 1.2, 2.8])
     with col1:
-        if st.button("编辑样本", key=f"samples_selected_edit_{selected.sample_id}", type="secondary", use_container_width=True):
-            _open_edit_dialog(selected.sample_id)
+        if st.button("新增样本", key="samples_create_open", type="primary", use_container_width=True):
+            _open_create_dialog()
     with col2:
+        edit_key = f"samples_selected_edit_{selected.sample_id if selected else 'none'}"
         if st.button(
-            "归档样本",
-            key=f"samples_selected_archive_{selected.sample_id}",
-            type="tertiary",
-            disabled=is_archived,
+            "编辑当前样本",
+            key=edit_key,
+            type="secondary",
+            disabled=disabled,
             use_container_width=True,
-        ):
-            _open_archive_dialog(selected.sample_id)
+        ) and selected is not None:
+            _open_edit_dialog(selected.sample_id)
     with col3:
-        if is_archived:
-            st.caption("该样本已归档，不会进入发起测试。")
-        else:
-            st.caption("编辑会同步正式评测资产；归档后样本不会进入发起测试。")
+        archive_key = f"samples_selected_archive_{selected.sample_id if selected else 'none'}"
+        if st.button(
+            "归档当前样本",
+            key=archive_key,
+            type="tertiary",
+            disabled=disabled or is_archived,
+            use_container_width=True,
+        ) and selected is not None:
+            _open_archive_dialog(selected.sample_id)
+    with col4:
+        with st.expander("更多操作", expanded=False):
+            if not ds.database_ready():
+                st.caption("SQLite 未初始化时，新增或编辑不会进入正式测试。")
+            _render_backup_controls()
+            st.caption("删除在本 MVP 中采用归档方式实现，避免破坏历史评测记录。")
+
+    if selected is None:
+        st.caption("当前查询无结果，无法编辑或归档。")
+    elif is_archived:
+        st.caption("当前样本已归档，不会进入发起测试。")
+    else:
+        st.caption("归档是软删除：归档后不会进入发起测试，历史记录仍保留。")
 
 
 def _render_sample_detail(
@@ -895,7 +911,6 @@ def _render_sample_detail(
     )
 
     _render_current_sample_summary(sample, readiness)
-    _render_selected_sample_actions(samples)
     with st.expander("任务内容", expanded=False):
         render_html(_task_body_html(sample, task_record))
     with st.expander("理想回复标准 / Gold Answer", expanded=False):

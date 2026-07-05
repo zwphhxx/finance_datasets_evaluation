@@ -166,7 +166,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertNotIn("samples_view_", samples_source)
         self.assertNotIn("for sample, row in zip", samples_source)
         self.assertIn("[data-testid=\"stDataFrame\"]", components_source)
-        self.assertIn(".sample-index-actions", components_source)
+        self.assertIn(".sample-operation-selected", components_source)
 
     def test_sample_library_uses_dialogs_and_selected_actions(self):
         samples_source = Path("src/ui/samples.py").read_text(encoding="utf-8")
@@ -175,13 +175,16 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn("@st.dialog(\"编辑样本\"", samples_source)
         self.assertIn("@st.dialog(\"确认归档\"", samples_source)
         self.assertIn("samples_create_open", samples_source)
-        self.assertIn("当前选中", samples_source)
-        self.assertIn("编辑样本", samples_source)
-        self.assertIn("归档样本", samples_source)
+        self.assertIn("当前样本", samples_source)
+        self.assertIn("编辑当前样本", samples_source)
+        self.assertIn("归档当前样本", samples_source)
+        self.assertIn("删除在本 MVP 中采用归档方式实现", samples_source)
+        self.assertIn("归档是软删除", samples_source)
         self.assertIn("点击表格行可查看当前样本。", samples_source)
         self.assertNotIn("_render_sample_selectbox_fallback", samples_source)
         self.assertNotIn("samples_index_select_fallback", samples_source)
         self.assertNotIn('"选择样本"', samples_source)
+        self.assertNotIn('"查看"', samples_source)
         self.assertNotIn('with st.expander("样本管理"', samples_source)
         self.assertNotIn("st.tabs([\"新增样本\", \"编辑样本\", \"状态管理\", \"导入导出\"])", samples_source)
 
@@ -189,10 +192,9 @@ class UIUXAuditFixesTests(unittest.TestCase):
         samples_source = Path("src/ui/samples.py").read_text(encoding="utf-8")
         page_config_source = Path("src/ui/page_config.py").read_text(encoding="utf-8")
 
-        self.assertIn('render_numbered_section("01", "查询样本", "用于筛选样本列表。")', samples_source)
+        self.assertIn('render_numbered_section("01", "样本操作")', samples_source)
         self.assertIn('render_numbered_section("02", "样本列表", "展示当前查询结果。")', samples_source)
         self.assertIn('render_numbered_section("03", "当前样本", "展示当前选中的样本详情。")', samples_source)
-        self.assertIn("用于筛选样本列表。", samples_source)
         self.assertIn("展示当前查询结果。", samples_source)
         self.assertIn("展示当前选中的样本详情。", samples_source)
         self.assertIn('st.expander("任务内容", expanded=False)', samples_source)
@@ -201,6 +203,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn('st.expander("完整度检查", expanded=False)', samples_source)
         self.assertIn(".current-sample-summary", Path("src/ui/components.py").read_text(encoding="utf-8"))
         self.assertIn("维护正式评测样本。完整且已入库的样本可以进入发起测试。", page_config_source)
+        self.assertIn("样本操作、样本列表、当前样本。", page_config_source)
         self.assertNotIn("新增和编辑会同步任务题", samples_source)
 
     def test_test_run_has_at_most_two_primary_buttons(self):

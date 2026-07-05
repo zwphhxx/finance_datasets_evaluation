@@ -832,7 +832,7 @@ header,
     color: var(--fde-ink);
     font-weight: 720;
 }
-.sample-index-actions {
+.sample-operation-selected {
     border: 1px solid var(--fde-line);
     background: var(--fde-status-muted-bg);
     color: var(--fde-muted);
@@ -841,12 +841,9 @@ header,
     margin: 0.55rem 0 0.35rem 0;
     font-size: 0.86rem;
 }
-.sample-index-actions strong {
+.sample-operation-selected strong {
     color: var(--fde-ink);
     margin: 0 0.35rem;
-}
-.sample-index-action-title {
-    color: var(--fde-muted);
 }
 .current-sample-summary {
     display: flex;
