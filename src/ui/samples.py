@@ -24,7 +24,6 @@ from src.ui.components import (
     render_evidence_panel,
     render_html,
     render_numbered_section,
-    render_two_column_panel,
 )
 from src.ui.page_config import get_page_config
 from src.ui.tasks import (
@@ -679,18 +678,10 @@ def render_samples_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
     config = get_page_config("samples")
 
-    domain_count = 0
-    if not data.tasks.empty and "domain" in data.tasks.columns:
-        domain_count = data.tasks["domain"].dropna().nunique()
-    hero_stats = [
-        (str(len(data.tasks)), "尽调任务样本"),
-        (str(int(domain_count)), "专业领域"),
-    ]
     render_compact_hero(
         eyebrow="样本维护",
         title=config.title,
         question=config.question,
-        stats=hero_stats,
     )
 
     # 自动初始化 samples.json（从已有 task/gold 生成，幂等）
@@ -702,15 +693,9 @@ def render_samples_page(data_bundle: dict) -> None:
     task_records, gold_map, rubric_dimensions = _page_readiness_inputs(data, samples)
     readiness_map = build_sample_readiness_map(samples, task_records, gold_map, rubric_dimensions)
 
-    st.caption("维护正式评测样本。完整且已入库的样本可以进入发起测试。")
-    if ds.database_ready():
-        st.caption("新增和编辑会同步任务题、理想回复标准 / Gold Answer 与 Rubric 评分标准。")
-    else:
-        st.warning("当前未初始化 SQLite 数据层。页面仍可读取种子文件；新增或编辑内容不会进入正式测试。")
-
     _render_top_actions()
 
-    render_numbered_section("01", "查询样本", "按关键词、场景、测试状态和难度筛选。")
+    render_numbered_section("01", "查询样本")
     keyword, scenario, test_status, difficulty = _render_filters(samples)
     filtered = _filter_samples_for_index(
         samples,
@@ -721,18 +706,18 @@ def render_samples_page(data_bundle: dict) -> None:
         difficulty=difficulty,
     )
 
-    render_numbered_section("02", "样本列表", "列表用于查找和选择样本，编辑和归档在下方操作区完成。")
+    render_numbered_section("02", "样本列表")
     if not filtered:
-        render_empty_state("没有符合当前筛选条件的样本。")
+        render_empty_state("没有符合当前条件的样本。")
     else:
         _render_samples_table(filtered, readiness_map)
 
-    render_numbered_section("03", "样本详情", "按评测资产结构查看任务内容、标准、评分依据和完整度检查。")
+    render_numbered_section("03", "当前样本")
     _render_sample_detail(filtered, readiness_map, task_records, gold_map, rubric_dimensions)
 
     col1, col2 = st.columns([1, 3])
     with col1:
-        if st.button("进入发起测试", key="samples_to_test_run", use_container_width=True):
+        if st.button("进入发起测试", key="samples_to_test_run", type="secondary", use_container_width=True):
             st.session_state.current_page = "test_run"
             st.rerun()
     with col2:
@@ -748,6 +733,8 @@ def _render_top_actions() -> None:
             _open_create_dialog()
     with col2:
         with st.expander("更多操作", expanded=False):
+            if not ds.database_ready():
+                st.caption("SQLite 未初始化时，新增或编辑不会进入正式测试。")
             _render_backup_controls()
             st.caption("导入导出用于备份和兼容迁移；正式测试仍以可用数据层和完整度校验为准。")
 
@@ -929,14 +916,35 @@ def _render_sample_detail(
         rubric_rows=rubric_rows,
     )
 
-    _render_asset_overview(sample, readiness, sections[0])
-    left = _task_section_html(sample, task_record, sections[1])
-    right = _gold_section_html(gold_display, sections[2])
-    render_two_column_panel(left, right)
-    _render_rubric_section(rubric_rows, sections[3])
-    left = _error_optimization_section_html(sample, sections[4])
-    right = _readiness_section_html(readiness, sample, sections[5])
-    render_two_column_panel(left, right)
+    _render_current_sample_summary(sample, readiness)
+    with st.expander("任务内容", expanded=False):
+        render_html(_task_body_html(sample, task_record))
+    with st.expander("理想回复标准 / Gold Answer", expanded=False):
+        render_html(_gold_body_html(gold_display))
+    with st.expander("Rubric 评分标准", expanded=False):
+        render_html(_rubric_body_html(rubric_rows))
+    with st.expander("完整度检查", expanded=False):
+        render_html(_readiness_body_html(readiness, sample))
+    with st.expander("错误标签与优化建议", expanded=False):
+        render_html(_error_optimization_body_html(sample))
+
+
+def _render_current_sample_summary(sample: sr.Sample, readiness: ds.SampleReadiness) -> None:
+    test_status = _test_status_label(sample, readiness)
+    completeness = "通过" if readiness.is_testable else ("已归档" if test_status == "已归档" else "待补充")
+    render_html(
+        '<div class="current-sample-summary">'
+        '<div class="current-sample-main">'
+        f'<div class="current-sample-id">当前样本：{escape(sample.sample_id or "待补充")}</div>'
+        f'<div class="current-sample-title">{escape(sample.title or "未命名样本")}</div>'
+        '</div>'
+        '<div class="current-sample-meta">'
+        f'<span>测试状态：{escape(test_status)}</span>'
+        f'<span>完整度：{escape(completeness)}</span>'
+        f'<span>更新时间：{escape(_format_date(sample.updated_at))}</span>'
+        '</div>'
+        '</div>'
+    )
 
 
 def _render_asset_overview(sample: sr.Sample, readiness: ds.SampleReadiness, section: dict) -> None:
@@ -956,6 +964,10 @@ def _render_asset_overview(sample: sr.Sample, readiness: ds.SampleReadiness, sec
 
 
 def _task_section_html(sample: sr.Sample, task_record: dict, section: dict) -> str:
+    return _asset_section_html(str(section["title"]), str(section["caption"]), _task_body_html(sample, task_record))
+
+
+def _task_body_html(sample: sr.Sample, task_record: dict) -> str:
     task_prompt = task_record.get("question") or sample.task_prompt or "待补充"
     context = task_record.get("context") or sample.business_context or "待补充"
     output_requirement = (
@@ -970,10 +982,14 @@ def _task_section_html(sample: sr.Sample, task_record: dict, section: dict) -> s
             ("输出要求 / 考察能力", str(output_requirement)),
         ])
     )
-    return _asset_section_html(str(section["title"]), str(section["caption"]), body)
+    return body
 
 
 def _gold_section_html(gold_display: dict, section: dict) -> str:
+    return _asset_section_html(str(section["title"]), str(section["caption"]), _gold_body_html(gold_display))
+
+
+def _gold_body_html(gold_display: dict) -> str:
     fields = gold_display.get("fields", {})
     lists = gold_display.get("lists", {})
     fallback = str(gold_display.get("fallback_text") or "").strip()
@@ -987,31 +1003,42 @@ def _gold_section_html(gold_display: dict, section: dict) -> str:
     body += '<div class="text-block-label">不可接受错误</div>' + _list_html(lists.get("不可接受错误", []))
     if fallback:
         body += f'<p class="check-note">未识别为结构化 JSON，以下按原文展示：{escape(fallback)}</p>'
-    return _asset_section_html(str(section["title"]), str(section["caption"]), body)
+    return body
 
 
 def _render_rubric_section(rubric_rows: list[dict[str, str]], section: dict) -> None:
-    table = _table_html(
-        ["评分维度", "满分", "满分标准", "扣分规则", "关联错误类型或说明"],
-        rubric_rows,
-    )
     render_evidence_panel(
         str(section["title"]),
-        f'<p class="check-note">{escape(str(section["caption"]))}</p>{table}',
+        f'<p class="check-note">{escape(str(section["caption"]))}</p>{_rubric_body_html(rubric_rows)}',
     )
 
 
 def _error_optimization_section_html(sample: sr.Sample, section: dict) -> str:
+    return _asset_section_html(str(section["title"]), str(section["caption"]), _error_optimization_body_html(sample))
+
+
+def _rubric_body_html(rubric_rows: list[dict[str, str]]) -> str:
+    return _table_html(
+        ["评分维度", "满分", "满分标准", "扣分规则", "关联错误类型或说明"],
+        rubric_rows,
+    )
+
+
+def _error_optimization_body_html(sample: sr.Sample) -> str:
     body = '<div class="text-block-label">错误标签</div>'
     body += _list_html(sample.error_tags, fallback="暂无关联错误标签")
     body += '<div class="text-block-label">常见模型问题</div>'
     body += _list_html(sample.model_answers, fallback="暂无历史模型回答记录")
     body += '<div class="text-block-label">数据优化建议</div>'
     body += _list_html(sample.improvement_suggestions, fallback="暂无优化建议")
-    return _asset_section_html(str(section["title"]), str(section["caption"]), body)
+    return body
 
 
 def _readiness_section_html(readiness: ds.SampleReadiness, sample: sr.Sample, section: dict) -> str:
+    return _asset_section_html(str(section["title"]), str(section["caption"]), _readiness_body_html(readiness, sample))
+
+
+def _readiness_body_html(readiness: ds.SampleReadiness, sample: sr.Sample) -> str:
     rows = [
         ("是否可进入测试", "是" if readiness.is_testable else "否"),
         ("检查结果", readiness.label),
@@ -1022,7 +1049,7 @@ def _readiness_section_html(readiness: ds.SampleReadiness, sample: sr.Sample, se
     ]
     body = _kv_html(rows)
     body += '<div class="text-block-label">已满足项</div>' + _list_html(readiness.satisfied_items, fallback="待补充")
-    return _asset_section_html(str(section["title"]), str(section["caption"]), body)
+    return body
 
 
 def _render_readiness_panel(readiness: ds.SampleReadiness) -> None:

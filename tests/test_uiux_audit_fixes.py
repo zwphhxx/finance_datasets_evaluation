@@ -181,6 +181,21 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertNotIn('with st.expander("样本管理"', samples_source)
         self.assertNotIn("st.tabs([\"新增样本\", \"编辑样本\", \"状态管理\", \"导入导出\"])", samples_source)
 
+    def test_sample_library_has_three_main_sections_and_collapsed_detail(self):
+        samples_source = Path("src/ui/samples.py").read_text(encoding="utf-8")
+        page_config_source = Path("src/ui/page_config.py").read_text(encoding="utf-8")
+
+        self.assertIn('render_numbered_section("01", "查询样本")', samples_source)
+        self.assertIn('render_numbered_section("02", "样本列表")', samples_source)
+        self.assertIn('render_numbered_section("03", "当前样本")', samples_source)
+        self.assertIn('st.expander("任务内容", expanded=False)', samples_source)
+        self.assertIn('st.expander("理想回复标准 / Gold Answer", expanded=False)', samples_source)
+        self.assertIn('st.expander("Rubric 评分标准", expanded=False)', samples_source)
+        self.assertIn('st.expander("完整度检查", expanded=False)', samples_source)
+        self.assertIn(".current-sample-summary", Path("src/ui/components.py").read_text(encoding="utf-8"))
+        self.assertIn("维护正式评测样本。完整且已入库的样本可以进入发起测试。", page_config_source)
+        self.assertNotIn("新增和编辑会同步任务题", samples_source)
+
     def test_test_run_has_at_most_two_primary_buttons(self):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
         primary_buttons = re.findall(r'type\s*=\s*"primary"', source)
