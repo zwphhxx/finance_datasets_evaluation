@@ -241,12 +241,38 @@ class ReviewQueueTests(unittest.TestCase):
         seed_item = self._item("建议确认", source="seed")
         items = [confirm_item, review_item, confirmed_item, seed_item]
 
+        self.assertEqual("待确认", review.REVIEW_FILTER_OPTIONS[0])
+        self.assertEqual([confirm_item, review_item], review.filter_review_queue_items(items, "待确认"))
         self.assertEqual([confirm_item], review.filter_review_queue_items(items, "建议确认"))
         self.assertEqual([confirmed_item], review.filter_review_queue_items(items, "已确认"))
         self.assertTrue(review.is_bulk_confirm_eligible(confirm_item))
         self.assertFalse(review.is_bulk_confirm_eligible(review_item))
         self.assertFalse(review.is_bulk_confirm_eligible(confirmed_item))
         self.assertFalse(review.is_bulk_confirm_eligible(seed_item))
+
+    def test_queue_row_marks_bulk_eligibility(self):
+        confirm_item = self._item("建议确认")
+        review_item = self._item("建议复核")
+        confirmed_item = self._item("建议确认", status="confirmed")
+
+        self.assertEqual("是", review.review_queue_row(confirm_item)["可批量确认"])
+        self.assertEqual("否", review.review_queue_row(review_item)["可批量确认"])
+        self.assertEqual("否", review.review_queue_row(confirmed_item)["可批量确认"])
+
+    def test_bulk_message_survives_rerun_payload(self):
+        message = review.build_bulk_review_message(confirmed_count=3, failed_count=2, blocked_count=1)
+
+        self.assertIn("已确认 3 条评分，已纳入正式结论。", message["success"])
+        self.assertIn("2 条评分未确认", message["warning"])
+        self.assertIn("仅“建议确认”且状态为“待确认”的评分支持批量确认", message["warning"])
+
+    def test_bulk_confirm_result_counts_failures_and_ids(self):
+        result = review.summarize_bulk_confirm_result([10, 11, 12], {"confirmed_ids": [10, 12], "failed_ids": [11]})
+
+        self.assertEqual(2, result["confirmed_count"])
+        self.assertEqual(1, result["failed_count"])
+        self.assertEqual([10, 12], result["confirmed_ids"])
+        self.assertEqual([11], result["failed_ids"])
 
 
 class ErrorAttributionTests(unittest.TestCase):

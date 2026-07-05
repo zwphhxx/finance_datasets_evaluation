@@ -447,6 +447,25 @@ def confirm_score_reviews_bulk(
     db_path: Path | None = None,
 ) -> dict[str, Any]:
     """批量确认低风险评分草稿；仅处理 live_run_scores 中仍为 pending 的记录。"""
+    def _result(confirmed_ids: list[int], failed_ids: list[int], reason: str = "") -> dict[str, Any]:
+        confirmed_count = len(confirmed_ids)
+        failed_count = len(failed_ids)
+        summary = f"已确认 {confirmed_count} 条评分。"
+        if failed_count:
+            summary += f" {failed_count} 条未确认。"
+        if reason:
+            summary += f" {reason}"
+        return {
+            "confirmed": confirmed_count,
+            "confirmed_count": confirmed_count,
+            "confirmed_ids": confirmed_ids,
+            "failed": failed_ids,
+            "failed_count": failed_count,
+            "failed_ids": failed_ids,
+            "reason": reason,
+            "summary": summary,
+        }
+
     unique_ids: list[int] = []
     for row_id in row_ids:
         try:
@@ -456,7 +475,7 @@ def confirm_score_reviews_bulk(
         if numeric_id not in unique_ids:
             unique_ids.append(numeric_id)
     if not unique_ids:
-        return {"confirmed": 0, "failed": []}
+        return _result([], [], "没有可确认的评分。")
 
     try:
         from app.services.dataset_service import database_ready, get_db_path
@@ -464,11 +483,11 @@ def confirm_score_reviews_bulk(
 
         path = db_path or get_db_path()
         if not database_ready(path):
-            return {"confirmed": 0, "failed": unique_ids}
+            return _result([], unique_ids, "SQLite 数据层不可用。")
         repo = Repository(path)
         rows = repo.list_df("live_run_scores")
         if rows.empty or "id" not in rows.columns:
-            return {"confirmed": 0, "failed": unique_ids}
+            return _result([], unique_ids, "未找到评分草稿。")
 
         id_set = set(unique_ids)
         valid_ids: list[int] = []
@@ -490,9 +509,10 @@ def confirm_score_reviews_bulk(
         for row_id in valid_ids:
             repo.update("live_run_scores", row_id, changes)
         failed = [row_id for row_id in unique_ids if row_id not in set(valid_ids)]
-        return {"confirmed": len(valid_ids), "failed": failed}
+        reason = "" if not failed else "仅待确认且裁判成功的评分支持批量确认。"
+        return _result(valid_ids, failed, reason)
     except Exception:
-        return {"confirmed": 0, "failed": unique_ids}
+        return _result([], unique_ids, "批量确认失败。")
 
 
 def skip_score_review(

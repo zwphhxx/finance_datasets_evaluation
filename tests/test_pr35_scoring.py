@@ -274,6 +274,10 @@ class ScorePersistenceTests(unittest.TestCase):
         outcome = sc.confirm_score_reviews_bulk(row_ids, note, db_path=_DB_PATH)
 
         self.assertEqual(len(row_ids), outcome["confirmed"])
+        self.assertEqual(len(row_ids), outcome["confirmed_count"])
+        self.assertEqual(sorted(row_ids), sorted(outcome["confirmed_ids"]))
+        self.assertEqual([], outcome["failed_ids"])
+        self.assertEqual("已确认 2 条评分。", outcome["summary"])
         self.assertEqual([], outcome["failed"])
         after = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)
         self.assertTrue(all(row["review_status"] == "confirmed" for row in after))
