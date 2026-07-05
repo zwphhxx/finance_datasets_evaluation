@@ -48,6 +48,12 @@ _STATUS_LEVEL = {
     "需优化": "danger",
     "已归档": "neutral",
 }
+_READINESS_LEVEL = {
+    "完整，可测试": "success",
+    "待补充": "warning",
+    "不可测试": "neutral",
+    "已归档": "neutral",
+}
 
 _DIFFICULTY_OPTIONS = list(DIFFICULTY_LABELS.keys())
 _RISK_OPTIONS = ["", "高", "中", "低"]
@@ -76,6 +82,19 @@ def _difficulty_label(value) -> str:
 def _status_badge(status: str) -> str:
     level = _STATUS_LEVEL.get(status, "neutral")
     return f'<span class="status-badge status-{level}">{escape(status)}</span>'
+
+
+def _readiness_badge(readiness: ds.SampleReadiness) -> str:
+    level = _READINESS_LEVEL.get(readiness.label, "neutral")
+    return f'<span class="status-badge status-{level}">{escape(readiness.label)}</span>'
+
+
+def _missing_summary(readiness: ds.SampleReadiness, limit: int = 3) -> str:
+    if not readiness.missing_items:
+        return "—"
+    items = readiness.missing_items[:limit]
+    suffix = "…" if len(readiness.missing_items) > limit else ""
+    return "；".join(items) + suffix
 
 
 def _as_lines(value) -> str:
@@ -115,6 +134,41 @@ def _searchable_text(sample: sr.Sample) -> str:
 
 def _formal_db_path_for_ui():
     return ds.get_db_path() if ds.database_ready() else None
+
+
+def _page_readiness_inputs(data, samples: list[sr.Sample]) -> tuple[list[dict], dict, list[dict]]:
+    if ds.database_ready():
+        task_records = ds.list_task_cases().to_dict(orient="records")
+        gold_map = {
+            sample.sample_id: ds.get_gold_answer_record(sample.sample_id) or {}
+            for sample in samples
+        }
+        rubric_dimensions = ds.get_testable_rubric_dimensions()
+        return task_records, gold_map, rubric_dimensions
+    return (
+        data.tasks.to_dict(orient="records"),
+        getattr(data, "gold_answer_map", {}) or {},
+        ds.get_testable_rubric_dimensions(),
+    )
+
+
+def build_sample_readiness_map(
+    samples: list[sr.Sample],
+    task_records: list[dict],
+    gold_map: dict,
+    rubric_dimensions: list[dict] | None,
+) -> dict[str, ds.SampleReadiness]:
+    """Build sample readiness display data using the same formal gate as test_run."""
+    tasks_by_case = {str(row.get("case_id") or ""): row for row in task_records}
+    readiness: dict[str, ds.SampleReadiness] = {}
+    for sample in samples:
+        case_id = str(sample.sample_id or "").strip()
+        readiness[case_id] = ds.assess_sample_readiness(
+            tasks_by_case.get(case_id),
+            gold_map.get(case_id) or {},
+            rubric_dimensions,
+        )
+    return readiness
 
 
 # --------------------------------------------------------------------------- #
@@ -242,6 +296,9 @@ def render_samples_page(data_bundle: dict) -> None:
     else:
         st.warning("当前未初始化 SQLite 数据层。样本库仍可作为本地管理视图运行，但新增或编辑内容不会进入正式测试。")
 
+    task_records, gold_map, rubric_dimensions = _page_readiness_inputs(data, samples)
+    readiness_map = build_sample_readiness_map(samples, task_records, gold_map, rubric_dimensions)
+
     render_numbered_section("01", "筛选与搜索", "按状态、场景、难度、错误标签筛选，或使用关键词搜索。")
     status, scenario, difficulty, error_tag, keyword = _render_filters(samples)
 
@@ -254,10 +311,10 @@ def render_samples_page(data_bundle: dict) -> None:
     if not filtered:
         render_empty_state("没有符合当前筛选条件的样本。")
     else:
-        _render_samples_table(filtered)
+        _render_samples_table(filtered, readiness_map)
 
     render_numbered_section("03", "选中样本详情", "查看样本的完整信息。")
-    _render_sample_detail(filtered)
+    _render_sample_detail(filtered, readiness_map)
 
     with st.expander("样本管理", expanded=False):
         _render_sample_management()
@@ -282,25 +339,28 @@ def _render_filters(samples: list[sr.Sample]) -> tuple[str, str, str, str, str]:
     return status, scenario, difficulty, error_tag, keyword
 
 
-def _render_samples_table(samples: list[sr.Sample]) -> None:
+def _render_samples_table(samples: list[sr.Sample], readiness_map: dict[str, ds.SampleReadiness]) -> None:
     header_cells = "".join(
         f"<th>{escape(name)}</th>"
-        for name in ["样本编号", "标题", "场景", "难度", "状态"]
+        for name in ["样本编号", "标题", "场景", "难度", "状态", "完整度", "缺失项摘要"]
     )
     body = ""
     for sample in samples:
+        readiness = readiness_map.get(sample.sample_id) or ds.assess_sample_readiness(None, None, [])
         body += (
             f'<tr><td class="check-key">{escape(sample.sample_id)}</td>'
             f'<td>{escape(_truncate(sample.title, 32))}</td>'
             f'<td>{escape(_truncate(sample.scenario, 24))}</td>'
             f'<td>{escape(_difficulty_label(sample.difficulty))}</td>'
-            f'<td>{_status_badge(sample.status)}</td></tr>'
+            f'<td>{_status_badge(sample.status)}</td>'
+            f'<td>{_readiness_badge(readiness)}</td>'
+            f'<td>{escape(_missing_summary(readiness))}</td></tr>'
         )
     table_html = f'<table class="check-table"><thead><tr>{header_cells}</tr></thead><tbody>{body}</tbody></table>'
     render_evidence_panel("样本列表", table_html)
 
 
-def _render_sample_detail(samples: list[sr.Sample]) -> None:
+def _render_sample_detail(samples: list[sr.Sample], readiness_map: dict[str, ds.SampleReadiness]) -> None:
     if not samples:
         render_empty_state("没有可查看的样本。")
         return
@@ -311,6 +371,7 @@ def _render_sample_detail(samples: list[sr.Sample]) -> None:
     if sample is None:
         render_empty_state("未找到该样本记录。")
         return
+    readiness = readiness_map.get(sample.sample_id) or ds.assess_sample_readiness(None, None, [])
 
     col1, col2 = st.columns(2)
     with col1:
@@ -328,6 +389,8 @@ def _render_sample_detail(samples: list[sr.Sample]) -> None:
         ])
         if sample.reviewer_note:
             render_text_block("复核备注", sample.reviewer_note)
+
+    _render_readiness_panel(readiness)
 
     gold_formatted = _format_json_text(sample.gold_answer)
     rubric_formatted = _format_json_text(sample.rubric)
@@ -348,6 +411,24 @@ def _render_sample_detail(samples: list[sr.Sample]) -> None:
         with col7:
             render_text_block("优化建议", "")
             render_clean_list(sample.improvement_suggestions or ["暂无"])
+
+
+def _render_readiness_panel(readiness: ds.SampleReadiness) -> None:
+    rows = [
+        ("是否可进入测试", "是" if readiness.is_testable else "否"),
+        ("检查结果", readiness.label),
+        ("已满足项", "；".join(readiness.satisfied_items) if readiness.satisfied_items else "—"),
+        ("缺失项", "；".join(readiness.missing_items) if readiness.missing_items else "—"),
+        ("原因", "；".join(readiness.reasons) if readiness.reasons else "已满足测试准入条件"),
+    ]
+    body = "".join(
+        f"<tr><td>{escape(key)}</td><td>{escape(value)}</td></tr>"
+        for key, value in rows
+    )
+    render_evidence_panel(
+        "样本完整度 / 入库检查",
+        f'<table class="check-table"><tbody>{body}</tbody></table>',
+    )
 
 
 def _render_sample_management() -> None:
@@ -538,7 +619,18 @@ def _render_status_transition() -> None:
     cols = st.columns(len(allowed)) if allowed else []
     for col, new_status in zip(cols, allowed):
         with col:
-            if st.button(f"设为「{new_status}」", key=f"samples_status_{selected_id}_{new_status}"):
+            disabled = False
+            projected = None
+            if new_status == "已入库" and ds.database_ready():
+                projected = _entry_readiness_for_sample(sample)
+                disabled = not projected.is_testable
+                if disabled:
+                    st.caption("暂不能设为已入库：" + _missing_summary(projected, limit=5))
+            if st.button(
+                f"设为「{new_status}」",
+                key=f"samples_status_{selected_id}_{new_status}",
+                disabled=disabled,
+            ):
                 try:
                     sr.set_sample_status(selected_id, new_status, db_path=_formal_db_path_for_ui())
                 except Exception as exc:
@@ -546,6 +638,27 @@ def _render_status_transition() -> None:
                 else:
                     st.success(f"样本 {selected_id} 已变更为 {new_status}。")
                     st.rerun()
+
+
+def _entry_readiness_for_sample(sample: sr.Sample) -> ds.SampleReadiness:
+    task = ds.get_task_case(sample.sample_id) or {
+        "case_id": sample.sample_id,
+        "question": sample.task_prompt,
+        "context": sample.business_context,
+        "scenario": sample.scenario,
+    }
+    task = {**task, "status": ds.ACTIVE_STATUS}
+    gold = ds.get_gold_answer_record(sample.sample_id) or _parse_gold_for_local_check(sample)
+    return ds.assess_sample_readiness(task, gold, ds.get_testable_rubric_dimensions())
+
+
+def _parse_gold_for_local_check(sample: sr.Sample) -> dict:
+    try:
+        parsed = json.loads(sample.gold_answer)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        text = str(sample.gold_answer or "").strip()
+        return {"core_conclusion": text} if text else {}
 
 
 def _render_archive_form() -> None:

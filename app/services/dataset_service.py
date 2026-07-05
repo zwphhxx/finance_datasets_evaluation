@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
@@ -26,6 +27,7 @@ from app.db import DEFAULT_DB_PATH
 from app.db.init_db import initialize_database
 from app.db.repository import Repository
 from src.error_config import evaluate_error_config
+from src.gold_quality import field_list, field_value
 from src.data_service import (
     DATA_FILES,
     OPTIMIZATION_COMPARISON_COLUMNS,
@@ -212,14 +214,28 @@ FORMAL_STATUS_BY_BUSINESS_STATUS = {
 }
 
 
+@dataclass(frozen=True)
+class SampleReadiness:
+    """样本完整度与测试准入判断结果。"""
+
+    case_id: str
+    status: str
+    status_label: str
+    label: str
+    is_testable: bool
+    satisfied_items: list[str]
+    missing_items: list[str]
+    reasons: list[str]
+
+
 def has_judgment_criteria(gold_record: dict | None) -> bool:
     """检查样本是否具备完整的评判标准（Gold Answer 核心要素）。"""
     if not isinstance(gold_record, dict):
         return False
     # 必须同时存在核心结论、必须覆盖点、不可接受错误
-    core = _clean(gold_record.get("core_conclusion"))
-    must = _as_list(gold_record.get("must_have_points"))
-    unacc = _as_list(gold_record.get("unacceptable_errors"))
+    core = field_value(gold_record, "core_conclusion")
+    must = field_list(gold_record, "must_have_points")
+    unacc = field_list(gold_record, "unacceptable_errors")
     return bool(core) and bool(must) and bool(unacc)
 
 
@@ -229,7 +245,9 @@ def get_sample_status(task_record: dict | None, gold_record: dict | None) -> str
     页面只展示中文业务状态；这里保留 active/draft/inactive 作为正式评测数据层的
     准入控制字段。draft 或 inactive 都不可进入测试。
     """
-    task_status = str((task_record or {}).get("status") or ACTIVE_STATUS).strip().lower()
+    if not isinstance(task_record, dict) or not _clean(task_record.get("case_id")):
+        return DRAFT_STATUS
+    task_status = str(task_record.get("status") or DRAFT_STATUS).strip().lower()
     if task_status == INACTIVE_STATUS:
         return INACTIVE_STATUS
     if task_status == DRAFT_STATUS:
@@ -261,16 +279,117 @@ def has_rubric_criteria(rubric_dimensions: list[dict] | None) -> bool:
     return True
 
 
+def assess_sample_readiness(
+    task_record: dict | None,
+    gold_record: dict | None,
+    rubric_dimensions: list[dict] | None,
+) -> SampleReadiness:
+    """评估样本完整度与是否可进入正式测试。
+
+    判断只基于正式评测数据结构：任务题、Gold Answer、Rubric 与任务状态。
+    """
+    task = task_record if isinstance(task_record, dict) else {}
+    gold = gold_record if isinstance(gold_record, dict) else None
+    status = str(task.get("status") or DRAFT_STATUS).strip().lower()
+    if status not in {ACTIVE_STATUS, DRAFT_STATUS, INACTIVE_STATUS}:
+        status = DRAFT_STATUS
+    case_id = _clean(task.get("case_id")) or ""
+
+    satisfied: list[str] = []
+    missing: list[str] = []
+
+    def record(ok: bool, present_label: str, missing_label: str) -> None:
+        (satisfied if ok else missing).append(present_label if ok else missing_label)
+
+    record(bool(case_id), "存在任务编号", "缺少任务编号")
+    record(_clean(task.get("question")) is not None, "存在任务题", "缺少任务题")
+    record(_clean(task.get("context")) is not None, "存在业务背景", "缺少业务背景")
+    record(_clean(task.get("scenario")) is not None, "存在场景", "缺少场景")
+
+    has_gold = bool(gold)
+    record(has_gold, "存在理想回复标准 / Gold Answer", "缺少理想回复标准 / Gold Answer")
+    record(
+        bool(field_value(gold, "core_conclusion")) if gold else False,
+        "Gold Answer 包含核心结论",
+        "缺少核心结论",
+    )
+    record(
+        bool(field_list(gold, "must_have_points")) if gold else False,
+        "Gold Answer 包含必须覆盖点",
+        "缺少必须覆盖点",
+    )
+    record(
+        bool(field_list(gold, "unacceptable_errors")) if gold else False,
+        "Gold Answer 包含不可接受错误",
+        "缺少不可接受错误",
+    )
+
+    record(has_rubric_criteria(rubric_dimensions), "存在 Rubric 评分标准", "缺少 Rubric 评分标准")
+
+    if status == INACTIVE_STATUS:
+        missing.append("样本已归档")
+    elif status == ACTIVE_STATUS:
+        satisfied.append("状态为已入库")
+    else:
+        missing.append("状态不是已入库")
+
+    is_testable = not missing
+    if status == INACTIVE_STATUS:
+        label = "已归档"
+    elif is_testable:
+        label = "完整，可测试"
+    elif any(item.startswith("缺少") for item in missing):
+        label = "待补充"
+    else:
+        label = "不可测试"
+
+    return SampleReadiness(
+        case_id=case_id,
+        status=status,
+        status_label=sample_status_label(status),
+        label=label,
+        is_testable=is_testable,
+        satisfied_items=satisfied,
+        missing_items=missing,
+        reasons=missing[:],
+    )
+
+
+def assess_case_readiness(case_id: str, db_path: Path | None = None) -> SampleReadiness:
+    """按 case_id 从正式数据层读取并评估样本完整度。"""
+    path = db_path or get_db_path()
+    return assess_sample_readiness(
+        get_task_case(case_id, path),
+        get_gold_answer_record(case_id, path),
+        get_testable_rubric_dimensions(path),
+    )
+
+
+def get_testable_rubric_dimensions(db_path: Path | None = None) -> list[dict]:
+    """返回用于测试准入的 Rubric 维度。
+
+    SQLite 可用时必须确有未停用的 rubrics 行；未初始化时回退到现有配置维度。
+    """
+    path = db_path or get_db_path()
+    if database_ready(path):
+        try:
+            frame = list_rubrics(path)
+            if "status" in frame.columns:
+                frame = frame[frame["status"].astype(str).str.strip().str.lower() != INACTIVE_STATUS]
+            if frame.empty:
+                return []
+        except Exception:
+            return []
+    return get_rubric_dimensions(path)
+
+
 def can_enter_formal_testing(
     task_record: dict | None,
     gold_record: dict | None,
     rubric_dimensions: list[dict] | None = None,
 ) -> bool:
-    """样本是否允许进入正式测试（必须非 draft、非 inactive，且 Rubric 可用）。"""
-    status = get_sample_status(task_record, gold_record)
-    if rubric_dimensions is not None and not has_rubric_criteria(rubric_dimensions):
-        return False
-    return status not in {DRAFT_STATUS, INACTIVE_STATUS}
+    """样本是否允许进入正式测试。"""
+    return assess_sample_readiness(task_record, gold_record, rubric_dimensions).is_testable
 
 
 def _invalidate_caches() -> None:
@@ -634,6 +753,15 @@ def upsert_sample_assets(sample: dict, *, db_path: Path | None = None) -> None:
         "context": _clean(sample.get("business_context")),
         "status": formal_status,
     }
+    gold_entry = _coerce_gold_answer_entry(case_id, sample.get("gold_answer") or {})
+    for field in _GOLD_LIST_FIELDS:
+        gold_entry[field] = _as_list(gold_entry.get(field))
+
+    if formal_status == ACTIVE_STATUS:
+        readiness = assess_sample_readiness(task_payload, gold_entry, get_testable_rubric_dimensions(path))
+        if not readiness.is_testable:
+            raise DataLoadError("样本未通过入库检查：" + "；".join(readiness.missing_items))
+
     if get_task_case(case_id, path) is None:
         create_task_case(task_payload, db_path=path)
     else:

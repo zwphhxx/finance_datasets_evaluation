@@ -500,7 +500,10 @@ def _sync_sample_assets_to_formal_layer(sample: Sample, *, db_path: Path) -> boo
 
     payload = sample.to_dict()
     payload["formal_status"] = formal_status_for_sample_status(sample.status)
-    ds.upsert_sample_assets(payload, db_path=db_path)
+    try:
+        ds.upsert_sample_assets(payload, db_path=db_path)
+    except ds.DataLoadError as exc:
+        raise ValueError(str(exc)) from exc
     return True
 
 

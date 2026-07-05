@@ -175,11 +175,14 @@ def _render_task_selector(task_records: list[dict], gold_map: dict) -> list[dict
         task_type = display_label(row.get("task_type"), TASK_TYPE_LABELS)
         return f"{case_id} · {task_type} · {summarize_text(row.get('question'), 24)}"
 
-    dimensions = ds.get_rubric_dimensions()
+    dimensions = ds.get_testable_rubric_dimensions()
     eligible = eligible_case_ids(task_records, gold_map, dimensions)
 
     if not eligible:
-        st.warning("当前没有状态为「已入库」且理想回复标准 / Gold Answer 与 Rubric 评分标准完整的样本可测。请到「样本库」补齐后再发起测试。")
+        st.warning(
+            "当前没有可测样本。可测样本需同时满足：正式题库存在任务题、"
+            "Gold Answer 具备完整评判标准、Rubric 评分标准存在，且样本状态为已入库。"
+        )
         return []
 
     default_cases = [str(r.get("case_id")) for r in er.default_task_selection(task_records) if str(r.get("case_id")) in by_case]
@@ -209,7 +212,7 @@ def eligible_case_ids(task_records: list[dict], gold_map: dict, rubric_dimension
         if not case_id:
             continue
         gold = gold_map.get(case_id) or {}
-        if ds.can_enter_formal_testing(row, gold, rubric_dimensions):
+        if ds.assess_sample_readiness(row, gold, rubric_dimensions).is_testable:
             eligible.append(case_id)
     return eligible
 

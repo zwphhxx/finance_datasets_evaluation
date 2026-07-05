@@ -79,10 +79,10 @@ class ResultsTableColumnsTests(unittest.TestCase):
 class FormalSampleEligibilityTests(unittest.TestCase):
     def test_eligible_case_ids_use_formal_status_gold_and_rubric(self):
         tasks = [
-            {"case_id": "A", "status": "active"},
-            {"case_id": "B", "status": "draft"},
-            {"case_id": "C", "status": "inactive"},
-            {"case_id": "D", "status": "active"},
+            {"case_id": "A", "status": "active", "question": "题干", "context": "背景", "scenario": "场景"},
+            {"case_id": "B", "status": "draft", "question": "题干", "context": "背景", "scenario": "场景"},
+            {"case_id": "C", "status": "inactive", "question": "题干", "context": "背景", "scenario": "场景"},
+            {"case_id": "D", "status": "active", "question": "题干", "context": "背景", "scenario": "场景"},
         ]
         gold_map = {
             "A": {

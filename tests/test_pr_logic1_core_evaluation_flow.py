@@ -21,6 +21,18 @@ from src.ui.navigation import get_primary_nav_items, _TOP_NAV_ITEMS
 
 
 class SampleJudgmentCriteriaTests(unittest.TestCase):
+    def _task(self, status="active"):
+        return {
+            "case_id": "T1",
+            "status": status,
+            "question": "任务题",
+            "context": "业务背景",
+            "scenario": "业务场景",
+        }
+
+    def _rubric(self):
+        return [{"field": "accuracy_score", "name": "准确性", "full_mark": 30}]
+
     def test_has_judgment_criteria_requires_all_fields(self):
         """样本必须具备核心结论、必须覆盖点、不可接受错误才算有评判标准。"""
         self.assertFalse(ds.has_judgment_criteria(None))
@@ -38,43 +50,43 @@ class SampleJudgmentCriteriaTests(unittest.TestCase):
 
     def test_draft_sample_cannot_enter_testing(self):
         """缺少评判标准的样本为 draft，不可进入正式测试。"""
-        task = {"case_id": "T1", "status": "active"}
+        task = self._task()
         gold_no_criteria = {"core_conclusion": "有结论"}  # 缺少 must_have_points 和 unacceptable_errors
         self.assertEqual(ds.get_sample_status(task, gold_no_criteria), ds.DRAFT_STATUS)
-        self.assertFalse(ds.can_enter_formal_testing(task, gold_no_criteria))
+        self.assertFalse(ds.can_enter_formal_testing(task, gold_no_criteria, self._rubric()))
 
     def test_complete_sample_can_enter_testing(self):
         """评判标准完整的样本为 active，可以进入正式测试。"""
-        task = {"case_id": "T1", "status": "active"}
+        task = self._task()
         gold_complete = {
             "core_conclusion": "有结论",
             "must_have_points": ["要点1"],
             "unacceptable_errors": ["错误1"],
         }
         self.assertEqual(ds.get_sample_status(task, gold_complete), ds.ACTIVE_STATUS)
-        self.assertTrue(ds.can_enter_formal_testing(task, gold_complete))
+        self.assertTrue(ds.can_enter_formal_testing(task, gold_complete, self._rubric()))
 
     def test_task_draft_status_cannot_enter_testing_even_with_complete_gold(self):
         """任务层标记为 draft 时，即使评判标准完整，也不可进入测试。"""
-        task = {"case_id": "T1", "status": "draft"}
+        task = self._task(status="draft")
         gold_complete = {
             "core_conclusion": "有结论",
             "must_have_points": ["要点1"],
             "unacceptable_errors": ["错误1"],
         }
         self.assertEqual(ds.get_sample_status(task, gold_complete), ds.DRAFT_STATUS)
-        self.assertFalse(ds.can_enter_formal_testing(task, gold_complete))
+        self.assertFalse(ds.can_enter_formal_testing(task, gold_complete, self._rubric()))
 
     def test_inactive_sample_cannot_enter_testing(self):
         """已停用样本不可进入测试，无论评判标准是否完整。"""
-        task = {"case_id": "T1", "status": "inactive"}
+        task = self._task(status="inactive")
         gold_complete = {
             "core_conclusion": "有结论",
             "must_have_points": ["要点1"],
             "unacceptable_errors": ["错误1"],
         }
         self.assertEqual(ds.get_sample_status(task, gold_complete), ds.INACTIVE_STATUS)
-        self.assertFalse(ds.can_enter_formal_testing(task, gold_complete))
+        self.assertFalse(ds.can_enter_formal_testing(task, gold_complete, self._rubric()))
 
 
 class FixedJudgeModelTests(unittest.TestCase):
