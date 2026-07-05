@@ -261,6 +261,9 @@ header,
     background: transparent;
     border: 1px solid transparent;
     color: var(--fde-muted);
+    min-height: 1.9rem;
+    padding: 0.22rem 0.46rem;
+    font-size: 0.82rem;
 }
 .stButton > button[kind="tertiary"]:hover,
 [data-testid="stFormSubmitButton"] button[kind="tertiary"]:hover,
@@ -812,6 +815,34 @@ header,
     width: 100%;
     overflow-x: auto;
 }
+.sample-index-grid {
+    display: grid;
+    grid-template-columns: 1.05fr 3.1fr 1.55fr 1.05fr 0.8fr 1.05fr 1.45fr;
+    column-gap: 0.6rem;
+    align-items: center;
+    min-width: 930px;
+}
+.sample-index-head {
+    background: #f7f8fa;
+    border: 1px solid #edf0f4;
+    border-radius: 8px 8px 0 0;
+    color: var(--fde-muted);
+    font-size: 0.74rem;
+    font-weight: 650;
+    padding: 0.42rem 0.55rem;
+    margin-top: 0.25rem;
+}
+.sample-index-cell {
+    min-height: 2.05rem;
+    display: flex;
+    align-items: center;
+    padding: 0.08rem 0;
+    font-size: 0.84rem;
+}
+.sample-index-row-divider {
+    border-bottom: 1px solid #edf0f4;
+    margin: 0.1rem 0 0.18rem 0;
+}
 .sample-index-table {
     table-layout: fixed;
     min-width: 860px;
@@ -875,6 +906,18 @@ header,
     font-weight: 620;
     line-height: 1.35;
     white-space: nowrap;
+}
+.selected-sample-strip {
+    border: 1px solid var(--fde-line);
+    background: var(--fde-status-muted-bg);
+    color: var(--fde-muted);
+    border-radius: 8px;
+    padding: 0.45rem 0.65rem;
+    margin: 0.2rem 0 0.55rem 0;
+    font-size: 0.86rem;
+}
+.selected-sample-strip strong {
+    color: var(--fde-ink);
 }
 /* Redline verdict banner: a single low-saturation statement strip. */
 .redline-verdict {
