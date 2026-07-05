@@ -12,6 +12,7 @@ import json
 import re
 from html import escape
 
+import pandas as pd
 import streamlit as st
 
 from app.services import dataset_service as ds
@@ -34,15 +35,12 @@ from src.ui.tasks import (
 )
 
 
-_TEST_STATUS_LEVEL = {
-    "可测试": "success",
-    "待补充": "warning",
-    "不可测试": "neutral",
-    "已归档": "neutral",
-}
 _TEST_STATUS_OPTIONS = ["全部", "可测试", "待补充", "不可测试", "已归档"]
+_SAMPLE_TABLE_COLUMNS = ["样本编号", "任务标题", "场景", "测试状态", "难度", "更新时间"]
 
 _DIFFICULTY_OPTIONS = list(DIFFICULTY_LABELS.keys())
+
+
 def _clean_text(value, fallback: str = "未标注") -> str:
     if value is None:
         return fallback
@@ -71,11 +69,6 @@ def _test_status_label(sample: sr.Sample, readiness: ds.SampleReadiness) -> str:
     if readiness.missing_items:
         return "待补充"
     return "不可测试"
-
-
-def _test_status_badge(status: str) -> str:
-    level = _TEST_STATUS_LEVEL.get(status, "neutral")
-    return f'<span class="status-badge sample-status-badge status-{level}">{escape(status)}</span>'
 
 
 def _format_date(value) -> str:
@@ -170,12 +163,11 @@ def build_sample_table_rows(
         test_status = _test_status_label(sample, readiness)
         rows.append({
             "样本编号": sample.sample_id or "待补充",
-            "任务标题": _truncate(sample.title, 56),
+            "任务标题": _truncate(sample.title, 44),
             "场景": _truncate(sample.scenario, 24),
             "测试状态": test_status,
             "难度": _difficulty_label(sample.difficulty),
             "更新时间": _format_date(sample.updated_at),
-            "操作": "查看｜编辑｜归档",
         })
     return rows
 
@@ -729,7 +721,7 @@ def render_samples_page(data_bundle: dict) -> None:
         difficulty=difficulty,
     )
 
-    render_numbered_section("02", "样本列表", "列表只作为样本索引和操作入口。")
+    render_numbered_section("02", "样本列表", "列表用于查找和选择样本，编辑和归档在下方操作区完成。")
     if not filtered:
         render_empty_state("没有符合当前筛选条件的样本。")
     else:
@@ -781,57 +773,128 @@ def _render_filters(
 
 
 def _render_samples_table(samples: list[sr.Sample], readiness_map: dict[str, ds.SampleReadiness]) -> None:
+    _ensure_selected_sample(samples)
     rows = build_sample_table_rows(samples, readiness_map)
-    headers = ["样本编号", "任务标题", "场景", "测试状态", "难度", "更新时间", "操作"]
-    render_html(
-        '<div class="sample-index-scroll">'
-        '<div class="sample-index-table sample-index-grid sample-index-head">'
-        + "".join(f"<div>{escape(header)}</div>" for header in headers)
-        + "</div></div>"
+    frame = pd.DataFrame(rows, columns=_SAMPLE_TABLE_COLUMNS)
+    try:
+        selection = st.dataframe(
+            frame,
+            hide_index=True,
+            width="stretch",
+            height=_sample_table_height(len(rows)),
+            row_height=34,
+            on_select="rerun",
+            selection_mode="single-row",
+            column_config=_sample_table_column_config(),
+            key="samples_index_dataframe",
+        )
+        selected_row = _selected_dataframe_row_index(selection)
+        if selected_row is not None and 0 <= selected_row < len(samples):
+            _select_sample(samples[selected_row].sample_id)
+    except TypeError:
+        st.dataframe(
+            frame,
+            hide_index=True,
+            width="stretch",
+            height=_sample_table_height(len(rows)),
+            column_config=_sample_table_column_config(),
+        )
+        _render_sample_selectbox_fallback(samples)
+
+    _render_selected_sample_actions(samples)
+
+
+def _sample_table_height(row_count: int) -> int:
+    return min(420, max(118, 42 + row_count * 35))
+
+
+def _sample_table_column_config() -> dict:
+    return {
+        "样本编号": st.column_config.TextColumn("样本编号", width="small"),
+        "任务标题": st.column_config.TextColumn("任务标题", width="large"),
+        "场景": st.column_config.TextColumn("场景", width="medium"),
+        "测试状态": st.column_config.TextColumn("测试状态", width="small"),
+        "难度": st.column_config.TextColumn("难度", width="small"),
+        "更新时间": st.column_config.TextColumn("更新时间", width="small"),
+    }
+
+
+def _selected_dataframe_row_index(selection) -> int | None:
+    selected = getattr(selection, "selection", None)
+    if selected is None and isinstance(selection, dict):
+        selected = selection.get("selection")
+    if isinstance(selected, dict):
+        rows = selected.get("rows") or []
+    else:
+        rows = getattr(selected, "rows", []) if selected is not None else []
+    if not rows:
+        return None
+    try:
+        return int(rows[0])
+    except (TypeError, ValueError):
+        return None
+
+
+def _ensure_selected_sample(samples: list[sr.Sample]) -> sr.Sample | None:
+    if not samples:
+        return None
+    sample_ids = [sample.sample_id for sample in samples]
+    selected_id = st.session_state.get("samples_selected_id")
+    if selected_id not in sample_ids:
+        selected_id = sample_ids[0]
+        st.session_state["samples_selected_id"] = selected_id
+    return next((sample for sample in samples if sample.sample_id == selected_id), samples[0])
+
+
+def _sample_option_label(sample: sr.Sample) -> str:
+    return f"{sample.sample_id} · {_truncate(sample.title, 28)}"
+
+
+def _render_sample_selectbox_fallback(samples: list[sr.Sample]) -> None:
+    selected = _ensure_selected_sample(samples)
+    if selected is None:
+        return
+    sample_by_id = {sample.sample_id: sample for sample in samples}
+    sample_ids = list(sample_by_id)
+    selected_id = st.selectbox(
+        "选择样本",
+        sample_ids,
+        index=_index_of(sample_ids, selected.sample_id),
+        format_func=lambda sample_id: _sample_option_label(sample_by_id[sample_id]),
+        key="samples_index_select_fallback",
     )
-    for sample, row in zip(samples, rows):
-        cols = st.columns([1.05, 3.1, 1.55, 1.05, 0.8, 1.05, 1.45], gap="small", vertical_alignment="center")
-        with cols[0]:
-            render_html(f'<div class="sample-index-cell sample-id-cell">{escape(row["样本编号"])}</div>')
-        with cols[1]:
-            render_html(
-                '<div class="sample-index-cell sample-title-cell">'
-                f'<span title="{escape(sample.title or row["任务标题"])}">{escape(row["任务标题"])}</span>'
-                '</div>'
-            )
-        with cols[2]:
-            render_html(
-                '<div class="sample-index-cell sample-scenario-cell">'
-                f'<span title="{escape(sample.scenario or row["场景"])}">{escape(row["场景"])}</span>'
-                '</div>'
-            )
-        with cols[3]:
-            render_html(f'<div class="sample-index-cell sample-cell-nowrap">{_test_status_badge(row["测试状态"])}</div>')
-        with cols[4]:
-            render_html(f'<div class="sample-index-cell sample-cell-nowrap">{escape(row["难度"])}</div>')
-        with cols[5]:
-            render_html(
-                f'<div class="sample-index-cell sample-cell-nowrap sample-date-cell">{escape(row["更新时间"])}</div>'
-            )
-        with cols[6]:
-            action_cols = st.columns([1, 1, 1], gap="small")
-            with action_cols[0]:
-                if st.button("查看", key=f"samples_view_{sample.sample_id}", type="tertiary"):
-                    _select_sample(sample.sample_id)
-            with action_cols[1]:
-                if st.button("编辑", key=f"samples_edit_{sample.sample_id}", type="tertiary"):
-                    _select_sample(sample.sample_id)
-                    _open_edit_dialog(sample.sample_id)
-            with action_cols[2]:
-                if st.button(
-                    "归档",
-                    key=f"samples_archive_{sample.sample_id}",
-                    type="tertiary",
-                    disabled=sample.status == "已归档",
-                ):
-                    _select_sample(sample.sample_id)
-                    _open_archive_dialog(sample.sample_id)
-        render_html('<div class="sample-index-row-divider"></div>')
+    _select_sample(selected_id)
+
+
+def _render_selected_sample_actions(samples: list[sr.Sample]) -> None:
+    selected = _ensure_selected_sample(samples)
+    if selected is None:
+        return
+    is_archived = selected.status == "已归档"
+    render_html(
+        '<div class="sample-index-actions">'
+        f'<span>当前选中：</span><strong>{escape(selected.sample_id)}</strong>'
+        f'<span class="sample-index-action-title">{escape(_truncate(selected.title, 36))}</span>'
+        '</div>'
+    )
+    col1, col2, col3 = st.columns([1, 1, 4])
+    with col1:
+        if st.button("编辑样本", key=f"samples_selected_edit_{selected.sample_id}", type="secondary", use_container_width=True):
+            _open_edit_dialog(selected.sample_id)
+    with col2:
+        if st.button(
+            "归档样本",
+            key=f"samples_selected_archive_{selected.sample_id}",
+            type="tertiary",
+            disabled=is_archived,
+            use_container_width=True,
+        ):
+            _open_archive_dialog(selected.sample_id)
+    with col3:
+        if is_archived:
+            st.caption("该样本已归档，不会进入发起测试。")
+        else:
+            st.caption("编辑会同步正式评测资产；归档后样本不会进入发起测试。")
 
 
 def _render_sample_detail(
@@ -845,16 +908,7 @@ def _render_sample_detail(
         render_empty_state("没有可查看的样本。")
         return
 
-    sample_ids = [s.sample_id for s in samples]
-    selected_id = st.session_state.get("samples_selected_id")
-    if selected_id not in sample_ids:
-        selected_id = sample_ids[0]
-        st.session_state["samples_selected_id"] = selected_id
-    render_html(
-        '<div class="selected-sample-strip">'
-        f'当前样本：<strong>{escape(str(selected_id))}</strong>'
-        '</div>'
-    )
+    selected_id = (_ensure_selected_sample(samples) or samples[0]).sample_id
     sample = sr.get_sample(str(selected_id))
     if sample is None:
         sample = next((item for item in samples if item.sample_id == selected_id), None)

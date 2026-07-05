@@ -158,23 +158,26 @@ class UIUXAuditFixesTests(unittest.TestCase):
         samples_source = Path("src/ui/samples.py").read_text(encoding="utf-8")
         components_source = Path("src/ui/components.py").read_text(encoding="utf-8")
 
-        self.assertIn("sample-index-table", samples_source)
+        self.assertIn("st.dataframe", samples_source)
         self.assertIn('"测试状态"', samples_source)
-        self.assertIn('"操作"', samples_source)
+        self.assertNotIn('"操作"', samples_source)
         self.assertNotIn('"缺失项摘要"', samples_source)
-        self.assertIn(".sample-title-cell span", components_source)
-        self.assertIn("-webkit-line-clamp: 2", components_source)
-        self.assertIn(".sample-status-badge", components_source)
+        self.assertNotIn("sample-index-grid", samples_source)
+        self.assertNotIn("samples_view_", samples_source)
+        self.assertNotIn("for sample, row in zip", samples_source)
+        self.assertIn("[data-testid=\"stDataFrame\"]", components_source)
+        self.assertIn(".sample-index-actions", components_source)
 
-    def test_sample_library_uses_dialogs_and_row_actions(self):
+    def test_sample_library_uses_dialogs_and_selected_actions(self):
         samples_source = Path("src/ui/samples.py").read_text(encoding="utf-8")
 
         self.assertIn("@st.dialog(\"新增样本\"", samples_source)
         self.assertIn("@st.dialog(\"编辑样本\"", samples_source)
         self.assertIn("@st.dialog(\"确认归档\"", samples_source)
         self.assertIn("samples_create_open", samples_source)
-        self.assertIn("samples_edit_", samples_source)
-        self.assertIn("samples_archive_", samples_source)
+        self.assertIn("当前选中", samples_source)
+        self.assertIn("编辑样本", samples_source)
+        self.assertIn("归档样本", samples_source)
         self.assertNotIn('with st.expander("样本管理"', samples_source)
         self.assertNotIn("st.tabs([\"新增样本\", \"编辑样本\", \"状态管理\", \"导入导出\"])", samples_source)
 
