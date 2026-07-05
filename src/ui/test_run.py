@@ -267,6 +267,7 @@ def _render_configuration_panel(
 
 def _open_model_dialog(provider_name: str) -> None:
     st.session_state["test_run_dialog"] = "models"
+    st.session_state["test_run_model_dialog_selected"] = _selected_model_ids_from_state()
 
 
 def _render_pending_dialogs(sample_options: list[dict]) -> None:
@@ -347,26 +348,49 @@ def _render_sample_selection_dialog(sample_options: list[dict]) -> None:
 def _render_model_selection_dialog() -> None:
     provider = sf.SiliconFlowProvider()
     st.markdown(f"**模型服务：** {_SILICONFLOW_LABEL}")
-    st.caption(f"账户余额：{_siliconflow_balance_label(provider)}")
+    balance_text = _siliconflow_balance_text(provider)
+    if balance_text:
+        st.caption(f"账户余额：{balance_text}")
     if not sf.is_configured():
         st.warning("当前未配置模型服务密钥，暂不能发起真实调用。")
 
     result = provider.list_models()
     model_options = [model.id for model in result.models] if result.ok else []
-    chosen_models: list[str] = []
     st.markdown("**可用模型**")
     if model_options:
-        current_models = set(st.session_state.get("test_run_selected_models", []))
-        for index, model_id in enumerate(model_options):
-            key = f"test_run_model_check_{index}_{_safe_widget_key(model_id)}"
-            if key not in st.session_state:
-                st.session_state[key] = model_id in current_models
-            if st.checkbox(model_id, key=key):
-                chosen_models.append(model_id)
+        if st.session_state.get("test_run_model_select") not in model_options:
+            st.session_state["test_run_model_select"] = model_options[0]
+        st.selectbox("模型", model_options, key="test_run_model_select")
+        if st.button("添加到对比列表", key="test_run_add_model", type="secondary"):
+            selected = str(st.session_state.get("test_run_model_select") or "").strip()
+            current = _dedupe(list(st.session_state.get("test_run_model_dialog_selected", [])))
+            if selected and selected not in current:
+                current.append(selected)
+            st.session_state["test_run_model_dialog_selected"] = current
+            st.rerun()
     else:
         st.caption("模型列表暂未获取，请检查模型服务配置。")
 
-    chosen_models = _dedupe(chosen_models)
+    chosen_models = _dedupe([
+        model
+        for model in st.session_state.get("test_run_model_dialog_selected", [])
+        if model in model_options
+    ])
+    st.session_state["test_run_model_dialog_selected"] = chosen_models
+    st.markdown("**已选模型**")
+    if chosen_models:
+        for index, model_id in enumerate(chosen_models):
+            col1, col2 = st.columns([4, 1])
+            with col1:
+                st.markdown(f"- `{model_id}`")
+            with col2:
+                if st.button("移除", key=f"test_run_remove_model_{index}", type="tertiary", use_container_width=True):
+                    st.session_state["test_run_model_dialog_selected"] = [
+                        item for item in chosen_models if item != model_id
+                    ]
+                    st.rerun()
+    else:
+        st.caption("尚未选择模型。")
     st.caption(f"已选模型：{len(chosen_models)} 个")
     col1, col2 = st.columns(2)
     with col1:
@@ -387,21 +411,17 @@ def _render_model_selection_dialog() -> None:
             st.rerun()
 
 
-def _siliconflow_balance_label(provider: sf.SiliconFlowProvider) -> str:
+def _siliconflow_balance_text(provider: sf.SiliconFlowProvider) -> str | None:
     try:
         balance = provider.get_balance()
     except Exception:
         balance = None
     if balance is None:
-        return "未获取"
+        return None
     if isinstance(balance, (int, float)):
         return f"¥{balance:.2f}"
-    return str(balance).strip() or "未获取"
-
-
-def _safe_widget_key(value: str) -> str:
-    text = "".join(ch if ch.isalnum() else "_" for ch in str(value))
-    return text[:80] or "model"
+    text = str(balance).strip()
+    return text or None
 
 
 def eligible_case_ids(task_records: list[dict], gold_map: dict, rubric_dimensions: list[dict] | None) -> list[str]:

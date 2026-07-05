@@ -12,6 +12,7 @@ from src.ui.test_run import (
     build_score_summary_rows,
     get_advanced_setting_items,
     get_test_run_steps,
+    _siliconflow_balance_text,
 )
 
 
@@ -32,20 +33,42 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn('@st.dialog("选择模型"', source)
         self.assertIn("模型服务：", source)
         self.assertIn("硅基流动", source)
-        self.assertIn("账户余额", source)
+        self.assertIn('st.selectbox("模型"', source)
+        self.assertIn("添加到对比列表", source)
+        self.assertIn("test_run_model_dialog_selected", source)
+        self.assertIn("移除", source)
         self.assertIn("test_run_selected_cases", source)
         self.assertIn("test_run_selected_models", source)
         self.assertIn("test_run_cases_dialog", source)
-        self.assertIn("test_run_model_check_", source)
         self.assertNotIn('render_numbered_section("04"', source)
         self.assertNotIn('st.multiselect(\n        "选择样本"', source)
         self.assertNotIn('st.multiselect("选择对比模型"', source)
+        self.assertNotIn("st.checkbox", source)
+        self.assertNotIn("test_run_model_check_", source)
         self.assertNotIn("模型服务 provider", source)
         self.assertNotIn('st.expander("高级设置"', source)
         self.assertNotIn("加载 / 刷新模型列表", source)
         self.assertNotIn("手动追加模型 ID", source)
         self.assertNotIn('st.slider("temperature"', source)
         self.assertNotIn('number_input(\n            "max_tokens"', source)
+        self.assertNotIn("账户余额：未获取", source)
+
+    def test_balance_text_is_optional(self):
+        class _NoBalanceProvider:
+            def get_balance(self):
+                return None
+
+        class _NumericBalanceProvider:
+            def get_balance(self):
+                return 12.345
+
+        class _EmptyBalanceProvider:
+            def get_balance(self):
+                return " "
+
+        self.assertIsNone(_siliconflow_balance_text(_NoBalanceProvider()))
+        self.assertIsNone(_siliconflow_balance_text(_EmptyBalanceProvider()))
+        self.assertEqual("¥12.35", _siliconflow_balance_text(_NumericBalanceProvider()))
 
 
 class SampleSelectionTests(unittest.TestCase):
