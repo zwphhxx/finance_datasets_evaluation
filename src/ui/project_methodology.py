@@ -82,7 +82,7 @@ def render_project_methodology_page(data_bundle: dict) -> None:
         title="财务/法律/投行场景大模型对比评测",
         subtitle="专业尽调场景下的大模型可用边界评测",
         description=(
-            "基于投资投行、财务与法律尽调经验，不是模型排行榜；"
+            "基于投资投行、财务与法律尽调经验，不是模型排名；"
             "判断模型的回答哪些能参考、哪些需人工复核、哪些触发红线。"
         ),
         checklist_items=[

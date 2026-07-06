@@ -51,8 +51,7 @@ class RegistrationTests(unittest.TestCase):
     def test_source_has_no_banned_phrases_and_uses_shared_components(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         self.assertIn("src.ui.components", source)
-        self.assertIn("render_page_heading", source)
-        self.assertNotIn("render_compact_hero", source)
+        self.assertIn("render_compact_hero", source)
         self.assertNotIn("render_mockup_stack", source)
         # 项目说明页保留编号 section block，但不再走作品集 mockup 叙事。
         self.assertIn("render_story_section", source)

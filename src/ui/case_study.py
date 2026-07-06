@@ -8,10 +8,10 @@ import streamlit as st
 from src.metrics import SCORE_DIMENSIONS
 from src.model_boundary import BOUNDARY_AWARENESS_LABEL
 from src.ui.components import (
+    render_compact_hero,
     render_clean_list,
     render_inline_status,
     render_numbered_section,
-    render_page_heading,
 )
 from src.ui.page_config import get_page_config
 
@@ -97,7 +97,12 @@ def render_case_study_page(data_bundle: dict) -> None:
     eval_status = data_bundle.get("eval_status") or {}
     config = get_page_config("case_study")
 
-    render_page_heading(config.title, config.question)
+    render_compact_hero(
+        eyebrow="项目概览",
+        title=config.title,
+        question=config.question,
+        stats=_build_home_stats(base, eval_status),
+    )
 
     render_numbered_section("01", "项目定位")
     st.markdown(

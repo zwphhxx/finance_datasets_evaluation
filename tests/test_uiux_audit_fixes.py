@@ -76,7 +76,14 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn('"tertiary"', navigation_source)
         self.assertIn('[data-testid="stHorizontalBlock"]:has(.top-nav-brand)', components_source)
         self.assertIn("border: 0;", components_source)
-        self.assertIn("background: var(--fde-status-muted-bg)", components_source)
+        self.assertIn('left: calc(50% - 50vw)', components_source)
+        self.assertIn('use_container_width=False', navigation_source)
+        self.assertIn("background: transparent !important;", components_source)
+        self.assertNotIn(
+            '[data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton > button[kind="secondary"] {\n'
+            "    background: var(--fde-status-muted-bg)",
+            components_source,
+        )
         self.assertNotIn("border-bottom-color: var(--fde-ink)", components_source)
 
     def test_primary_buttons_are_not_used_for_navigation(self):

@@ -45,7 +45,7 @@ def _set_current_page(page_key: str) -> None:
 def render_top_navigation() -> None:
     """Render a lightweight tab-style top navigation."""
     current = st.session_state.get("current_page", DEFAULT_PAGE_KEY)
-    cols = st.columns([3.4, 0.86, 0.86, 0.96, 0.96, 0.96], gap="small")
+    cols = st.columns([3.35, 0.72, 0.72, 0.82, 0.82, 0.82], gap="medium")
     with cols[0]:
         render_html(f'<div class="top-nav-brand">{PROJECT_DISPLAY_NAME}</div>')
     for col, (label, page_key) in zip(cols[1:], _TOP_NAV_ITEMS):
@@ -54,7 +54,7 @@ def render_top_navigation() -> None:
                 label,
                 key=f"top_nav_{page_key}",
                 type="secondary" if current == page_key else "tertiary",
-                use_container_width=True,
+                use_container_width=False,
             ):
                 st.session_state.current_page = page_key
                 st.rerun()

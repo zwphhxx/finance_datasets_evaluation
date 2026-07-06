@@ -5,7 +5,7 @@
 不回写 data/ 下的 CSV/JSON/YAML——后者仍是初始化 seed 与可审阅的版本化数据资产。
 
 页面不直接写 SQL，全部通过 app.services.dataset_service 操作；删除统一做 status=inactive，
-不做物理删除。数据库不存在时回退到 seed 文件只读展示，并提供一键初始化入口。
+不做物理删除。数据库不存在时回退到 seed 文件只读展示，并提供初始化入口。
 """
 
 from __future__ import annotations
@@ -83,7 +83,7 @@ def render_dataset_admin_page(data_bundle: dict) -> None:
 
 
 def _render_uninitialized(data_bundle: dict) -> None:
-    """数据库未初始化：回退 seed 只读展示，并提供一键初始化入口。"""
+    """数据库未初始化：回退 seed 只读展示，并提供初始化入口。"""
     st.info(
         "尚未初始化 SQLite 运行时数据层，当前页面仅以 seed 文件只读展示。"
         "维护任务题、Gold Answer 与 Rubric 需先从 seed 初始化数据库。"

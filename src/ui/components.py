@@ -81,7 +81,7 @@ header,
     height: 0 !important;
 }
 .block-container {
-    padding-top: 1.05rem;
+    padding-top: 0;
     padding-bottom: 3rem;
     max-width: var(--portfolio-max-width);
     margin: 0 auto;
@@ -97,39 +97,58 @@ header,
     z-index: 100;
     min-height: 56px;
     align-items: center;
-    padding: 0.24rem 0 0.32rem 0;
-    margin: 0 0 0.72rem 0;
-    border-bottom: 1px solid var(--fde-line);
-    background: rgba(255, 255, 255, 0.98);
+    padding: 0.42rem 1.5rem;
+    margin: 0 0 1.55rem 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
     backdrop-filter: blur(8px);
+}
+[data-testid="stHorizontalBlock"]:has(.top-nav-brand)::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc(50% - 50vw);
+    right: calc(50% - 50vw);
+    z-index: -1;
+    background: rgba(255, 255, 255, 0.98);
+    border-bottom: 1px solid var(--fde-line);
 }
 .top-nav-brand {
     color: var(--fde-ink);
-    font-size: 0.98rem;
-    font-weight: 760;
+    font-size: 1.02rem;
+    font-weight: 720;
     line-height: 1.35;
     letter-spacing: 0;
-    padding-top: 0.18rem;
+    padding-top: 0.08rem;
+}
+[data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton {
+    display: flex;
+    justify-content: center;
 }
 [data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton > button {
-    min-height: 2rem;
-    padding: 0.26rem 0.34rem;
-    border-radius: 6px;
-    border: 0;
-    background: transparent;
+    width: auto;
+    min-width: 0;
+    min-height: 1.9rem;
+    padding: 0.18rem 0.38rem;
+    border-radius: 3px;
+    border: 0 !important;
+    background: transparent !important;
     color: var(--fde-muted);
-    font-size: 0.86rem;
-    font-weight: 620;
+    font-size: 0.94rem;
+    font-weight: 590;
     box-shadow: none;
     white-space: nowrap;
 }
 [data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton > button[kind="secondary"] {
-    background: var(--fde-status-muted-bg);
+    background: transparent !important;
     color: var(--fde-ink);
-    font-weight: 740;
+    font-weight: 720;
+    box-shadow: none;
 }
 [data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton > button:hover {
-    background: var(--fde-status-neutral-bg);
+    background: transparent !important;
     color: var(--fde-ink);
 }
 @media (max-width: 860px) {
@@ -137,9 +156,13 @@ header,
         position: relative;
         flex-wrap: wrap;
         min-height: auto;
+        padding: 0.55rem 1rem;
     }
     .top-nav-brand {
         font-size: 0.92rem;
+    }
+    [data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton {
+        justify-content: flex-start;
     }
 }
 .nav-brand {

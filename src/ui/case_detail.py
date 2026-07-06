@@ -554,7 +554,7 @@ def _render_model_comparison(comparison: list[dict]) -> None:
         )
     table_html = f'<table class="rubric-table"><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>'
     render_evidence_panel("模型对比结论", table_html)
-    st.caption("并排结论为样本内观察，不构成模型排行榜；切换下方“选择模型”查看单题回答与扣分依据。")
+    st.caption("并排结论为样本内观察，不构成模型排名；切换下方“选择模型”查看单题回答与扣分依据。")
 
 
 def _render_human_review_note(output_row: pd.Series | None) -> None:
