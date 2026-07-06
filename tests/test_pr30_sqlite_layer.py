@@ -94,6 +94,16 @@ class SchemaFieldTests(unittest.TestCase):
         for table in ["task_cases", "gold_answers", "rubrics"]:
             self.assertIn("version", self._columns(table), table)
 
+    def test_seeded_rubrics_include_standards_and_deduction_rules(self):
+        rows = self.connection.execute(
+            "SELECT dimension_field, full_mark_standard, deduction_rules FROM rubrics"
+        ).fetchall()
+
+        self.assertTrue(rows)
+        for field, standard, rules in rows:
+            self.assertTrue(str(standard or "").strip(), field)
+            self.assertTrue(str(rules or "").strip(), field)
+
     def test_schema_file_is_used(self):
         self.assertTrue(SCHEMA_PATH.exists())
 

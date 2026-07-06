@@ -357,11 +357,26 @@ def build_rubric_rows_for_display(
             continue
         field = _rubric_field(dim)
         merged = {**dim, **overrides.get(field, {})}
+        normalized = {
+            "field": field,
+            "name": _clean_text(merged.get("name") or merged.get("dimension"), fallback=""),
+            "full_mark": merged.get("full_mark") or merged.get("weight"),
+            "full_mark_standard": _clean_text(merged.get("full_mark_standard"), fallback=""),
+            "deduction_rules": _clean_text(merged.get("deduction_rules"), fallback=""),
+        }
+        missing = ds.rubric_dimension_missing_items(normalized)
+        if missing:
+            rows.append({
+                "评分维度": normalized["name"] or field or "待补充",
+                "满分": _clean_text(normalized["full_mark"], fallback="待补充"),
+                "缺失项": "；".join(missing),
+            })
+            continue
         rows.append({
-            "评分维度": _clean_text(merged.get("name") or merged.get("dimension"), fallback=field or "待补充"),
-            "满分": _clean_text(merged.get("full_mark") or merged.get("weight"), fallback="待补充"),
-            "满分标准": _clean_text(merged.get("full_mark_standard"), fallback="待补充"),
-            "扣分规则": _clean_text(merged.get("deduction_rules"), fallback="待补充"),
+            "评分维度": normalized["name"],
+            "满分": _clean_text(normalized["full_mark"], fallback="待补充"),
+            "满分标准": normalized["full_mark_standard"],
+            "扣分规则": normalized["deduction_rules"],
             "关联错误类型或说明": _clean_text(
                 merged.get("related_error_type")
                 or merged.get("related_dimension")
@@ -382,6 +397,12 @@ def build_sample_asset_sections(
     rubric_rows: list[dict],
 ) -> list[dict[str, object]]:
     """返回样本详情的评测资产分区定义。"""
+    rubric_title = "Rubric 评分标准" if _rubric_rows_are_complete(rubric_rows) else "Rubric 维度配置"
+    rubric_caption = (
+        "裁判评分链路使用的维度、满分标准和扣分规则。"
+        if rubric_title == "Rubric 评分标准"
+        else "当前仅展示 Rubric 维度和满分，缺失项需补齐后才可作为完整评分标准。"
+    )
     return [
         {
             "title": "样本基础信息",
@@ -396,8 +417,8 @@ def build_sample_asset_sections(
             "caption": "裁判评分链路使用的评判锚点，包含应答方向、关键依据和红线边界。",
         },
         {
-            "title": "Rubric 评分标准",
-            "caption": "裁判评分链路使用的维度、满分标准和扣分规则。",
+            "title": rubric_title,
+            "caption": rubric_caption,
         },
         {
             "title": "错误标签与数据优化建议",
@@ -652,6 +673,8 @@ def _rubric_dimensions_for_check(
             "field": field,
             "name": _clean_text(item.get("name") or item.get("dimension"), fallback=field),
             "full_mark": _to_int(item.get("full_mark") or item.get("weight"), fallback=0),
+            "full_mark_standard": _clean_text(item.get("full_mark_standard"), fallback=""),
+            "deduction_rules": _clean_text(item.get("deduction_rules"), fallback=""),
         })
     return dimensions
 
@@ -1052,12 +1075,13 @@ def render_sample_detail_panel(
     task_prompt, business_context, output_requirement = _task_markdown_values(sample, task_record)
     test_status = _test_status_label(sample, readiness)
     completeness = _completeness_label(sample, readiness)
+    rubric_title = "Rubric 评分标准" if _rubric_rows_are_complete(rubric_rows) else "Rubric 维度配置"
     body = "".join([
         _detail_section_html("基本信息", _basic_info_html(sample, readiness, task_record, test_status, completeness)),
         _detail_section_html("任务场景", _scenario_detail_html(sample, task_record)),
         _detail_section_html("任务内容", _task_detail_html(task_prompt, business_context, output_requirement)),
         _detail_section_html("理想回复标准 / Gold Answer", _gold_detail_html(gold_display)),
-        _detail_section_html("Rubric 评分标准", _rubric_detail_html(rubric_rows)),
+        _detail_section_html(rubric_title, _rubric_detail_html(rubric_rows)),
         _detail_section_html("准入状态", _readiness_detail_html(sample, readiness)),
     ])
     render_detail_panel(body)
@@ -1140,7 +1164,18 @@ def _task_markdown_values(sample: sr.Sample, task_record: dict) -> tuple[str, st
 def _rubric_detail_html(rubric_rows: list[dict[str, str]]) -> str:
     if not rubric_rows:
         return '<p class="sample-detail-text">待补充</p>'
-    headers = ["评分维度", "满分", "满分标准", "扣分规则"]
+    complete = _rubric_rows_are_complete(rubric_rows)
+    headers = ["评分维度", "满分", "满分标准", "扣分规则"] if complete else ["评分维度", "满分", "缺失项"]
+    note = (
+        ""
+        if complete
+        else (
+            '<p class="sample-detail-text">'
+            "当前 Rubric 仅维护评分维度和满分，尚未完整维护满分标准与扣分规则。"
+            "该样本不应作为完整可测样本进入正式评测。"
+            "</p>"
+        )
+    )
     header_html = "".join(f"<th>{escape(header)}</th>" for header in headers)
     row_html = ""
     for row in rubric_rows:
@@ -1148,7 +1183,14 @@ def _rubric_detail_html(rubric_rows: list[dict[str, str]]) -> str:
             f"<td>{_html_multiline(row.get(header), fallback='待补充')}</td>"
             for header in headers
         ) + "</tr>"
-    return f'<table class="sample-detail-table"><thead><tr>{header_html}</tr></thead><tbody>{row_html}</tbody></table>'
+    return f'{note}<table class="sample-detail-table"><thead><tr>{header_html}</tr></thead><tbody>{row_html}</tbody></table>'
+
+
+def _rubric_rows_are_complete(rubric_rows: list[dict[str, str]]) -> bool:
+    return bool(rubric_rows) and all(
+        "满分标准" in row and "扣分规则" in row and "缺失项" not in row
+        for row in rubric_rows
+    )
 
 
 def _readiness_detail_html(sample: sr.Sample, readiness: ds.SampleReadiness) -> str:

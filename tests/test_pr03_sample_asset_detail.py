@@ -31,7 +31,13 @@ class SampleListSummaryTests(unittest.TestCase):
         readiness = ds.assess_sample_readiness(
             {"case_id": "CASE-1", "question": "题", "context": "背景", "scenario": "场景", "status": "active"},
             {"core_conclusion": "结论", "must_have_points": ["要点"], "unacceptable_errors": ["错误"]},
-            [{"field": "accuracy_score", "name": "准确性", "full_mark": 30}],
+            [{
+                "field": "accuracy_score",
+                "name": "准确性",
+                "full_mark": 30,
+                "full_mark_standard": "结论准确且依据充分。",
+                "deduction_rules": "事实错误扣分。",
+            }],
         )
 
         rows = build_sample_table_rows([sample], {"CASE-1": readiness})
@@ -128,6 +134,17 @@ class RubricDisplayTests(unittest.TestCase):
     def test_missing_rubric_rows_show_pending(self):
         self.assertEqual([], build_rubric_rows_for_display([]))
 
+    def test_incomplete_rubric_rows_show_missing_items_without_fake_standards(self):
+        rows = build_rubric_rows_for_display([
+            {"field": "accuracy_score", "name": "准确性", "full_mark": 30}
+        ])
+
+        self.assertEqual("准确性", rows[0]["评分维度"])
+        self.assertEqual("30", rows[0]["满分"])
+        self.assertEqual("缺少满分标准；缺少扣分规则", rows[0]["缺失项"])
+        self.assertNotIn("满分标准", rows[0])
+        self.assertNotIn("扣分规则", rows[0])
+
 
 class AssetSectionTests(unittest.TestCase):
     def test_asset_sections_have_required_order_and_prompt_boundary(self):
@@ -144,7 +161,13 @@ class AssetSectionTests(unittest.TestCase):
         readiness = ds.assess_sample_readiness(
             {"case_id": "CASE-2", "question": "任务题", "context": "业务背景", "scenario": "场景", "status": "active"},
             {"core_conclusion": "结论", "must_have_points": ["要点"], "unacceptable_errors": ["错误"]},
-            [{"field": "accuracy_score", "name": "准确性", "full_mark": 30}],
+            [{
+                "field": "accuracy_score",
+                "name": "准确性",
+                "full_mark": 30,
+                "full_mark_standard": "结论准确且依据充分。",
+                "deduction_rules": "事实错误扣分。",
+            }],
         )
 
         sections = build_sample_asset_sections(
@@ -154,7 +177,12 @@ class AssetSectionTests(unittest.TestCase):
             gold_display=parse_gold_answer_for_display(
                 {"core_conclusion": "结论", "must_have_points": ["要点"], "unacceptable_errors": ["错误"]}
             ),
-            rubric_rows=[{"评分维度": "准确性", "满分": "30"}],
+            rubric_rows=[{
+                "评分维度": "准确性",
+                "满分": "30",
+                "满分标准": "结论准确且依据充分。",
+                "扣分规则": "事实错误扣分。",
+            }],
         )
 
         self.assertEqual(

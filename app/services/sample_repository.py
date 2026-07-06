@@ -481,8 +481,9 @@ def verify_sample_asset_sync(
         missing.append("task_cases 缺少该样本")
     if gold is None:
         missing.append("gold_answers 缺少该样本")
-    if not ds.has_rubric_criteria(rubrics):
-        missing.append("rubrics 缺少可用评分标准")
+    rubric_missing = ds.rubric_criteria_missing_items(rubrics)
+    if rubric_missing:
+        missing.extend(rubric_missing)
     if task is not None and expected_status:
         actual_status = str(task.get("status") or "").strip().lower()
         if actual_status != expected_status:

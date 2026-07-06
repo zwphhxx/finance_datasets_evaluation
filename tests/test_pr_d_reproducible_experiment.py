@@ -104,7 +104,13 @@ class FormalSampleEligibilityTests(unittest.TestCase):
             },
             "D": {"core_conclusion": "缺少 Rubric 支撑要素"},
         }
-        dimensions = [{"field": "accuracy_score", "name": "准确性", "full_mark": 30}]
+        dimensions = [{
+            "field": "accuracy_score",
+            "name": "准确性",
+            "full_mark": 30,
+            "full_mark_standard": "结论准确且依据充分。",
+            "deduction_rules": "事实错误扣分。",
+        }]
 
         self.assertEqual(["A"], eligible_case_ids(tasks, gold_map, dimensions))
         self.assertEqual([], eligible_case_ids(tasks, gold_map, []))

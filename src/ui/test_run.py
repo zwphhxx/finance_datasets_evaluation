@@ -44,7 +44,7 @@ PROMPT_ISOLATION_NOTE = (
 )
 NO_TESTABLE_SAMPLE_MESSAGE = (
     "当前没有可测样本。可测样本需同时满足：正式题库存在任务题、"
-    "Gold Answer 具备完整评判标准、Rubric 评分标准存在，且样本状态为已入库。"
+    "Gold Answer 具备完整评判标准，Rubric 满分标准和扣分规则完整，且样本状态为已入库。"
 )
 
 TEST_RUN_STEPS = ["评测配置", "模型回答", "评分草稿"]

@@ -27,7 +27,13 @@ class SampleReadinessTests(unittest.TestCase):
             "must_have_points": ["核查合同与流水"],
             "unacceptable_errors": ["无依据给出确定结论"],
         }
-        self.rubric = [{"field": "accuracy_score", "name": "准确性", "full_mark": 30}]
+        self.rubric = [{
+            "field": "accuracy_score",
+            "name": "准确性",
+            "full_mark": 30,
+            "full_mark_standard": "结论准确且依据充分。",
+            "deduction_rules": "事实错误、缺少依据或结论跳跃时扣分。",
+        }]
 
     def _assess(self, task=_SENTINEL, gold=_SENTINEL, rubric=_SENTINEL):
         return ds.assess_sample_readiness(
@@ -60,7 +66,39 @@ class SampleReadinessTests(unittest.TestCase):
     def test_missing_rubric_is_not_testable(self):
         readiness = self._assess(rubric=[])
         self.assertFalse(readiness.is_testable)
-        self.assertIn("缺少 Rubric 评分标准", readiness.missing_items)
+        self.assertIn("缺少 Rubric 维度配置", readiness.missing_items)
+
+    def test_rubric_with_only_dimension_and_full_mark_is_not_testable(self):
+        rubric = [{"field": "accuracy_score", "name": "准确性", "full_mark": 30}]
+        self.assertFalse(ds.has_rubric_criteria(rubric))
+        readiness = self._assess(rubric=rubric)
+        self.assertFalse(readiness.is_testable)
+        self.assertIn("缺少 Rubric 满分标准", readiness.missing_items)
+        self.assertIn("缺少 Rubric 扣分规则", readiness.missing_items)
+
+    def test_rubric_missing_full_mark_standard_is_not_testable(self):
+        rubric = [{
+            "field": "accuracy_score",
+            "name": "准确性",
+            "full_mark": 30,
+            "deduction_rules": "事实错误扣分。",
+        }]
+        self.assertFalse(ds.has_rubric_criteria(rubric))
+        self.assertIn("缺少 Rubric 满分标准", self._assess(rubric=rubric).missing_items)
+
+    def test_rubric_missing_deduction_rules_is_not_testable(self):
+        rubric = [{
+            "field": "accuracy_score",
+            "name": "准确性",
+            "full_mark": 30,
+            "full_mark_standard": "结论准确且依据充分。",
+        }]
+        self.assertFalse(ds.has_rubric_criteria(rubric))
+        self.assertIn("缺少 Rubric 扣分规则", self._assess(rubric=rubric).missing_items)
+
+    def test_complete_rubric_is_testable(self):
+        self.assertTrue(ds.has_rubric_criteria(self.rubric))
+        self.assertTrue(self._assess().is_testable)
 
     def test_archived_sample_is_not_testable(self):
         task = {**self.task, "status": ds.INACTIVE_STATUS}
@@ -96,7 +134,13 @@ class SharedReadinessGateTests(unittest.TestCase):
             },
             "B": {"core_conclusion": "缺少必须覆盖点"},
         }
-        rubric = [{"field": "accuracy_score", "name": "准确性", "full_mark": 30}]
+        rubric = [{
+            "field": "accuracy_score",
+            "name": "准确性",
+            "full_mark": 30,
+            "full_mark_standard": "结论准确且依据充分。",
+            "deduction_rules": "事实错误扣分。",
+        }]
 
         readiness = build_sample_readiness_map(samples, tasks, gold_map, rubric)
         sample_library_testable = [case_id for case_id, item in readiness.items() if item.is_testable]

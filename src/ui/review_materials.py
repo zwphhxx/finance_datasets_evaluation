@@ -27,10 +27,10 @@ from src.ui.labels import (
 )
 from src.ui.review_scoring import (
     attention_items,
+    build_rubric_material_display,
     clean,
     has_value,
     number_text,
-    rubric_material_rows,
     safe_key,
     score_text,
     text,
@@ -171,8 +171,11 @@ def render_score_materials_dialog(
 
     render_markdown_detail_panel("模型回答", text(row.get("answer_text"), "暂无回答内容。"))
 
-    st.markdown("**Rubric 原始要求**")
-    rubric_rows = rubric_material_rows(ds.get_rubric_dimensions())
+    rubric_display = build_rubric_material_display(ds.get_rubric_dimensions())
+    st.markdown(f"**{rubric_display['title']}**")
+    if rubric_display.get("note"):
+        st.caption(str(rubric_display["note"]))
+    rubric_rows = list(rubric_display.get("rows") or [])
     if rubric_rows:
         st.dataframe(pd.DataFrame(rubric_rows), hide_index=True, use_container_width=True)
     else:

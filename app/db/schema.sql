@@ -65,7 +65,7 @@ CREATE TABLE gold_answers (
 
 -- Rubric 维度：对应 dataset_manifest.yml 的 rubric.dimensions。
 -- full_mark_standard / deduction_rules 为质量治理补充字段：满分标准与扣分规则，
--- 由数据集管理页按需维护；种子导入时留空，不预置任何编造内容。
+-- 由 dataset_manifest.yml 初始化，样本库编辑可按需维护。
 CREATE TABLE rubrics (
     dimension_field    TEXT PRIMARY KEY,
     name               TEXT,

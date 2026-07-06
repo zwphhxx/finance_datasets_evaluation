@@ -31,7 +31,15 @@ class SampleJudgmentCriteriaTests(unittest.TestCase):
         }
 
     def _rubric(self):
-        return [{"field": "accuracy_score", "name": "准确性", "full_mark": 30}]
+        return [
+            {
+                "field": "accuracy_score",
+                "name": "准确性",
+                "full_mark": 30,
+                "full_mark_standard": "回答准确覆盖核心判断与依据。",
+                "deduction_rules": "遗漏核心判断、依据或出现事实错误时扣分。",
+            }
+        ]
 
     def test_has_judgment_criteria_requires_all_fields(self):
         """样本必须具备核心结论、必须覆盖点、不可接受错误才算有评判标准。"""

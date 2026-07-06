@@ -321,19 +321,37 @@ def sample_status_label(status: str | None) -> str:
 
 
 def has_rubric_criteria(rubric_dimensions: list[dict] | None) -> bool:
-    """检查正式 Rubric 是否具备可用于裁判评分的维度。"""
+    """检查正式 Rubric 是否具备完整评分标准。"""
+    return not rubric_criteria_missing_items(rubric_dimensions)
+
+
+def rubric_criteria_missing_items(rubric_dimensions: list[dict] | None) -> list[str]:
+    """返回 Rubric 缺失项，区分维度配置、满分、满分标准和扣分规则。"""
     if not rubric_dimensions:
-        return False
+        return ["缺少 Rubric 维度配置"]
+    missing: list[str] = []
     for dimension in rubric_dimensions:
-        if not isinstance(dimension, dict):
-            return False
-        if not _clean(dimension.get("field")):
-            return False
-        if not _clean(dimension.get("name")):
-            return False
-        if not _as_int(dimension.get("full_mark")):
-            return False
-    return True
+        for item in rubric_dimension_missing_items(dimension):
+            missing.append("缺少 Rubric " + item.replace("缺少", "", 1))
+    return _dedupe(missing)
+
+
+def rubric_dimension_missing_items(dimension: dict | None) -> list[str]:
+    """返回单个 Rubric 维度缺失项，用于样本库和评分材料展示。"""
+    if not isinstance(dimension, dict):
+        return ["缺少维度配置"]
+    missing: list[str] = []
+    if not _clean(dimension.get("field") or dimension.get("dimension_field")):
+        missing.append("缺少维度字段")
+    if not _clean(dimension.get("name") or dimension.get("dimension")):
+        missing.append("缺少维度名称")
+    if not _as_int(dimension.get("full_mark") or dimension.get("weight")):
+        missing.append("缺少满分")
+    if not _clean(dimension.get("full_mark_standard")):
+        missing.append("缺少满分标准")
+    if not _clean(dimension.get("deduction_rules")):
+        missing.append("缺少扣分规则")
+    return missing
 
 
 def assess_sample_readiness(
@@ -381,7 +399,16 @@ def assess_sample_readiness(
         "缺少不可接受错误",
     )
 
-    record(has_rubric_criteria(rubric_dimensions), "存在 Rubric 评分标准", "缺少 Rubric 评分标准")
+    rubric_missing = rubric_criteria_missing_items(rubric_dimensions)
+    if rubric_missing:
+        missing.extend(rubric_missing)
+    else:
+        satisfied.extend([
+            "存在 Rubric 维度配置",
+            "Rubric 满分完整",
+            "Rubric 满分标准完整",
+            "Rubric 扣分规则完整",
+        ])
 
     if status == INACTIVE_STATUS:
         missing.append("样本已移出测试")
@@ -677,6 +704,7 @@ def get_rubric_dimensions(db_path: Path | None = None) -> list[dict]:
     """
     from src.metrics import SCORE_DIMENSIONS, SCORE_DIMENSION_FULL_MARKS
 
+    defaults = _manifest_rubric_defaults()
     overrides: dict[str, dict] = {}
     try:
         frame = list_rubrics(db_path)
@@ -688,17 +716,18 @@ def get_rubric_dimensions(db_path: Path | None = None) -> list[dict]:
 
     dimensions: list[dict] = []
     for field, default_name in SCORE_DIMENSIONS:
+        default_row = defaults.get(field, {})
         row = overrides.get(field, {})
         full_mark = _as_int(row.get("full_mark")) if row.get("full_mark") is not None else None
         if not full_mark:
-            full_mark = SCORE_DIMENSION_FULL_MARKS.get(field)
-        name = _clean(row.get("name")) or default_name
+            full_mark = _as_int(default_row.get("full_mark") or default_row.get("weight")) or SCORE_DIMENSION_FULL_MARKS.get(field)
+        name = _clean(row.get("name")) or _clean(default_row.get("name")) or default_name
         dimensions.append({
             "field": field,
             "name": name,
             "full_mark": full_mark,
-            "full_mark_standard": _clean(row.get("full_mark_standard")),
-            "deduction_rules": _clean(row.get("deduction_rules")),
+            "full_mark_standard": _clean(row.get("full_mark_standard")) or _clean(default_row.get("full_mark_standard")),
+            "deduction_rules": _clean(row.get("deduction_rules")) or _clean(default_row.get("deduction_rules")),
             "related_error_type": _clean(row.get("related_error_type") or row.get("related_dimension")),
         })
     return dimensions
@@ -1002,6 +1031,38 @@ def evaluate_error_configuration(db_path: Path | None = None) -> list:
 
 
 # -- 小工具 ------------------------------------------------------------------ #
+def _manifest_rubric_defaults() -> dict[str, dict]:
+    """从 dataset_manifest.yml 读取 Rubric 默认标准，作为正式 seed 配置。"""
+    try:
+        data_dir = get_data_dir()
+        manifest = _read_yaml_file("dataset_manifest.yml", data_dir)
+        rubric = manifest.get("rubric", {}) if isinstance(manifest, dict) else {}
+        defaults: dict[str, dict] = {}
+        for item in rubric.get("dimensions", []) or []:
+            if not isinstance(item, dict):
+                continue
+            field = _clean(item.get("field") or item.get("dimension_field"))
+            if not field:
+                continue
+            row = dict(item)
+            row["full_mark"] = item.get("full_mark") or item.get("weight")
+            defaults[field] = row
+        return defaults
+    except Exception:
+        return {}
+
+
+def _dedupe(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for item in items:
+        text = str(item or "").strip()
+        if text and text not in seen:
+            seen.add(text)
+            ordered.append(text)
+    return ordered
+
+
 def _clean(value: object) -> str | None:
     """空白/缺失统一规整为 None，其余转为去除首尾空白的字符串。"""
     if value is None:

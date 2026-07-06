@@ -404,7 +404,15 @@ class SampleSelectionTests(unittest.TestCase):
                 "unacceptable_errors": ["错误"],
             },
         }
-        dimensions = [{"field": "accuracy_score", "name": "准确性", "full_mark": 30}]
+        dimensions = [
+            {
+                "field": "accuracy_score",
+                "name": "准确性",
+                "full_mark": 30,
+                "full_mark_standard": "回答完整准确覆盖标准。",
+                "deduction_rules": "缺少关键判断或依据时扣分。",
+            }
+        ]
 
         options = build_sample_options(tasks, gold_map, dimensions)
 

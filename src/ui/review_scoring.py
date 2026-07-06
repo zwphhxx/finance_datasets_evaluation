@@ -507,17 +507,50 @@ def attention_items(
 
 
 def rubric_material_rows(dimensions: list[dict]) -> list[dict[str, str]]:
+    return list(build_rubric_material_display(dimensions)["rows"])
+
+
+def build_rubric_material_display(dimensions: list[dict]) -> dict[str, object]:
+    """Build dynamic Rubric material display metadata for complete/incomplete standards."""
     rows: list[dict[str, str]] = []
+    complete = bool(dimensions)
     for dim in dimensions or []:
-        rows.append(
-            {
-                "维度": text(dim.get("name") or dim.get("dimension"), "未标注维度"),
-                "满分": number_text(dim.get("full_mark"), "待补充"),
-                "满分标准": text(dim.get("full_mark_standard"), "待补充"),
-                "扣分规则": text(dim.get("deduction_rules"), "暂无规则"),
-            }
-        )
-    return rows
+        field = clean(dim.get("field") or dim.get("dimension_field"))
+        normalized = {
+            "field": field,
+            "name": clean(dim.get("name") or dim.get("dimension")),
+            "full_mark": dim.get("full_mark") or dim.get("weight"),
+            "full_mark_standard": clean(dim.get("full_mark_standard")),
+            "deduction_rules": clean(dim.get("deduction_rules")),
+        }
+        missing = ds.rubric_dimension_missing_items(normalized)
+        if missing:
+            complete = False
+            rows.append({
+                "维度": normalized["name"] or field or "未标注维度",
+                "满分": number_text(normalized["full_mark"], "待补充"),
+                "缺失项": "；".join(missing),
+            })
+            continue
+        rows.append({
+            "维度": normalized["name"] or field or "未标注维度",
+            "满分": number_text(normalized["full_mark"], "待补充"),
+            "满分标准": normalized["full_mark_standard"] or "",
+            "扣分规则": normalized["deduction_rules"] or "",
+        })
+    if complete:
+        return {
+            "complete": True,
+            "title": "Rubric 评分标准",
+            "note": "",
+            "rows": rows,
+        }
+    return {
+        "complete": False,
+        "title": "Rubric 维度配置",
+        "note": "当前 Rubric 仅维护评分维度和满分，尚未完整维护满分标准与扣分规则。该样本不应作为完整可测样本进入正式评测。",
+        "rows": rows,
+    }
 
 
 def rubric_requirement(field: str, dim: dict) -> str:

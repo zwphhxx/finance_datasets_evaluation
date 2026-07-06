@@ -124,6 +124,9 @@ def _rubric_rows(data_dir: Path, version: str) -> list[dict]:
                 "weight": _cell(weight),
                 "full_mark": _cell(weight),
                 "total": _cell(total),
+                "full_mark_standard": _cell(dimension.get("full_mark_standard")),
+                "deduction_rules": _cell(dimension.get("deduction_rules")),
+                "status": _cell(dimension.get("status")) or "active",
                 "version": version,
             }
         )

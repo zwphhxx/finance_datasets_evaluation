@@ -9,6 +9,7 @@ from src.ui import components
 from src.ui import review
 from src.ui import review_materials
 from src.ui import review_queue
+from src.ui import review_scoring
 
 
 def _score_row(**overrides):
@@ -201,6 +202,37 @@ class ReviewMatrixTests(unittest.TestCase):
         self.assertEqual("待补充", rows[0]["模型得分"])
         self.assertEqual("待补充", rows[0]["理想回复要求 / Gold 要求"])
         self.assertEqual("暂无错误标签", rows[0]["对应错误标签"])
+
+
+class RubricMaterialDisplayTests(unittest.TestCase):
+    def test_incomplete_rubric_material_shows_dimension_config(self):
+        state = review_scoring.build_rubric_material_display([
+            {"field": "accuracy_score", "name": "准确性", "full_mark": 30}
+        ])
+
+        self.assertFalse(state["complete"])
+        self.assertEqual("Rubric 维度配置", state["title"])
+        self.assertIn("尚未完整维护满分标准与扣分规则", state["note"])
+        self.assertEqual(["维度", "满分", "缺失项"], list(state["rows"][0].keys()))
+        self.assertEqual("缺少满分标准；缺少扣分规则", state["rows"][0]["缺失项"])
+        self.assertNotIn("待补充", str(state["rows"]))
+        self.assertNotIn("暂无规则", str(state["rows"]))
+
+    def test_complete_rubric_material_shows_scoring_standard(self):
+        state = review_scoring.build_rubric_material_display([
+            {
+                "field": "accuracy_score",
+                "name": "准确性",
+                "full_mark": 30,
+                "full_mark_standard": "结论准确且依据充分。",
+                "deduction_rules": "事实错误扣分。",
+            }
+        ])
+
+        self.assertTrue(state["complete"])
+        self.assertEqual("Rubric 评分标准", state["title"])
+        self.assertEqual(["维度", "满分", "满分标准", "扣分规则"], list(state["rows"][0].keys()))
+        self.assertEqual("结论准确且依据充分。", state["rows"][0]["满分标准"])
 
 
 class RecommendationTests(unittest.TestCase):

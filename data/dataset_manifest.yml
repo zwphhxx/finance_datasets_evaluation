@@ -92,18 +92,48 @@ rubric:
     - field: accuracy_score
       name: 专业准确性
       weight: 30
+      full_mark_standard: >-
+        结论与 Gold Answer 的核心判断一致，关键财务、法律或监管要点无事实性错误，
+        对题目给出的数据和事实使用准确，并能识别影响结论的必要前提。
+      deduction_rules: >-
+        结论方向错误、引用事实错误或忽略关键前提时扣重分；关键计算、法规适用或主体关系
+        存在局部错误时按影响程度扣分；只给结论但缺少必要事实支撑时扣分。
     - field: reasoning_score
       name: 推理与场景适配
       weight: 20
+      full_mark_standard: >-
+        分析路径与当前任务场景匹配，能说明判断步骤、关键假设和不确定性，
+        推理链条完整且前后结论一致。
+      deduction_rules: >-
+        推理跳跃、场景套用不当、只罗列结论不说明路径时扣分；遗漏关键假设、
+        前后表述矛盾或未解释边界条件时按严重程度扣分。
     - field: coverage_score
       name: 风险覆盖
       weight: 20
+      full_mark_standard: >-
+        覆盖 Gold Answer 中的必须关注点，能识别主要风险、核查事项和不可接受错误边界，
+        对高风险事项给出清楚提示。
+      deduction_rules: >-
+        漏掉必须覆盖点、未识别重大风险或未提示红线错误时扣重分；风险事项覆盖不全、
+        核查建议过泛或遗漏次要风险时按影响程度扣分。
     - field: evidence_score
       name: 依据可靠性
       weight: 15
+      full_mark_standard: >-
+        依据来自题目材料、财务数据、法规口径或需核查文件，能区分已知事实与待核验事项，
+        不编造不存在的材料或结论。
+      deduction_rules: >-
+        编造事实、法规、文件或数据时扣重分；依据来源含糊、未区分事实与假设、
+        缺少关键材料核查路径时按影响程度扣分。
     - field: expression_score
       name: 专业表达
       weight: 15
+      full_mark_standard: >-
+        表达清晰、审慎、结构完整，符合财务/法律/投行业务底稿或评审意见的专业语气，
+        能用简洁语言呈现结论、依据和后续核查事项。
+      deduction_rules: >-
+        表述武断、口语化、结构混乱或遗漏必要保留意见时扣分；冗长重复、
+        术语使用不当或无法支撑人工复核时按影响程度扣分。
 
 # Gold Answer 质量门槛：
 #   required_fields 为每条 Gold Answer 必须具备的核心要素；

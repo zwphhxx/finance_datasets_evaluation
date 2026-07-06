@@ -121,11 +121,12 @@ class RubricCrudTests(unittest.TestCase):
     def setUp(self):
         _reseed()
 
-    def test_seed_quality_columns_are_empty(self):
-        # 不预置任何编造的满分标准/扣分规则。
+    def test_seed_quality_columns_are_complete(self):
+        # seed manifest 维护正式 Rubric 标准，初始化后应可直接用于完整度校验。
         rubrics = ds.list_rubrics(_DB_PATH)
-        self.assertTrue(rubrics["full_mark_standard"].isna().all())
-        self.assertTrue(rubrics["deduction_rules"].isna().all())
+        self.assertTrue(rubrics["full_mark_standard"].fillna("").str.strip().astype(bool).all())
+        self.assertTrue(rubrics["deduction_rules"].fillna("").str.strip().astype(bool).all())
+        self.assertTrue(ds.has_rubric_criteria(ds.get_rubric_dimensions(_DB_PATH)))
 
     def test_edit_weight_and_rules(self):
         field = ds.list_rubrics(_DB_PATH)["dimension_field"].iloc[0]
