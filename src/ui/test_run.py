@@ -299,6 +299,40 @@ def build_score_summary_rows(score_result, dimensions) -> list[dict[str, str]]:
     return rows
 
 
+def build_score_result_index_rows(score_result, dimensions) -> list[dict[str, str]]:
+    """Build the compact score-result index table. Detail stays in the panel below."""
+    return [
+        {
+            "模型": _model_short_name(outcome.eval_model),
+            "样本": outcome.case_id,
+            "总分": _score_total_label(outcome, dimensions),
+            "状态": _score_status_label(outcome),
+        }
+        for outcome in getattr(score_result, "outcomes", []) or []
+    ]
+
+
+def build_score_draft_detail_panel(outcome: sc.ScoreOutcome, dimensions) -> dict[str, str]:
+    """Build the lightweight detail-panel content for one score draft."""
+    title = (
+        f"{outcome.case_id}｜"
+        f"{_model_short_name(outcome.eval_model)}｜"
+        f"{_score_total_label(outcome, dimensions)}｜"
+        f"{_score_status_label(outcome)}"
+    )
+    meta = (
+        f"裁判模型：{_model_short_name(outcome.judge_model)}｜"
+        f"模型 ID：{outcome.eval_model}"
+    )
+    if outcome.ok:
+        markdown = _score_success_markdown(outcome, dimensions)
+    elif _is_mock_score_outcome(outcome):
+        markdown = _score_mock_markdown()
+    else:
+        markdown = _score_failure_markdown(outcome)
+    return {"title": title, "meta": meta, "markdown": markdown}
+
+
 def build_score_queue_items(compare_result) -> list[er.RunOutcome]:
     """Return successful model answers that can enter judge scoring."""
     if compare_result is None:
@@ -1990,15 +2024,7 @@ def _render_score_result_list(score_result, dimensions) -> None:
     if not score_result.outcomes:
         st.caption("暂无评分草稿。")
         return
-    rows = [
-        {
-            "模型": _model_short_name(outcome.eval_model),
-            "样本": outcome.case_id,
-            "总分": _score_total_label(outcome, dimensions),
-            "状态": _score_status_label(outcome),
-        }
-        for outcome in score_result.outcomes
-    ]
+    rows = build_score_result_index_rows(score_result, dimensions)
     st.markdown("**评分结果**")
     st.dataframe(
         pd.DataFrame(rows),
@@ -2013,7 +2039,7 @@ def _render_score_detail_viewer(score_result, dimensions) -> None:
         return
     options = build_score_view_options(outcomes)
     selected = st.selectbox(
-        "当前评分详情",
+        "查看评分草稿",
         options=[int(item["index"]) for item in options],
         index=default_score_view_index(outcomes),
         format_func=lambda idx: str(options[idx]["label"]),
@@ -2023,69 +2049,77 @@ def _render_score_detail_viewer(score_result, dimensions) -> None:
 
 
 def _render_score_detail(outcome: sc.ScoreOutcome, dimensions) -> None:
-    st.markdown("**当前评分详情**")
-    summary_items = [
-        ("样本", outcome.case_id),
-        ("模型", _model_short_name(outcome.eval_model)),
-        ("总分", _score_total_label(outcome, dimensions)),
-        ("裁判模型", _model_short_name(outcome.judge_model)),
-        ("确认状态", _score_status_label(outcome)),
-    ]
-    _render_answer_summary(
-        summary_items,
-        outcome.eval_model if outcome.eval_model != _model_short_name(outcome.eval_model) else "",
+    panel = build_score_draft_detail_panel(outcome, dimensions)
+    render_markdown_detail_panel(
+        title=panel["title"],
+        meta=panel["meta"],
+        markdown_text=panel["markdown"],
     )
-    if outcome.ok:
-        st.markdown("**复核提示**")
-        st.caption(outcome.review_note or "未返回明确复核提示。")
-        st.markdown("**维度评分**")
-        _render_score_dimensions_table(outcome, dimensions)
-        return
-
-    if _is_mock_score_outcome(outcome):
-        st.markdown("**模拟评分**")
-        st.caption(outcome.review_note or "未配置模型服务密钥，未产生真实评分。")
-        return
-
-    st.markdown("**评分失败**")
-    st.markdown("模型回答已生成，裁判评分失败。")
-    st.markdown(f"原因：{_score_failure_reason_label(outcome)}")
-    st.markdown(f"错误码：`{_dash(outcome.error_code)}`")
-    st.markdown(f"错误信息：{_short(outcome.error_message, 220)}")
-    retry_count = getattr(outcome, "retry_count", 0)
-    if retry_count:
-        st.caption(f"已自动重试 {retry_count} 次。")
-    guidance = _score_failure_guidance(outcome)
-    if guidance:
-        st.caption(guidance)
 
 
-def _render_score_dimensions_table(outcome: sc.ScoreOutcome, dimensions) -> None:
-    rows = []
+def _score_success_markdown(outcome: sc.ScoreOutcome, dimensions) -> str:
+    lines = [
+        "**复核提示**",
+        "",
+        str(outcome.review_note or "").strip() or "未返回明确复核提示。",
+        "",
+        "**维度评分**",
+        "",
+    ]
+    dimension_lines = _score_dimension_markdown_sections(outcome, dimensions)
+    if dimension_lines:
+        lines.extend(dimension_lines)
+    else:
+        lines.append("暂无维度评分。")
+    return "\n".join(lines).strip()
+
+
+def _score_dimension_markdown_sections(outcome: sc.ScoreOutcome, dimensions) -> list[str]:
+    lines: list[str] = []
     for dim in dimensions or []:
         field = str(dim.get("field") or "")
         name = str(dim.get("name") or field)
         full_mark = _n(dim.get("full_mark"))
         score = _n((outcome.scores or {}).get(field))
-        rationale = str((outcome.rationale or {}).get(field) or "").strip() or "未返回明确依据"
-        rows.append(
-            {
-                "维度": name,
-                "得分": score,
-                "满分": full_mark,
-                "评分依据": rationale,
-            }
-        )
-    st.dataframe(
-        pd.DataFrame(rows),
-        hide_index=True,
-        use_container_width=True,
-        column_config={
-            "维度": st.column_config.TextColumn("维度", width="small"),
-            "得分": st.column_config.TextColumn("得分", width="small"),
-            "满分": st.column_config.TextColumn("满分", width="small"),
-            "评分依据": st.column_config.TextColumn("评分依据", width="large"),
-        },
+        rationale = str((outcome.rationale or {}).get(field) or "").strip() or "未返回明确依据。"
+        lines.extend([
+            f"**{name}：{score} / {full_mark}**",
+            "",
+            f"评分依据：{rationale}",
+            "",
+        ])
+    return lines
+
+
+def _score_failure_markdown(outcome: sc.ScoreOutcome) -> str:
+    lines = [
+        "**评分失败**",
+        "",
+        "模型回答已生成，裁判评分失败。",
+        "",
+        f"错误码：`{_dash(outcome.error_code)}`",
+        "",
+        f"错误信息：{_short(outcome.error_message, 260)}",
+    ]
+    retry_count = getattr(outcome, "retry_count", 0)
+    if retry_count:
+        lines.extend(["", f"已自动重试 {retry_count} 次。"])
+    guidance = _score_failure_guidance(outcome)
+    lines.extend([
+        "",
+        "**处理建议**",
+        "",
+        "可稍后重试失败评分；失败评分不会进入评分确认，也不会纳入正式结论。",
+    ])
+    if guidance:
+        lines.extend(["", guidance])
+    return "\n".join(lines).strip()
+
+
+def _score_mock_markdown() -> str:
+    return (
+        "**模拟评分**\n\n"
+        "未配置真实模型服务，未产生真实评分。该结果仅用于链路调试，不进入正式结论。"
     )
 
 
@@ -2315,27 +2349,6 @@ def _score_failure_guidance(outcome) -> str:
     if code == "runtime_error":
         return "已停止后续评分，已生成的评分草稿仍保留。"
     return ""
-
-
-def _score_failure_reason_label(outcome) -> str:
-    code = str(getattr(outcome, "error_code", "") or "").strip().lower()
-    if code in {"timeout", "gateway_timeout"}:
-        return "请求超时。"
-    if code == "rate_limited":
-        return "模型服务触发限流。"
-    if code == "service_unavailable":
-        return "模型服务暂不可用。"
-    if code == "connection_error":
-        return "网络连接异常。"
-    if code in {"missing_api_key", "unauthorized", "forbidden"}:
-        return "API Key 无效或缺失。"
-    if code == "judge_parse_error":
-        return "裁判输出无法解析为评分 JSON。"
-    if code == "empty_response":
-        return "裁判模型返回为空。"
-    if code in {"bad_request", "not_found"}:
-        return "模型 ID 或请求参数异常。"
-    return "裁判模型未返回有效评分。"
 
 
 def _kv_table_html(rows: list[tuple[str, str]]) -> str:

@@ -813,6 +813,13 @@ def markdown_detail_html(markdown_text: str) -> str:
             index += 1
             continue
 
+        bold_heading = re.match(r"^\s*\*\*(.+?)\*\*\s*$", line)
+        if bold_heading and _is_concise_detail_heading(bold_heading.group(1)):
+            close_list()
+            parts.append(f'<div class="markdown-detail-heading">{_inline_markdown_html(bold_heading.group(1))}</div>')
+            index += 1
+            continue
+
         if _is_chinese_section_heading(line):
             close_list()
             parts.append(f'<div class="markdown-detail-heading">{_inline_markdown_html(stripped)}</div>')

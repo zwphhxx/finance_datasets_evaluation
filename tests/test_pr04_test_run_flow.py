@@ -16,6 +16,8 @@ from src.ui.test_run import (
     build_run_queue_items,
     build_score_plan_summary,
     build_score_queue_items,
+    build_score_draft_detail_panel,
+    build_score_result_index_rows,
     build_sample_options,
     build_sample_selection_rows,
     build_score_view_options,
@@ -306,6 +308,12 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn('class="markdown-detail-table"', table_html)
         self.assertIn("<strong>准确性</strong>", table_html)
         self.assertIn('class="markdown-detail-inline-code"', table_html)
+
+    def test_answer_markdown_bold_only_lines_render_as_detail_panel_subtitles(self):
+        html = ui_components.markdown_detail_html("**复核提示**\n\n需人工确认评分依据。")
+
+        self.assertIn('<div class="markdown-detail-heading">复核提示</div>', html)
+        self.assertIn("<p>需人工确认评分依据。</p>", html)
 
     def test_answer_markdown_section_numbers_render_as_subtitles(self):
         html = ui_components.markdown_detail_html(
@@ -606,6 +614,129 @@ class ScoreDraftTests(unittest.TestCase):
         self.assertEqual("10", rows[0]["覆盖度"])
         self.assertEqual("30", rows[0]["总分"])
         self.assertEqual("待确认", rows[0]["裁判状态"])
+
+    def test_score_result_index_rows_only_keep_summary_fields(self):
+        result = sc.ScoreResult(
+            score_run_id="S1",
+            run_id="R1",
+            judge_provider="siliconflow",
+            judge_model="judge/model",
+            mode="live",
+            created_at="2026-07-05T12:00:00",
+            outcomes=(
+                sc.ScoreOutcome(
+                    case_id="CM-001",
+                    task_type="analysis",
+                    eval_model="vendor/model-a",
+                    judge_provider="siliconflow",
+                    judge_model="judge/model",
+                    judge_status="success",
+                    scores={"accuracy_score": 22},
+                    total_score=85,
+                    review_status="pending",
+                    review_note="复核提示不应出现在索引表",
+                ),
+            ),
+        )
+
+        rows = build_score_result_index_rows(result, [{"field": "accuracy_score", "name": "准确性", "full_mark": 30}])
+
+        self.assertEqual([{"模型": "model-a", "样本": "CM-001", "总分": "85 / 30", "状态": "待确认"}], rows)
+        self.assertNotIn("模型ID", rows[0])
+        self.assertNotIn("复核提示", rows[0])
+        self.assertNotIn("评分依据", rows[0])
+
+    def test_success_score_draft_detail_uses_markdown_panel_content(self):
+        dimensions = [
+            {"field": "accuracy_score", "name": "专业准确性", "full_mark": 30},
+            {"field": "coverage_score", "name": "风险覆盖", "full_mark": 20},
+        ]
+        outcome = sc.ScoreOutcome(
+            case_id="CM-001",
+            task_type="analysis",
+            eval_model="Pro/moonshotai/Kimi-K2.6",
+            judge_provider="siliconflow",
+            judge_model="deepseek-ai/DeepSeek-V4-Pro",
+            judge_status="success",
+            scores={"accuracy_score": 22, "coverage_score": 16},
+            total_score=38,
+            rationale={"accuracy_score": "判断标准准确。", "coverage_score": "覆盖主要风险。"},
+            review_note="需人工确认评分依据。",
+            review_status="pending",
+        )
+
+        panel = build_score_draft_detail_panel(outcome, dimensions)
+
+        self.assertEqual("CM-001｜Kimi-K2.6｜38 / 50｜待确认", panel["title"])
+        self.assertIn("裁判模型：DeepSeek-V4-Pro", panel["meta"])
+        self.assertIn("模型 ID：Pro/moonshotai/Kimi-K2.6", panel["meta"])
+        self.assertIn("**复核提示**", panel["markdown"])
+        self.assertIn("需人工确认评分依据。", panel["markdown"])
+        self.assertIn("**维度评分**", panel["markdown"])
+        self.assertIn("**专业准确性：22 / 30**", panel["markdown"])
+        self.assertIn("评分依据：判断标准准确。", panel["markdown"])
+
+    def test_success_score_draft_detail_uses_fallback_review_note_and_rationale(self):
+        outcome = sc.ScoreOutcome(
+            case_id="CM-002",
+            task_type="analysis",
+            eval_model="vendor/model-a",
+            judge_provider="siliconflow",
+            judge_model="judge/model",
+            judge_status="success",
+            scores={"accuracy_score": 12},
+            total_score=12,
+            rationale={},
+            review_note="",
+        )
+
+        panel = build_score_draft_detail_panel(outcome, [{"field": "accuracy_score", "name": "准确性", "full_mark": 30}])
+
+        self.assertIn("未返回明确复核提示。", panel["markdown"])
+        self.assertIn("评分依据：未返回明确依据。", panel["markdown"])
+
+    def test_failed_score_draft_detail_shows_failure_without_dimension_table(self):
+        outcome = sc.ScoreOutcome(
+            case_id="CM-003",
+            task_type="analysis",
+            eval_model="vendor/model-a",
+            judge_provider="siliconflow",
+            judge_model="judge/model",
+            judge_status="failed",
+            scores={},
+            total_score=None,
+            error_code="timeout",
+            error_message="请求超时，请稍后重试或调大 SILICONFLOW_TIMEOUT_SECONDS。",
+        )
+
+        panel = build_score_draft_detail_panel(outcome, [{"field": "accuracy_score", "name": "准确性", "full_mark": 30}])
+
+        self.assertEqual("CM-003｜model-a｜未评分｜失败", panel["title"])
+        self.assertIn("**评分失败**", panel["markdown"])
+        self.assertIn("模型回答已生成，裁判评分失败。", panel["markdown"])
+        self.assertIn("错误码：`timeout`", panel["markdown"])
+        self.assertIn("错误信息：请求超时", panel["markdown"])
+        self.assertIn("失败评分不会进入评分确认，也不会纳入正式结论。", panel["markdown"])
+        self.assertNotIn("**维度评分**", panel["markdown"])
+
+    def test_mock_score_draft_detail_is_marked_as_mock(self):
+        outcome = sc.ScoreOutcome(
+            case_id="CM-004",
+            task_type="analysis",
+            eval_model="vendor/model-a",
+            judge_provider="mock",
+            judge_model="judge/model",
+            judge_status="mock",
+            scores={},
+            total_score=None,
+            review_note="",
+        )
+
+        panel = build_score_draft_detail_panel(outcome, [])
+
+        self.assertIn("**模拟评分**", panel["markdown"])
+        self.assertIn("未配置真实模型服务，未产生真实评分。", panel["markdown"])
+        self.assertIn("该结果仅用于链路调试，不进入正式结论。", panel["markdown"])
 
     def test_failed_score_retry_items_only_retry_failed_scores_with_successful_answers(self):
         import src.ui.test_run as tr
