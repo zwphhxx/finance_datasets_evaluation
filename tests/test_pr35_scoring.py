@@ -347,6 +347,38 @@ class ScorePersistenceTests(unittest.TestCase):
         self.assertEqual(int(after["total_score"]), 75)
         self.assertEqual(after["review_note"], "复核已调整")
 
+    def test_confirm_review_returns_false_when_row_missing(self):
+        edited = {"accuracy_score": 25, "reasoning_score": 15, "coverage_score": 15,
+                  "evidence_score": 10, "expression_score": 10}
+
+        self.assertFalse(sc.confirm_score_review(99999999, edited, "不存在的评分", db_path=_DB_PATH))
+
+    def test_skip_review_returns_false_when_row_missing(self):
+        self.assertFalse(sc.skip_score_review(99999999, "暂不采用：不存在的评分", db_path=_DB_PATH))
+
+    def test_confirm_review_returns_false_when_row_already_processed(self):
+        provider = get_provider("mock")
+        compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(1))
+        result = sc.score_compare(_FakeJudge(), compare, {}, {}, _DIMENSIONS, judge_model_id="judge/x")
+        self.assertTrue(sc.persist_score_result(result, db_path=_DB_PATH))
+        row = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)[0]
+        edited = {"accuracy_score": 25, "reasoning_score": 15, "coverage_score": 15,
+                  "evidence_score": 10, "expression_score": 10}
+
+        self.assertTrue(sc.confirm_score_review(int(row["id"]), edited, "首次确认", db_path=_DB_PATH))
+        self.assertFalse(sc.confirm_score_review(int(row["id"]), edited, "重复确认", db_path=_DB_PATH))
+
+    def test_confirm_review_returns_false_for_failed_judge_score(self):
+        provider = get_provider("mock")
+        compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(1))
+        result = sc.score_compare(_GarbageJudge(), compare, {}, {}, _DIMENSIONS, judge_model_id="judge/x")
+        self.assertTrue(sc.persist_score_result(result, db_path=_DB_PATH))
+        row = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)[0]
+        edited = {"accuracy_score": 25, "reasoning_score": 15, "coverage_score": 15,
+                  "evidence_score": 10, "expression_score": 10}
+
+        self.assertFalse(sc.confirm_score_review(int(row["id"]), edited, "失败评分不能确认", db_path=_DB_PATH))
+
     def test_incremental_score_persist_dedupes_final_persist(self):
         provider = get_provider("mock")
         compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(1))

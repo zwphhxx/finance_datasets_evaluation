@@ -35,6 +35,11 @@ def set_last_score(score_result: Any) -> None:
     st.session_state[_SCORE_KEY] = score_result
 
 
+def clear_last_score() -> None:
+    """清空最近一次裁判评分结果，避免会话草稿覆盖 SQLite 真实状态。"""
+    st.session_state.pop(_SCORE_KEY, None)
+
+
 def has_run() -> bool:
     """当前会话是否已有运行结果。"""
     return get_last_run() is not None

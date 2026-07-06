@@ -33,9 +33,7 @@ def render_conclusions_page(data_bundle: dict) -> None:
     confirmed_live, pending_live = cc.split_live_scores(live_scores)
     responses = cc.load_live_responses()
     model_summaries = cc.build_model_issue_summaries(confirmed_live, pd.DataFrame(), tasks)
-    draft_rows = cc.build_draft_rows(pending_live, responses)
-    if not draft_rows:
-        draft_rows = _session_draft_rows()
+    draft_rows = build_page_draft_rows(pending_live, responses)
 
     config = get_page_config("conclusions")
     render_page_heading(config.title, config.question)
@@ -45,6 +43,14 @@ def render_conclusions_page(data_bundle: dict) -> None:
     _render_model_recommendations(model_summaries)
     _render_model_issue_details(model_summaries)
     _render_drafts(draft_rows)
+
+
+def build_page_draft_rows(pending_live: pd.DataFrame, responses: pd.DataFrame) -> list[dict]:
+    """Build pending draft rows for the page; SQLite state wins over stale session data."""
+    draft_rows = cc.build_draft_rows(pending_live, responses)
+    if draft_rows or ds.database_ready():
+        return draft_rows
+    return _session_draft_rows()
 
 
 # --------------------------------------------------------------------------- #

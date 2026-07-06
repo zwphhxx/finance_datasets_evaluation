@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from app.services import dataset_service as ds
+from app.services import eval_state
 from app.services import scorer as sc
 from src.ui.components import render_empty_state
 from src.ui.review_queue import record_review_action_result, review_status_label
@@ -118,10 +119,11 @@ def render_skip_dialog(item: dict) -> None:
                 st.warning("请填写暂不采用原因。")
                 return
             if sc.skip_score_review(row_id, f"暂不采用：{cleaned}"):
+                eval_state.clear_last_score()
                 record_review_action_result("skip", row_id)
                 st.rerun()
             else:
-                st.warning("暂不采用失败：请刷新页面后重试，或检查 SQLite 数据层是否已初始化。")
+                st.warning("暂不采用失败：评分记录未更新，请刷新页面后重试。")
     with col2:
         if st.button("取消", type="tertiary", key=f"review_skip_cancel::{row_id}", use_container_width=True):
             st.rerun()
@@ -165,7 +167,8 @@ def confirm_review(
         st.warning("建议复核或不建议采用的评分，需要填写复核说明后再确认。")
         return
     if sc.confirm_score_review(row_id, edited, note):
+        eval_state.clear_last_score()
         record_review_action_result(action_type, row_id)
         st.rerun()
     else:
-        st.warning("确认失败：请刷新页面后重试，或检查 SQLite 数据层是否已初始化。")
+        st.warning("确认失败：评分记录未更新，请刷新页面后重试。")

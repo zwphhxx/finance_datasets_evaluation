@@ -17,6 +17,7 @@ from pathlib import Path
 import pandas as pd
 
 from app.services import conclusions as cc
+from src.ui import conclusions as conclusions_page
 from src.data_service import load_all_data
 from src.ui.navigation import PAGES
 from src.ui.page_config import PAGE_CONFIG_BY_KEY, PAGE_CONTEXTS
@@ -170,6 +171,38 @@ class DraftRowTests(unittest.TestCase):
         pending = pd.DataFrame([_live_row("C1", "live-model", "pending")])
         rows = cc.build_draft_rows(pending, None)
         self.assertEqual(rows[0]["answer_text"], "")
+
+    def test_conclusion_page_does_not_use_session_drafts_when_sqlite_ready(self):
+        calls = {"session": 0}
+        original_ready = conclusions_page.ds.database_ready
+        original_session = conclusions_page._session_draft_rows
+        try:
+            conclusions_page.ds.database_ready = lambda: True
+            conclusions_page._session_draft_rows = lambda: calls.__setitem__("session", calls["session"] + 1) or [
+                {"case_id": "OLD", "review_status": "pending"}
+            ]
+
+            rows = conclusions_page.build_page_draft_rows(pd.DataFrame(), pd.DataFrame())
+        finally:
+            conclusions_page.ds.database_ready = original_ready
+            conclusions_page._session_draft_rows = original_session
+
+        self.assertEqual([], rows)
+        self.assertEqual(0, calls["session"])
+
+    def test_conclusion_page_uses_session_drafts_only_when_sqlite_unavailable(self):
+        original_ready = conclusions_page.ds.database_ready
+        original_session = conclusions_page._session_draft_rows
+        try:
+            conclusions_page.ds.database_ready = lambda: False
+            conclusions_page._session_draft_rows = lambda: [{"case_id": "SESSION", "review_status": "pending"}]
+
+            rows = conclusions_page.build_page_draft_rows(pd.DataFrame(), pd.DataFrame())
+        finally:
+            conclusions_page.ds.database_ready = original_ready
+            conclusions_page._session_draft_rows = original_session
+
+        self.assertEqual("SESSION", rows[0]["case_id"])
 
 
 class RobustnessTests(unittest.TestCase):

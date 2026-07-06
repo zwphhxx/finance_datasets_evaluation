@@ -718,6 +718,14 @@ def confirm_score_review(
         path = db_path or get_db_path()
         if not database_ready(path):
             return False
+        repo = Repository(path)
+        existing = repo.get("live_run_scores", row_id)
+        if not existing:
+            return False
+        judge_status = str(existing.get("judge_status") or "").strip().lower()
+        review_status = str(existing.get("review_status") or "pending").strip().lower()
+        if judge_status != STATUS_SUCCESS or review_status != "pending":
+            return False
         changes: dict[str, Any] = {"review_status": "confirmed"}
         total = 0
         for field_name, value in edited_scores.items():
@@ -728,8 +736,8 @@ def confirm_score_review(
         changes["total_score"] = total
         if review_note:
             changes["review_note"] = review_note
-        Repository(path).update("live_run_scores", row_id, changes)
-        return True
+        updated = repo.update("live_run_scores", row_id, changes)
+        return updated > 0
     except Exception:
         return False
 
@@ -800,11 +808,13 @@ def confirm_score_reviews_bulk(
         changes: dict[str, Any] = {"review_status": "confirmed"}
         if review_note:
             changes["review_note"] = review_note
+        confirmed_ids: list[int] = []
         for row_id in valid_ids:
-            repo.update("live_run_scores", row_id, changes)
-        failed = [row_id for row_id in unique_ids if row_id not in set(valid_ids)]
+            if repo.update("live_run_scores", row_id, changes) > 0:
+                confirmed_ids.append(row_id)
+        failed = [row_id for row_id in unique_ids if row_id not in set(confirmed_ids)]
         reason = "" if not failed else "仅待确认且裁判成功的评分支持批量确认。"
-        return _result(valid_ids, failed, reason)
+        return _result(confirmed_ids, failed, reason)
     except Exception:
         return _result([], unique_ids, "批量确认失败。")
 
@@ -823,11 +833,19 @@ def skip_score_review(
         path = db_path or get_db_path()
         if not database_ready(path):
             return False
+        repo = Repository(path)
+        existing = repo.get("live_run_scores", row_id)
+        if not existing:
+            return False
+        judge_status = str(existing.get("judge_status") or "").strip().lower()
+        review_status = str(existing.get("review_status") or "pending").strip().lower()
+        if judge_status != STATUS_SUCCESS or review_status != "pending":
+            return False
         changes: dict[str, Any] = {"review_status": "skipped"}
         if review_note:
             changes["review_note"] = review_note
-        Repository(path).update("live_run_scores", row_id, changes)
-        return True
+        updated = repo.update("live_run_scores", row_id, changes)
+        return updated > 0
     except Exception:
         return False
 

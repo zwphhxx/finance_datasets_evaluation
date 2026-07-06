@@ -69,6 +69,12 @@ class ReviewStructureTests(unittest.TestCase):
         self.assertNotIn("number_input", actions_source)
         self.assertNotIn("text_area", actions_source)
 
+    def test_confirmation_actions_clear_stale_session_score_and_show_update_failure(self):
+        source = Path("src/ui/review_actions.py").read_text(encoding="utf-8")
+        self.assertIn("eval_state.clear_last_score()", source)
+        self.assertIn("确认失败：评分记录未更新，请刷新页面后重试。", source)
+        self.assertIn("暂不采用失败：评分记录未更新，请刷新页面后重试。", source)
+
     def test_review_page_does_not_use_risk_note_cards(self):
         combined = "\n".join(
             Path(path).read_text(encoding="utf-8")
