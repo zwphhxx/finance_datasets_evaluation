@@ -7,6 +7,7 @@ from app.models.base import ModelInfo
 from app.services import dataset_service as ds
 from app.services import eval_runner as er
 from app.services import scorer as sc
+from src.ui import components as ui_components
 from src.ui.test_run import (
     build_outcome_view_options,
     build_model_selection_options,
@@ -24,7 +25,6 @@ from src.ui.test_run import (
     filter_sample_selection_options,
     get_advanced_setting_items,
     get_test_run_steps,
-    normalize_answer_markdown,
     _model_short_name,
     _siliconflow_balance_text,
 )
@@ -116,16 +116,20 @@ class TestRunFlowStructureTests(unittest.TestCase):
 
         self.assertIn("build_outcome_view_options", source)
         self.assertIn("default_outcome_view_index", source)
-        self.assertIn("normalize_answer_markdown", source)
+        self.assertIn("render_model_answer_detail", source)
+        self.assertIn("render_markdown_detail_panel", source)
         self.assertIn("_model_short_name", source)
         self.assertIn("_task_lookup_for_result", source)
         self.assertIn("answer-viewer-summary", Path("src/ui/components.py").read_text(encoding="utf-8"))
+        self.assertIn("markdown-detail-heading", Path("src/ui/components.py").read_text(encoding="utf-8"))
         self.assertIn('st.selectbox(\n        "查看回答"', source)
         self.assertIn("_render_selected_outcome_detail", source)
         self.assertIn("失败项不会进入评分草稿", source)
         self.assertIn("默认展示第一条失败原因", source)
         self.assertNotIn("for index, outcome in enumerate(result.outcomes", results_source)
         self.assertNotIn("_render_run_outcome_card(outcome, index)", results_source)
+        self.assertNotIn("st.markdown(normalize_answer_markdown(_answer_preview(answer)))", source)
+        self.assertNotIn("st.markdown(normalize_answer_markdown(outcome.answer_text or \"—\"))", source)
 
     def test_score_draft_streams_and_shows_rationale_by_default(self):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
@@ -267,15 +271,28 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertEqual("DeepSeek-V4-Pro", _model_short_name("deepseek-ai/DeepSeek-V4-Pro"))
         self.assertEqual("plain-model", _model_short_name("plain-model"))
 
-    def test_answer_markdown_headings_are_downgraded(self):
-        text = "# 一级\n## 二级\n### 三级\n- 列表\n```python\n# keep\n```"
-        normalized = normalize_answer_markdown(text)
+    def test_answer_markdown_headings_render_as_detail_panel_subtitles(self):
+        self.assertTrue(hasattr(ui_components, "markdown_detail_html"))
 
-        self.assertIn("#### 一级", normalized)
-        self.assertIn("#### 二级", normalized)
-        self.assertIn("##### 三级", normalized)
-        self.assertIn("- 列表", normalized)
-        self.assertIn("```python\n# keep\n```", normalized)
+        text = "# 一级\n## 二级\n### 三级\n- 列表\n```python\n# keep\n```"
+        html = ui_components.markdown_detail_html(text)
+
+        self.assertIn('class="markdown-detail-heading"', html)
+        self.assertIn("一级", html)
+        self.assertIn("二级", html)
+        self.assertIn("三级", html)
+        self.assertIn("<li>列表</li>", html)
+        self.assertIn("# keep", html)
+        self.assertNotIn("<h1", html)
+        self.assertNotIn("<h2", html)
+        self.assertNotIn("#### 一级", html)
+
+        table_html = ui_components.markdown_detail_html(
+            "| 维度 | 得分 |\n| --- | ---: |\n| **准确性** | `18/20` |"
+        )
+        self.assertIn('class="markdown-detail-table"', table_html)
+        self.assertIn("<strong>准确性</strong>", table_html)
+        self.assertIn('class="markdown-detail-inline-code"', table_html)
 
 
 class SampleSelectionTests(unittest.TestCase):

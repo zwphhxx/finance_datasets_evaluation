@@ -25,6 +25,7 @@ from src.ui.components import (
     render_empty_state,
     render_html,
     render_inline_status,
+    render_markdown_detail_panel,
     render_numbered_section,
     render_page_heading,
 )
@@ -209,7 +210,7 @@ def default_outcome_view_index(outcomes: list[er.RunOutcome]) -> int:
 
 
 def normalize_answer_markdown(answer: str) -> str:
-    """Downgrade model-authored Markdown headings so answers do not overpower the page."""
+    """Convert model-authored Markdown headings into small text headings."""
     lines: list[str] = []
     in_fence = False
     for line in str(answer or "").splitlines():
@@ -225,10 +226,8 @@ def normalize_answer_markdown(answer: str) -> str:
         if not match:
             lines.append(line)
             continue
-        indent, hashes, text = match.groups()
-        level = len(hashes)
-        downgraded = {1: 4, 2: 4, 3: 5, 4: 5, 5: 6, 6: 6}[level]
-        lines.append(f"{indent}{'#' * downgraded}{text}")
+        indent, _hashes, text = match.groups()
+        lines.append(f"{indent}**{text.strip()}**")
     return "\n".join(lines)
 
 
@@ -1457,8 +1456,7 @@ def _render_run_outcome_card(
     st.caption(f"任务编号：{outcome.case_id} · 状态：{status} · 耗时：{elapsed}")
     if outcome.success:
         answer = outcome.answer_text or "—"
-        preview = _answer_preview(answer)
-        st.markdown(normalize_answer_markdown(preview))
+        render_model_answer_detail(outcome, preview=True)
         if len(answer) > _ANSWER_PREVIEW_LIMIT and not compact:
             if st.button(
                 "查看全文",
@@ -1478,8 +1476,7 @@ def _render_run_outcome_card(
 @st.dialog("模型回答全文", width="large")
 def _render_full_answer_dialog(outcome: er.RunOutcome) -> None:
     st.caption(f"任务编号：{outcome.case_id} · 模型：{_model_short_name(outcome.model_id)}")
-    st.markdown("**模型回答**")
-    st.markdown(normalize_answer_markdown(outcome.answer_text or "—"))
+    render_model_answer_detail(outcome, preview=False)
 
 
 @st.dialog("技术明细", width="large")
@@ -1543,8 +1540,7 @@ def _render_selected_outcome_detail(outcome: er.RunOutcome, task_lookup: dict[st
         summary_items.append(("回答长度", _answer_length_label(outcome)))
         _render_answer_summary(summary_items, outcome.model_id if outcome.model_id != model_short else "")
         answer = outcome.answer_text or "—"
-        st.markdown("**模型回答**")
-        st.markdown(normalize_answer_markdown(_answer_preview(answer)))
+        render_model_answer_detail(outcome, preview=True)
         if len(answer) > _ANSWER_PREVIEW_LIMIT:
             if st.button(
                 "查看全文",
@@ -1561,6 +1557,12 @@ def _render_selected_outcome_detail(outcome: er.RunOutcome, task_lookup: dict[st
     guidance = _failure_guidance(outcome)
     if guidance:
         st.caption(guidance)
+
+
+def render_model_answer_detail(outcome: er.RunOutcome, *, preview: bool = True) -> None:
+    answer = outcome.answer_text or "—"
+    display_text = _answer_preview(answer) if preview else answer
+    render_markdown_detail_panel("模型回答", display_text)
 
 
 def _render_answer_summary(items: list[tuple[str, str]], model_id: str = "") -> None:

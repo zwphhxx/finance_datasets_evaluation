@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from html import escape
+import re
 from textwrap import dedent
 
 import streamlit as st
@@ -404,6 +405,71 @@ header,
     margin-top: 0.5rem;
     overflow-wrap: anywhere;
 }
+.markdown-detail-body {
+    color: var(--fde-ink);
+    font-size: 0.94rem;
+    font-weight: 400;
+    line-height: 1.62;
+}
+.markdown-detail-body p {
+    margin: 0 0 0.68rem 0;
+    font-weight: 400;
+}
+.markdown-detail-heading {
+    color: var(--fde-muted);
+    font-size: 0.86rem;
+    font-weight: 760;
+    line-height: 1.45;
+    margin: 0.95rem 0 0.42rem 0;
+}
+.markdown-detail-heading:first-child {
+    margin-top: 0;
+}
+.markdown-detail-list {
+    margin: 0.26rem 0 0.74rem 1.1rem;
+    padding: 0;
+}
+.markdown-detail-list li {
+    margin: 0.18rem 0;
+    line-height: 1.6;
+}
+.markdown-detail-code {
+    background: var(--fde-surface-subtle);
+    border: 1px solid var(--fde-line);
+    border-radius: 8px;
+    color: var(--fde-text);
+    font-size: 0.84rem;
+    line-height: 1.55;
+    margin: 0.55rem 0 0.8rem 0;
+    overflow: auto;
+    padding: 0.68rem 0.78rem;
+}
+.markdown-detail-inline-code {
+    background: var(--fde-surface-subtle);
+    border: 1px solid var(--fde-line);
+    border-radius: 4px;
+    padding: 0.04rem 0.24rem;
+}
+.markdown-detail-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    margin: 0.5rem 0 0.85rem 0;
+}
+.markdown-detail-table th,
+.markdown-detail-table td {
+    border-bottom: 1px solid var(--fde-line);
+    padding: 0.45rem 0.45rem;
+    text-align: left;
+    vertical-align: top;
+}
+.markdown-detail-table th {
+    background: var(--fde-surface-subtle);
+    color: var(--fde-muted);
+    font-size: 0.78rem;
+    font-weight: 720;
+}
 .clean-list {
     margin: 0.25rem 0 0.85rem 1.1rem;
     padding: 0;
@@ -614,6 +680,158 @@ def render_detail_panel(body_html: str, title: str | None = None, meta: str | No
             <div class="detail-panel-body sample-detail-panel-body">{body_html}</div>
         </div>
         """
+    )
+
+
+def markdown_detail_html(markdown_text: str) -> str:
+    """Render model-authored Markdown into a constrained detail-pane HTML subset."""
+    lines = str(markdown_text or "").splitlines()
+    parts: list[str] = []
+    list_type: str | None = None
+    code_lines: list[str] = []
+    in_code = False
+    index = 0
+
+    def close_list() -> None:
+        nonlocal list_type
+        if list_type:
+            parts.append(f"</{list_type}>")
+            list_type = None
+
+    while index < len(lines):
+        line = lines[index]
+        stripped = line.strip()
+
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            if in_code:
+                parts.append(
+                    '<pre class="markdown-detail-code"><code>'
+                    + escape("\n".join(code_lines))
+                    + "</code></pre>"
+                )
+                code_lines = []
+                in_code = False
+            else:
+                close_list()
+                in_code = True
+                code_lines = []
+            index += 1
+            continue
+        if in_code:
+            code_lines.append(line)
+            index += 1
+            continue
+
+        if not stripped:
+            close_list()
+            index += 1
+            continue
+
+        if _is_markdown_table_start(lines, index):
+            close_list()
+            table_rows, next_index = _collect_markdown_table(lines, index)
+            parts.append(_markdown_table_html(table_rows))
+            index = next_index
+            continue
+
+        heading = re.match(r"^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$", line)
+        if heading:
+            close_list()
+            parts.append(f'<div class="markdown-detail-heading">{_inline_markdown_html(heading.group(1))}</div>')
+            index += 1
+            continue
+
+        unordered = re.match(r"^\s*[-*]\s+(.+)$", line)
+        if unordered:
+            if list_type != "ul":
+                close_list()
+                list_type = "ul"
+                parts.append('<ul class="markdown-detail-list">')
+            parts.append(f"<li>{_inline_markdown_html(unordered.group(1))}</li>")
+            index += 1
+            continue
+
+        ordered = re.match(r"^\s*\d+[.)]\s+(.+)$", line)
+        if ordered:
+            if list_type != "ol":
+                close_list()
+                list_type = "ol"
+                parts.append('<ol class="markdown-detail-list">')
+            parts.append(f"<li>{_inline_markdown_html(ordered.group(1))}</li>")
+            index += 1
+            continue
+
+        close_list()
+        parts.append(f"<p>{_inline_markdown_html(stripped)}</p>")
+        index += 1
+
+    close_list()
+    if in_code:
+        parts.append(
+            '<pre class="markdown-detail-code"><code>'
+            + escape("\n".join(code_lines))
+            + "</code></pre>"
+        )
+    return "\n".join(parts) or "<p>—</p>"
+
+
+def render_markdown_detail_panel(
+    title: str,
+    markdown_text: str,
+    meta: str | None = None,
+) -> None:
+    body_html = f'<div class="markdown-detail-body">{markdown_detail_html(markdown_text)}</div>'
+    render_detail_panel(body_html, title=title, meta=meta)
+
+
+def _inline_markdown_html(text: str) -> str:
+    html = escape(str(text or "").strip())
+    html = re.sub(r"`([^`]+)`", r'<code class="markdown-detail-inline-code">\1</code>', html)
+    html = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", html)
+    return html
+
+
+def _is_markdown_table_start(lines: list[str], index: int) -> bool:
+    if index + 1 >= len(lines):
+        return False
+    header = lines[index].strip()
+    divider = lines[index + 1].strip()
+    if "|" not in header or "|" not in divider:
+        return False
+    cells = [cell.strip() for cell in divider.strip("|").split("|")]
+    return bool(cells) and all(re.match(r"^:?-{3,}:?$", cell or "") for cell in cells)
+
+
+def _collect_markdown_table(lines: list[str], index: int) -> tuple[list[list[str]], int]:
+    rows: list[list[str]] = []
+    cursor = index
+    while cursor < len(lines):
+        line = lines[cursor].strip()
+        if "|" not in line:
+            break
+        if cursor == index + 1:
+            cursor += 1
+            continue
+        rows.append([cell.strip() for cell in line.strip("|").split("|")])
+        cursor += 1
+    return rows, cursor
+
+
+def _markdown_table_html(rows: list[list[str]]) -> str:
+    if not rows:
+        return ""
+    header = rows[0]
+    body_rows = rows[1:]
+    header_html = "".join(f"<th>{_inline_markdown_html(cell)}</th>" for cell in header)
+    body_html = "".join(
+        "<tr>" + "".join(f"<td>{_inline_markdown_html(cell)}</td>" for cell in row) + "</tr>"
+        for row in body_rows
+    )
+    return (
+        '<table class="markdown-detail-table">'
+        f"<thead><tr>{header_html}</tr></thead>"
+        f"<tbody>{body_html}</tbody>"
+        "</table>"
     )
 
 
