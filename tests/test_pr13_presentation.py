@@ -31,7 +31,6 @@ class CaseStudyPresentationTests(unittest.TestCase):
         self.assertIn("本项目评估大模型在财务、法律、投行等专业场景中的回答质量", source)
         self.assertIn("主要问题", source)
         self.assertIn("使用边界", source)
-        self.assertIn("样本库 → 发起评测 → 评分草稿 → 人工确认 → 评测结论", source)
         self.assertIn("被测模型不会看到 Gold Answer、必须覆盖点、不可接受错误或 Rubric", source)
         self.assertIn("待确认、暂不采用、评分失败或示例评价均不进入正式结论", source)
         self.assertNotIn("维护样本", source)
@@ -51,6 +50,29 @@ class CaseStudyPresentationTests(unittest.TestCase):
             self.assertIn(f'title="{title}"', source)
             self.assertIn(f'lead="{lead}"', source)
         self.assertNotIn("render_numbered_section", source)
+
+    def test_case_study_keeps_process_line_only_in_flow_section(self):
+        source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
+        self.assertNotIn("PROCESS_TEXT", source)
+        self.assertNotIn("process_text=", source)
+        self.assertEqual(1, source.count("render_process_line(PROCESS_STEPS)"))
+        self.assertIn('title="评测流程"', source)
+        self.assertLess(source.index('title="评测流程"'), source.index("render_process_line(PROCESS_STEPS)"))
+
+    def test_brief_and_section_title_styles_are_stronger(self):
+        css = Path("src/ui/components.py").read_text(encoding="utf-8")
+        for snippet in [
+            "font-size: 2.35rem;",
+            "font-weight: 820;",
+            "letter-spacing: 0;",
+            "border-left: 2px solid var(--fde-accent);",
+            "grid-template-columns: 5.4rem minmax(0, 1fr);",
+            "font-size: 2.45rem;",
+            "font-size: 1.55rem;",
+            "grid-template-columns: 3.1rem minmax(0, 1fr);",
+            "font-size: 1.22rem;",
+        ]:
+            self.assertIn(snippet, css)
 
 
 class TaskPresentationTests(unittest.TestCase):

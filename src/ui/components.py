@@ -197,19 +197,19 @@ header,
 }
 .brief-title {
     color: var(--fde-ink);
-    font-size: 2rem;
-    font-weight: 780;
-    line-height: 1.18;
+    font-size: 2.35rem;
+    font-weight: 820;
+    line-height: 1.12;
     letter-spacing: 0;
     margin: 0;
-    max-width: 54rem;
+    max-width: 58rem;
 }
 .brief-subtitle {
     color: var(--fde-muted);
-    font-size: 0.98rem;
-    line-height: 1.62;
-    margin: 0.7rem 0 0 0;
-    max-width: 46rem;
+    font-size: 1.05rem;
+    line-height: 1.65;
+    margin: 0.75rem 0 0 0;
+    max-width: 50rem;
 }
 .brief-meta {
     color: var(--fde-muted);
@@ -226,10 +226,10 @@ header,
     align-items: center;
     flex-wrap: wrap;
     gap: 0.58rem;
-    margin: 1rem 0 0.25rem 0;
+    margin: 0.95rem 0 0.25rem 0;
     color: var(--fde-ink);
     font-size: 0.94rem;
-    font-weight: 680;
+    font-weight: 700;
 }
 .process-line-separator {
     width: 2.2rem;
@@ -245,73 +245,77 @@ header,
     margin: 0.85rem 0 0.35rem 0;
 }
 .brief-note {
-    color: var(--fde-text);
-    font-size: 0.95rem;
-    line-height: 1.62;
-    margin: 0.55rem 0 0 0;
-    max-width: 48rem;
+    border-left: 2px solid var(--fde-accent);
+    color: var(--fde-ink);
+    font-size: 1rem;
+    line-height: 1.65;
+    margin: 0.75rem 0 0 0;
+    max-width: 50rem;
+    padding-left: 0.85rem;
 }
 .home-section {
     display: grid;
-    grid-template-columns: 4.4rem minmax(0, 1fr);
-    gap: 1.1rem;
-    margin: 1.7rem 0 0 0;
-    padding: 1.3rem 0 0 0;
-    border-top: 1px solid var(--fde-line);
+    grid-template-columns: 5.4rem minmax(0, 1fr);
+    gap: 1.35rem;
+    margin: 2.1rem 0 0 0;
+    padding: 1.55rem 0 0 0;
+    border-top: 1px solid var(--fde-line-strong);
 }
 .home-section-number {
     color: var(--fde-accent);
-    font-size: 2rem;
-    font-weight: 760;
+    font-size: 2.45rem;
+    font-weight: 820;
     line-height: 1;
     letter-spacing: 0;
 }
 .home-section-title {
     color: var(--fde-ink);
-    font-size: 1.28rem;
-    font-weight: 780;
-    line-height: 1.28;
+    font-size: 1.55rem;
+    font-weight: 820;
+    line-height: 1.22;
     margin: 0;
 }
 .home-section-lead {
-    color: var(--fde-accent);
-    font-size: 1rem;
+    color: var(--fde-text);
+    font-size: 1.03rem;
     font-weight: 680;
     line-height: 1.55;
-    margin: 0.32rem 0 0.7rem 0;
+    margin: 0.38rem 0 0.85rem 0;
 }
 .home-section-body p {
     color: var(--fde-text);
-    font-size: 0.95rem;
+    font-size: 0.96rem;
     font-weight: 400;
     line-height: 1.72;
     margin: 0 0 0.72rem 0;
 }
 .numbered-section {
     display: grid;
-    grid-template-columns: 2.4rem minmax(0, 1fr);
-    gap: 0.8rem;
+    grid-template-columns: 3.1rem minmax(0, 1fr);
+    gap: 0.9rem;
     align-items: start;
-    margin: 1.55rem 0 0.72rem 0;
+    margin: 1.8rem 0 0.85rem 0;
+    padding-top: 0.85rem;
+    border-top: 1px solid var(--fde-line);
 }
 .numbered-section-index {
-    color: var(--fde-muted);
-    font-size: 0.78rem;
-    font-weight: 760;
-    letter-spacing: 0.03em;
-    padding-top: 0.12rem;
+    color: var(--fde-accent);
+    font-size: 0.98rem;
+    font-weight: 820;
+    letter-spacing: 0.02em;
+    padding-top: 0.1rem;
 }
 .numbered-section-title {
     color: var(--fde-ink);
-    font-size: 1.08rem;
-    font-weight: 760;
-    line-height: 1.35;
+    font-size: 1.22rem;
+    font-weight: 820;
+    line-height: 1.3;
 }
 .numbered-section-caption {
     color: var(--fde-muted);
-    font-size: 0.9rem;
+    font-size: 0.92rem;
     line-height: 1.55;
-    margin-top: 0.16rem;
+    margin-top: 0.22rem;
 }
 .inline-status {
     display: grid;
@@ -789,20 +793,23 @@ div[data-testid="stDialog"] {
     }
     .numbered-section {
         grid-template-columns: 1fr;
-        gap: 0.18rem;
+        gap: 0.22rem;
     }
     .brief-title {
-        font-size: 1.62rem;
+        font-size: 1.78rem;
     }
     .process-line-separator {
         width: 1.2rem;
     }
     .home-section {
         grid-template-columns: 1fr;
-        gap: 0.4rem;
+        gap: 0.45rem;
     }
     .home-section-number {
-        font-size: 1.6rem;
+        font-size: 1.75rem;
+    }
+    .home-section-title {
+        font-size: 1.32rem;
     }
 }
 </style>

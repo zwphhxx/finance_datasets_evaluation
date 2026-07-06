@@ -12,7 +12,6 @@ from src.ui.components import (
 
 
 PROCESS_STEPS = ["样本库", "发起评测", "评分草稿", "人工确认", "评测结论"]
-PROCESS_TEXT = "样本库 → 发起评测 → 评分草稿 → 人工确认 → 评测结论"
 
 
 def _distinct_count(df, column: str) -> int:
@@ -77,7 +76,6 @@ def render_case_study_page(data_bundle: dict) -> None:
             "并在当前样本范围内判断模型表现、主要问题和使用边界。"
         ),
         stats=_build_home_stats(base, eval_status),
-        process_text=PROCESS_TEXT,
     )
 
     render_home_section(
