@@ -192,23 +192,24 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertNotIn('with st.expander("样本管理"', samples_source)
         self.assertNotIn("st.tabs([\"新增样本\", \"编辑样本\", \"状态管理\", \"导入导出\"])", samples_source)
 
-    def test_sample_library_has_three_main_sections_and_collapsed_detail(self):
+    def test_sample_library_has_four_main_sections_and_markdown_detail(self):
         samples_source = Path("src/ui/samples.py").read_text(encoding="utf-8")
         page_config_source = Path("src/ui/page_config.py").read_text(encoding="utf-8")
 
         self.assertIn('render_numbered_section("01", "查询样本")', samples_source)
         self.assertIn('render_numbered_section("02", "样本列表", "展示当前查询结果。")', samples_source)
-        self.assertIn('render_numbered_section("03", "当前样本", "选择、查看和维护一个样本。")', samples_source)
+        self.assertIn('render_numbered_section("03", "当前样本", "查看一个样本的评测资产结构。")', samples_source)
+        self.assertIn('render_numbered_section("04", "样本操作"', samples_source)
         self.assertIn("展示当前查询结果。", samples_source)
-        self.assertIn("选择、查看和维护一个样本。", samples_source)
-        self.assertIn("#### 任务内容", samples_source)
-        self.assertIn("#### 理想回复标准 / Gold Answer", samples_source)
-        self.assertIn('st.markdown("#### Rubric 评分标准")', samples_source)
-        self.assertIn("#### 完整度检查", samples_source)
+        self.assertIn("查看一个样本的评测资产结构。", samples_source)
+        self.assertIn("**任务内容**", samples_source)
+        self.assertIn("**理想回复标准 / Gold Answer**", samples_source)
+        self.assertIn("**Rubric 评分标准**", samples_source)
+        self.assertIn("**完整度检查**", samples_source)
         self.assertNotIn('st.expander("任务内容", expanded=False)', samples_source)
         self.assertNotIn(".current-sample-summary", Path("src/ui/components.py").read_text(encoding="utf-8"))
         self.assertIn("维护正式评测样本。完整且已入库的样本可以进入发起评测。", page_config_source)
-        self.assertIn("查询样本、样本列表、当前样本。", page_config_source)
+        self.assertIn("查询样本、样本列表、当前样本、样本操作。", page_config_source)
         self.assertNotIn("新增和编辑会同步任务题", samples_source)
 
     def test_test_run_keeps_primary_buttons_for_confirmation_and_execution(self):

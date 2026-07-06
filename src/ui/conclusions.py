@@ -15,8 +15,8 @@ from app.services import eval_state
 from src.ui.page_config import get_page_config
 from src.ui.components import (
     render_compact_hero,
+    render_empty_state,
     render_numbered_section,
-    render_text_block,
 )
 
 
@@ -38,7 +38,7 @@ def render_conclusions_page(data_bundle: dict) -> None:
         title=config.title,
         question=config.question,
     )
-    st.markdown("本页只汇总已确认评分。待确认评分不会进入正式结论，结论仅代表当前样本内观察。")
+    st.caption("本页只汇总已确认评分。待确认评分不会进入正式结论，结论仅代表当前样本内观察。")
 
     _render_current_conclusion(confirmed_live, draft_rows)
     _render_model_recommendations(model_summaries)
@@ -59,10 +59,7 @@ def _render_current_conclusion(confirmed_live, draft_rows: list[dict]) -> None:
     empty_seed = pd.DataFrame()
     summary = cc.summarize_formal(empty_seed, confirmed_live)
     if summary["total_rows"] == 0:
-        render_text_block(
-            "当前暂无已确认评分",
-            "请先在评分确认页完成确认。",
-        )
+        render_empty_state("当前暂无已确认评分。请先在评分确认页完成确认。")
         return
 
     confirmed = int(summary["confirmed_rows"])
@@ -86,10 +83,7 @@ def _render_model_recommendations(model_summaries: list[dict]) -> None:
     )
 
     if not model_summaries:
-        render_text_block(
-            "暂无模型判断",
-            "暂无已确认评分。完成评分确认后，此处会生成模型当前判断。",
-        )
+        render_empty_state("暂无模型判断。完成评分确认后，此处会生成模型当前判断。")
         return
 
     rows = [_recommendation_row(item) for item in model_summaries]
@@ -147,7 +141,7 @@ def _render_model_issue_details(model_summaries: list[dict]) -> None:
 def _render_issue_markdown(item: dict) -> None:
     display = str(item.get("display_name") or item.get("model_name") or "未标注模型")
     model_id = str(item.get("model_name") or "")
-    st.markdown(f"### {display}")
+    st.markdown(f"**{display}**")
     if model_id and model_id != display:
         st.caption(f"模型 ID：{model_id}")
 

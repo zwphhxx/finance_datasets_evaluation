@@ -33,7 +33,7 @@ from src.ui.test_run import (
 class TestRunFlowStructureTests(unittest.TestCase):
     def test_main_steps_are_execution_flow(self):
         self.assertEqual(
-            ["评测配置", "运行结果", "评分草稿"],
+            ["评测配置", "模型回答", "评分草稿"],
             get_test_run_steps(),
         )
 

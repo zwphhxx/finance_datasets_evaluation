@@ -1,7 +1,7 @@
 """PR-A tests: 项目介绍 / 方法论页面。
 
 校验新页面已注册为导航第一项、可正常渲染，且样本统计均从 tasks / gold / 评分维度
-动态计算（不写死数量），并带有明确的"可用边界评测、非排行榜"定位。
+动态计算（不写死数量），并带有明确的样本内观察与使用边界定位。
 """
 
 import unittest
@@ -60,10 +60,10 @@ class RegistrationTests(unittest.TestCase):
 
     def test_page_follows_project_explanation_sections(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
-        for section in ("项目定位", "评测流程", "样本口径", "评分方式", "下一步"):
+        for section in ("项目定位", "评测流程", "数据边界", "进入操作"):
             self.assertIn(section, source, section)
-        self.assertIn("不是模型排行榜", source)
-        self.assertIn("可用边界", source)
+        self.assertIn("当前样本内观察", source)
+        self.assertIn("使用边界", source)
 
 
 class DynamicStatsTests(unittest.TestCase):

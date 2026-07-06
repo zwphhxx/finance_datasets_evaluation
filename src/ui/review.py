@@ -54,7 +54,7 @@ _DEFAULT_DIMENSION_BASIS = {
 
 SEVERITY_BADGE = {"高": "danger", "中": "warning", "低": "neutral"}
 REVIEW_SECTIONS = [
-    "待确认评分",
+    "待处理评分",
     "当前评分摘要",
     "评分依据",
     "确认处理",
@@ -528,13 +528,13 @@ def render_review_page(data_bundle: dict) -> None:
 
     items, selected_score_run_id = _load_live_review_items(base, eval_status)
     if not items:
-        render_empty_state("暂无待确认评分草稿。请先在发起评测页运行模型回答并生成评分草稿。")
+        render_empty_state("暂无待处理评分草稿。请先在发起评测页运行模型回答并生成评分草稿。")
         return
 
     if st.session_state.get(REVIEW_AUTO_SWITCH_KEY):
         st.session_state["review_queue_filter"] = "待处理"
 
-    render_numbered_section("01", REVIEW_SECTIONS[0], "选择一条评分草稿，查看摘要和评分依据。")
+    render_numbered_section("01", REVIEW_SECTIONS[0], "通过表格选择一条评分草稿，查看摘要和评分依据。")
     visible_items, selected_table_index = _render_review_queue(items, selected_score_run_id)
     if not visible_items:
         st.session_state[REVIEW_AUTO_SWITCH_KEY] = False

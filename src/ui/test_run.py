@@ -26,8 +26,8 @@ from app.services import scorer as sc
 from src.ui.components import (
     render_compact_hero,
     render_empty_state,
-    render_evidence_panel,
     render_html,
+    render_inline_status,
     render_numbered_section,
 )
 from src.ui.page_config import get_page_config
@@ -48,7 +48,7 @@ NO_TESTABLE_SAMPLE_MESSAGE = (
     "Gold Answer 具备完整评判标准、Rubric 评分标准存在，且样本状态为已入库。"
 )
 
-TEST_RUN_STEPS = ["评测配置", "运行结果", "评分草稿"]
+TEST_RUN_STEPS = ["评测配置", "模型回答", "评分草稿"]
 _STATUS_BADGE = {
     "success": ("成功", "success"),
     "mock": ("模拟回退", "neutral"),
@@ -443,7 +443,8 @@ def _render_configuration_panel(
         ("预计模型回答", f"{run_plan['planned_responses']} 条"),
         ("当前运行模式", _mode_label(mode)),
     ]
-    render_evidence_panel("评测配置", _kv_table_html(rows))
+    st.markdown("**当前评测配置**")
+    render_inline_status(rows)
     if mode == "unconfigured":
         st.caption("当前未配置模型服务密钥，暂不能发起真实调用。模拟回退仅用于开发兜底，不作为页面可选服务。")
     st.caption("建议首次运行选择 1 个样本和 1 个模型，确认链路后再扩大范围。")
@@ -1313,34 +1314,34 @@ def _render_run_outcome_card(
     *,
     compact: bool = False,
 ) -> None:
-    with st.container(border=True):
-        status = "已完成" if outcome.success else "未获得有效回答"
-        elapsed = "—" if outcome.latency_ms is None else f"{outcome.latency_ms} ms"
-        st.markdown(f"**{index}. {_model_short_name(outcome.model_id)}**")
-        st.caption(f"任务编号：{outcome.case_id} · 状态：{status} · 耗时：{elapsed}")
-        if outcome.success:
-            answer = outcome.answer_text or "—"
-            preview = _answer_preview(answer)
-            st.markdown(normalize_answer_markdown(preview))
-            if len(answer) > _ANSWER_PREVIEW_LIMIT and not compact:
-                if st.button(
-                    "查看全文",
-                    key=f"test_run_full_answer_{index}_{_safe_key(outcome.model_id)}_{_safe_key(outcome.case_id)}",
-                    type="tertiary",
-                ):
-                    _render_full_answer_dialog(outcome)
-        else:
-            st.markdown(f"错误码：`{_dash(outcome.error_code)}`")
-            st.markdown(f"错误信息：{_short(outcome.error_message, 180)}")
-            guidance = _failure_guidance(outcome)
-            if guidance:
-                st.caption(guidance)
+    status = "已完成" if outcome.success else "未获得有效回答"
+    elapsed = "—" if outcome.latency_ms is None else f"{outcome.latency_ms} ms"
+    st.markdown(f"**{index}. {_model_short_name(outcome.model_id)}**")
+    st.caption(f"任务编号：{outcome.case_id} · 状态：{status} · 耗时：{elapsed}")
+    if outcome.success:
+        answer = outcome.answer_text or "—"
+        preview = _answer_preview(answer)
+        st.markdown(normalize_answer_markdown(preview))
+        if len(answer) > _ANSWER_PREVIEW_LIMIT and not compact:
+            if st.button(
+                "查看全文",
+                key=f"test_run_full_answer_{index}_{_safe_key(outcome.model_id)}_{_safe_key(outcome.case_id)}",
+                type="tertiary",
+            ):
+                _render_full_answer_dialog(outcome)
+        return
+
+    st.markdown(f"错误码：`{_dash(outcome.error_code)}`")
+    st.markdown(f"错误信息：{_short(outcome.error_message, 180)}")
+    guidance = _failure_guidance(outcome)
+    if guidance:
+        st.caption(guidance)
 
 
 @st.dialog("模型回答全文", width="large")
 def _render_full_answer_dialog(outcome: er.RunOutcome) -> None:
     st.caption(f"任务编号：{outcome.case_id} · 模型：{_model_short_name(outcome.model_id)}")
-    st.markdown("#### 模型回答")
+    st.markdown("**模型回答**")
     st.markdown(normalize_answer_markdown(outcome.answer_text or "—"))
 
 
@@ -1350,31 +1351,25 @@ def _render_technical_details_dialog(result) -> None:
 
 
 def _render_results_table(result) -> None:
-    header = "".join(
-        f"<th>{escape(name)}</th>"
-        for name in [
-            "模型", "任务编号", "状态", "HTTP状态", "错误码", "错误信息",
-            "trace_id", "耗时(ms)", "回答长度",
-        ]
+    rows = [
+        {
+            "模型": outcome.model_id,
+            "任务编号": outcome.case_id,
+            "状态": _status_label(outcome.run_status),
+            "HTTP状态": _n(outcome.http_status),
+            "错误码": _dash(outcome.error_code),
+            "错误信息": _short(outcome.error_message),
+            "trace_id": _dash(outcome.trace_id),
+            "耗时(ms)": _n(outcome.latency_ms),
+            "回答长度": str(outcome.answer_length),
+        }
+        for outcome in result.outcomes
+    ]
+    st.dataframe(
+        pd.DataFrame(rows),
+        hide_index=True,
+        use_container_width=True,
     )
-    body = ""
-    for outcome in result.outcomes:
-        label, level = _STATUS_BADGE.get(outcome.run_status, (outcome.run_status, "neutral"))
-        body += (
-            f'<tr><td class="check-key">{escape(outcome.model_id)}</td>'
-            f"<td>{escape(outcome.case_id)}</td>"
-            f'<td><span class="status-badge status-{level}">{escape(label)}</span></td>'
-            f'<td class="check-count">{escape(_n(outcome.http_status))}</td>'
-            f"<td>{escape(_dash(outcome.error_code))}</td>"
-            f"<td>{escape(_short(outcome.error_message))}</td>"
-            f"<td>{escape(_dash(outcome.trace_id))}</td>"
-            f'<td class="check-count">{escape(_n(outcome.latency_ms))}</td>'
-            f'<td class="check-count">{escape(str(outcome.answer_length))}</td></tr>'
-        )
-    table_html = (
-        f'<table class="check-table"><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>'
-    )
-    render_evidence_panel("运行明细", table_html)
 
 
 def _render_answer_viewer(result, task_records: list[dict]) -> None:
@@ -1400,36 +1395,35 @@ def _render_selected_outcome_detail(outcome: er.RunOutcome, task_lookup: dict[st
     elapsed = _latency_label(outcome.latency_ms)
     sample_label = _outcome_sample_label(outcome, task_lookup)
     model_short = _model_short_name(outcome.model_id)
-    with st.container(border=True):
-        st.markdown("**当前回答**")
-        summary_items = [
-            ("样本", sample_label),
-            ("模型", model_short),
-            ("状态", status),
-            ("耗时", elapsed),
-        ]
-        if outcome.success:
-            summary_items.append(("回答长度", _answer_length_label(outcome)))
-            _render_answer_summary(summary_items, outcome.model_id if outcome.model_id != model_short else "")
-            answer = outcome.answer_text or "—"
-            st.markdown("#### 模型回答")
-            st.markdown(normalize_answer_markdown(_answer_preview(answer)))
-            if len(answer) > _ANSWER_PREVIEW_LIMIT:
-                if st.button(
-                    "查看全文",
-                    key=f"test_run_selected_full_answer_{_safe_key(outcome.model_id)}_{_safe_key(outcome.case_id)}",
-                    type="tertiary",
-                ):
-                    _render_full_answer_dialog(outcome)
-            return
-
+    st.markdown("**当前回答**")
+    summary_items = [
+        ("样本", sample_label),
+        ("模型", model_short),
+        ("状态", status),
+        ("耗时", elapsed),
+    ]
+    if outcome.success:
+        summary_items.append(("回答长度", _answer_length_label(outcome)))
         _render_answer_summary(summary_items, outcome.model_id if outcome.model_id != model_short else "")
-        st.markdown("#### 未获得有效回答")
-        st.markdown(f"错误码：`{_dash(outcome.error_code)}`")
-        st.markdown(f"错误信息：{_short(outcome.error_message, 220)}")
-        guidance = _failure_guidance(outcome)
-        if guidance:
-            st.caption(guidance)
+        answer = outcome.answer_text or "—"
+        st.markdown("**模型回答**")
+        st.markdown(normalize_answer_markdown(_answer_preview(answer)))
+        if len(answer) > _ANSWER_PREVIEW_LIMIT:
+            if st.button(
+                "查看全文",
+                key=f"test_run_selected_full_answer_{_safe_key(outcome.model_id)}_{_safe_key(outcome.case_id)}",
+                type="tertiary",
+            ):
+                _render_full_answer_dialog(outcome)
+        return
+
+    _render_answer_summary(summary_items, outcome.model_id if outcome.model_id != model_short else "")
+    st.markdown("**未获得有效回答**")
+    st.markdown(f"错误码：`{_dash(outcome.error_code)}`")
+    st.markdown(f"错误信息：{_short(outcome.error_message, 220)}")
+    guidance = _failure_guidance(outcome)
+    if guidance:
+        st.caption(guidance)
 
 
 def _render_answer_summary(items: list[tuple[str, str]], model_id: str = "") -> None:
@@ -1560,19 +1554,20 @@ def _render_score_result_list(score_result, dimensions) -> None:
     if not score_result.outcomes:
         st.caption("暂无评分草稿。")
         return
-    headers = ["模型", "样本", "总分", "状态"]
-    header_html = "".join(f"<th>{escape(item)}</th>" for item in headers)
-    rows = ""
-    for outcome in score_result.outcomes:
-        rows += (
-            f"<tr><td>{escape(_model_short_name(outcome.eval_model))}</td>"
-            f"<td>{escape(outcome.case_id)}</td>"
-            f'<td class="check-count">{escape(_score_total_label(outcome, dimensions))}</td>'
-            f"<td>{escape(_score_status_label(outcome))}</td></tr>"
-        )
-    render_evidence_panel(
-        "评分结果",
-        f'<table class="check-table"><thead><tr>{header_html}</tr></thead><tbody>{rows}</tbody></table>',
+    rows = [
+        {
+            "模型": _model_short_name(outcome.eval_model),
+            "样本": outcome.case_id,
+            "总分": _score_total_label(outcome, dimensions),
+            "状态": _score_status_label(outcome),
+        }
+        for outcome in score_result.outcomes
+    ]
+    st.markdown("**评分结果**")
+    st.dataframe(
+        pd.DataFrame(rows),
+        hide_index=True,
+        use_container_width=True,
     )
 
 
@@ -1592,57 +1587,64 @@ def _render_score_detail_viewer(score_result, dimensions) -> None:
 
 
 def _render_score_detail(outcome: sc.ScoreOutcome, dimensions) -> None:
-    with st.container(border=True):
-        st.markdown("**当前评分详情**")
-        summary_items = [
-            ("样本", outcome.case_id),
-            ("模型", _model_short_name(outcome.eval_model)),
-            ("总分", _score_total_label(outcome, dimensions)),
-            ("裁判模型", _model_short_name(outcome.judge_model)),
-            ("确认状态", _score_status_label(outcome)),
-        ]
-        _render_answer_summary(
-            summary_items,
-            outcome.eval_model if outcome.eval_model != _model_short_name(outcome.eval_model) else "",
-        )
-        if outcome.ok:
-            st.markdown("#### 复核提示")
-            st.caption(outcome.review_note or "未返回明确复核提示。")
-            st.markdown("#### 维度评分")
-            _render_score_dimensions_table(outcome, dimensions)
-            return
+    st.markdown("**当前评分详情**")
+    summary_items = [
+        ("样本", outcome.case_id),
+        ("模型", _model_short_name(outcome.eval_model)),
+        ("总分", _score_total_label(outcome, dimensions)),
+        ("裁判模型", _model_short_name(outcome.judge_model)),
+        ("确认状态", _score_status_label(outcome)),
+    ]
+    _render_answer_summary(
+        summary_items,
+        outcome.eval_model if outcome.eval_model != _model_short_name(outcome.eval_model) else "",
+    )
+    if outcome.ok:
+        st.markdown("**复核提示**")
+        st.caption(outcome.review_note or "未返回明确复核提示。")
+        st.markdown("**维度评分**")
+        _render_score_dimensions_table(outcome, dimensions)
+        return
 
-        if _is_mock_score_outcome(outcome):
-            st.markdown("#### 模拟评分")
-            st.caption(outcome.review_note or "未配置模型服务密钥，未产生真实评分。")
-            return
+    if _is_mock_score_outcome(outcome):
+        st.markdown("**模拟评分**")
+        st.caption(outcome.review_note or "未配置模型服务密钥，未产生真实评分。")
+        return
 
-        st.markdown("#### 评分失败")
-        st.markdown(f"错误码：`{_dash(outcome.error_code)}`")
-        st.markdown(f"错误信息：{_short(outcome.error_message, 220)}")
-        guidance = _score_failure_guidance(outcome)
-        if guidance:
-            st.caption(guidance)
+    st.markdown("**评分失败**")
+    st.markdown(f"错误码：`{_dash(outcome.error_code)}`")
+    st.markdown(f"错误信息：{_short(outcome.error_message, 220)}")
+    guidance = _score_failure_guidance(outcome)
+    if guidance:
+        st.caption(guidance)
 
 
 def _render_score_dimensions_table(outcome: sc.ScoreOutcome, dimensions) -> None:
-    header = "".join(f"<th>{escape(name)}</th>" for name in ["维度", "得分", "满分", "评分依据"])
-    body = ""
+    rows = []
     for dim in dimensions or []:
         field = str(dim.get("field") or "")
         name = str(dim.get("name") or field)
         full_mark = _n(dim.get("full_mark"))
         score = _n((outcome.scores or {}).get(field))
         rationale = str((outcome.rationale or {}).get(field) or "").strip() or "未返回明确依据"
-        body += (
-            f"<tr><td>{escape(name)}</td>"
-            f'<td class="check-count">{escape(score)}</td>'
-            f'<td class="check-count">{escape(full_mark)}</td>'
-            f"<td>{escape(rationale)}</td></tr>"
+        rows.append(
+            {
+                "维度": name,
+                "得分": score,
+                "满分": full_mark,
+                "评分依据": rationale,
+            }
         )
-    render_evidence_panel(
-        "维度评分",
-        f'<table class="check-table"><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>',
+    st.dataframe(
+        pd.DataFrame(rows),
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "维度": st.column_config.TextColumn("维度", width="small"),
+            "得分": st.column_config.TextColumn("得分", width="small"),
+            "满分": st.column_config.TextColumn("满分", width="small"),
+            "评分依据": st.column_config.TextColumn("评分依据", width="large"),
+        },
     )
 
 
@@ -1652,32 +1654,13 @@ def _render_score_compare_dialog(score_result, dimensions) -> None:
 
 
 def _render_score_compare_table(score_result, dimensions) -> None:
-    headers = ["模型", "样本"] + [str(d["name"]) for d in dimensions] + ["总分", "裁判状态", "错误码", "错误信息"]
-    header = "".join(f"<th>{escape(name)}</th>" for name in headers)
     rows = build_score_summary_rows(score_result, dimensions)
-    body = ""
-    outcome_by_key = {
-        (str(o.eval_model), str(o.case_id)): o
-        for o in score_result.outcomes
-    }
-    for row in rows:
-        outcome = outcome_by_key.get((row.get("模型ID", row["模型"]), row["样本"]))
-        level = _score_status_level(outcome) if outcome is not None else "neutral"
-        dim_cells = "".join(f'<td class="check-count">{escape(row[str(d["name"])])}</td>' for d in dimensions)
-        body += (
-            f'<tr><td class="check-key">{escape(row["模型"])}</td>'
-            f"<td>{escape(row['样本'])}</td>"
-            f"{dim_cells}"
-            f'<td class="check-count">{escape(row["总分"])}</td>'
-            f'<td><span class="status-badge status-{level}">{escape(row["裁判状态"])}</span></td>'
-            f"<td>{escape(row['错误码'])}</td>"
-            f"<td>{escape(row['错误信息'])}</td></tr>"
-        )
-    table_html = (
-        f'<table class="check-table"><thead><tr>'
-        f"{header}</tr></thead><tbody>{body}</tbody></table>"
+    frame = pd.DataFrame(rows).drop(columns=["模型ID"], errors="ignore")
+    st.dataframe(
+        frame,
+        hide_index=True,
+        use_container_width=True,
     )
-    render_evidence_panel("评分对比表", table_html)
 
 
 def _dedupe(items: list[str]) -> list[str]:

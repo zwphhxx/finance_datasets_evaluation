@@ -43,7 +43,7 @@ class ReviewStructureTests(unittest.TestCase):
     def test_review_sections_have_required_order(self):
         self.assertEqual(
             [
-                "待确认评分",
+                "待处理评分",
                 "当前评分摘要",
                 "评分依据",
                 "确认处理",

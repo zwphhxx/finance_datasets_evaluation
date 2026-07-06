@@ -9,9 +9,9 @@ from src.metrics import SCORE_DIMENSIONS
 from src.model_boundary import BOUNDARY_AWARENESS_LABEL
 from src.ui.components import (
     render_compact_hero,
-    render_process_line,
-    render_pull_quote,
-    render_story_section,
+    render_clean_list,
+    render_inline_status,
+    render_numbered_section,
 )
 from src.ui.page_config import get_page_config
 
@@ -104,42 +104,30 @@ def render_case_study_page(data_bundle: dict) -> None:
         stats=_build_home_stats(base, eval_status),
     )
 
-    render_story_section(
-        title="项目定位",
-        paragraphs=[
-            "这是一个面试 MVP，用脱敏尽调样本评估模型回答的可参考程度、复核需求和使用边界。",
-            "项目不是模型排行榜，也不替代专业判断；它把模型回答拆回理想回复标准 / Gold Answer、Rubric 评分标准和人工复核记录。",
-        ],
-        index="01",
+    render_numbered_section("01", "项目定位")
+    st.markdown(
+        "这是一个面试 MVP，用脱敏尽调样本评估模型回答的可参考程度、复核需求和使用边界。"
+        "页面围绕样本、评分草稿、评分确认和正式结论组织，不替代专业判断。"
     )
 
-    render_story_section(
-        title="评测流程",
-        paragraphs=[
-            "主线从样本维护开始，到评测、评分草稿、评分确认和正式结论结束。只有通过样本库准入检查的样本可进入评测，只有人工确认后的分数进入正式结论。",
-        ],
-        index="02",
-    )
-    render_process_line([
-        "维护样本", "确认可测", "发起评测", "评分草稿", "评分确认", "正式结论"
+    render_numbered_section("02", "评测流程")
+    render_inline_status([
+        ("1", "维护样本"),
+        ("2", "确认可测"),
+        ("3", "发起评测"),
+        ("4", "评分草稿"),
+        ("5", "评分确认"),
+        ("6", "正式结论"),
     ])
+    st.caption("只有通过样本库准入检查的样本可进入评测；只有人工确认后的分数进入正式结论。")
 
-    render_story_section(
-        title="样本口径",
-        paragraphs=[
-            _build_sample_scope_text(base),
-            "每个可测样本由任务题、业务背景、理想回复标准 / Gold Answer、Rubric 评分标准和状态组成；是否进入评测由样本库中的完整度校验决定。",
-        ],
-        index="03",
+    render_numbered_section("03", "数据边界")
+    st.markdown(_build_sample_scope_text(base))
+    st.markdown(
+        "每个可测样本由任务题、业务背景、理想回复标准 / Gold Answer、Rubric 评分标准和状态组成；"
+        "是否进入评测由样本库中的完整度校验决定。"
     )
-
-    render_story_section(
-        title="评分方式",
-        paragraphs=[
-            "评分草稿由裁判模型对照理想回复标准 / Gold Answer 和 Rubric 评分标准生成，人工可以修订分数和复核说明。高分只能作为初稿参考，红线错误仍需人工判断。",
-        ],
-        index="04",
-    )
+    st.markdown("**评分依据**")
     eval_items = []
     for key, label in SCORE_DIMENSIONS:
         note = {
@@ -150,16 +138,11 @@ def render_case_study_page(data_bundle: dict) -> None:
             "expression_score": "表达是否专业克制、结构清楚",
         }.get(key, "")
         eval_items.append(f"{label}：{note}")
-    st.markdown("\n".join(f"{i + 1}. {item}" for i, item in enumerate(eval_items)))
-    render_pull_quote("高分只能作为初稿参考，红线错误一票否决。")
+    render_clean_list(eval_items)
+    st.caption("高分只能作为初稿参考，红线错误仍需人工判断。")
 
-    render_story_section(
-        title="下一步",
-        paragraphs=[
-            "先检查样本库，再选择可测样本发起评测。评测完成后会生成评分草稿，进入评分确认后才形成正式结论。",
-        ],
-        index="05",
-    )
+    render_numbered_section("04", "进入操作")
+    st.caption("先检查样本库，再选择可测样本发起评测。评分草稿进入评分确认后才形成正式结论。")
     col1, col2 = st.columns(2)
     with col1:
         if st.button("查看样本库", type="primary", key="case_study_samples"):
@@ -169,6 +152,9 @@ def render_case_study_page(data_bundle: dict) -> None:
         if st.button("发起评测", type="secondary", key="case_study_try"):
             st.session_state.current_page = "test_run"
             st.rerun()
+
+    # render_story_section is kept in src.ui.components for older imports; the
+    # current landing page uses render_numbered_section for the unified shell.
 
 
 # --------------------------------------------------------------------------- #
@@ -236,7 +222,7 @@ def get_project_brief_items() -> list[tuple[str, str]]:
         (
             "项目输出",
             "一套可复用的评测样本库、评分草稿、人工复核和正式结论入口，"
-            "让'能不能用'从主观判断变成可验证的样本内观察。",
+            "让'能不能用'从主观判断变成当前样本内观察。",
         ),
     ]
 

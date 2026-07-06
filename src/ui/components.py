@@ -376,7 +376,12 @@ header,
     color: var(--fde-orange);
 }
 .empty-state {
-    background: var(--fde-gray-soft);
+    background: rgba(255, 255, 255, 0.62);
+    border-style: dashed;
+    border-color: var(--fde-line-strong);
+    border-radius: 8px;
+    padding: 0.85rem 0.95rem;
+    line-height: 1.6;
     text-align: center;
 }
 .section-title {
@@ -714,9 +719,9 @@ header,
 .evidence-card {
     border: 1px solid var(--fde-line);
     border-radius: 8px;
-    background: var(--fde-surface);
-    padding: 0.85rem 0.95rem;
-    margin: 0.4rem 0;
+    background: rgba(255, 255, 255, 0.72);
+    padding: 0.68rem 0.78rem;
+    margin: 0.35rem 0;
     box-shadow: var(--fde-shadow);
 }
 .evidence-card-clean {
@@ -787,15 +792,16 @@ header,
 }
 .check-table td,
 .check-table th {
-    padding: 0.6rem;
+    padding: 0.48rem 0.55rem;
     border-bottom: 1px solid var(--fde-line);
     text-align: left;
     vertical-align: top;
 }
 .check-table thead th {
+    background: #f7f8fa;
     color: var(--fde-muted);
     font-size: 0.8rem;
-    font-weight: 750;
+    font-weight: 680;
 }
 .check-table .check-key {
     color: var(--fde-blue);
@@ -817,6 +823,7 @@ header,
     border-radius: 8px;
     overflow: hidden;
     background: #ffffff;
+    margin: 0.35rem 0 0.55rem 0;
 }
 [data-testid="stDataFrame"] [role="columnheader"] {
     background: #f7f8fa;

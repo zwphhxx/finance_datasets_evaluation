@@ -203,7 +203,7 @@ def build_formal_conclusions(
                 "confirmed_count": int(source_counts.get("confirmed_live", 0)),
             }
         )
-    # 按平均总分降序仅为展示稳定性，页面文案明确说明这不是排行榜。
+    # 按平均总分降序仅为展示稳定性；页面文案说明这只是当前样本内观察。
     results.sort(key=lambda item: (-item["avg_total"], item["display_name"]))
     return results
 
