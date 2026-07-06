@@ -2,10 +2,14 @@
 
 样本库是业务操作视图：待复核、已入库、需优化、已移出测试。
 历史 inactive 状态在读取时会规范为已移出测试。
-SQLite 可用时，样本库 CRUD 会同步维护正式评测资产：
-`task_cases` / `gold_answers` / `rubrics`。`data/samples.json` 保留为轻量管理视图、
-导入导出与兼容备份，不再作为正式评测内容的唯一来源。
-首次加载时若 JSON 不存在，从现有 `data/tasks.csv` + `data/gold_answers.json` 自动生成初始样本。
+数据源层级固定为：
+
+- seed 文件（`data/tasks.csv`、`data/gold_answers.json`、manifest/Rubric）只用于初始化。
+- `data/samples.json` 是样本库管理视图、导入导出与兼容备份。
+- SQLite 中的 `task_cases` / `gold_answers` / `rubrics` 是正式评测资产源。
+
+SQLite 可用时，样本库 CRUD 会同步维护正式评测资产，并在写入后校验可见性。
+首次加载时若 JSON 不存在，从现有 seed 文件自动生成初始样本。
 """
 
 from __future__ import annotations
@@ -98,6 +102,17 @@ def _as_str_list(value) -> list[str]:
     if isinstance(value, str):
         return [line.strip() for line in value.splitlines() if line.strip()]
     return []
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if text and text not in seen:
+            seen.add(text)
+            result.append(text)
+    return result
 
 
 def normalize_sample_status(value: Any) -> str:
@@ -412,6 +427,171 @@ def import_samples(samples_data: list[dict[str, Any]], *, db_path: Path | None =
     return imported
 
 
+def verify_sample_asset_sync(
+    sample_id: str,
+    *,
+    db_path: Path | None = None,
+    sample: Sample | None = None,
+) -> dict[str, Any]:
+    """校验样本库视图是否已同步到正式评测资产。
+
+    对“已入库”样本，除 `task_cases` / `gold_answers` / `rubrics` 均存在外，还必须
+    通过正式准入检查，保证发起评测页能够读取。对待复核、需优化和已移出测试样本，
+    只校验资产写入完整性与底层状态同步，不要求进入测试。
+    """
+    from app.services import dataset_service as ds
+
+    case_id = str(sample_id or "").strip()
+    result: dict[str, Any] = {
+        "case_id": case_id,
+        "sqlite_ready": False,
+        "ok": False,
+        "task_exists": False,
+        "gold_exists": False,
+        "rubric_exists": False,
+        "is_testable": False,
+        "missing_items": [],
+        "message": "",
+    }
+    if not case_id:
+        result["message"] = "缺少样本编号，无法校验正式资产同步。"
+        result["missing_items"] = ["缺少样本编号"]
+        return result
+
+    path = Path(db_path) if db_path is not None else ds.get_db_path()
+    if not ds.database_ready(path):
+        result["message"] = "SQLite 未初始化或不可用，无法校验正式评测资产。"
+        result["missing_items"] = ["SQLite 未初始化或不可用"]
+        return result
+
+    result["sqlite_ready"] = True
+    task = ds.get_task_case(case_id, path)
+    gold = ds.get_gold_answer_record(case_id, path)
+    rubrics = ds.get_testable_rubric_dimensions(path)
+    readiness = ds.assess_sample_readiness(task, gold, rubrics)
+    sample_for_check = sample or get_sample(case_id)
+    expected_status = (
+        formal_status_for_sample_status(sample_for_check.status)
+        if sample_for_check is not None
+        else ""
+    )
+
+    missing: list[str] = []
+    if task is None:
+        missing.append("task_cases 缺少该样本")
+    if gold is None:
+        missing.append("gold_answers 缺少该样本")
+    if not ds.has_rubric_criteria(rubrics):
+        missing.append("rubrics 缺少可用评分标准")
+    if task is not None and expected_status:
+        actual_status = str(task.get("status") or "").strip().lower()
+        if actual_status != expected_status:
+            missing.append("正式资产状态未同步")
+    if sample_for_check is not None and sample_for_check.status == "已入库" and not readiness.is_testable:
+        missing.extend(readiness.missing_items)
+
+    missing = _dedupe(missing)
+    result.update({
+        "task_exists": task is not None,
+        "gold_exists": gold is not None,
+        "rubric_exists": ds.has_rubric_criteria(rubrics),
+        "is_testable": readiness.is_testable,
+        "missing_items": missing,
+        "ok": not missing,
+        "message": "样本库视图已同步正式评测资产。" if not missing else "；".join(missing),
+    })
+    return result
+
+
+def sample_data_source_status(*, db_path: Path | None = None) -> dict[str, Any]:
+    """返回样本库页面可展示的数据源状态。"""
+    from app.services import dataset_service as ds
+
+    path = Path(db_path) if db_path is not None else ds.get_db_path()
+    sqlite_ready = ds.database_ready(path)
+    samples = load_samples()
+    if not sqlite_ready:
+        return {
+            "sqlite_ready": False,
+            "source": "seed / samples.json",
+            "message": "当前修改不会写入正式 SQLite 资产，发起评测可能无法读取新增样本。",
+            "sample_count": len(samples),
+            "unsynced_count": None,
+            "unsynced_ids": [],
+        }
+
+    active_samples = [sample for sample in samples if sample.status == "已入库"]
+    unsynced: list[str] = []
+    for sample in active_samples:
+        sync_result = verify_sample_asset_sync(sample.sample_id, db_path=path, sample=sample)
+        if not sync_result.get("ok"):
+            unsynced.append(sample.sample_id)
+    if unsynced:
+        shown = "、".join(unsynced[:3])
+        suffix = f" 等 {len(unsynced)} 条" if len(unsynced) > 3 else ""
+        message = f"{shown}{suffix} 已入库样本未完成正式资产同步。"
+    else:
+        message = "样本库视图已同步正式评测资产。"
+    return {
+        "sqlite_ready": True,
+        "source": "SQLite 正式资产",
+        "message": message,
+        "sample_count": len(samples),
+        "unsynced_count": len(unsynced),
+        "unsynced_ids": unsynced,
+    }
+
+
+def sync_all_samples_to_formal_assets(*, db_path: Path | None = None) -> dict[str, Any]:
+    """将 samples.json 管理视图批量同步到 SQLite 正式资产层。
+
+    该操作只写入任务题、Gold Answer 和 Rubric，不触碰 live 运行结果或评分记录。
+    """
+    samples = load_samples()
+    try:
+        formal_db_path = _resolve_formal_db_path(db_path)
+    except ValueError as exc:
+        return {
+            "sqlite_ready": False,
+            "total": len(samples),
+            "success_count": 0,
+            "failed_count": len(samples),
+            "failures": [{"case_id": sample.sample_id, "reason": str(exc)} for sample in samples],
+            "message": "SQLite 未初始化或不可用，暂不能同步正式评测资产。",
+        }
+    if formal_db_path is None:
+        return {
+            "sqlite_ready": False,
+            "total": len(samples),
+            "success_count": 0,
+            "failed_count": len(samples),
+            "failures": [{"case_id": sample.sample_id, "reason": "SQLite 未初始化或不可用"} for sample in samples],
+            "message": "SQLite 未初始化或不可用，暂不能同步正式评测资产。",
+        }
+
+    success_count = 0
+    failures: list[dict[str, str]] = []
+    for sample in samples:
+        try:
+            _sync_sample_assets_to_formal_layer(sample, db_path=formal_db_path)
+            success_count += 1
+        except Exception as exc:
+            failures.append({"case_id": sample.sample_id, "reason": str(exc)})
+
+    failed_count = len(failures)
+    message = f"已同步 {success_count} 条样本到正式评测资产。"
+    if failed_count:
+        message += f" {failed_count} 条未完成同步。"
+    return {
+        "sqlite_ready": True,
+        "total": len(samples),
+        "success_count": success_count,
+        "failed_count": failed_count,
+        "failures": failures,
+        "message": message,
+    }
+
+
 def validate_sample(values: dict[str, Any], existing_ids: set[str] | None = None) -> list[str]:
     """基础校验。返回错误信息列表，空列表表示通过。"""
     errors: list[str] = []
@@ -530,6 +710,9 @@ def _sync_sample_assets_to_formal_layer(sample: Sample, *, db_path: Path) -> boo
         ds.upsert_sample_assets(payload, db_path=db_path)
     except ds.DataLoadError as exc:
         raise ValueError(str(exc)) from exc
+    sync_result = verify_sample_asset_sync(sample.sample_id, db_path=db_path, sample=sample)
+    if not sync_result.get("ok"):
+        raise ValueError("样本已写入但正式资产校验未通过：" + str(sync_result.get("message") or "未知原因"))
     return True
 
 

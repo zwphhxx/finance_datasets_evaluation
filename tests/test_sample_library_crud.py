@@ -193,6 +193,13 @@ class SampleRepositoryTests(unittest.TestCase):
             self.assertEqual("结论需基于明确测算。", row["full_mark_standard"])
             self.assertEqual("缺少关键测算应扣分。", row["deduction_rules"])
 
+            sync_result = sr.verify_sample_asset_sync("PR01-NEW", db_path=db_path)
+            self.assertTrue(sync_result["ok"])
+            self.assertTrue(sync_result["task_exists"])
+            self.assertTrue(sync_result["gold_exists"])
+            self.assertTrue(sync_result["rubric_exists"])
+            self.assertTrue(sync_result["is_testable"])
+
     def test_update_sample_updates_formal_task_gold_and_rubric_when_db_ready(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "findueval.db"
@@ -244,6 +251,46 @@ class SampleRepositoryTests(unittest.TestCase):
             self.assertEqual("更新后的满分标准。", row["full_mark_standard"])
             self.assertEqual("更新后的扣分规则。", row["deduction_rules"])
             self.assertFalse(ds.can_enter_formal_testing(task, gold, ds.get_rubric_dimensions(db_path)))
+
+            sync_result = sr.verify_sample_asset_sync("PR01-EDIT", db_path=db_path)
+            self.assertTrue(sync_result["ok"])
+            self.assertFalse(sync_result["is_testable"])
+
+    def test_verify_sample_asset_sync_reports_missing_formal_assets(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "findueval.db"
+            ds.ensure_seed_database(db_path, force=True)
+
+            sync_result = sr.verify_sample_asset_sync("NOT-IN-DB", db_path=db_path)
+
+            self.assertFalse(sync_result["ok"])
+            self.assertIn("task_cases 缺少该样本", sync_result["missing_items"])
+            self.assertIn("gold_answers 缺少该样本", sync_result["missing_items"])
+
+    def test_sync_all_samples_to_formal_assets_repairs_management_view(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "findueval.db"
+            ds.ensure_seed_database(db_path, force=True)
+            values = self._sample_values("PR04-SYNC", title="PR04 同步样本")
+            values["status"] = "已入库"
+            sr.create_sample(values)
+
+            self.assertIsNone(ds.get_task_case("PR04-SYNC", db_path))
+
+            result = sr.sync_all_samples_to_formal_assets(db_path=db_path)
+
+            self.assertTrue(result["sqlite_ready"])
+            self.assertEqual(1, result["success_count"])
+            self.assertEqual(0, result["failed_count"])
+            self.assertIsNotNone(ds.get_task_case("PR04-SYNC", db_path))
+            self.assertTrue(sr.verify_sample_asset_sync("PR04-SYNC", db_path=db_path)["ok"])
+
+    def test_sample_data_source_status_reports_sqlite_unavailable(self):
+        status = sr.sample_data_source_status(db_path=Path(self.tmp.name).with_suffix(".db"))
+
+        self.assertFalse(status["sqlite_ready"])
+        self.assertEqual("seed / samples.json", status["source"])
+        self.assertIn("SQLite", status["message"])
 
     def test_export_and_import_samples(self):
         sr.create_sample(self._sample_values("SM-EXP"))

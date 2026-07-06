@@ -718,11 +718,64 @@ def _select_sample(sample_id: str) -> None:
     st.session_state["samples_selected_id"] = sample_id
 
 
+def _format_source_status_caption(status: dict) -> str:
+    return f"当前数据源：{status.get('source', '未知')}。{status.get('message', '')}"
+
+
+def _render_sample_source_status() -> None:
+    status = sr.sample_data_source_status()
+    st.caption(_format_source_status_caption(status))
+    if not status.get("sqlite_ready"):
+        st.caption("seed 文件只用于初始化；samples.json 是样本库管理视图，不是发起评测的唯一正式源。")
+
+
+def _store_sample_operation_message(message: str, level: str = "success") -> None:
+    st.session_state["samples_operation_message"] = {"message": message, "level": level}
+
+
+def _render_sample_operation_message() -> None:
+    payload = st.session_state.get("samples_operation_message")
+    if isinstance(payload, dict):
+        message = str(payload.get("message") or "")
+        level = str(payload.get("level") or "success")
+    elif payload:
+        message = str(payload)
+        level = "success"
+    else:
+        return
+    if level == "error":
+        st.error(message)
+    elif level == "warning":
+        st.warning(message)
+    elif level == "info":
+        st.info(message)
+    else:
+        st.success(message)
+
+
+def _sync_samples_to_formal_assets() -> None:
+    result = sr.sync_all_samples_to_formal_assets(db_path=_formal_db_path_for_ui())
+    failures = result.get("failures") or []
+    level = "success" if result.get("sqlite_ready") and not result.get("failed_count") else "warning"
+    message = str(result.get("message") or "同步完成。")
+    if failures:
+        first = failures[0]
+        message += f" 首条失败：{first.get('case_id', '未知样本')}：{first.get('reason', '未知原因')}"
+    _store_sample_operation_message(message, level=level)
+
+
+def _formal_sync_feedback_suffix() -> tuple[str, str]:
+    status = sr.sample_data_source_status()
+    if status.get("sqlite_ready"):
+        return "已同步正式评测资产。", "success"
+    return "已写入样本库视图，但当前 SQLite 不可用，尚未写入正式评测资产。", "warning"
+
+
 # --------------------------------------------------------------------------- #
 # New sample-library UI
 # --------------------------------------------------------------------------- #
 def _render_samples_title_bar(config) -> None:
-    col1, col2, col3 = st.columns([4.1, 0.95, 0.95], gap="small")
+    col1, col2, col3, col4 = st.columns([3.7, 0.9, 0.9, 1.35], gap="small")
     with col1:
         render_page_heading(config.title, config.question)
     with col2:
@@ -733,9 +786,13 @@ def _render_samples_title_bar(config) -> None:
         st.write("")
         if st.button("导入 CSV", key="samples_import_csv_open", type="secondary", use_container_width=True):
             _open_import_csv_dialog()
-    result = st.session_state.get("samples_import_result")
-    if result:
-        st.success(str(result))
+    with col4:
+        st.write("")
+        if st.button("同步样本库", key="samples_sync_assets", type="tertiary", use_container_width=True):
+            _sync_samples_to_formal_assets()
+            st.rerun()
+    _render_sample_operation_message()
+    _render_sample_source_status()
 
 
 def render_samples_page(data_bundle: dict) -> None:
@@ -1097,10 +1154,16 @@ def _rubric_detail_html(rubric_rows: list[dict[str, str]]) -> str:
 def _readiness_detail_html(sample: sr.Sample, readiness: ds.SampleReadiness) -> str:
     missing_items = "无" if not readiness.missing_items else "；".join(readiness.missing_items)
     satisfied = readiness.satisfied_items or ["待补充"]
+    visibility_note = "可进入发起评测" if readiness.is_testable else "—"
+    if sample.status == "已入库" and not readiness.is_testable:
+        visibility_note = "该样本未进入发起评测：Gold Answer 或 Rubric 未同步到正式资产。"
+        if readiness.missing_items:
+            visibility_note += " " + "；".join(readiness.missing_items[:4])
     rows = [
         ("是否可测试", "是" if readiness.is_testable else "否"),
         ("当前状态", _sample_status_label(sample)),
         ("检查结果", readiness.label),
+        ("发起评测可见性", visibility_note),
         ("缺失项", missing_items),
         ("复核备注", sample.reviewer_note or "未填写"),
     ]
@@ -1290,7 +1353,7 @@ def _render_pending_dialogs(rubric_dimensions: list[dict] | None) -> None:
 
 @st.dialog("导入 CSV", width="large")
 def _render_import_csv_dialog(rubric_dimensions: list[dict] | None) -> None:
-    st.caption("CSV 用于批量新增或更新样本资产。字段校验通过后才会写入样本库。")
+    st.caption("CSV 用于批量新增或更新样本库视图；SQLite 可用时会同步正式评测资产。")
     st.download_button(
         "下载 CSV 模板",
         data=_csv_template_bytes(),
@@ -1366,8 +1429,10 @@ def _render_import_csv_dialog(rubric_dimensions: list[dict] | None) -> None:
                     if sample_id:
                         _select_sample(sample_id)
                         break
-            st.session_state["samples_import_result"] = (
-                f"已导入 {imported} 条样本，更新 {updated} 条，跳过 {skipped} 条重复记录。"
+            sync_suffix, level = _formal_sync_feedback_suffix()
+            _store_sample_operation_message(
+                f"已导入 {imported} 条样本，更新 {updated} 条，跳过 {skipped} 条重复记录。{sync_suffix}",
+                level=level,
             )
             _clear_dialog_state()
             st.rerun()
@@ -1606,7 +1671,8 @@ def _render_sample_editor_dialog_body(
 
     _select_sample(selected_id)
     _clear_dialog_state()
-    st.success(f"已保存样本 {selected_id}。")
+    sync_suffix, level = _formal_sync_feedback_suffix()
+    _store_sample_operation_message(f"已保存样本 {selected_id}。{sync_suffix}", level=level)
     st.rerun()
 
 
@@ -1628,7 +1694,8 @@ def _render_archive_dialog(sample_id: str) -> None:
                 return
             _select_sample(sample_id)
             _clear_dialog_state()
-            st.success(f"样本 {sample_id} 已移出测试。")
+            sync_suffix, level = _formal_sync_feedback_suffix()
+            _store_sample_operation_message(f"样本 {sample_id} 已移出测试。{sync_suffix}", level=level)
             st.rerun()
     with col2:
         if st.button("取消", key=f"samples_archive_cancel_{sample_id}", type="tertiary", use_container_width=True):
