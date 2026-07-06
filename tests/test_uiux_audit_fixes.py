@@ -76,9 +76,11 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn('"tertiary"', navigation_source)
         self.assertIn('[data-testid="stHorizontalBlock"]:has(.top-nav-brand)', components_source)
         self.assertIn("border: 0;", components_source)
-        self.assertIn('left: calc(50% - 50vw)', components_source)
         self.assertIn('use_container_width=False', navigation_source)
         self.assertIn("background: transparent !important;", components_source)
+        self.assertNotIn("position: sticky", components_source)
+        self.assertNotIn("position: fixed", components_source)
+        self.assertNotIn('left: calc(50% - 50vw)', components_source)
         self.assertNotIn(
             '[data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton > button[kind="secondary"] {\n'
             "    background: var(--fde-status-muted-bg)",
@@ -91,7 +93,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertNotIn('type="primary"', navigation_source)
 
         case_study_source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
-        self.assertEqual(1, case_study_source.count('type="primary"'))
+        self.assertEqual(0, case_study_source.count('type="primary"'))
 
     def test_main_pages_do_not_repeat_brand_eyebrow(self):
         for file_path in [
@@ -136,21 +138,22 @@ class UIUXAuditFixesTests(unittest.TestCase):
         case_study_source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         self.assertNotIn("✅", case_study_source)
 
-    def test_case_study_has_single_primary_cta(self):
+    def test_case_study_has_no_duplicate_cta_buttons(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         buttons = re.findall(r"st\.button\(", source)
-        self.assertEqual(2, len(buttons), "项目说明页应提供样本库与发起评测两个入口")
-        self.assertIn('查看样本库', source)
-        self.assertIn('发起评测', source)
-        self.assertEqual(1, source.count('type="primary"'))
-        self.assertIn('type="secondary"', source)
+        self.assertEqual(0, len(buttons), "项目说明页不再重复顶部导航入口")
+        self.assertNotIn('查看样本库', source)
+        self.assertNotIn('case_study_samples', source)
+        self.assertNotIn('case_study_try', source)
+        self.assertNotIn('type="primary"', source)
+        self.assertNotIn('type="secondary"', source)
 
     def test_case_study_does_not_duplicate_top_nav_actions(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         button_labels = re.findall(r'st\.button\("([^"]+)"', source)
 
-        self.assertEqual(["查看样本库", "发起评测"], button_labels)
-        for label in ["项目说明", "评分确认", "评测结论"]:
+        self.assertEqual([], button_labels)
+        for label in ["项目说明", "样本库", "发起评测", "评分确认", "评测结论"]:
             self.assertNotIn(label, button_labels)
 
     def test_case_study_does_not_render_status_or_domain_pills(self):

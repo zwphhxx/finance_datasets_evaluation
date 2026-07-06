@@ -141,18 +141,6 @@ def render_case_study_page(data_bundle: dict) -> None:
     render_clean_list(eval_items)
     st.caption("高分只能作为初稿参考，红线错误仍需人工判断。")
 
-    render_numbered_section("04", "进入操作")
-    st.caption("先检查样本库，再选择可测样本发起评测。评分草稿进入评分确认后才形成正式结论。")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("查看样本库", type="primary", key="case_study_samples"):
-            st.session_state.current_page = "samples"
-            st.rerun()
-    with col2:
-        if st.button("发起评测", type="secondary", key="case_study_try"):
-            st.session_state.current_page = "test_run"
-            st.rerun()
-
     # render_story_section is kept in src.ui.components for older imports; the
     # current landing page uses render_numbered_section for the unified shell.
 

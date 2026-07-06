@@ -60,8 +60,10 @@ class RegistrationTests(unittest.TestCase):
 
     def test_page_follows_project_explanation_sections(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
-        for section in ("项目定位", "评测流程", "数据边界", "进入操作"):
+        for section in ("项目定位", "评测流程", "数据边界"):
             self.assertIn(section, source, section)
+        self.assertNotIn('render_numbered_section("04", "进入操作")', source)
+        self.assertNotIn("查看样本库", source)
         self.assertIn("当前样本内观察", source)
         self.assertIn("使用边界", source)
 
