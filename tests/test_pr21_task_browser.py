@@ -6,14 +6,14 @@ top filters narrow that row set. Nothing is hardcoded.
 import unittest
 
 from src.data_service import load_all_data
-from src.ui import samples as tasks
+from src.ui import samples
 from src.ui.page_config import get_page_config
 
 
 class TaskBrowserTests(unittest.TestCase):
     def setUp(self):
         self.data = load_all_data()
-        self.rows = tasks.build_case_overview_rows(self.data)
+        self.rows = samples.build_case_overview_rows(self.data)
 
     def test_title_is_task_sample(self):
         self.assertEqual("样本库", get_page_config("samples").title)
@@ -50,14 +50,14 @@ class TaskBrowserTests(unittest.TestCase):
             self.assertEqual(expected, row["has_gold"], row["case_id"])
 
     def test_filter_by_gold_and_answer(self):
-        with_gold = tasks.filter_case_rows(self.rows, gold="有")
+        with_gold = samples.filter_case_rows(self.rows, gold="有")
         self.assertTrue(all(r["has_gold"] for r in with_gold))
 
-        without_answer = tasks.filter_case_rows(self.rows, answer="无")
+        without_answer = samples.filter_case_rows(self.rows, answer="无")
         self.assertTrue(all(r["model_answer_count"] == 0 for r in without_answer))
 
         first_domain = self.rows[0]["domain_label"]
-        by_domain = tasks.filter_case_rows(self.rows, domain=first_domain)
+        by_domain = samples.filter_case_rows(self.rows, domain=first_domain)
         self.assertTrue(all(r["domain_label"] == first_domain for r in by_domain))
 
     def test_capability_is_not_long_text(self):

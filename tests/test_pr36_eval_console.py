@@ -141,11 +141,6 @@ class LiveResultsAdapterTests(unittest.TestCase):
 
 
 class PageRemovalTests(unittest.TestCase):
-    def test_data_gap_and_standalone_pages_unregistered(self):
-        for page_key in ("live_eval", "error_analysis", "optimization_compare"):
-            self.assertNotIn(page_key, PAGES)
-            self.assertNotIn(page_key, PAGE_CONFIG_BY_KEY)
-
     def test_kept_pages_are_the_evaluation_loop_pages(self):
         self.assertEqual(
             [

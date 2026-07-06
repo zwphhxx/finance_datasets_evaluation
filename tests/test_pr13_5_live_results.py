@@ -204,12 +204,12 @@ class DefaultTaskSelectionTests(unittest.TestCase):
 
 class PersistFlagTests(unittest.TestCase):
     def test_page_uses_persist_return_not_is_mock_result(self):
-        source = Path("src/ui/eval_run_page.py").read_text(encoding="utf-8")
+        source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
         # 修复点：持久化标记取 persist_compare_result 的真实返回值。
         self.assertIn("persisted = er.persist_compare_result(result)", source)
-        self.assertIn('st.session_state["live_eval_persisted"] = persisted', source)
+        self.assertIn('st.session_state["test_run_persisted"] = persisted', source)
         # 不应再用 is_mock_result 充当落库标记。
-        self.assertNotIn('live_eval_persisted"] = er.is_mock_result', source)
+        self.assertNotIn('test_run_persisted"] = er.is_mock_result', source)
 
 
 if __name__ == "__main__":

@@ -142,12 +142,12 @@ class ComponentRenderTests(unittest.TestCase):
 
     def test_hero_renders_title_and_stats(self):
         components.render_hero(
-            "EYEBROW", "FinDueEval", "副标题", "价值句",
+            "EYEBROW", "财务/法律/投行场景大模型对比评测", "副标题", "价值句",
             stats=[("14", "任务"), ("3", "领域")],
         )
         html = "".join(self._captured)
         self.assertIn("fde-hero", html)
-        self.assertIn("FinDueEval", html)
+        self.assertIn("财务/法律/投行场景大模型对比评测", html)
         self.assertIn("fde-hero-stat", html)
 
     def test_hero_without_stats_omits_aside(self):
@@ -189,7 +189,7 @@ class ComponentRenderTests(unittest.TestCase):
     # --- PR-UI6 new component render tests ---
     def test_portfolio_landing_hero_renders(self):
         components.render_portfolio_landing_hero(
-            title="FinDueEval",
+            title="财务/法律/投行场景大模型对比评测",
             subtitle="副标题",
             description="描述",
             checklist_items=["项1", "项2"],
@@ -197,7 +197,7 @@ class ComponentRenderTests(unittest.TestCase):
         )
         html = "".join(self._captured)
         self.assertIn("portfolio-hero", html)
-        self.assertIn("FinDueEval", html)
+        self.assertIn("财务/法律/投行场景大模型对比评测", html)
         self.assertIn("portfolio-checklist", html)
         self.assertIn("项1", html)
         self.assertIn("10 任务", html)

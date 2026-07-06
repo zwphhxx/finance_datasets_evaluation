@@ -1,8 +1,8 @@
 """PR-27 tests: Gold Answer quality governance.
 
 Each Gold Answer carries the structured fields; the central evaluator derives a
-usable / partially-usable status from data; the overview and dataset-quality
-pages and the validator all read those fields dynamically with nothing hardcoded.
+usable / partially-usable status from data; the validator reads those fields
+dynamically with nothing hardcoded.
 """
 
 import json
@@ -14,7 +14,6 @@ from tempfile import TemporaryDirectory
 from scripts.validate_dataset import validate_dataset
 from src import gold_quality as gq
 from src.data_service import load_all_data
-from src.ui import overview as ov
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = PROJECT_ROOT / "data"
@@ -65,19 +64,6 @@ class GoldQualityEvaluatorTests(unittest.TestCase):
         self.assertEqual(gq.field_text(legacy, "core_conclusion"), "结论")
         self.assertEqual(gq.field_text(legacy, "key_evidence"), "依据")
         self.assertEqual(gq.field_list(legacy, "unacceptable_errors"), ["红线"])
-
-
-class OverviewGoldSummaryTests(unittest.TestCase):
-    def setUp(self):
-        self.data = load_all_data()
-
-    def test_summary_counts_match_data(self):
-        summary = ov.build_gold_quality_summary(self.data.gold_answer_map, self.data.tasks)
-        self.assertEqual(summary["total"], len(self.data.tasks))
-        self.assertEqual(summary["usable"] + summary["partial"], summary["total"])
-        # Seed Gold Answers are complete; the summary must reflect that, not invent it.
-        self.assertEqual(summary["usable"], summary["total"])
-        self.assertEqual(summary["partial_cases"], [])
 
 
 class ValidatorCompletenessTests(unittest.TestCase):

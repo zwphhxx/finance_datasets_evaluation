@@ -1,47 +1,32 @@
-"""PR-13 tests: overview insight numbers stay dynamic and task fields are
+"""PR-13 tests: project-intro numbers stay dynamic and task fields are
 presented in business Chinese without leaking raw English field values.
 """
 
 import unittest
 
 from src.data_service import load_all_data
-from src.ui import overview, tasks
+from src.ui import case_study, labels
 
 
-class OverviewPresentationTests(unittest.TestCase):
+class CaseStudyPresentationTests(unittest.TestCase):
     def setUp(self):
         self.data = load_all_data()
 
-    def test_insight_cards_are_three_and_data_driven(self):
-        cards = overview.get_overview_insight_cards(self.data)
-        self.assertEqual(["样本资产", "评测机制", "数据优化价值"], [c["label"] for c in cards])
-
-        # Numbers must match the loaded data, never hardcoded.
-        self.assertEqual(len(self.data.tasks), cards[0]["value"])
-        self.assertEqual(self.data.model_outputs["model_name"].nunique(), cards[1]["value"])
-        self.assertEqual(len(self.data.optimizations), cards[2]["value"])
-
-        domain_count = self.data.tasks["domain"].nunique()
-        self.assertIn(str(domain_count), cards[0]["note"])
-
     def test_summary_items_cover_core_assets_with_live_counts(self):
-        items = dict(overview.get_overview_summary_items(self.data))
+        items = dict(case_study.build_dataset_summary_items(self.data))
         self.assertIn("任务样本", items)
-        self.assertIn("模型回答", items)
-        self.assertIn(str(self.data.model_outputs["model_name"].nunique()), items["模型回答"])
+        self.assertIn("Gold Answer", items)
+        self.assertIn(str(len(self.data.tasks)), items["任务样本"])
 
-    def test_loop_steps_unchanged(self):
-        self.assertEqual(
-            ["专业任务", "Gold Answer", "模型回答", "Rubric 评分", "错误归因", "数据补强", "复测验证"],
-            overview.get_evaluation_loop_steps(),
-        )
+    def test_methodology_steps_unchanged(self):
+        self.assertEqual(5, len(case_study.get_methodology_items()))
 
 
 class TaskPresentationTests(unittest.TestCase):
     def setUp(self):
         self.data = load_all_data()
-        self.records = tasks.build_task_records(self.data.tasks)
-        self.table = tasks.build_task_table(self.data.tasks)
+        self.records = labels.build_task_records(self.data.tasks)
+        self.table = labels.build_task_table(self.data.tasks)
 
     def test_records_match_row_count(self):
         self.assertEqual(len(self.data.tasks), len(self.records))
@@ -57,13 +42,13 @@ class TaskPresentationTests(unittest.TestCase):
         self.assertEqual("high", sample["risk_badge"])
 
     def test_unmapped_values_fall_back_to_raw(self):
-        self.assertEqual("Unknown Domain", tasks.display_label("Unknown Domain", tasks.DOMAIN_LABELS))
-        self.assertEqual("未标注", tasks.display_label("", tasks.DOMAIN_LABELS))
+        self.assertEqual("Unknown Domain", labels.display_label("Unknown Domain", labels.DOMAIN_LABELS))
+        self.assertEqual("未标注", labels.display_label("", labels.DOMAIN_LABELS))
 
     def test_long_text_is_summarized(self):
         long_text = "甲" * 400
-        summary = tasks.summarize_text(long_text)
-        self.assertLessEqual(len(summary), tasks.SUMMARY_LIMIT + 1)
+        summary = labels.summarize_text(long_text)
+        self.assertLessEqual(len(summary), labels.SUMMARY_LIMIT + 1)
         self.assertTrue(summary.endswith("…"))
 
     def test_table_uses_business_chinese_headers_in_order(self):

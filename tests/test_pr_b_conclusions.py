@@ -52,8 +52,7 @@ class RegistrationTests(unittest.TestCase):
         self.assertIn("评测结论", PAGE_CONTEXTS)
 
     def test_positioning_not_a_leaderboard(self):
-        # PR-LOGIC2 merged model_diagnosis/model_boundary/overview into conclusions;
-        # the formal-conclusion positioning lives in case_study (project intro).
+        # The formal-conclusion positioning lives in case_study (project intro).
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         self.assertIn("当前样本内观察", source)
         self.assertIn("使用边界", source)

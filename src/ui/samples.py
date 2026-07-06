@@ -26,7 +26,7 @@ from src.ui.components import (
     render_page_heading,
 )
 from src.ui.page_config import get_page_config
-from src.ui.tasks import (
+from src.ui.labels import (
     DIFFICULTY_LABELS,
     DOMAIN_LABELS,
     TASK_TYPE_LABELS,

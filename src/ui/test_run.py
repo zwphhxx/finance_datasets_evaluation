@@ -1,6 +1,4 @@
 """发起评测页面。
-
-Replaces eval_run_page.
 - 选择可进入测试的样本与被测模型。
 - 裁判模型使用系统默认配置，页面不提供裁判模型输入。
 - 被测模型提示词不包含理想回复标准 / Gold Answer。
@@ -31,7 +29,7 @@ from src.ui.components import (
     render_page_heading,
 )
 from src.ui.page_config import get_page_config
-from src.ui.tasks import TASK_TYPE_LABELS, display_label, summarize_text
+from src.ui.labels import TASK_TYPE_LABELS, display_label, summarize_text
 
 MAIN_PROMPT = "选择样本和模型，生成模型回答与评分草稿。"
 

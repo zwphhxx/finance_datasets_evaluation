@@ -307,12 +307,12 @@ class ServiceAndWiringTests(unittest.TestCase):
         self.assertEqual([d["field"] for d in dims], [d["field"] for d in _DIMENSIONS])
         self.assertEqual(sum(d["full_mark"] for d in dims), 100)
 
-    def test_scoring_wired_through_console(self):
-        # 评分仍可用，但入口从独立页迁到总览页控制台；live_eval 页已撤销。
+    def test_scoring_wired_through_current_test_run_page(self):
+        # 评分仍可用，但入口收敛到「发起评测」页；live_eval 页已撤销。
         self.assertNotIn("live_eval", PAGES)
-        from src.ui.eval_console import render_eval_console
+        from src.ui.test_run import render_test_run_page
 
-        self.assertTrue(callable(render_eval_console))
+        self.assertTrue(callable(render_test_run_page))
         self.assertTrue(callable(sc.score_compare))
 
 

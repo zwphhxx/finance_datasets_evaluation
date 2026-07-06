@@ -8,12 +8,9 @@ configuration check (src.error_config) detects invalid labels, high-frequency
 errors without actions and orphan actions — while staying clean on the seed.
 """
 
-import os
 import tempfile
 import unittest
 from pathlib import Path
-
-import streamlit as st
 
 from app.services import dataset_service as ds
 from src.data_service import get_data_dir, read_csv_file
@@ -164,26 +161,6 @@ class ConfigurationCheckTests(unittest.TestCase):
         counts = {"孤独错误": 9}
         issues = evaluate_error_config(labels, counts, actions=[], rubric_dimensions=[])
         self.assertTrue(any(issue.kind == "high_freq_without_action" for issue in issues))
-
-
-class PageRenderTests(unittest.TestCase):
-    def test_dataset_admin_renders_with_taxonomy_sections(self):
-        from streamlit.testing.v1 import AppTest
-
-        previous = os.environ.get("FINDUEVAL_DB_PATH")
-        try:
-            st.cache_data.clear()
-            os.environ["FINDUEVAL_DB_PATH"] = str(_DB_PATH)
-            at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
-            at.session_state["current_page"] = "dataset_admin"
-            at.run(timeout=60)
-            self.assertEqual(list(at.exception), [])
-        finally:
-            if previous is None:
-                os.environ.pop("FINDUEVAL_DB_PATH", None)
-            else:
-                os.environ["FINDUEVAL_DB_PATH"] = previous
-            st.cache_data.clear()
 
 
 if __name__ == "__main__":

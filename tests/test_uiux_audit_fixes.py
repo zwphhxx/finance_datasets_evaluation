@@ -4,29 +4,29 @@ from pathlib import Path
 
 
 class UIUXAuditFixesTests(unittest.TestCase):
-    def test_overview_uses_flow_strip_not_loop_rail(self):
-        from src.ui.overview import get_evaluation_loop_steps
+    def test_legacy_ui_pages_are_removed_from_main_flow(self):
         import src.ui.components as components
 
-        expected = [
-            "专业任务",
-            "Gold Answer",
-            "模型回答",
-            "Rubric 评分",
-            "错误归因",
-            "数据补强",
-            "复测验证",
+        legacy_files = [
+            "src/ui/overview.py",
+            "src/ui/eval_run_page.py",
+            "src/ui/model_diagnosis.py",
+            "src/ui/model_boundary.py",
+            "src/ui/dataset_quality.py",
+            "src/ui/error_analysis.py",
+            "src/ui/optimization_compare.py",
+            "src/ui/case_detail.py",
+            "src/ui/dataset_admin.py",
+            "src/ui/evaluation_conclusions.py",
+            "src/ui/project_methodology.py",
+            "src/ui/tasks.py",
         ]
-        self.assertEqual(expected, get_evaluation_loop_steps())
-        self.assertTrue(hasattr(components, "render_flow_strip"))
-        self.assertIn(".flow-strip", components.STYLE_CSS)
-
-        overview_source = Path("src/ui/overview.py").read_text(encoding="utf-8")
-        self.assertNotIn("render_loop_rail", overview_source)
-        self.assertIn("render_flow_strip", overview_source)
+        for legacy_file in legacy_files:
+            self.assertFalse(Path(legacy_file).exists(), legacy_file)
 
         test_run_source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
         self.assertNotIn("loop-rail", test_run_source)
+        self.assertTrue(hasattr(components, "render_flow_strip"))
 
     def test_pages_keep_shared_page_components_available(self):
         import src.ui.components as components
@@ -274,7 +274,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertNotIn("render_evidence_panel", source)
         self.assertNotIn("st.expander", source)
 
-    def test_case_detail_uses_review_workbench_components(self):
+    def test_shared_review_components_remain_available(self):
         import src.ui.components as components
 
         self.assertTrue(hasattr(components, "render_answer_boundary_panel"))
@@ -287,26 +287,6 @@ class UIUXAuditFixesTests(unittest.TestCase):
             source = review_path.read_text(encoding="utf-8")
             self.assertNotIn("Preferred", source)
             self.assertNotIn("Rejected", source)
-
-    def test_error_analysis_prioritizes_error_to_data_action_path(self):
-        from src.data_service import load_all_data
-        from src.metrics import get_error_attribution_actions
-        from src.ui.error_analysis import build_error_action_path
-
-        data = load_all_data()
-        actions = get_error_attribution_actions(data.errors, data.optimizations)
-        path_df = build_error_action_path(actions)
-
-        self.assertFalse(path_df.empty)
-        self.assertEqual(
-            ["错误表现", "可能原因", "数据补强动作", "验证指标"],
-            list(path_df.columns),
-        )
-
-        source = Path("src/ui/error_analysis.py").read_text(encoding="utf-8")
-        self.assertIn("_show_error_action_path", source)
-        self.assertIn("错误表现 → 可能原因 → 数据补强动作", source)
-        self.assertIn("当前样本观察", source)
 
 
 if __name__ == "__main__":

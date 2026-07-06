@@ -2261,7 +2261,7 @@ def render_loop_rail(steps) -> None:
 
 
 def render_redline_verdict(text: str, badge: str = "红线优先") -> None:
-    """Render the single-statement verdict banner for the cockpit home.
+    """Render a single-statement verdict banner.
 
     `text` may contain a `[[...]]` span which is highlighted in the accent color;
     everything else is escaped as plain text.

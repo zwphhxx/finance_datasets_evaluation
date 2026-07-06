@@ -13,6 +13,7 @@ Covers:
 """
 
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -41,9 +42,31 @@ class PagesDictTests(unittest.TestCase):
             "overview", "case_detail", "model_diagnosis", "model_boundary",
             "dataset_quality", "project_methodology", "eval_run",
             "tasks", "evaluation_conclusions", "dataset_admin",
+            "model_results", "dataset", "cockpit",
         }
         for key in old_keys:
             self.assertNotIn(key, PAGES, f"Old key '{key}' should not be in PAGES")
+
+    def test_legacy_ui_page_files_are_removed(self):
+        """Legacy user-facing UI page files must not remain in src/ui."""
+        legacy_files = [
+            "case_detail.py",
+            "dataset_admin.py",
+            "dataset_quality.py",
+            "error_analysis.py",
+            "eval_console.py",
+            "eval_run_page.py",
+            "evaluation_conclusions.py",
+            "model_boundary.py",
+            "model_diagnosis.py",
+            "optimization_compare.py",
+            "overview.py",
+            "project_methodology.py",
+            "tasks.py",
+        ]
+        ui_dir = Path("src/ui")
+        for filename in legacy_files:
+            self.assertFalse((ui_dir / filename).exists(), filename)
 
 
 class PageConfigTests(unittest.TestCase):

@@ -54,7 +54,7 @@ def _build_home_stats(base, eval_status: dict | None) -> list[tuple[str, str]]:
 
 def _build_sample_scope_text(data) -> str:
     """Describe sample scope as plain text instead of homepage tags."""
-    from src.ui.tasks import DOMAIN_LABELS, display_label
+    from src.ui.labels import DOMAIN_LABELS, display_label
     tasks = getattr(data, "tasks", None)
     if tasks is None or tasks.empty or "domain" not in tasks.columns:
         return "样本来自金融尽调场景，已脱敏抽象为可评测任务；不包含真实公司、交易或敏感数据。"
