@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+from html import escape
 
 import pandas as pd
 import streamlit as st
@@ -676,11 +677,11 @@ def render_samples_page(data_bundle: dict) -> None:
     else:
         _render_samples_table(filtered, readiness_map)
 
-    render_numbered_section("03", "当前样本", "查看一个样本的评测资产结构。")
+    render_numbered_section("03", "当前样本", "选择一个样本，查看评测资产结构。")
     selected = _render_sample_detail(filtered, readiness_map, task_records, gold_map, rubric_dimensions)
 
-    render_numbered_section("04", "样本操作", "新增、编辑当前样本，或将当前样本移出测试。")
-    _render_current_sample_actions(selected)
+    render_numbered_section("04", "样本操作", "新增样本、备份恢复，或进入发起评测。")
+    _render_sample_page_actions()
     col1, col2 = st.columns([1, 3])
     with col1:
         if st.button("进入发起评测", key="samples_to_test_run", type="secondary", use_container_width=True):
@@ -765,11 +766,8 @@ def _ensure_selected_sample(samples: list[sr.Sample]) -> sr.Sample | None:
 def _render_current_sample_actions(selected: sr.Sample | None) -> None:
     is_archived = bool(selected and selected.status == sr.REMOVED_FROM_TEST_STATUS)
     disabled = selected is None
-    col1, col2, col3, col4 = st.columns([1, 1.1, 1, 2.8])
+    col1, col2, col3 = st.columns([1.15, 1, 3.2])
     with col1:
-        if st.button("新增样本", key="samples_create_open", type="primary", use_container_width=True):
-            _open_create_dialog()
-    with col2:
         edit_key = f"samples_selected_edit_{selected.sample_id if selected else 'none'}"
         if st.button(
             "编辑当前样本",
@@ -779,7 +777,7 @@ def _render_current_sample_actions(selected: sr.Sample | None) -> None:
             use_container_width=True,
         ) and selected is not None:
             _open_edit_dialog(selected.sample_id)
-    with col3:
+    with col2:
         archive_key = f"samples_selected_archive_{selected.sample_id if selected else 'none'}"
         if st.button(
             "移出测试",
@@ -789,16 +787,25 @@ def _render_current_sample_actions(selected: sr.Sample | None) -> None:
             use_container_width=True,
         ) and selected is not None:
             _open_archive_dialog(selected.sample_id)
-    with col4:
+    with col3:
+        if selected is None:
+            st.caption("当前查询无结果，无法编辑或移出测试。")
+        elif is_archived:
+            st.caption("该样本已移出测试。")
+        else:
+            st.caption("移出测试后，该样本不再进入发起评测，历史记录仍保留。")
+
+
+def _render_sample_page_actions() -> None:
+    col1, col2, col3 = st.columns([1, 1, 2.4])
+    with col1:
+        if st.button("新增样本", key="samples_create_open", type="secondary", use_container_width=True):
+            _open_create_dialog()
+    with col2:
         if st.button("更多操作", key="samples_more_open", type="tertiary", use_container_width=True):
             st.session_state["samples_dialog_mode"] = "more"
-
-    if selected is None:
-        st.caption("当前查询无结果，无法编辑或移出测试。")
-    elif is_archived:
-        st.caption("该样本已移出测试。")
-    else:
-        st.caption("移出测试是软删除：移出后不会进入发起评测，历史记录仍保留。")
+    with col3:
+        st.caption("新增和备份在此处理；当前样本的编辑与移出测试在上方详情区完成。")
 
 
 def _render_sample_detail(
@@ -816,6 +823,7 @@ def _render_sample_detail(
     if selected is None:
         render_empty_state("没有符合当前条件的样本。")
         return None
+    _render_current_sample_actions(selected)
 
     selected_id = selected.sample_id
     sample = sr.get_sample(str(selected_id))
@@ -830,10 +838,7 @@ def _render_sample_detail(
     gold_record = gold_map.get(sample.sample_id) or sample.gold_answer
     gold_display = parse_gold_answer_for_display(gold_record)
     rubric_rows = build_rubric_rows_for_display(rubric_dimensions, sample.rubric)
-    st.markdown(_sample_document_markdown(sample, readiness, task_record, gold_display))
-    _render_rubric_markdown_table(rubric_rows)
-    st.markdown(_readiness_markdown(sample, readiness))
-    st.markdown(_error_optimization_markdown(sample))
+    render_sample_detail_panel(sample, readiness, task_record, gold_display, rubric_rows)
     return sample
 
 
@@ -863,67 +868,98 @@ def _sample_option_label(sample_id: str, samples: list[sr.Sample]) -> str:
     return f"{sample.sample_id} · {_truncate(sample.title, 46)}"
 
 
-def _sample_document_markdown(
+def render_sample_detail_panel(
     sample: sr.Sample,
     readiness: ds.SampleReadiness,
     task_record: dict,
     gold_display: dict,
-) -> str:
+    rubric_rows: list[dict[str, str]],
+) -> None:
     test_status = _test_status_label(sample, readiness)
     completeness = "通过" if readiness.is_testable else ("已移出测试" if test_status == "已移出测试" else "待补充")
     task_prompt, business_context, output_requirement = _task_markdown_values(sample, task_record)
+    title = f"{_html_text(sample.sample_id or '待补充')}｜{_html_text(sample.title or '未命名样本')}"
+    meta = "｜".join([
+        _html_text(test_status),
+        _html_text(_sample_status_label(sample)),
+        f"完整度{_html_text(completeness)}",
+        f"更新：{_html_text(_format_date(sample.updated_at))}",
+    ])
+    body = "".join([
+        _detail_section_html("基本信息", _basic_info_html(sample, readiness, task_record, test_status, completeness)),
+        _detail_section_html("任务内容", _task_detail_html(task_prompt, business_context, output_requirement)),
+        _detail_section_html("理想回复标准 / Gold Answer", _gold_detail_html(gold_display)),
+        _detail_section_html("Rubric 评分标准", _rubric_detail_html(rubric_rows)),
+        _detail_section_html("准入状态与完整度", _readiness_detail_html(sample, readiness)),
+        _detail_section_html("错误标签与优化建议", _error_optimization_detail_html(sample)),
+    ])
+    render_html(
+        f"""
+        <div class="sample-detail-panel">
+            <div class="sample-detail-panel-header">
+                <div class="sample-detail-panel-title">{title}</div>
+                <div class="sample-detail-panel-meta">{meta}</div>
+            </div>
+            <div class="sample-detail-panel-body">{body}</div>
+        </div>
+        """
+    )
+
+
+def _detail_section_html(title: str, content_html: str) -> str:
+    return (
+        '<section class="sample-detail-section">'
+        f'<div class="sample-detail-section-title">{escape(str(title))}</div>'
+        f"{content_html}"
+        "</section>"
+    )
+
+
+def _basic_info_html(
+    sample: sr.Sample,
+    readiness: ds.SampleReadiness,
+    task_record: dict,
+    test_status: str,
+    completeness: str,
+) -> str:
+    domain = display_label(task_record.get("domain"), DOMAIN_LABELS)
+    task_type = display_label(task_record.get("task_type"), TASK_TYPE_LABELS)
+    rows = [
+        ("场景", sample.scenario or task_record.get("scenario") or "待补充"),
+        ("领域", domain or "待补充"),
+        ("任务类型", task_type or "待补充"),
+        ("难度", _difficulty_label(sample.difficulty or task_record.get("difficulty"))),
+        ("风险等级", task_record.get("risk_level") or "待补充"),
+        ("测试状态", test_status),
+        ("样本状态", _sample_status_label(sample)),
+        ("完整度", completeness or readiness.label),
+    ]
+    return _kv_grid_html(rows)
+
+
+def _task_detail_html(task_prompt: str, business_context: str, output_requirement: str) -> str:
+    return "".join([
+        _field_block_html("任务题", task_prompt),
+        _field_block_html("业务背景", business_context),
+        _field_block_html("输出要求", output_requirement),
+    ])
+
+
+def _gold_detail_html(gold_display: dict) -> str:
     fields = gold_display.get("fields", {})
     lists = gold_display.get("lists", {})
     fallback = str(gold_display.get("fallback_text") or "").strip()
-    fallback_note = (
-        "\n\n> Gold Answer 未识别为结构化 JSON，以下保留原文：\n\n"
-        f"{_md_value(fallback)}"
-        if fallback
-        else ""
-    )
-    return f"""
-**当前样本：{_md_value(sample.sample_id or "待补充")}**
-
-- 任务标题：{_md_value(sample.title or "未命名样本")}
-- 场景：{_md_value(sample.scenario or "待补充")}
-- 测试状态：{_md_value(test_status)}
-- 完整度：{_md_value(completeness)}
-- 当前状态：{_md_value(_sample_status_label(sample))}
-- 更新时间：{_md_value(_format_date(sample.updated_at))}
-
-**任务内容**
-
-**任务题：**
-{_md_value(task_prompt)}
-
-**业务背景：**
-{_md_value(business_context)}
-
-**输出要求：**
-{_md_value(output_requirement)}
-
-**理想回复标准 / Gold Answer**
-
-**核心结论：**
-{_md_value(fields.get("核心结论", "待补充"))}
-
-**关键依据：**
-{_md_value(fields.get("关键依据", "待补充"))}
-
-**必须覆盖点：**
-
-{_md_list(lists.get("必须覆盖点", []))}
-
-**不可接受错误：**
-
-{_md_list(lists.get("不可接受错误", []))}
-
-**边界条件：**
-{_md_value(fields.get("边界条件", "待补充"))}
-
-**人工复核提示：**
-{_md_value(fields.get("人工复核提示", "待补充"))}{fallback_note}
-""".strip()
+    parts = [
+        _field_block_html("核心结论", fields.get("核心结论", "待补充")),
+        _field_block_html("关键依据", fields.get("关键依据", "待补充")),
+        _list_block_html("必须覆盖点", lists.get("必须覆盖点", [])),
+        _list_block_html("不可接受错误", lists.get("不可接受错误", [])),
+        _field_block_html("边界条件", fields.get("边界条件", "待补充")),
+        _field_block_html("人工复核提示", fields.get("人工复核提示", "待补充")),
+    ]
+    if fallback:
+        parts.append(_field_block_html("Gold Answer 原文", fallback))
+    return "".join(parts)
 
 
 def _task_markdown_values(sample: sr.Sample, task_record: dict) -> tuple[str, str, str]:
@@ -937,73 +973,78 @@ def _task_markdown_values(sample: sr.Sample, task_record: dict) -> tuple[str, st
     return str(task_prompt), str(context), str(output_requirement)
 
 
-def _render_rubric_markdown_table(rubric_rows: list[dict[str, str]]) -> None:
-    st.markdown("**Rubric 评分标准**")
+def _rubric_detail_html(rubric_rows: list[dict[str, str]]) -> str:
     if not rubric_rows:
-        st.markdown("待补充")
-        return
-    frame = pd.DataFrame(rubric_rows)
-    columns = ["评分维度", "满分", "满分标准", "扣分规则"]
-    st.dataframe(
-        frame[[column for column in columns if column in frame.columns]],
-        hide_index=True,
-        width="stretch",
-        height=min(320, max(96, 42 + len(frame) * 40)),
-        column_config={
-            "评分维度": st.column_config.TextColumn("维度", width="medium"),
-            "满分": st.column_config.TextColumn("满分", width="small"),
-            "满分标准": st.column_config.TextColumn("满分标准", width="large"),
-            "扣分规则": st.column_config.TextColumn("扣分规则", width="large"),
-        },
+        return '<p class="sample-detail-text">待补充</p>'
+    headers = ["评分维度", "满分", "满分标准", "扣分规则"]
+    header_html = "".join(f"<th>{escape(header)}</th>" for header in headers)
+    row_html = ""
+    for row in rubric_rows:
+        row_html += "<tr>" + "".join(
+            f"<td>{_html_multiline(row.get(header), fallback='待补充')}</td>"
+            for header in headers
+        ) + "</tr>"
+    return f'<table class="sample-detail-table"><thead><tr>{header_html}</tr></thead><tbody>{row_html}</tbody></table>'
+
+
+def _readiness_detail_html(sample: sr.Sample, readiness: ds.SampleReadiness) -> str:
+    missing_items = "无" if not readiness.missing_items else "；".join(readiness.missing_items)
+    satisfied = readiness.satisfied_items or ["待补充"]
+    rows = [
+        ("是否可测试", "是" if readiness.is_testable else "否"),
+        ("当前状态", _sample_status_label(sample)),
+        ("检查结果", readiness.label),
+        ("缺失项", missing_items),
+        ("复核备注", sample.reviewer_note or "未填写"),
+    ]
+    return _kv_grid_html(rows) + _list_block_html("已满足项", satisfied)
+
+
+def _error_optimization_detail_html(sample: sr.Sample) -> str:
+    return "".join([
+        _list_block_html("错误标签", sample.error_tags, fallback="暂无关联错误标签"),
+        _list_block_html("常见问题", sample.model_answers, fallback="暂无历史模型回答记录"),
+        _list_block_html("数据优化建议", sample.improvement_suggestions, fallback="暂无优化建议"),
+    ])
+
+
+def _kv_grid_html(rows: list[tuple[str, object]]) -> str:
+    items = "".join(
+        f"""
+        <div class="sample-detail-kv">
+            <span>{escape(str(label))}</span>
+            <strong>{_html_multiline(value)}</strong>
+        </div>
+        """
+        for label, value in rows
+    )
+    return f'<div class="sample-detail-kv-grid">{items}</div>'
+
+
+def _field_block_html(label: str, value, fallback: str = "待补充") -> str:
+    return (
+        f'<div class="sample-detail-label">{escape(str(label))}</div>'
+        f'<p class="sample-detail-text">{_html_multiline(value, fallback=fallback)}</p>'
     )
 
 
-def _readiness_markdown(sample: sr.Sample, readiness: ds.SampleReadiness) -> str:
-    missing_items = "无" if not readiness.missing_items else "；".join(readiness.missing_items)
-    satisfied = readiness.satisfied_items or ["待补充"]
-    return f"""
-**完整度检查**
-
-- 是否可测试：{"是" if readiness.is_testable else "否"}
-- 当前状态：{_md_value(_sample_status_label(sample))}
-- 检查结果：{_md_value(readiness.label)}
-- 缺失项：{_md_value(missing_items)}
-- 复核备注：{_md_value(sample.reviewer_note or "未填写")}
-
-**已满足项：**
-
-{_md_list(satisfied)}
-""".strip()
-
-
-def _error_optimization_markdown(sample: sr.Sample) -> str:
-    return f"""
-**错误标签与优化建议**
-
-**错误标签：**
-
-{_md_list(sample.error_tags, fallback="暂无关联错误标签")}
-
-**常见问题：**
-
-{_md_list(sample.model_answers, fallback="暂无历史模型回答记录")}
-
-**数据优化建议：**
-
-{_md_list(sample.improvement_suggestions, fallback="暂无优化建议")}
-""".strip()
-
-
-def _md_value(value, fallback: str = "待补充") -> str:
-    text = _clean_text(value, fallback=fallback)
-    return text.replace("\n", "\n\n")
-
-
-def _md_list(items: list[str], fallback: str = "待补充") -> str:
-    values = [str(item).strip() for item in items if str(item).strip()]
+def _list_block_html(label: str, items, fallback: str = "待补充") -> str:
+    values = [str(item).strip() for item in (items or []) if str(item).strip()]
     if not values:
         values = [fallback]
-    return "\n".join(f"- {_md_value(item)}" for item in values)
+    item_html = "".join(f"<li>{_html_multiline(item)}</li>" for item in values)
+    return (
+        f'<div class="sample-detail-label">{escape(str(label))}</div>'
+        f'<ul class="sample-detail-list">{item_html}</ul>'
+    )
+
+
+def _html_text(value, fallback: str = "待补充") -> str:
+    return escape(_clean_text(value, fallback=fallback))
+
+
+def _html_multiline(value, fallback: str = "待补充") -> str:
+    return _html_text(value, fallback=fallback).replace("\n", "<br>")
 
 
 def _render_backup_controls() -> None:
