@@ -265,14 +265,16 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn('disabled=not selected_cases', source)
         self.assertIn('disabled=not chosen_models', source)
 
-    def test_review_seed_mode_hides_confirm_archive(self):
-        source = Path("src/ui/review.py").read_text(encoding="utf-8")
-        self.assertIn("score_run_id", source)
-        self.assertIn('"确认生效"', source)
-        self.assertIn('@st.dialog("确认生效"', source)
-        self.assertIn('@st.dialog("修订后确认"', source)
-        self.assertIn('@st.dialog("暂不采用"', source)
-        self.assertNotIn("def _render_case_review", source)
+    def test_review_seed_mode_hides_direct_confirmation_for_examples(self):
+        page_source = Path("src/ui/review.py").read_text(encoding="utf-8")
+        actions_source = Path("src/ui/review_actions.py").read_text(encoding="utf-8")
+        queue_source = Path("src/ui/review_queue.py").read_text(encoding="utf-8")
+        self.assertIn("score_run_id", page_source)
+        self.assertIn('"确认生效"', actions_source)
+        self.assertIn('@st.dialog("确认生效"', actions_source)
+        self.assertIn('@st.dialog("修订后确认"', actions_source)
+        self.assertIn('@st.dialog("暂不采用"', actions_source)
+        self.assertNotIn("def _render_case_review", page_source + actions_source + queue_source)
 
     def test_conclusions_does_not_render_card_classes(self):
         source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")

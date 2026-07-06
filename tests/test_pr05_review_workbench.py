@@ -58,21 +58,25 @@ class ReviewStructureTests(unittest.TestCase):
         self.assertIn("build_review_recommendation", source)
 
     def test_confirmation_actions_are_dialog_based(self):
-        source = Path("src/ui/review.py").read_text(encoding="utf-8")
+        source = Path("src/ui/review_actions.py").read_text(encoding="utf-8")
         self.assertIn('@st.dialog("确认生效"', source)
         self.assertIn('@st.dialog("修订后确认"', source)
         self.assertIn('@st.dialog("暂不采用"', source)
-        actions_source = source.split("def _render_confirmation_actions", 1)[1].split('@st.dialog("确认生效"', 1)[0]
+        actions_source = source.split("def render_confirmation_actions", 1)[1].split('@st.dialog("确认生效"', 1)[0]
         self.assertNotIn("number_input", actions_source)
         self.assertNotIn("text_area", actions_source)
 
     def test_review_page_does_not_use_risk_note_cards(self):
-        source = Path("src/ui/review.py").read_text(encoding="utf-8")
-        self.assertNotIn("review-risk-note", source)
-        self.assertNotIn('st.markdown("### 命中红线")', source)
-        self.assertNotIn('st.markdown("### 关键维度低分")', source)
-        self.assertIn('@st.dialog("评分材料"', source)
-        self.assertIn('"查看评分材料"', source)
+        combined = "\n".join(
+            Path(path).read_text(encoding="utf-8")
+            for path in ["src/ui/review.py", "src/ui/review_materials.py", "src/ui/review_scoring.py"]
+        )
+        self.assertNotIn("review-risk-note", combined)
+        self.assertNotIn('st.markdown("### 命中红线")', combined)
+        self.assertNotIn('st.markdown("### 关键维度低分")', combined)
+        materials_source = Path("src/ui/review_materials.py").read_text(encoding="utf-8")
+        self.assertIn('@st.dialog("评分材料"', materials_source)
+        self.assertIn('"查看评分材料"', materials_source)
 
 
 class ReviewMatrixTests(unittest.TestCase):
@@ -173,7 +177,7 @@ class RecommendationTests(unittest.TestCase):
 
         self.assertEqual("建议确认", recommendation["recommendation"])
 
-    def test_redline_or_low_score_is_not_recommended_for_archive(self):
+    def test_redline_or_low_score_is_not_recommended_for_adoption(self):
         row = _score_row(
             total_score=45,
             answer_text="回答内容",
@@ -265,12 +269,14 @@ class ReviewQueueTests(unittest.TestCase):
         self.assertEqual(1, review.selected_review_table_index({"selection": {"rows": [1]}}, [first, second]))
 
     def test_review_page_no_longer_exposes_dropdown_or_bulk_confirm(self):
-        source = Path("src/ui/review.py").read_text(encoding="utf-8")
+        page_source = Path("src/ui/review.py").read_text(encoding="utf-8")
+        queue_source = Path("src/ui/review_queue.py").read_text(encoding="utf-8")
+        combined = page_source + "\n" + queue_source
 
-        self.assertNotIn('st.selectbox(\n        "当前评分"', source)
-        self.assertIn("selection_mode=\"single-row\"", source)
-        self.assertNotIn("批量确认生效", source)
-        self.assertNotIn("CheckboxColumn", source)
+        self.assertNotIn('st.selectbox(\n        "当前评分"', combined)
+        self.assertIn("selection_mode=\"single-row\"", queue_source)
+        self.assertNotIn("批量" + "确认生效", combined)
+        self.assertNotIn("CheckboxColumn", combined)
 
     def test_action_message_payload_persists_after_rerun(self):
         payload = review.build_review_action_result("confirm", 42)
