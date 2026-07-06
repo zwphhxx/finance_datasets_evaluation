@@ -55,6 +55,20 @@ class ReadmeCurrentFlowTests(unittest.TestCase):
         for phrase in retired_page_phrases:
             self.assertNotIn(phrase, text)
 
+    def test_readme_documents_scoring_timeout_recovery(self):
+        text = Path("README.md").read_text(encoding="utf-8")
+
+        for phrase in [
+            "## 运行稳定性与失败恢复",
+            "SILICONFLOW_TIMEOUT_SECONDS=120",
+            'SILICONFLOW_TIMEOUT_SECONDS = "120"',
+            "评分失败通常是裁判模型超时，不代表样本失败",
+            "重试失败评分",
+            "推荐演示时选择 1 个样本 + 1 个模型",
+            "提前生成并确认评分结果",
+        ]:
+            self.assertIn(phrase, text)
+
 
 class NavigationAndPageConfigGuardrailTests(unittest.TestCase):
     def test_navigation_only_exposes_current_five_pages(self):

@@ -19,11 +19,12 @@ import io
 import json
 import math
 import re
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from app.models.base import ModelProvider, STATUS_FAILED, STATUS_MOCK, STATUS_SUCCESS
 from app.services import model_display as md
@@ -32,6 +33,22 @@ from app.services import model_display as md
 DEFAULT_JUDGE_MODEL = "deepseek-ai/DeepSeek-V4-Pro"
 SCORE_EXPORT_TYPE = "findueval_live_scores"
 SCORE_EXPORT_SCHEMA_VERSION = 1
+DEFAULT_JUDGE_RETRY_DELAYS: tuple[float, float] = (3.0, 8.0)
+RETRYABLE_JUDGE_ERRORS = {
+    "timeout",
+    "rate_limited",
+    "service_unavailable",
+    "gateway_timeout",
+    "connection_error",
+}
+NON_RETRYABLE_JUDGE_ERRORS = {
+    "unauthorized",
+    "bad_request",
+    "not_found",
+    "missing_api_key",
+    "judge_parse_error",
+    "invalid_response",
+}
 
 SCORE_EXPORT_COLUMNS = [
     "score_run_id",
@@ -123,6 +140,7 @@ class ScoreOutcome:
     trace_id: str | None = None
     error_code: str | None = None
     error_message: str | None = None
+    retry_count: int = 0
 
     @property
     def ok(self) -> bool:
@@ -249,6 +267,8 @@ def score_single(
     eval_model: str = "",
     temperature: float = 0.0,
     max_tokens: int = 1024,
+    retry_delays: Sequence[float] | None = None,
+    sleep_fn: Callable[[float], None] | None = None,
     **kwargs: Any,
 ) -> ScoreOutcome:
     """对单条（被评测回答）做一次裁判评分，转为统一 ScoreOutcome（不抛异常给调用方）。"""
@@ -273,37 +293,66 @@ def score_single(
         )
 
     messages = build_judge_messages(task, answer_text, gold, dimensions)
-    result = provider.generate_response(
-        judge_model_id, messages, temperature=temperature, max_tokens=max_tokens, **kwargs
-    )
-    common = dict(
-        latency_ms=result.latency_ms,
-        input_tokens=result.input_tokens,
-        output_tokens=result.output_tokens,
-        total_tokens=result.total_tokens,
-        trace_id=result.trace_id,
-    )
+    delays = tuple(DEFAULT_JUDGE_RETRY_DELAYS if retry_delays is None else retry_delays)
+    sleeper = sleep_fn or time.sleep
+    retry_count = 0
 
-    if not result.ok:
+    while True:
+        result = provider.generate_response(
+            judge_model_id, messages, temperature=temperature, max_tokens=max_tokens, **kwargs
+        )
+        common = dict(
+            latency_ms=result.latency_ms,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            total_tokens=result.total_tokens,
+            trace_id=result.trace_id,
+        )
+
+        if result.ok:
+            parsed = parse_judge_output(result.response_text, dimensions)
+            if parsed.ok:
+                return ScoreOutcome(
+                    **base, judge_status=STATUS_SUCCESS,
+                    scores=parsed.scores, total_score=parsed.total,
+                    rationale=parsed.rationale, review_note=parsed.review_note,
+                    retry_count=retry_count, **common,
+                )
+            error_code = "judge_parse_error"
+            error_message = parsed.error
+        else:
+            error_code = result.error_code or "invalid_response"
+            error_message = result.error_message or "裁判评分失败。"
+
+        if _should_retry_judge_error(error_code, retry_count, delays):
+            delay = float(delays[retry_count])
+            retry_count += 1
+            sleeper(delay)
+            continue
+
         return ScoreOutcome(
             **base, judge_status=STATUS_FAILED,
             scores={d["field"]: None for d in dimensions}, total_score=None,
-            error_code=result.error_code, error_message=result.error_message, **common,
+            error_code=error_code,
+            error_message=_with_retry_count(error_message, retry_count),
+            retry_count=retry_count,
+            **common,
         )
 
-    parsed = parse_judge_output(result.response_text, dimensions)
-    if not parsed.ok:
-        return ScoreOutcome(
-            **base, judge_status=STATUS_FAILED,
-            scores={d["field"]: None for d in dimensions}, total_score=None,
-            error_code="judge_parse_error", error_message=parsed.error, **common,
-        )
 
-    return ScoreOutcome(
-        **base, judge_status=STATUS_SUCCESS,
-        scores=parsed.scores, total_score=parsed.total,
-        rationale=parsed.rationale, review_note=parsed.review_note, **common,
-    )
+def _should_retry_judge_error(error_code: str | None, retry_count: int, delays: Sequence[float]) -> bool:
+    code = str(error_code or "").strip().lower()
+    return code in RETRYABLE_JUDGE_ERRORS and retry_count < len(delays)
+
+
+def _with_retry_count(message: str | None, retry_count: int) -> str:
+    text = _clean(message) or "裁判评分失败。"
+    if retry_count <= 0:
+        return text
+    suffix = f"已重试 {retry_count} 次。"
+    if suffix in text:
+        return text
+    return f"{text} {suffix}"
 
 
 def score_compare(
@@ -393,7 +442,24 @@ def persist_score_outcome(
         if not database_ready(path):
             return False
         repo = Repository(path)
-        if _score_outcome_exists(repo, score_run_id, outcome.case_id, outcome.eval_model):
+        existing = _find_score_outcome_row(repo, score_run_id, outcome.case_id, outcome.eval_model)
+        if existing is not None:
+            if _should_update_existing_score_outcome(existing, outcome):
+                row_id = _as_number(existing.get("id"))
+                if row_id is None:
+                    return True
+                repo.update(
+                    "live_run_scores",
+                    int(row_id),
+                    _score_outcome_row(
+                        score_run_id,
+                        run_id,
+                        judge_provider,
+                        judge_model,
+                        mode,
+                        outcome,
+                    ),
+                )
             return True
         repo.bulk_insert(
             "live_run_scores",
@@ -414,21 +480,35 @@ def persist_score_outcome(
 
 
 def _score_outcome_exists(repo, score_run_id: str, case_id: str, eval_model: str) -> bool:
+    return _find_score_outcome_row(repo, score_run_id, case_id, eval_model) is not None
+
+
+def _find_score_outcome_row(repo, score_run_id: str, case_id: str, eval_model: str) -> dict[str, Any] | None:
     try:
         rows = repo.list_df("live_run_scores")
         if rows.empty:
-            return False
+            return None
         required = {"score_run_id", "case_id", "eval_model"}
         if not required.issubset(rows.columns):
-            return False
+            return None
         matched = rows[
             (rows["score_run_id"].astype(str) == str(score_run_id))
             & (rows["case_id"].astype(str) == str(case_id))
             & (rows["eval_model"].astype(str) == str(eval_model))
         ]
-        return not matched.empty
+        if matched.empty:
+            return None
+        return matched.iloc[0].to_dict()
     except Exception:
+        return None
+
+
+def _should_update_existing_score_outcome(existing: Mapping[str, Any], outcome: ScoreOutcome) -> bool:
+    review_status = str(existing.get("review_status") or "pending").strip().lower()
+    if review_status in {"confirmed", "skipped"}:
         return False
+    existing_status = str(existing.get("judge_status") or "").strip().lower()
+    return existing_status != STATUS_SUCCESS
 
 
 def _score_outcome_row(

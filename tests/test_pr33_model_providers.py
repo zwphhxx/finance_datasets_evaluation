@@ -7,6 +7,7 @@ and registry resolution.
 """
 
 import json
+import os
 import unittest
 import urllib.error
 from unittest import mock
@@ -79,6 +80,15 @@ class SiliconFlowConfigTests(unittest.TestCase):
         provider = SiliconFlowProvider(api_key="sk-x", base_url=None, timeout_seconds=None)
         self.assertEqual(provider.base_url, sf.DEFAULT_BASE_URL)
         self.assertEqual(provider.timeout_seconds, float(sf.DEFAULT_TIMEOUT_SECONDS))
+
+    def test_timeout_can_be_configured_and_invalid_values_fallback(self):
+        with mock.patch.dict(os.environ, {"SILICONFLOW_TIMEOUT_SECONDS": "120"}, clear=False):
+            provider = SiliconFlowProvider(api_key="sk-x", timeout_seconds=None)
+            self.assertEqual(provider.timeout_seconds, 120.0)
+
+        with mock.patch.dict(os.environ, {"SILICONFLOW_TIMEOUT_SECONDS": "bad-value"}, clear=False):
+            provider = SiliconFlowProvider(api_key="sk-x", timeout_seconds=None)
+            self.assertEqual(provider.timeout_seconds, float(sf.DEFAULT_TIMEOUT_SECONDS))
 
     def test_balance_is_optional(self):
         provider = SiliconFlowProvider(api_key="sk-x")

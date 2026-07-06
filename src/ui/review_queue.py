@@ -338,7 +338,7 @@ def has_pending_review_items(items: list[dict]) -> bool:
 def review_empty_message(items: list[dict]) -> str:
     if has_pending_review_items(items):
         return "当前筛选条件下暂无评分记录。"
-    return "当前批次暂无待处理评分。"
+    return "暂无待处理评分草稿。若发起评测页存在评分失败，请先重试评分。"
 
 
 def should_show_no_pending_after_action(items: list[dict], action_recent: bool) -> bool:

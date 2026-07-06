@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.models.base import GenerationResult, ModelProvider, STATUS_SUCCESS
+from app.models.base import GenerationResult, ModelProvider, STATUS_FAILED, STATUS_SUCCESS
 from app.models.registry import get_provider
 from app.services import dataset_service as ds
 from app.services import eval_runner as er
@@ -86,6 +86,44 @@ class _GarbageJudge(ModelProvider):
 
     def generate_response(self, model_id, messages, *, temperature=0.2, max_tokens=2048, **kwargs):
         return GenerationResult(self.name, model_id, STATUS_SUCCESS, response_text="无法评分，抱歉。")
+
+
+class _SequenceJudge(ModelProvider):
+    name = "sequencejudge"
+
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = 0
+        self.kwargs_seen = []
+
+    def list_models(self, model_type="text", sub_type="chat"):
+        raise NotImplementedError
+
+    def generate_response(self, model_id, messages, *, temperature=0.2, max_tokens=2048, **kwargs):
+        self.calls += 1
+        self.kwargs_seen.append(dict(kwargs))
+        item = self.responses[min(self.calls - 1, len(self.responses) - 1)]
+        if item == "success":
+            scores = {
+                "accuracy_score": 26,
+                "reasoning_score": 18,
+                "coverage_score": 18,
+                "evidence_score": 13,
+                "expression_score": 13,
+            }
+            return GenerationResult(
+                self.name,
+                model_id,
+                STATUS_SUCCESS,
+                response_text=_valid_judge_json(scores),
+            )
+        return GenerationResult(
+            self.name,
+            model_id,
+            STATUS_FAILED,
+            error_code=str(item),
+            error_message=f"{item} failed",
+        )
 
 
 class MultiModelRunTests(unittest.TestCase):
@@ -195,6 +233,93 @@ class ScoreCompareTests(unittest.TestCase):
             self.assertIsNone(o.total_score)
             self.assertTrue(all(v is None for v in o.scores.values()))
 
+    def test_retryable_judge_error_retries_until_success(self):
+        provider = _SequenceJudge(["timeout", "success"])
+        sleeps = []
+
+        outcome = sc.score_single(
+            provider,
+            "judge/x",
+            {"case_id": "C1", "task_type": "analysis", "question": "Q"},
+            "模型回答",
+            {},
+            _DIMENSIONS,
+            eval_model="vendor/model",
+            retry_delays=(0, 0),
+            sleep_fn=sleeps.append,
+        )
+
+        self.assertTrue(outcome.ok)
+        self.assertEqual(2, provider.calls)
+        self.assertEqual(1, outcome.retry_count)
+        self.assertEqual([0], sleeps)
+
+    def test_retryable_judge_error_stops_after_two_retries(self):
+        provider = _SequenceJudge(["timeout", "gateway_timeout", "rate_limited"])
+        sleeps = []
+
+        outcome = sc.score_single(
+            provider,
+            "judge/x",
+            {"case_id": "C1", "task_type": "analysis", "question": "Q"},
+            "模型回答",
+            {},
+            _DIMENSIONS,
+            eval_model="vendor/model",
+            retry_delays=(0, 0),
+            sleep_fn=sleeps.append,
+        )
+
+        self.assertEqual("failed", outcome.judge_status)
+        self.assertEqual(3, provider.calls)
+        self.assertEqual(2, outcome.retry_count)
+        self.assertEqual([0, 0], sleeps)
+        self.assertIn("已重试 2 次", outcome.error_message)
+
+    def test_non_retryable_judge_errors_do_not_retry(self):
+        for error_code in [
+            "unauthorized",
+            "bad_request",
+            "not_found",
+            "missing_api_key",
+            "judge_parse_error",
+            "invalid_response",
+        ]:
+            provider = _SequenceJudge([error_code, "success"])
+            outcome = sc.score_single(
+                provider,
+                "judge/x",
+                {"case_id": "C1", "task_type": "analysis", "question": "Q"},
+                "模型回答",
+                {},
+                _DIMENSIONS,
+                eval_model="vendor/model",
+                retry_delays=(0, 0),
+                sleep_fn=lambda _: None,
+            )
+            self.assertEqual("failed", outcome.judge_status, error_code)
+            self.assertEqual(1, provider.calls, error_code)
+            self.assertEqual(0, outcome.retry_count, error_code)
+
+    def test_score_compare_continues_when_one_score_fails_after_retries(self):
+        compare = self._compare()
+        provider = _SequenceJudge(["timeout", "timeout", "timeout", "success"])
+
+        result = sc.score_compare(
+            provider,
+            compare,
+            {},
+            {},
+            _DIMENSIONS,
+            judge_model_id="judge/x",
+            retry_delays=(0, 0),
+            sleep_fn=lambda _: None,
+        )
+
+        self.assertEqual(2, len(result.outcomes))
+        self.assertEqual(["failed", "success"], [outcome.judge_status for outcome in result.outcomes])
+        self.assertEqual(4, provider.calls)
+
 
 class ScorePersistenceTests(unittest.TestCase):
     def test_persist_and_confirm_review(self):
@@ -244,6 +369,59 @@ class ScorePersistenceTests(unittest.TestCase):
         self.assertEqual("pending", rows[0]["review_status"])
         self.assertEqual(outcome.case_id, rows[0]["case_id"])
         self.assertEqual(outcome.eval_model, rows[0]["eval_model"])
+
+    def test_failed_score_row_can_be_updated_by_retry_success_without_duplicate(self):
+        failed = sc.ScoreOutcome(
+            case_id="C-RETRY",
+            task_type="analysis",
+            eval_model="vendor/model-retry",
+            judge_provider="fakejudge",
+            judge_model="judge/x",
+            judge_status="failed",
+            scores={field["field"]: None for field in _DIMENSIONS},
+            total_score=None,
+            error_code="timeout",
+            error_message="请求超时。已重试 2 次。",
+            retry_count=2,
+        )
+        success = sc.ScoreOutcome(
+            case_id="C-RETRY",
+            task_type="analysis",
+            eval_model="vendor/model-retry",
+            judge_provider="fakejudge",
+            judge_model="judge/x",
+            judge_status="success",
+            scores={
+                "accuracy_score": 26,
+                "reasoning_score": 18,
+                "coverage_score": 18,
+                "evidence_score": 13,
+                "expression_score": 13,
+            },
+            total_score=88,
+            rationale={"accuracy_score": "依据充分"},
+            review_note="重试后评分成功",
+            retry_count=1,
+        )
+
+        for outcome in [failed, success]:
+            self.assertTrue(
+                sc.persist_score_outcome(
+                    "SCORE-RETRY-UPDATE",
+                    "RUN-RETRY-UPDATE",
+                    "fakejudge",
+                    "judge/x",
+                    "live",
+                    outcome,
+                    db_path=_DB_PATH,
+                )
+            )
+
+        rows = sc.load_score_rows("SCORE-RETRY-UPDATE", db_path=_DB_PATH)
+        self.assertEqual(1, len(rows))
+        self.assertEqual("success", rows[0]["judge_status"])
+        self.assertEqual(88, int(rows[0]["total_score"]))
+        self.assertEqual("pending", rows[0]["review_status"])
 
     def test_skip_score_review_marks_not_adopted(self):
         provider = get_provider("mock")

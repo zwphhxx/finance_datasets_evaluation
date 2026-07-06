@@ -7,6 +7,7 @@ import pandas as pd
 
 from src.ui import components
 from src.ui import review
+from src.ui import review_queue
 
 
 def _score_row(**overrides):
@@ -311,10 +312,39 @@ class ReviewQueueTests(unittest.TestCase):
 
         self.assertFalse(review.has_pending_review_items([confirmed_item, skipped_item]))
         self.assertTrue(review.has_pending_review_items([confirmed_item, pending_item]))
-        self.assertEqual("当前批次暂无待处理评分。", review.review_empty_message([confirmed_item, skipped_item]))
+        self.assertEqual(
+            "暂无待处理评分草稿。若发起评测页存在评分失败，请先重试评分。",
+            review.review_empty_message([confirmed_item, skipped_item]),
+        )
         self.assertEqual("当前筛选条件下暂无评分记录。", review.review_empty_message([confirmed_item, pending_item]))
         self.assertTrue(review.should_show_no_pending_after_action([confirmed_item, skipped_item], True))
         self.assertFalse(review.should_show_no_pending_after_action([confirmed_item, pending_item], True))
+
+    def test_failed_judge_scores_do_not_enter_review_queue(self):
+        scores = pd.DataFrame([
+            {
+                "id": 1,
+                "score_run_id": "S1",
+                "case_id": "C1",
+                "eval_model": "vendor/model-ok",
+                "judge_status": "success",
+                "review_status": "pending",
+                "status": "active",
+            },
+            {
+                "id": 2,
+                "score_run_id": "S1",
+                "case_id": "C2",
+                "eval_model": "vendor/model-failed",
+                "judge_status": "failed",
+                "review_status": "pending",
+                "status": "active",
+            },
+        ])
+
+        filtered = review_queue.filter_live_score_frame(scores)
+
+        self.assertEqual(["vendor/model-ok"], filtered["eval_model"].tolist())
 
     def test_score_run_summary_counts_status_models_and_cases(self):
         scores = pd.DataFrame(

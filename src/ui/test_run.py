@@ -66,6 +66,7 @@ _LAST_RUN_STATUS_KEY = "test_run_last_run_status"
 _SCORE_STATE_KEY = "test_run_score_state"
 _PARTIAL_SCORE_OUTCOMES_KEY = "test_run_partial_score_outcomes"
 _LAST_SCORE_STATUS_KEY = "test_run_last_score_status"
+_SCORE_RETRY_RUNNING_KEY = "test_run_score_retry_running"
 _JUDGE_TEMPERATURE = 0.0
 _JUDGE_MAX_TOKENS = 2048
 
@@ -292,6 +293,25 @@ def build_score_queue_items(compare_result) -> list[er.RunOutcome]:
     return [outcome for outcome in getattr(compare_result, "outcomes", []) if outcome.success]
 
 
+def build_failed_score_retry_items(score_result, compare_result) -> list[er.RunOutcome]:
+    """Return successful model answers whose judge score failed and can be retried."""
+    if score_result is None or compare_result is None:
+        return []
+    failed_pairs = {
+        (str(outcome.case_id), str(outcome.eval_model))
+        for outcome in getattr(score_result, "outcomes", []) or []
+        if str(getattr(outcome, "judge_status", "") or "").strip().lower() == "failed"
+    }
+    retry_items: list[er.RunOutcome] = []
+    seen: set[tuple[str, str]] = set()
+    for outcome in getattr(compare_result, "outcomes", []) or []:
+        key = (str(outcome.case_id), str(outcome.model_id))
+        if key in failed_pairs and key not in seen and outcome.success:
+            seen.add(key)
+            retry_items.append(outcome)
+    return retry_items
+
+
 def build_score_plan_summary(compare_result) -> dict[str, int | bool]:
     """Summarize which model answers will enter score draft generation."""
     outcomes = list(getattr(compare_result, "outcomes", []) or [])
@@ -353,7 +373,7 @@ def render_test_run_page(data_bundle: dict) -> None:
 
     render_numbered_section("03", TEST_RUN_STEPS[2])
     _render_scoring(base, provider_name, task_records)
-    _render_score_results(task_records)
+    _render_score_results(base, provider_name, task_records)
     _render_pending_dialogs(sample_options)
 
 
@@ -799,6 +819,7 @@ def _clear_score_state() -> None:
     st.session_state.pop(_PARTIAL_SCORE_OUTCOMES_KEY, None)
     st.session_state.pop(_LAST_SCORE_STATUS_KEY, None)
     st.session_state.pop("test_run_score_persisted", None)
+    st.session_state.pop(_SCORE_RETRY_RUNNING_KEY, None)
 
 
 def _score_result_from_state(state: dict | None = None, outcomes: list[sc.ScoreOutcome] | None = None):
@@ -988,6 +1009,129 @@ def _finalize_score_result(status: str, state: dict, outcomes: list[sc.ScoreOutc
         eval_state.set_last_score(score_result)
         st.session_state["test_run_score_dims"] = list(st.session_state.get("test_run_score_dims") or [])
         st.session_state["test_run_score_persisted"] = persisted
+
+
+def _replace_score_outcomes(
+    existing: list[sc.ScoreOutcome],
+    updates: list[sc.ScoreOutcome],
+) -> list[sc.ScoreOutcome]:
+    update_by_pair = {
+        (str(outcome.case_id), str(outcome.eval_model)): outcome
+        for outcome in updates
+    }
+    replaced: list[sc.ScoreOutcome] = []
+    seen: set[tuple[str, str]] = set()
+    for outcome in existing:
+        key = (str(outcome.case_id), str(outcome.eval_model))
+        seen.add(key)
+        replaced.append(update_by_pair.get(key, outcome))
+    for key, outcome in update_by_pair.items():
+        if key not in seen:
+            replaced.append(outcome)
+    return replaced
+
+
+def _execute_retry_score_queue(
+    provider_name: str,
+    score_result: sc.ScoreResult,
+    compare_result,
+    base,
+    task_records: list[dict],
+    dimensions: list[dict],
+) -> None:
+    retry_items = build_failed_score_retry_items(score_result, compare_result)
+    if not retry_items:
+        return
+    provider = get_text_provider(prefer=provider_name)
+    judge_model = str(getattr(score_result, "judge_model", "") or sc.DEFAULT_JUDGE_MODEL)
+    score_run_id = str(getattr(score_result, "score_run_id", "") or sc.generate_score_run_id())
+    run_id = str(getattr(score_result, "run_id", "") or getattr(compare_result, "run_id", ""))
+    mode = "mock" if getattr(provider, "name", "") == "mock" else "live"
+    judge_provider = str(getattr(provider, "name", ""))
+    gold_map = getattr(base, "gold_answer_map", {}) or {}
+    tasks_by_case = {str(row.get("case_id") or ""): row for row in task_records}
+    state = _score_state()
+    original_queue = list(state.get("queue_items") or build_score_queue_items(compare_result))
+    skipped_count = int(state.get("skipped_count") or build_score_plan_summary(compare_result)["skipped"])
+    created_at = str(getattr(score_result, "created_at", "") or datetime.now().isoformat(timespec="seconds"))
+    updated_outcomes = list(getattr(score_result, "outcomes", []) or [])
+    retried_outcomes: list[sc.ScoreOutcome] = []
+    queue_slot = st.empty()
+    st.session_state[_SCORE_RETRY_RUNNING_KEY] = True
+    _render_live_score_queue(queue_slot, retry_items, retried_outcomes, retry_items[0], retry_items[1:], 0, mode)
+
+    for index, run_outcome in enumerate(retry_items):
+        waiting = retry_items[index + 1:]
+        _render_live_score_queue(queue_slot, retry_items, retried_outcomes, run_outcome, waiting, 0, mode)
+        task = tasks_by_case.get(run_outcome.case_id) or {
+            "case_id": run_outcome.case_id,
+            "task_type": run_outcome.task_type,
+        }
+        gold = gold_map.get(run_outcome.case_id) or {}
+        try:
+            retry_outcome = sc.score_single(
+                provider,
+                judge_model,
+                task,
+                run_outcome.answer_text,
+                gold,
+                dimensions,
+                eval_model=run_outcome.model_id,
+                temperature=_JUDGE_TEMPERATURE,
+                max_tokens=_JUDGE_MAX_TOKENS,
+            )
+        except Exception:
+            retry_outcome = _unexpected_score_failure_outcome(provider, judge_model, run_outcome, dimensions)
+        retried_outcomes.append(retry_outcome)
+        updated_outcomes = _replace_score_outcomes(updated_outcomes, [retry_outcome])
+        persisted = sc.persist_score_outcome(
+            score_run_id,
+            run_id,
+            judge_provider,
+            judge_model,
+            mode,
+            retry_outcome,
+        )
+        st.session_state["test_run_score_persisted"] = bool(
+            st.session_state.get("test_run_score_persisted") or persisted
+        )
+        _set_score_state(
+            status="running",
+            score_run_id=score_run_id,
+            run_id=run_id,
+            judge_provider=judge_provider,
+            judge_model=judge_model,
+            mode=mode,
+            created_at=created_at,
+            queue_items=original_queue,
+            outcomes=updated_outcomes,
+            skipped_count=skipped_count,
+        )
+        next_item = waiting[0] if waiting else None
+        next_waiting = waiting[1:] if waiting else []
+        _render_live_score_queue(queue_slot, retry_items, retried_outcomes, next_item, next_waiting, 0, mode)
+
+    success_count = sum(1 for outcome in retried_outcomes if outcome.ok)
+    failed_count = len(retried_outcomes) - success_count
+    message = f"已重试 {len(retried_outcomes)} 条，成功 {success_count} 条，仍失败 {failed_count} 条。"
+    _set_score_state(
+        status="completed",
+        score_run_id=score_run_id,
+        run_id=run_id,
+        judge_provider=judge_provider,
+        judge_model=judge_model,
+        mode=mode,
+        created_at=created_at,
+        queue_items=original_queue,
+        outcomes=updated_outcomes,
+        skipped_count=skipped_count,
+        message=message,
+    )
+    score_result = _score_result_from_state(_score_state(), updated_outcomes)
+    if score_result is not None:
+        eval_state.set_last_score(score_result)
+    st.session_state[_SCORE_RETRY_RUNNING_KEY] = False
+    st.rerun()
 
 
 def _execute_score_queue(
@@ -1473,8 +1617,9 @@ def _render_scoring(base, provider_name: str, task_records: list[dict]) -> None:
         _execute_score_queue(provider_name, result, base, task_records, dimensions)
 
 
-def _render_score_results(task_records: list[dict]) -> None:
+def _render_score_results(base, provider_name: str, task_records: list[dict]) -> None:
     score_result = eval_state.get_last_score()
+    compare_result = eval_state.get_last_run()
     state = _score_state()
     if score_result is None and state and _partial_score_outcomes():
         score_result = _score_result_from_state(state, _partial_score_outcomes())
@@ -1504,11 +1649,14 @@ def _render_score_results(task_records: list[dict]) -> None:
         st.caption("评分草稿需人工确认后才纳入正式结论。")
     if state and state.get("status") in {"running", "interrupted", "failed"}:
         _render_partial_score_notice(score_result, state)
+    elif state and state.get("message"):
+        st.caption(str(state.get("message")))
     if sc.is_mock_score(score_result):
         st.caption("本次为模拟回退模式：未产生真实评分，各维度留空。")
 
     _render_score_result_list(score_result, dimensions)
     _render_score_detail_viewer(score_result, dimensions)
+    _render_retry_failed_scores_action(base, provider_name, score_result, compare_result, task_records, dimensions)
     if st.button("查看评分对比表", key="test_run_score_compare_details", type="tertiary"):
         _render_score_compare_dialog(score_result, dimensions)
 
@@ -1518,6 +1666,36 @@ def _render_score_results(task_records: list[dict]) -> None:
             st.rerun()
     else:
         st.caption("SQLite 数据层未初始化，评分草稿仅在当前会话展示，暂不能进入评分确认页。")
+
+
+def _render_retry_failed_scores_action(
+    base,
+    provider_name: str,
+    score_result,
+    compare_result,
+    task_records: list[dict],
+    dimensions,
+) -> None:
+    retry_items = build_failed_score_retry_items(score_result, compare_result)
+    if not retry_items:
+        return
+    st.caption("模型回答已生成，裁判评分失败的项目可单独重试；不会重新生成模型回答。")
+    retrying = bool(st.session_state.get(_SCORE_RETRY_RUNNING_KEY))
+    if st.button(
+        "重试失败评分",
+        key="test_run_retry_failed_scores",
+        type="secondary",
+        disabled=retrying,
+    ):
+        st.session_state[_SCORE_RETRY_RUNNING_KEY] = True
+        _execute_retry_score_queue(
+            provider_name,
+            score_result,
+            compare_result,
+            base,
+            task_records,
+            list(dimensions or []),
+        )
 
 
 def _render_unfinished_score_notice(state: dict) -> None:
@@ -1605,8 +1783,13 @@ def _render_score_detail(outcome: sc.ScoreOutcome, dimensions) -> None:
         return
 
     st.markdown("**评分失败**")
+    st.markdown("模型回答已生成，裁判评分失败。")
+    st.markdown(f"原因：{_score_failure_reason_label(outcome)}")
     st.markdown(f"错误码：`{_dash(outcome.error_code)}`")
     st.markdown(f"错误信息：{_short(outcome.error_message, 220)}")
+    retry_count = getattr(outcome, "retry_count", 0)
+    if retry_count:
+        st.caption(f"已自动重试 {retry_count} 次。")
     guidance = _score_failure_guidance(outcome)
     if guidance:
         st.caption(guidance)
@@ -1851,11 +2034,15 @@ def _failure_guidance(outcome) -> str:
 def _score_failure_guidance(outcome) -> str:
     code = str(getattr(outcome, "error_code", "") or "").strip().lower()
     if code in {"missing_api_key", "unauthorized", "forbidden"}:
-        return "请检查模型服务密钥或账户权限。"
+        return "API Key 无效或缺失，请检查配置。"
     if code in {"timeout", "gateway_timeout"}:
-        return "模型服务响应超时，可稍后重试。"
+        return "模型服务响应超时，可稍后重试或调大 SILICONFLOW_TIMEOUT_SECONDS。"
     if code == "rate_limited":
-        return "请求触发限流，请稍后重试。"
+        return "模型服务触发限流，可稍后重试。"
+    if code == "service_unavailable":
+        return "模型服务暂不可用，可稍后重试。"
+    if code == "connection_error":
+        return "网络连接异常，可稍后重试或检查模型服务地址。"
     if code == "judge_parse_error":
         return "裁判输出未能解析为评分 JSON，可重试或更换裁判模型。"
     if code == "empty_response":
@@ -1863,6 +2050,27 @@ def _score_failure_guidance(outcome) -> str:
     if code == "runtime_error":
         return "已停止后续评分，已生成的评分草稿仍保留。"
     return ""
+
+
+def _score_failure_reason_label(outcome) -> str:
+    code = str(getattr(outcome, "error_code", "") or "").strip().lower()
+    if code in {"timeout", "gateway_timeout"}:
+        return "请求超时。"
+    if code == "rate_limited":
+        return "模型服务触发限流。"
+    if code == "service_unavailable":
+        return "模型服务暂不可用。"
+    if code == "connection_error":
+        return "网络连接异常。"
+    if code in {"missing_api_key", "unauthorized", "forbidden"}:
+        return "API Key 无效或缺失。"
+    if code == "judge_parse_error":
+        return "裁判输出无法解析为评分 JSON。"
+    if code == "empty_response":
+        return "裁判模型返回为空。"
+    if code in {"bad_request", "not_found"}:
+        return "模型 ID 或请求参数异常。"
+    return "裁判模型未返回有效评分。"
 
 
 def _kv_table_html(rows: list[tuple[str, str]]) -> str:

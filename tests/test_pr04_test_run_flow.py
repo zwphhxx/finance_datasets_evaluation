@@ -151,6 +151,14 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertNotIn("sc.score_compare(", score_source)
         self.assertNotIn('st.expander("评分对比表"', source)
 
+    def test_score_failure_copy_and_retry_entry_are_visible(self):
+        source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+
+        self.assertIn("模型回答已生成，裁判评分失败。", source)
+        self.assertIn("重试失败评分", source)
+        self.assertIn("SILICONFLOW_TIMEOUT_SECONDS", source)
+        self.assertIn("_execute_retry_score_queue", source)
+
     def test_model_selection_options_are_bounded_and_searchable(self):
         models = [
             ModelInfo(
@@ -496,6 +504,71 @@ class ScoreDraftTests(unittest.TestCase):
         self.assertEqual("10", rows[0]["覆盖度"])
         self.assertEqual("30", rows[0]["总分"])
         self.assertEqual("待确认", rows[0]["裁判状态"])
+
+    def test_failed_score_retry_items_only_retry_failed_scores_with_successful_answers(self):
+        import src.ui.test_run as tr
+
+        compare = er.CompareRunResult(
+            run_id="R1",
+            provider="siliconflow",
+            model_ids=("m1", "m2", "m3"),
+            mode="live",
+            created_at="2026-07-05T12:00:00",
+            outcomes=(
+                er.RunOutcome("A", "analysis", "siliconflow", "m1", "success", True, answer_text="回答 A"),
+                er.RunOutcome("A", "analysis", "siliconflow", "m2", "success", True, answer_text="回答 B"),
+                er.RunOutcome("A", "analysis", "siliconflow", "m3", "failed", False, error_code="timeout"),
+            ),
+        )
+        score_result = sc.ScoreResult(
+            score_run_id="S1",
+            run_id="R1",
+            judge_provider="siliconflow",
+            judge_model="judge",
+            mode="live",
+            created_at="2026-07-05T12:00:00",
+            outcomes=(
+                sc.ScoreOutcome(
+                    case_id="A",
+                    task_type="analysis",
+                    eval_model="m1",
+                    judge_provider="siliconflow",
+                    judge_model="judge",
+                    judge_status="failed",
+                    scores={},
+                    total_score=None,
+                    error_code="timeout",
+                ),
+                sc.ScoreOutcome(
+                    case_id="A",
+                    task_type="analysis",
+                    eval_model="m2",
+                    judge_provider="siliconflow",
+                    judge_model="judge",
+                    judge_status="success",
+                    scores={"accuracy_score": 20},
+                    total_score=80,
+                ),
+                sc.ScoreOutcome(
+                    case_id="A",
+                    task_type="analysis",
+                    eval_model="m3",
+                    judge_provider="siliconflow",
+                    judge_model="judge",
+                    judge_status="failed",
+                    scores={},
+                    total_score=None,
+                    error_code="timeout",
+                ),
+            ),
+        )
+
+        self.assertTrue(hasattr(tr, "build_failed_score_retry_items"))
+        retry_items = tr.build_failed_score_retry_items(score_result, compare)
+
+        self.assertEqual([("A", "m1", "回答 A")], [
+            (item.case_id, item.model_id, item.answer_text) for item in retry_items
+        ])
 
 
 class ScoringInputTests(unittest.TestCase):
