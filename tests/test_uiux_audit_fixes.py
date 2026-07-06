@@ -273,16 +273,17 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn('disabled=not selected_cases', source)
         self.assertIn('disabled=not chosen_models', source)
 
-    def test_auxiliary_view_entries_use_shared_action_bar(self):
+    def test_auxiliary_view_entries_use_detail_header_actions(self):
         test_run_source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
         components_source = Path("src/ui/components.py").read_text(encoding="utf-8")
 
-        self.assertIn("render_aux_action_bar", test_run_source)
-        self.assertIn('"辅助查看"', test_run_source)
+        self.assertIn("render_markdown_detail_panel", test_run_source)
+        self.assertIn("action_label=\"查看技术明细\"", test_run_source)
+        self.assertIn("action_label=\"查看评分对比表\"", test_run_source)
         self.assertIn('"查看评分对比表"', test_run_source)
-        self.assertIn('"type": "secondary"', test_run_source)
-        self.assertIn("def render_aux_action_bar", components_source)
-        self.assertIn("aux-action-bar-label", components_source)
+        self.assertIn("action_type=\"secondary\"", test_run_source)
+        self.assertIn("def render_detail_panel_with_action", components_source)
+        self.assertIn("detail-panel-toolbar-title", components_source)
 
     def test_review_seed_mode_hides_direct_confirmation_for_examples(self):
         page_source = Path("src/ui/review.py").read_text(encoding="utf-8")

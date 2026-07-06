@@ -93,11 +93,11 @@ class ReviewStructureTests(unittest.TestCase):
         summary_source = materials_source.split("def render_score_summary", 1)[1].split("@st.dialog", 1)[0]
 
         self.assertIn("build_score_summary_panel", materials_source)
-        self.assertIn("review-summary-toolbar-title", components_source)
-        self.assertIn("st.container(border=True)", summary_source)
+        self.assertIn("render_detail_panel_with_action", summary_source)
+        self.assertIn("detail-panel-toolbar-title", components_source)
         self.assertIn("review-summary-panel-body", summary_source)
         self.assertIn('"查看评分材料"', summary_source)
-        self.assertIn('type="secondary"', summary_source)
+        self.assertIn('action_type="secondary"', summary_source)
         self.assertIn("主要原因", summary_source)
         self.assertIn("需要关注", summary_source)
         self.assertNotIn("render_inline_status(summary_rows)", summary_source)

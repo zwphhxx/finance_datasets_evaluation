@@ -14,7 +14,7 @@ from src.gold_quality import field_list, field_text
 from src.metrics import get_errors_for_output, normalize_optimization_plan
 from src.ui.components import (
     render_clean_list,
-    render_html,
+    render_detail_panel_with_action,
     render_inline_status,
     render_markdown_detail_panel,
 )
@@ -44,27 +44,16 @@ def render_score_summary(
     optimization_df: pd.DataFrame,
 ) -> None:
     panel = build_score_summary_panel(item, errors_df)
-    with st.container(border=True):
-        title_col, action_col = st.columns([4.8, 1.15], gap="small")
-        with title_col:
-            render_html(
-                f"""
-                <div class="review-summary-toolbar-title">
-                    <div>{escape(panel["title"])}</div>
-                    <span>{escape(panel["meta"])}</span>
-                    <span>模型 ID：{escape(panel["model_id"])}</span>
-                </div>
-                """
-            )
-        with action_col:
-            if st.button(
-                "查看评分材料",
-                type="secondary",
-                key=f"review_materials::{item['case_id']}::{safe_key(panel['model_id'])}",
-                use_container_width=True,
-            ):
-                render_score_materials_dialog(item, verdict, errors_df, optimization_df)
-        render_html(_score_summary_body_html(panel))
+    clicked = render_detail_panel_with_action(
+        _score_summary_body_html(panel),
+        title=str(panel["title"]),
+        meta=f"{panel['meta']}\n模型 ID：{panel['model_id']}",
+        action_label="查看评分材料",
+        action_key=f"review_materials::{item['case_id']}::{safe_key(panel['model_id'])}",
+        action_type="secondary",
+    )
+    if clicked:
+        render_score_materials_dialog(item, verdict, errors_df, optimization_df)
 
 
 def build_score_summary_panel(item: dict, errors_df: pd.DataFrame | None) -> dict[str, object]:

@@ -22,7 +22,6 @@ from app.services import eval_state
 from app.services import model_display as md
 from app.services import scorer as sc
 from src.ui.components import (
-    render_aux_action_bar,
     render_empty_state,
     render_html,
     render_inline_status,
@@ -1540,20 +1539,7 @@ def _render_results(provider_name: str, temperature, max_tokens, task_records: l
     if er.is_mock_result(result):
         st.caption("本次为模拟回退模式运行，回答为模拟生成。")
 
-    _render_answer_viewer(result, task_records)
-
-    aux_clicked = render_aux_action_bar(
-        "辅助查看",
-        [
-            {
-                "id": "technical_details",
-                "label": "查看技术明细",
-                "key": "test_run_technical_details",
-                "type": "tertiary",
-            }
-        ],
-    )
-    if aux_clicked == "technical_details":
+    if _render_answer_viewer(result, task_records) == "technical_details":
         _render_technical_details_dialog(result)
 
 
@@ -1735,11 +1721,11 @@ def _render_results_table(result) -> None:
     )
 
 
-def _render_answer_viewer(result, task_records: list[dict]) -> None:
+def _render_answer_viewer(result, task_records: list[dict]) -> str | None:
     outcomes = list(result.outcomes)
     if not outcomes:
         st.caption("暂无回答可查看。")
-        return
+        return None
 
     task_lookup = _task_lookup_for_result(result, task_records)
     options = build_outcome_view_options(outcomes, task_lookup)
@@ -1750,26 +1736,21 @@ def _render_answer_viewer(result, task_records: list[dict]) -> None:
         format_func=lambda idx: str(options[idx]["label"]),
         key=f"test_run_view_outcome_{_safe_key(getattr(result, 'run_id', 'current'))}",
     )
-    _render_selected_outcome_detail(outcomes[int(selected)], task_lookup)
+    return _render_selected_outcome_detail(outcomes[int(selected)], task_lookup)
 
 
-def _render_selected_outcome_detail(outcome: er.RunOutcome, task_lookup: dict[str, dict]) -> None:
-    status = _outcome_display_status(outcome)
-    elapsed = _latency_label(outcome.latency_ms)
-    sample_label = _outcome_sample_label(outcome, task_lookup)
-    model_short = _model_short_name(outcome.model_id)
+def _render_selected_outcome_detail(outcome: er.RunOutcome, task_lookup: dict[str, dict]) -> str | None:
     st.markdown("**当前回答**")
-    summary_items = [
-        ("样本", sample_label),
-        ("模型", model_short),
-        ("状态", status),
-        ("耗时", elapsed),
-    ]
+    action_clicked = render_model_answer_detail(
+        outcome,
+        task_lookup=task_lookup,
+        preview=True,
+        action_label="查看技术明细",
+        action_key=f"test_run_technical_details::{_safe_key(outcome.model_id)}::{_safe_key(outcome.case_id)}",
+        action_type="secondary",
+    )
     if outcome.success:
-        summary_items.append(("回答长度", _answer_length_label(outcome)))
-        _render_answer_summary(summary_items, outcome.model_id if outcome.model_id != model_short else "")
         answer = outcome.answer_text or "—"
-        render_model_answer_detail(outcome, preview=True)
         if len(answer) > _ANSWER_PREVIEW_LIMIT:
             if st.button(
                 "查看全文",
@@ -1777,40 +1758,50 @@ def _render_selected_outcome_detail(outcome: er.RunOutcome, task_lookup: dict[st
                 type="tertiary",
             ):
                 _render_full_answer_dialog(outcome)
-        return
-
-    _render_answer_summary(summary_items, outcome.model_id if outcome.model_id != model_short else "")
-    st.markdown("**未获得有效回答**")
-    st.markdown(f"错误码：`{_dash(outcome.error_code)}`")
-    st.markdown(f"错误信息：{_short(outcome.error_message, 220)}")
-    guidance = _failure_guidance(outcome)
-    if guidance:
-        st.caption(guidance)
+    return "technical_details" if action_clicked else None
 
 
-def render_model_answer_detail(outcome: er.RunOutcome, *, preview: bool = True) -> None:
+def render_model_answer_detail(
+    outcome: er.RunOutcome,
+    *,
+    task_lookup: dict[str, dict] | None = None,
+    preview: bool = True,
+    action_label: str | None = None,
+    action_key: str | None = None,
+    action_type: str = "secondary",
+) -> bool:
+    title = (
+        f"{outcome.case_id}｜"
+        f"{_model_short_name(outcome.model_id)}｜"
+        f"{_outcome_display_status(outcome)}"
+    )
+    meta_parts = [f"耗时：{_latency_label(outcome.latency_ms)}"]
+    if outcome.success:
+        meta_parts.append(f"回答长度：{_answer_length_label(outcome)}")
+    meta = "｜".join(meta_parts) + f"\n模型 ID：{outcome.model_id}"
     answer = outcome.answer_text or "—"
     display_text = _answer_preview(answer) if preview else answer
-    render_markdown_detail_panel("模型回答", display_text)
-
-
-def _render_answer_summary(items: list[tuple[str, str]], model_id: str = "") -> None:
-    item_html = "".join(
-        f'<div class="answer-viewer-item"><span>{escape(label)}</span><strong>{escape(value)}</strong></div>'
-        for label, value in items
-    )
-    model_html = (
-        f'<div class="answer-viewer-muted">模型 ID：{escape(model_id)}</div>'
-        if model_id
-        else ""
-    )
-    render_html(
-        f"""
-        <div class="answer-viewer-summary">
-            <div class="answer-viewer-grid">{item_html}</div>
-            {model_html}
-        </div>
-        """
+    if outcome.success:
+        markdown = f"**模型回答**\n\n{display_text}"
+    else:
+        guidance = _failure_guidance(outcome)
+        lines = [
+            "**未获得有效回答**",
+            "",
+            f"错误码：`{_dash(outcome.error_code)}`",
+            "",
+            f"错误信息：{_short(outcome.error_message, 220)}",
+        ]
+        if guidance:
+            lines.extend(["", guidance])
+        markdown = "\n".join(lines)
+    return render_markdown_detail_panel(
+        title=title,
+        meta=meta,
+        markdown_text=markdown,
+        action_label=action_label,
+        action_key=action_key,
+        action_type=action_type,
     )
 
 
@@ -1893,22 +1884,10 @@ def _render_score_results(base, provider_name: str, task_records: list[dict]) ->
         st.caption("本次为模拟回退模式：未产生真实评分，各维度留空。")
 
     _render_score_result_list(score_result, dimensions)
-    _render_score_detail_viewer(score_result, dimensions)
+    if _render_score_detail_viewer(score_result, dimensions):
+        _render_score_compare_dialog(score_result, dimensions)
     if not (state and state.get("status") in {"running", "interrupted", "failed"}):
         _render_retry_failed_scores_action(base, provider_name, score_result, compare_result, task_records, dimensions)
-    aux_clicked = render_aux_action_bar(
-        "辅助查看",
-        [
-            {
-                "id": "score_compare",
-                "label": "查看评分对比表",
-                "key": "test_run_score_compare_details",
-                "type": "secondary",
-            }
-        ],
-    )
-    if aux_clicked == "score_compare":
-        _render_score_compare_dialog(score_result, dimensions)
 
     has_confirmable = has_confirmable_score_drafts(score_result)
     if ds.database_ready() and has_confirmable:
@@ -2066,10 +2045,10 @@ def _render_score_result_list(score_result, dimensions) -> None:
     )
 
 
-def _render_score_detail_viewer(score_result, dimensions) -> None:
+def _render_score_detail_viewer(score_result, dimensions) -> bool:
     outcomes = list(score_result.outcomes)
     if not outcomes:
-        return
+        return False
     options = build_score_view_options(outcomes)
     selected = st.selectbox(
         "查看评分草稿",
@@ -2078,15 +2057,18 @@ def _render_score_detail_viewer(score_result, dimensions) -> None:
         format_func=lambda idx: str(options[idx]["label"]),
         key=f"test_run_score_view_{_safe_key(getattr(score_result, 'score_run_id', 'current'))}",
     )
-    _render_score_detail(outcomes[int(selected)], dimensions)
+    return _render_score_detail(outcomes[int(selected)], dimensions, score_result)
 
 
-def _render_score_detail(outcome: sc.ScoreOutcome, dimensions) -> None:
+def _render_score_detail(outcome: sc.ScoreOutcome, dimensions, score_result=None) -> bool:
     panel = build_score_draft_detail_panel(outcome, dimensions)
-    render_markdown_detail_panel(
+    return render_markdown_detail_panel(
         title=panel["title"],
         meta=panel["meta"],
         markdown_text=panel["markdown"],
+        action_label="查看评分对比表",
+        action_key=f"test_run_score_compare_details::{_safe_key(getattr(score_result, 'score_run_id', 'current'))}",
+        action_type="secondary",
     )
 
 

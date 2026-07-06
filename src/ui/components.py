@@ -467,6 +467,41 @@ header,
     margin-top: 0.18rem;
     overflow-wrap: anywhere;
 }
+.detail-panel-toolbar-title div {
+    color: var(--fde-ink);
+    font-size: 1.01rem;
+    font-weight: 720;
+    line-height: 1.44;
+    overflow-wrap: anywhere;
+}
+.detail-panel-toolbar-title span {
+    display: block;
+    color: var(--fde-muted);
+    font-size: 0.84rem;
+    line-height: 1.5;
+    margin-top: 0.18rem;
+    overflow-wrap: anywhere;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:has(.detail-panel-toolbar-title) {
+    border-color: var(--fde-line) !important;
+    border-radius: var(--fde-radius) !important;
+    background: var(--fde-surface) !important;
+    box-shadow: none !important;
+    margin: 0.55rem 0 1rem 0;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:has(.detail-panel-toolbar-title)
+    [data-testid="stVerticalBlock"] {
+    gap: 0.25rem;
+}
+[data-testid="stHorizontalBlock"]:has(.detail-panel-toolbar-title) {
+    align-items: start;
+    gap: 0.65rem;
+    padding-bottom: 0.62rem;
+    border-bottom: 1px solid var(--fde-line);
+}
+[data-testid="stHorizontalBlock"]:has(.detail-panel-toolbar-title) .stButton > button {
+    margin-top: 0.05rem;
+}
 .review-summary-panel-body {
     padding-top: 0.5rem;
 }
@@ -809,6 +844,60 @@ def render_detail_panel(body_html: str, title: str | None = None, meta: str | No
     )
 
 
+def render_detail_panel_with_action(
+    body_html: str,
+    *,
+    title: str | None = None,
+    meta: str | None = None,
+    action_label: str | None = None,
+    action_key: str | None = None,
+    action_type: str = "secondary",
+    action_disabled: bool = False,
+) -> bool:
+    """Render a detail panel with one low-emphasis action in the header."""
+    if not action_label:
+        render_detail_panel(body_html, title=title, meta=meta)
+        return False
+
+    if not all(hasattr(st, name) for name in ("container", "columns", "button")):
+        render_detail_panel(
+            body_html,
+            title=title,
+            meta=_join_meta_lines(meta, f"[{action_label}]"),
+        )
+        return False
+
+    clicked = False
+    with st.container(border=True):
+        title_col, action_col = st.columns([4.8, 1.18], gap="small")
+        with title_col:
+            render_html(_detail_panel_toolbar_html(title, meta))
+        with action_col:
+            clicked = st.button(
+                str(action_label),
+                type=action_type,
+                key=action_key or f"detail_panel_action::{title or action_label}",
+                disabled=action_disabled,
+                use_container_width=True,
+            )
+        render_html(f'<div class="detail-panel-body sample-detail-panel-body">{body_html}</div>')
+    return bool(clicked)
+
+
+def _detail_panel_toolbar_html(title: str | None, meta: str | None) -> str:
+    title_html = f"<div>{escape(str(title))}</div>" if title else ""
+    meta_html = "".join(
+        f"<span>{escape(line)}</span>"
+        for line in str(meta or "").splitlines()
+        if line.strip()
+    )
+    return f'<div class="detail-panel-toolbar-title">{title_html}{meta_html}</div>'
+
+
+def _join_meta_lines(*values: str | None) -> str:
+    return "\n".join(str(value).strip() for value in values if str(value or "").strip())
+
+
 _ORDERED_ITEM_RE = re.compile(r"^\s*(?P<number>\d+)(?:\.\s+|\)\s*|）\s*)(?P<text>.+?)\s*$")
 _CHINESE_SECTION_RE = re.compile(
     r"^\s*(?:[一二三四五六七八九十百千万]+、|[（(][一二三四五六七八九十百千万]+[）)])\s*(?P<text>.+?)\s*$"
@@ -932,9 +1021,25 @@ def render_markdown_detail_panel(
     title: str,
     markdown_text: str,
     meta: str | None = None,
-) -> None:
+    *,
+    action_label: str | None = None,
+    action_key: str | None = None,
+    action_type: str = "secondary",
+    action_disabled: bool = False,
+) -> bool:
     body_html = f'<div class="markdown-detail-body">{markdown_detail_html(markdown_text)}</div>'
+    if action_label:
+        return render_detail_panel_with_action(
+            body_html,
+            title=title,
+            meta=meta,
+            action_label=action_label,
+            action_key=action_key,
+            action_type=action_type,
+            action_disabled=action_disabled,
+        )
     render_detail_panel(body_html, title=title, meta=meta)
+    return False
 
 
 def _inline_markdown_html(text: str) -> str:
