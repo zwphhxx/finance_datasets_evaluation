@@ -262,33 +262,62 @@ header,
     border-top: 0;
     padding-top: 0;
 }
-.home-section-heading {
+.section-heading {
     display: grid;
-    grid-template-columns: 4.8rem minmax(0, 1fr);
-    column-gap: 1.25rem;
+    grid-template-columns: 4.2rem minmax(0, 1fr);
+    column-gap: 1rem;
     align-items: baseline;
-    margin-bottom: 0.9rem;
 }
-.home-section-number {
+.section-heading-number {
     color: var(--fde-accent);
-    font-size: 2.15rem;
     font-weight: 820;
     line-height: 1;
     letter-spacing: 0;
 }
-.home-section-title {
+.section-heading-title {
     color: var(--fde-ink);
-    font-size: 1.62rem;
     font-weight: 820;
-    line-height: 1.12;
+    line-height: 1.16;
     margin: 0;
 }
-.home-section-lead {
+.section-heading-lead {
+    color: var(--fde-muted);
+    line-height: 1.55;
+    margin-top: 0.32rem;
+}
+.section-heading-home {
+    grid-template-columns: 4.8rem minmax(0, 1fr);
+    column-gap: 1.25rem;
+    margin-bottom: 0.9rem;
+}
+.section-heading-home .section-heading-number {
+    font-size: 2.05rem;
+}
+.section-heading-home .section-heading-title {
+    font-size: 1.62rem;
+}
+.section-heading-home .section-heading-lead {
     color: var(--fde-text);
     font-size: 1.03rem;
     font-weight: 680;
-    line-height: 1.55;
-    margin: 0.48rem 0 0 0;
+    margin-top: 0.48rem;
+}
+.section-heading-page {
+    grid-template-columns: 3.4rem minmax(0, 1fr);
+    column-gap: 1rem;
+    margin: 1.9rem 0 0.95rem 0;
+    padding-top: 1rem;
+    border-top: 1px solid var(--fde-line);
+}
+.section-heading-page .section-heading-number {
+    font-size: 1.08rem;
+}
+.section-heading-page .section-heading-title {
+    font-size: 1.28rem;
+}
+.section-heading-page .section-heading-lead {
+    font-size: 0.94rem;
+    font-weight: 400;
 }
 .home-section-body {
     margin-left: 6.05rem;
@@ -299,35 +328,6 @@ header,
     font-weight: 400;
     line-height: 1.72;
     margin: 0 0 0.72rem 0;
-}
-.numbered-section {
-    display: grid;
-    grid-template-columns: 3.4rem minmax(0, 1fr);
-    gap: 1rem;
-    align-items: baseline;
-    margin: 1.9rem 0 0.95rem 0;
-    padding-top: 1rem;
-    border-top: 1px solid var(--fde-line);
-}
-.numbered-section-index {
-    color: var(--fde-accent);
-    font-size: 1.05rem;
-    font-weight: 820;
-    letter-spacing: 0.02em;
-    line-height: 1.25;
-    padding-top: 0.12rem;
-}
-.numbered-section-title {
-    color: var(--fde-ink);
-    font-size: 1.28rem;
-    font-weight: 820;
-    line-height: 1.24;
-}
-.numbered-section-caption {
-    color: var(--fde-muted);
-    font-size: 0.94rem;
-    line-height: 1.55;
-    margin-top: 0.28rem;
 }
 .inline-status {
     display: grid;
@@ -803,9 +803,11 @@ div[data-testid="stDialog"] {
         justify-content: flex-start;
         margin-top: 0.75rem;
     }
-    .numbered-section {
+    .section-heading,
+    .section-heading-home,
+    .section-heading-page {
         grid-template-columns: 1fr;
-        gap: 0.22rem;
+        gap: 0.35rem;
         align-items: start;
     }
     .brief-title {
@@ -814,16 +816,17 @@ div[data-testid="stDialog"] {
     .process-line-separator {
         width: 1.2rem;
     }
-    .home-section-heading {
-        grid-template-columns: 1fr;
-        gap: 0.35rem;
-        align-items: start;
-    }
-    .home-section-number {
+    .section-heading-home .section-heading-number {
         font-size: 1.55rem;
     }
-    .home-section-title {
+    .section-heading-home .section-heading-title {
         font-size: 1.34rem;
+    }
+    .section-heading-page .section-heading-number {
+        font-size: 0.98rem;
+    }
+    .section-heading-page .section-heading-title {
+        font-size: 1.16rem;
     }
     .home-section-body {
         margin-left: 0;
@@ -933,16 +936,11 @@ def render_home_section(
 ) -> None:
     body_html = "".join(f"<p>{escape(str(paragraph))}</p>" for paragraph in body if str(paragraph).strip())
     section_class = "home-section home-section-first" if first else "home-section"
+    heading_html = _section_heading_html(number, title, lead, variant="home")
     render_html(
         f"""
         <section class="{section_class}">
-            <div class="home-section-heading">
-                <span class="home-section-number">{escape(str(number))}</span>
-                <div class="home-section-heading-main">
-                    <h2 class="home-section-title">{escape(str(title))}</h2>
-                    <div class="home-section-lead">{escape(str(lead))}</div>
-                </div>
-            </div>
+            {heading_html}
             <div class="home-section-body">{body_html}</div>
         </section>
         """
@@ -960,23 +958,44 @@ def render_process_line(steps: list[str]) -> None:
     render_html(f'<div class="process-line">{"".join(parts)}</div>')
 
 
-def render_numbered_section(index: str, title: str, caption: str | None = None) -> None:
-    caption_html = (
-        f'<div class="numbered-section-caption">{escape(str(caption))}</div>'
-        if caption
+def _section_heading_html(
+    number: str,
+    title: str,
+    lead: str | None = None,
+    *,
+    variant: str = "page",
+) -> str:
+    normalized = str(variant or "page").strip().lower()
+    if normalized not in {"home", "page"}:
+        normalized = "page"
+    lead_html = (
+        f'<div class="section-heading-lead">{escape(str(lead))}</div>'
+        if str(lead or "").strip()
         else ""
     )
-    render_html(
-        f"""
-        <div class="numbered-section">
-            <div class="numbered-section-index">{escape(str(index))}</div>
-            <div>
-                <div class="numbered-section-title">{escape(str(title))}</div>
-                {caption_html}
+    return f"""
+        <div class="section-heading section-heading-{normalized}">
+            <span class="section-heading-number">{escape(str(number))}</span>
+            <div class="section-heading-main">
+                <h2 class="section-heading-title">{escape(str(title))}</h2>
+                {lead_html}
             </div>
         </div>
-        """
-    )
+    """
+
+
+def render_section_heading(
+    number: str,
+    title: str,
+    lead: str | None = None,
+    *,
+    variant: str = "page",
+) -> None:
+    render_html(_section_heading_html(number, title, lead, variant=variant))
+
+
+def render_numbered_section(index: str, title: str, caption: str | None = None) -> None:
+    render_section_heading(index, title, caption, variant="page")
 
 
 def render_empty_state(message: str) -> None:

@@ -43,7 +43,8 @@ class ComponentRenderTests(unittest.TestCase):
     def test_numbered_section_renders_index_and_caption(self):
         components.render_numbered_section("02", "样本列表", "展示当前查询结果。")
         html = "".join(self._captured)
-        self.assertIn("numbered-section", html)
+        self.assertIn("section-heading-page", html)
+        self.assertIn("section-heading-number", html)
         self.assertIn("02", html)
         self.assertIn("样本列表", html)
 

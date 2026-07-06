@@ -69,10 +69,13 @@ class CaseStudyPresentationTests(unittest.TestCase):
             "border-left: 2px solid var(--fde-accent);",
             ".home-section-first",
             "border-top: 0;",
+            ".section-heading {",
+            ".section-heading-home",
+            ".section-heading-page",
             "grid-template-columns: 4.8rem minmax(0, 1fr);",
             "align-items: baseline;",
             "margin-left: 6.05rem;",
-            "font-size: 2.15rem;",
+            "font-size: 2.05rem;",
             "font-size: 1.62rem;",
             "grid-template-columns: 3.4rem minmax(0, 1fr);",
             "font-size: 1.28rem;",
@@ -98,12 +101,49 @@ class CaseStudyPresentationTests(unittest.TestCase):
 
         html = "".join(captured)
         self.assertIn('class="home-section home-section-first"', html)
-        self.assertIn("home-section-heading", html)
-        self.assertIn("home-section-heading-main", html)
-        self.assertIn('<span class="home-section-number">01</span>', html)
-        self.assertNotIn('<div class="home-section-number">01</div>', html)
+        self.assertIn('class="section-heading section-heading-home"', html)
+        self.assertIn("section-heading-main", html)
+        self.assertIn('<span class="section-heading-number">01</span>', html)
+        self.assertNotIn("home-section-heading", html)
         self.assertIn("home-section-body", html)
-        self.assertLess(html.index("home-section-heading"), html.index("home-section-body"))
+        self.assertLess(html.index("section-heading"), html.index("home-section-body"))
+
+    def test_section_heading_renders_home_and_page_variants(self):
+        import src.ui.components as components
+
+        captured = []
+        original = components.render_html
+        try:
+            components.render_html = lambda html, container=None: captured.append(str(html))
+            components.render_section_heading("01", "项目定位", "评估模型回答质量。", variant="home")
+            components.render_section_heading("02", "样本列表", "展示当前查询结果。", variant="page")
+        finally:
+            components.render_html = original
+
+        html = "".join(captured)
+        self.assertIn('class="section-heading section-heading-home"', html)
+        self.assertIn('class="section-heading section-heading-page"', html)
+        self.assertIn("section-heading-number", html)
+        self.assertIn("section-heading-title", html)
+        self.assertIn("section-heading-lead", html)
+
+    def test_numbered_section_uses_unified_heading_structure(self):
+        import src.ui.components as components
+
+        captured = []
+        original = components.render_html
+        try:
+            components.render_html = lambda html, container=None: captured.append(str(html))
+            components.render_numbered_section("02", "样本列表", "展示当前查询结果。")
+        finally:
+            components.render_html = original
+
+        html = "".join(captured)
+        self.assertIn('class="section-heading section-heading-page"', html)
+        self.assertIn('<span class="section-heading-number">02</span>', html)
+        self.assertIn("样本列表", html)
+        self.assertIn("展示当前查询结果", html)
+        self.assertNotIn("numbered-section-index", html)
 
 
 class TaskPresentationTests(unittest.TestCase):
