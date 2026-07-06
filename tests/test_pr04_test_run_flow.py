@@ -107,6 +107,19 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertNotIn('st.expander("查看回答"', source)
         self.assertNotIn('st.expander("查看全部回答"', source)
 
+    def test_page_wires_recoverable_run_and_score_queues(self):
+        source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+
+        self.assertIn("er.initialize_run_queue", source)
+        self.assertIn("er.mark_run_queue_item_running", source)
+        self.assertIn("er.persist_run_outcome", source)
+        self.assertIn("er.restore_compare_result_from_db", source)
+        self.assertIn("sc.initialize_score_queue", source)
+        self.assertIn("sc.mark_score_queue_item_running", source)
+        self.assertIn("sc.restore_score_result_from_db", source)
+        self.assertIn("当前任务在页面内执行", source)
+        self.assertIn("已完成结果会保留，未完成项可稍后继续", source)
+
     def test_run_results_use_selector_for_answer_review(self):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
         results_source = source[

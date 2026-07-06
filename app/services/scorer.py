@@ -432,18 +432,20 @@ def persist_score_outcome(
 ) -> bool:
     """增量写入单条评分草稿；用于边评分边入库。"""
     try:
-        from app.services.dataset_service import database_ready, get_db_path
+        from app.services.dataset_service import database_ready, ensure_recoverable_queue_tables, get_db_path
         from app.db.repository import Repository
 
         path = db_path or get_db_path()
         if not database_ready(path):
             return False
+        ensure_recoverable_queue_tables(path)
         repo = Repository(path)
         existing = _find_score_outcome_row(repo, score_run_id, outcome.case_id, outcome.eval_model)
         if existing is not None:
             if _should_update_existing_score_outcome(existing, outcome):
                 row_id = _as_number(existing.get("id"))
                 if row_id is None:
+                    _sync_score_queue_from_outcome(score_run_id, outcome, path)
                     return True
                 repo.update(
                     "live_run_scores",
@@ -457,6 +459,7 @@ def persist_score_outcome(
                         outcome,
                     ),
                 )
+            _sync_score_queue_from_outcome(score_run_id, outcome, path)
             return True
         repo.bulk_insert(
             "live_run_scores",
@@ -471,9 +474,166 @@ def persist_score_outcome(
                 )
             ],
         )
+        _sync_score_queue_from_outcome(score_run_id, outcome, path)
         return True
     except Exception:
         return False
+
+
+def initialize_score_queue(
+    score_run_id: str,
+    run_id: str,
+    queue_items: Sequence[Any],
+    judge_provider: str,
+    judge_model: str,
+    *,
+    db_path: Path | None = None,
+) -> bool:
+    """开始裁判评分前写入完整评分队列，用于中断恢复。"""
+    try:
+        from app.services.dataset_service import database_ready, ensure_recoverable_queue_tables, get_db_path
+        from app.db.repository import Repository
+
+        path = db_path or get_db_path()
+        if not database_ready(path):
+            return False
+        ensure_recoverable_queue_tables(path)
+        repo = Repository(path)
+        existing = _safe_list_df(repo, "live_score_queue")
+        if not existing.empty and "score_run_id" in existing.columns:
+            if not existing[existing["score_run_id"].astype(str) == str(score_run_id)].empty:
+                return True
+        rows: list[dict[str, Any]] = []
+        for item in queue_items or []:
+            case_id = _clean(getattr(item, "case_id", None) or _mapping_get(item, "case_id"))
+            eval_model = _clean(getattr(item, "model_id", None) or _mapping_get(item, "eval_model") or _mapping_get(item, "model_id"))
+            if not case_id or not eval_model:
+                continue
+            rows.append({
+                "score_run_id": str(score_run_id),
+                "run_id": str(run_id or ""),
+                "case_id": case_id,
+                "task_type": _clean(getattr(item, "task_type", None) or _mapping_get(item, "task_type")),
+                "eval_model": eval_model,
+                "judge_model": str(judge_model or ""),
+                "judge_provider": str(judge_provider or ""),
+                "status": "queued",
+                "attempt_count": 0,
+            })
+        if not rows:
+            return False
+        repo.bulk_insert("live_score_queue", rows)
+        return True
+    except Exception:
+        return False
+
+
+def mark_score_queue_item_running(
+    score_run_id: str,
+    case_id: str,
+    eval_model: str,
+    *,
+    db_path: Path | None = None,
+) -> bool:
+    """将一条评分队列项标记为运行中，并增加尝试次数。"""
+    return _update_score_queue_item(
+        score_run_id,
+        case_id,
+        eval_model,
+        {"status": "running"},
+        increment_attempt=True,
+        db_path=db_path,
+    )
+
+
+def load_score_queue(score_run_id: str, *, db_path: Path | None = None) -> list[dict[str, Any]]:
+    try:
+        from app.services.dataset_service import database_ready, ensure_recoverable_queue_tables, get_db_path
+        from app.db.repository import Repository
+
+        path = db_path or get_db_path()
+        if not database_ready(path):
+            return []
+        ensure_recoverable_queue_tables(path)
+        rows = Repository(path).list_df("live_score_queue", order_by="id")
+        if rows.empty or "score_run_id" not in rows.columns:
+            return []
+        matched = rows[rows["score_run_id"].astype(str) == str(score_run_id)]
+        return matched.to_dict("records")
+    except Exception:
+        return []
+
+
+def summarize_score_queue(score_run_id: str, *, db_path: Path | None = None) -> dict[str, int]:
+    rows = load_score_queue(score_run_id, db_path=db_path)
+    counts = {"total": len(rows), "queued": 0, "running": 0, "success": 0, "failed": 0, "skipped": 0}
+    for row in rows:
+        status = str(row.get("status") or "queued").strip().lower()
+        if status in counts:
+            counts[status] += 1
+    counts["unfinished"] = counts["queued"] + counts["running"]
+    return counts
+
+
+def queue_items_for_status(
+    score_run_id: str,
+    statuses: set[str],
+    *,
+    db_path: Path | None = None,
+) -> list[dict[str, Any]]:
+    wanted = {str(status).strip().lower() for status in statuses}
+    return [
+        row for row in load_score_queue(score_run_id, db_path=db_path)
+        if str(row.get("status") or "").strip().lower() in wanted
+    ]
+
+
+def latest_score_queue(*, db_path: Path | None = None) -> list[dict[str, Any]]:
+    try:
+        from app.services.dataset_service import database_ready, ensure_recoverable_queue_tables, get_db_path
+        from app.db.repository import Repository
+
+        path = db_path or get_db_path()
+        if not database_ready(path):
+            return []
+        ensure_recoverable_queue_tables(path)
+        frame = Repository(path).list_df("live_score_queue", order_by="id")
+        if frame.empty or "score_run_id" not in frame.columns:
+            return []
+        latest = str(frame.iloc[-1]["score_run_id"])
+        return frame[frame["score_run_id"].astype(str) == latest].to_dict("records")
+    except Exception:
+        return []
+
+
+def restore_score_result_from_db(score_run_id: str, *, db_path: Path | None = None) -> ScoreResult | None:
+    """从 live_run_scores 重建已完成评分结果；不重新调用裁判模型。"""
+    try:
+        from app.services.dataset_service import database_ready, get_db_path
+        from app.db.repository import Repository
+
+        path = db_path or get_db_path()
+        if not database_ready(path):
+            return None
+        frame = Repository(path).list_df("live_run_scores", order_by="id")
+        if frame.empty or "score_run_id" not in frame.columns:
+            return None
+        matched = frame[frame["score_run_id"].astype(str) == str(score_run_id)]
+        if matched.empty:
+            return None
+        first = matched.iloc[0]
+        outcomes = tuple(_score_outcome_from_row(row) for row in matched.to_dict("records"))
+        return ScoreResult(
+            score_run_id=str(score_run_id),
+            run_id=str(first.get("run_id") or ""),
+            judge_provider=str(first.get("judge_provider") or ""),
+            judge_model=str(first.get("judge_model") or DEFAULT_JUDGE_MODEL),
+            mode=str(first.get("judge_mode") or "live"),
+            created_at=str(first.get("created_at") or datetime.now().isoformat(timespec="seconds")),
+            outcomes=outcomes,
+        )
+    except Exception:
+        return None
 
 
 def _score_outcome_exists(repo, score_run_id: str, case_id: str, eval_model: str) -> bool:
@@ -965,6 +1125,118 @@ def _score_export_row(row: Mapping[str, Any]) -> dict[str, Any]:
         if isinstance(parsed, Mapping):
             exported["rationale"] = _jsonable(dict(parsed))
     return exported
+
+
+def _sync_score_queue_from_outcome(score_run_id: str, outcome: ScoreOutcome, db_path: Path) -> bool:
+    return _update_score_queue_item(
+        score_run_id,
+        outcome.case_id,
+        outcome.eval_model,
+        {
+            "status": "success" if outcome.judge_status == STATUS_SUCCESS else "failed",
+            "error_code": outcome.error_code,
+            "error_message": outcome.error_message,
+        },
+        db_path=db_path,
+    )
+
+
+def _update_score_queue_item(
+    score_run_id: str,
+    case_id: str,
+    eval_model: str,
+    changes: dict[str, Any],
+    *,
+    increment_attempt: bool = False,
+    db_path: Path | None = None,
+) -> bool:
+    try:
+        from app.services.dataset_service import database_ready, ensure_recoverable_queue_tables, get_db_path
+        from app.db.repository import Repository
+
+        path = db_path or get_db_path()
+        if not database_ready(path):
+            return False
+        ensure_recoverable_queue_tables(path)
+        repo = Repository(path)
+        rows = repo.list_df("live_score_queue", order_by="id")
+        if rows.empty:
+            return False
+        matched = rows[
+            (rows["score_run_id"].astype(str) == str(score_run_id))
+            & (rows["case_id"].astype(str) == str(case_id))
+            & (rows["eval_model"].astype(str) == str(eval_model))
+        ]
+        if matched.empty:
+            return False
+        row = matched.iloc[0].to_dict()
+        row_id = _as_number(row.get("id"))
+        if row_id is None:
+            return False
+        payload = dict(changes)
+        if increment_attempt:
+            payload["attempt_count"] = int(row.get("attempt_count") or 0) + 1
+        repo.update("live_score_queue", int(row_id), payload)
+        return True
+    except Exception:
+        return False
+
+
+def _safe_list_df(repo, table: str):
+    try:
+        return repo.list_df(table, order_by="id")
+    except Exception:
+        import pandas as pd
+
+        return pd.DataFrame()
+
+
+def _mapping_get(value: Any, key: str) -> Any:
+    getter = getattr(value, "get", None)
+    return getter(key) if callable(getter) else None
+
+
+def _score_outcome_from_row(row: Mapping[str, Any]) -> ScoreOutcome:
+    rationale = row.get("rationale")
+    rationale_map: dict[str, str] = {}
+    if isinstance(rationale, str) and rationale.strip():
+        try:
+            parsed = json.loads(rationale)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, Mapping):
+            rationale_map = {str(key): str(value) for key, value in parsed.items()}
+    scores = {
+        field: int(value) if _as_number(value) is not None else None
+        for field, value in {
+            "accuracy_score": row.get("accuracy_score"),
+            "reasoning_score": row.get("reasoning_score"),
+            "coverage_score": row.get("coverage_score"),
+            "evidence_score": row.get("evidence_score"),
+            "expression_score": row.get("expression_score"),
+        }.items()
+    }
+    total = _as_number(row.get("total_score"))
+    return ScoreOutcome(
+        case_id=str(row.get("case_id") or ""),
+        task_type=str(row.get("task_type") or ""),
+        eval_model=str(row.get("eval_model") or ""),
+        judge_provider=str(row.get("judge_provider") or ""),
+        judge_model=str(row.get("judge_model") or ""),
+        judge_status=str(row.get("judge_status") or ""),
+        scores=scores,
+        total_score=int(total) if total is not None else None,
+        rationale=rationale_map,
+        review_note=str(row.get("review_note") or ""),
+        review_status=str(row.get("review_status") or "pending"),
+        latency_ms=int(_as_number(row.get("latency_ms"))) if _as_number(row.get("latency_ms")) is not None else None,
+        input_tokens=int(_as_number(row.get("input_tokens"))) if _as_number(row.get("input_tokens")) is not None else None,
+        output_tokens=int(_as_number(row.get("output_tokens"))) if _as_number(row.get("output_tokens")) is not None else None,
+        total_tokens=int(_as_number(row.get("total_tokens"))) if _as_number(row.get("total_tokens")) is not None else None,
+        trace_id=row.get("trace_id"),
+        error_code=row.get("error_code"),
+        error_message=row.get("error_message"),
+    )
 
 
 def _normalize_import_score_row(row: Mapping[str, Any]) -> dict[str, Any]:

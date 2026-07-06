@@ -22,6 +22,8 @@ DROP TABLE IF EXISTS evaluation_runs;
 DROP TABLE IF EXISTS error_taxonomy;
 DROP TABLE IF EXISTS live_run_responses;
 DROP TABLE IF EXISTS live_run_scores;
+DROP TABLE IF EXISTS live_run_queue;
+DROP TABLE IF EXISTS live_score_queue;
 
 -- 任务题：对应 data/tasks.csv。status 复用任务的 draft/active/inactive 标记，
 -- 由样本库中文状态映射后控制测试准入。
@@ -208,6 +210,23 @@ CREATE TABLE live_run_responses (
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- 可恢复的模型回答队列。本表只记录运行状态，不代表后台任务；页面中断后用于恢复
+-- 未完成/失败项，已完成回答仍以 live_run_responses 为准。
+CREATE TABLE live_run_queue (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id        TEXT,
+    case_id       TEXT,
+    task_type     TEXT,
+    model_id      TEXT,
+    provider      TEXT,
+    status        TEXT NOT NULL DEFAULT 'queued',
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    error_code    TEXT,
+    error_message TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- 真实模型评测的 LLM-as-judge 评分（PR-35）。本表不来自任何 seed 文件，仅承载「真实模型评测」
 -- 页由裁判模型对照 Gold Answer + Rubric 产出的「机器建议分」，与 seed 的 score_records 分离。
 -- 评分为机器建议，需人工复核：review_status 为 pending（待复核）/ confirmed（已确认）/ skipped（暂不采用）。
@@ -243,4 +262,22 @@ CREATE TABLE live_run_scores (
     status           TEXT NOT NULL DEFAULT 'active',
     created_at       TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- 可恢复的评分队列。本表只记录裁判评分队列状态；评分结果仍以 live_run_scores 为准。
+CREATE TABLE live_score_queue (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    score_run_id  TEXT,
+    run_id        TEXT,
+    case_id       TEXT,
+    task_type     TEXT,
+    eval_model    TEXT,
+    judge_model   TEXT,
+    judge_provider TEXT,
+    status        TEXT NOT NULL DEFAULT 'queued',
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    error_code    TEXT,
+    error_message TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );

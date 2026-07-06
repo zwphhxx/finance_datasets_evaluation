@@ -241,6 +241,20 @@ def build_remaining_queue_items(queue_items: list[dict], outcomes: list[er.RunOu
     ]
 
 
+def build_failed_run_queue_items(queue_items: list[dict], outcomes: list[er.RunOutcome]) -> list[dict]:
+    """Return queue items whose latest model answer failed and can be retried."""
+    failed = {
+        (str(outcome.model_id), str(outcome.case_id))
+        for outcome in outcomes or []
+        if not outcome.success
+    }
+    return [
+        item
+        for item in queue_items or []
+        if (str(item.get("model_id") or ""), str(item.get("case_id") or "")) in failed
+    ]
+
+
 def build_model_selection_options(models, keyword: str, limit: int = _MODEL_OPTION_LIMIT) -> tuple[list[str], int]:
     """Filter provider models into a bounded selectbox option list."""
     query = str(keyword or "").strip().lower()
@@ -460,6 +474,7 @@ def _render_configuration_panel(
     if mode == "unconfigured":
         st.caption("当前未配置模型服务密钥，暂不能发起真实调用。模拟回退仅用于开发兜底，不作为页面可选服务。")
     st.caption("建议首次运行选择 1 个样本和 1 个模型，确认链路后再扩大范围。")
+    st.caption("当前任务在页面内执行。运行中不建议刷新、关闭页面或切换页面；若中断，已完成结果会保留，未完成项可稍后继续。")
 
     col1, col2, col3 = st.columns([1, 1, 1.2])
     with col1:
@@ -852,6 +867,103 @@ def _compare_result_from_state(state: dict | None = None, outcomes: list[er.RunO
     )
 
 
+def _recover_latest_run_from_sqlite(task_records: list[dict]) -> object | None:
+    if _run_state() or eval_state.get_last_run() is not None:
+        return eval_state.get_last_run()
+    rows = er.latest_run_queue()
+    if not rows:
+        return None
+    run_id = str(rows[0].get("run_id") or "")
+    if not run_id:
+        return None
+    result = er.restore_compare_result_from_db(run_id)
+    queue_items = _run_queue_items_from_rows(rows, task_records)
+    summary = er.summarize_run_queue(run_id)
+    status = "interrupted" if summary.get("unfinished") else "completed"
+    if result is not None:
+        eval_state.set_last_run(result)
+    _set_run_state(
+        status=status,
+        run_id=run_id,
+        provider=str(rows[0].get("provider") or getattr(result, "provider", "")),
+        model_ids=_dedupe([str(row.get("model_id") or "") for row in rows]),
+        mode=str(getattr(result, "mode", "") or "live"),
+        created_at=str(rows[0].get("created_at") or datetime.now().isoformat(timespec="seconds")),
+        queue_items=queue_items,
+        outcomes=list(getattr(result, "outcomes", []) or []),
+        message="检测到最近一次运行记录。已完成结果会保留，未完成项可稍后继续。",
+    )
+    st.session_state["test_run_persisted"] = bool(result is not None and getattr(result, "outcomes", None))
+    return result
+
+
+def _recover_latest_score_from_sqlite(compare_result) -> object | None:
+    if _score_state() or eval_state.get_last_score() is not None:
+        return eval_state.get_last_score()
+    rows = sc.latest_score_queue()
+    if not rows:
+        return None
+    score_run_id = str(rows[0].get("score_run_id") or "")
+    if not score_run_id:
+        return None
+    score_result = sc.restore_score_result_from_db(score_run_id)
+    queue_items = _score_queue_items_from_rows(rows, compare_result)
+    summary = sc.summarize_score_queue(score_run_id)
+    status = "interrupted" if summary.get("unfinished") else "completed"
+    if score_result is not None:
+        eval_state.set_last_score(score_result)
+    _set_score_state(
+        status=status,
+        score_run_id=score_run_id,
+        run_id=str(rows[0].get("run_id") or getattr(compare_result, "run_id", "")),
+        judge_provider=str(rows[0].get("judge_provider") or getattr(score_result, "judge_provider", "")),
+        judge_model=str(rows[0].get("judge_model") or getattr(score_result, "judge_model", sc.DEFAULT_JUDGE_MODEL)),
+        mode=str(getattr(score_result, "mode", "") or "live"),
+        created_at=str(rows[0].get("created_at") or datetime.now().isoformat(timespec="seconds")),
+        queue_items=queue_items,
+        outcomes=list(getattr(score_result, "outcomes", []) or []),
+        skipped_count=0,
+        message="检测到已生成评分草稿。已生成评分会保留，未完成项可稍后继续。",
+    )
+    st.session_state["test_run_score_persisted"] = bool(score_result is not None and getattr(score_result, "outcomes", None))
+    return score_result
+
+
+def _run_queue_items_from_rows(rows: list[dict], task_records: list[dict]) -> list[dict]:
+    tasks_by_case = {str(row.get("case_id") or ""): row for row in task_records or []}
+    items: list[dict] = []
+    for row in rows or []:
+        case_id = str(row.get("case_id") or "")
+        task = tasks_by_case.get(case_id) or {"case_id": case_id, "task_type": str(row.get("task_type") or "")}
+        items.append({
+            "model_id": str(row.get("model_id") or ""),
+            "case_id": case_id,
+            "task": task,
+        })
+    return items
+
+
+def _score_queue_items_from_rows(rows: list[dict], compare_result) -> list[er.RunOutcome]:
+    outcomes = list(getattr(compare_result, "outcomes", []) or [])
+    by_pair = {(str(outcome.case_id), str(outcome.model_id)): outcome for outcome in outcomes}
+    items: list[er.RunOutcome] = []
+    for row in rows or []:
+        key = (str(row.get("case_id") or ""), str(row.get("eval_model") or ""))
+        existing = by_pair.get(key)
+        if existing is not None:
+            items.append(existing)
+            continue
+        items.append(er.RunOutcome(
+            case_id=key[0],
+            task_type=str(row.get("task_type") or ""),
+            provider="",
+            model_id=key[1],
+            run_status="success",
+            success=True,
+        ))
+    return items
+
+
 def _finalize_run_result(status: str, state: dict, outcomes: list[er.RunOutcome], message: str = "") -> None:
     queue_items = list(state.get("queue_items") or [])
     _set_run_state(
@@ -867,7 +979,11 @@ def _finalize_run_result(status: str, state: dict, outcomes: list[er.RunOutcome]
     )
     result = _compare_result_from_state(_run_state(), outcomes)
     if result is not None:
-        persisted = er.persist_compare_result(result)
+        persisted_from_queue = bool(st.session_state.get("test_run_persisted"))
+        if persisted_from_queue:
+            persisted = True
+        else:
+            persisted = er.persist_compare_result(result)
         eval_state.set_last_run(result)
         _clear_score_state()
         st.session_state["test_run_persisted"] = persisted
@@ -914,6 +1030,7 @@ def _execute_run_queue(
         "created_at": created_at,
         "queue_items": all_queue,
     }
+    er.initialize_run_queue(run_id, state_provider, all_queue)
     _set_run_state(
         status="running",
         run_id=run_id,
@@ -932,6 +1049,7 @@ def _execute_run_queue(
     for index, item in enumerate(queue_items):
         waiting = queue_items[index + 1:]
         _render_live_run_queue(queue_slot, all_queue, outcomes, item, waiting, mode)
+        er.mark_run_queue_item_running(run_id, item["case_id"], item["model_id"])
         try:
             outcome = er.run_single(
                 provider,
@@ -942,9 +1060,10 @@ def _execute_run_queue(
             )
         except Exception:
             outcome = _unexpected_failure_outcome(provider, item)
-            interrupted = True
-            message = "本次运行未完成。已保留已完成回答；未完成项可继续运行。"
+            message = "本次运行出现单条失败。已完成结果会保留，未完成项可稍后继续。"
         outcomes.append(outcome)
+        persisted = er.persist_run_outcome(run_id, mode, outcome)
+        st.session_state["test_run_persisted"] = bool(st.session_state.get("test_run_persisted") or persisted)
         _set_run_state(
             status="running",
             run_id=run_id,
@@ -1062,6 +1181,7 @@ def _execute_retry_score_queue(
     for index, run_outcome in enumerate(retry_items):
         waiting = retry_items[index + 1:]
         _render_live_score_queue(queue_slot, retry_items, retried_outcomes, run_outcome, waiting, 0, mode)
+        sc.mark_score_queue_item_running(score_run_id, run_outcome.case_id, run_outcome.model_id)
         task = tasks_by_case.get(run_outcome.case_id) or {
             "case_id": run_outcome.case_id,
             "task_type": run_outcome.task_type,
@@ -1139,22 +1259,27 @@ def _execute_score_queue(
     base,
     task_records: list[dict],
     dimensions: list[dict],
+    *,
+    queue_items_override: list[er.RunOutcome] | None = None,
+    existing_outcomes: list[sc.ScoreOutcome] | None = None,
+    base_state: dict | None = None,
 ) -> None:
     st.session_state["test_run_score_dims"] = list(dimensions or [])
-    queue_items = build_score_queue_items(compare_result)
-    skipped_count = build_score_plan_summary(compare_result)["skipped"]
+    full_queue = list((base_state or {}).get("queue_items") or build_score_queue_items(compare_result))
+    queue_items = list(queue_items_override or full_queue)
+    skipped_count = int((base_state or {}).get("skipped_count") or build_score_plan_summary(compare_result)["skipped"])
     if not queue_items:
         return
 
     provider = get_text_provider(prefer=provider_name)
     judge_model = sc.DEFAULT_JUDGE_MODEL
-    score_run_id = sc.generate_score_run_id()
-    created_at = datetime.now().isoformat(timespec="seconds")
+    score_run_id = str((base_state or {}).get("score_run_id") or sc.generate_score_run_id())
+    created_at = str((base_state or {}).get("created_at") or datetime.now().isoformat(timespec="seconds"))
     mode = "mock" if getattr(provider, "name", "") == "mock" else "live"
     judge_provider = str(getattr(provider, "name", ""))
     gold_map = getattr(base, "gold_answer_map", {}) or {}
     tasks_by_case = {str(row.get("case_id") or ""): row for row in task_records}
-    outcomes: list[sc.ScoreOutcome] = []
+    outcomes: list[sc.ScoreOutcome] = list(existing_outcomes or [])
     state = {
         "score_run_id": score_run_id,
         "run_id": str(getattr(compare_result, "run_id", "")),
@@ -1162,9 +1287,10 @@ def _execute_score_queue(
         "judge_model": judge_model,
         "mode": mode,
         "created_at": created_at,
-        "queue_items": queue_items,
+        "queue_items": full_queue,
         "skipped_count": int(skipped_count),
     }
+    sc.initialize_score_queue(score_run_id, state["run_id"], full_queue, judge_provider, judge_model)
     _set_score_state(
         status="running",
         score_run_id=score_run_id,
@@ -1173,19 +1299,20 @@ def _execute_score_queue(
         judge_model=judge_model,
         mode=mode,
         created_at=created_at,
-        queue_items=queue_items,
+        queue_items=full_queue,
         outcomes=outcomes,
         skipped_count=int(skipped_count),
     )
 
     queue_slot = st.empty()
-    _render_live_score_queue(queue_slot, queue_items, outcomes, queue_items[0], queue_items[1:], skipped_count, mode)
+    _render_live_score_queue(queue_slot, full_queue, outcomes, queue_items[0], queue_items[1:], skipped_count, mode)
 
     interrupted = False
     message = ""
     for index, run_outcome in enumerate(queue_items):
         waiting = queue_items[index + 1:]
-        _render_live_score_queue(queue_slot, queue_items, outcomes, run_outcome, waiting, skipped_count, mode)
+        _render_live_score_queue(queue_slot, full_queue, outcomes, run_outcome, waiting, skipped_count, mode)
+        sc.mark_score_queue_item_running(score_run_id, run_outcome.case_id, run_outcome.model_id)
         task = tasks_by_case.get(run_outcome.case_id) or {
             "case_id": run_outcome.case_id,
             "task_type": run_outcome.task_type,
@@ -1227,18 +1354,18 @@ def _execute_score_queue(
             judge_model=judge_model,
             mode=mode,
             created_at=created_at,
-            queue_items=queue_items,
+            queue_items=full_queue,
             outcomes=outcomes,
             skipped_count=int(skipped_count),
             message=message,
         )
         next_item = None if interrupted else (waiting[0] if waiting else None)
         next_waiting = [] if interrupted or not waiting else waiting[1:]
-        _render_live_score_queue(queue_slot, queue_items, outcomes, next_item, next_waiting, skipped_count, mode)
+        _render_live_score_queue(queue_slot, full_queue, outcomes, next_item, next_waiting, skipped_count, mode)
         if interrupted:
             break
 
-    remaining = len(queue_items) - len(outcomes)
+    remaining = len(full_queue) - len(outcomes)
     status = "interrupted" if interrupted or remaining else "completed"
     _finalize_score_result(status, state, outcomes, message)
     st.rerun()
@@ -1338,6 +1465,9 @@ def _render_live_score_queue(
 def _render_results(provider_name: str, temperature, max_tokens, task_records: list[dict]) -> None:
     result = eval_state.get_last_run()
     state = _run_state()
+    if result is None and not state:
+        result = _recover_latest_run_from_sqlite(task_records)
+        state = _run_state()
     if result is None and state and _partial_outcomes():
         result = _compare_result_from_state(state, _partial_outcomes())
     if result is None:
@@ -1357,6 +1487,8 @@ def _render_results(provider_name: str, temperature, max_tokens, task_records: l
     )
     if run_status in {"running", "interrupted", "failed"}:
         _render_partial_run_notice(result, provider_name, temperature, max_tokens)
+    elif failed:
+        _render_retry_failed_run_action(result, provider_name, temperature, max_tokens)
     if summary.total and summary.success == 0:
         st.caption("本次运行没有成功回答，默认展示第一条失败原因。")
     elif failed:
@@ -1406,6 +1538,7 @@ def _render_partial_run_notice(result, provider_name: str, temperature, max_toke
     queue_items = list(state.get("queue_items") or [])
     outcomes = list(result.outcomes)
     remaining = build_remaining_queue_items(queue_items, outcomes)
+    failed_items = build_failed_run_queue_items(queue_items, outcomes)
     failed = sum(1 for outcome in outcomes if not outcome.success)
     status = _run_status_for_result(result)
     if status == "completed":
@@ -1418,7 +1551,8 @@ def _render_partial_run_notice(result, provider_name: str, temperature, max_toke
     if state.get("message"):
         st.caption(str(state.get("message")))
     resume_clicked = False
-    col1, col2 = st.columns([1, 1])
+    retry_clicked = False
+    col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
         resume_clicked = st.button(
             "继续未完成项",
@@ -1428,6 +1562,14 @@ def _render_partial_run_notice(result, provider_name: str, temperature, max_toke
             use_container_width=True,
         )
     with col2:
+        retry_clicked = st.button(
+            "重试失败项",
+            key="test_run_retry_failed_run_partial",
+            type="secondary",
+            disabled=not failed_items,
+            use_container_width=True,
+        )
+    with col3:
         if st.button("放弃本次运行", key="test_run_discard_partial", type="tertiary", use_container_width=True):
             _clear_run_state()
             eval_state.clear()
@@ -1440,6 +1582,38 @@ def _render_partial_run_notice(result, provider_name: str, temperature, max_toke
             temperature,
             max_tokens,
             existing_outcomes=outcomes,
+            base_state=state,
+        )
+    if retry_clicked:
+        successful = [outcome for outcome in outcomes if outcome.success]
+        _execute_run_queue(
+            provider_name,
+            failed_items,
+            list(state.get("model_ids") or []),
+            temperature,
+            max_tokens,
+            existing_outcomes=successful,
+            base_state=state,
+        )
+
+
+def _render_retry_failed_run_action(result, provider_name: str, temperature, max_tokens) -> None:
+    state = _run_state()
+    queue_items = list(state.get("queue_items") or [])
+    outcomes = list(getattr(result, "outcomes", []) or [])
+    failed_items = build_failed_run_queue_items(queue_items, outcomes)
+    if not failed_items:
+        return
+    st.caption("部分模型回答失败，可只重试失败项；已完成回答不会重新生成。")
+    if st.button("重试失败项", key="test_run_retry_failed_run", type="secondary"):
+        successful = [outcome for outcome in outcomes if outcome.success]
+        _execute_run_queue(
+            provider_name,
+            failed_items,
+            list(state.get("model_ids") or []),
+            temperature,
+            max_tokens,
+            existing_outcomes=successful,
             base_state=state,
         )
 
@@ -1588,6 +1762,8 @@ def _render_answer_summary(items: list[tuple[str, str]], model_id: str = "") -> 
 def _render_scoring(base, provider_name: str, task_records: list[dict]) -> None:
     result = eval_state.get_last_run()
     if result is None:
+        result = _recover_latest_run_from_sqlite(task_records)
+    if result is None:
         st.caption("请先运行模型回答，再生成评分草稿。")
         return
 
@@ -1623,11 +1799,16 @@ def _render_score_results(base, provider_name: str, task_records: list[dict]) ->
     score_result = eval_state.get_last_score()
     compare_result = eval_state.get_last_run()
     state = _score_state()
+    if compare_result is None:
+        compare_result = _recover_latest_run_from_sqlite(task_records)
+    if score_result is None and not state:
+        score_result = _recover_latest_score_from_sqlite(compare_result)
+        state = _score_state()
     if score_result is None and state and _partial_score_outcomes():
         score_result = _score_result_from_state(state, _partial_score_outcomes())
     if score_result is None:
         if state and state.get("status") in {"running", "interrupted", "failed"}:
-            _render_unfinished_score_notice(state)
+            _render_unfinished_score_notice(state, base, provider_name, compare_result, task_records)
         return
     dimensions = st.session_state.get("test_run_score_dims") or ds.get_rubric_dimensions()
     state_skipped = int((state or {}).get("skipped_count") or 0)
@@ -1650,7 +1831,7 @@ def _render_score_results(base, provider_name: str, task_records: list[dict]) ->
     else:
         st.caption("评分草稿需人工确认后才纳入正式结论。")
     if state and state.get("status") in {"running", "interrupted", "failed"}:
-        _render_partial_score_notice(score_result, state)
+        _render_partial_score_notice(score_result, state, base, provider_name, compare_result, task_records, dimensions)
     elif state and state.get("message"):
         st.caption(str(state.get("message")))
     if sc.is_mock_score(score_result):
@@ -1658,7 +1839,8 @@ def _render_score_results(base, provider_name: str, task_records: list[dict]) ->
 
     _render_score_result_list(score_result, dimensions)
     _render_score_detail_viewer(score_result, dimensions)
-    _render_retry_failed_scores_action(base, provider_name, score_result, compare_result, task_records, dimensions)
+    if not (state and state.get("status") in {"running", "interrupted", "failed"}):
+        _render_retry_failed_scores_action(base, provider_name, score_result, compare_result, task_records, dimensions)
     if st.button("查看评分对比表", key="test_run_score_compare_details", type="tertiary"):
         _render_score_compare_dialog(score_result, dimensions)
 
@@ -1700,17 +1882,18 @@ def _render_retry_failed_scores_action(
         )
 
 
-def _render_unfinished_score_notice(state: dict) -> None:
+def _render_unfinished_score_notice(state: dict, base=None, provider_name: str = "", compare_result=None, task_records: list[dict] | None = None) -> None:
     queue_items = list(state.get("queue_items") or [])
     skipped = int(state.get("skipped_count") or 0)
     st.markdown("**本次评分未完成**")
     st.caption(
         f"已评分 0 条 · 未评分 {len(queue_items)} 条 · 失败 0 条 · "
-        f"跳过失败回答 {skipped} 条。页面刷新或连接中断可能导致未完成评分丢失。"
+        f"跳过失败回答 {skipped} 条。已生成评分会保留，未完成项可稍后继续。"
     )
+    _render_score_recovery_actions(state, [], base, provider_name, compare_result, task_records or [])
 
 
-def _render_partial_score_notice(score_result, state: dict) -> None:
+def _render_partial_score_notice(score_result, state: dict, base=None, provider_name: str = "", compare_result=None, task_records: list[dict] | None = None, dimensions=None) -> None:
     queue_items = list(state.get("queue_items") or [])
     remaining = max(0, len(queue_items) - len(score_result.outcomes))
     failed = sum(1 for outcome in score_result.outcomes if not outcome.ok)
@@ -1721,6 +1904,86 @@ def _render_partial_score_notice(score_result, state: dict) -> None:
     )
     if state.get("message"):
         st.caption(str(state.get("message")))
+    _render_score_recovery_actions(state, list(score_result.outcomes), base, provider_name, compare_result, task_records or [], dimensions)
+
+
+def _render_score_recovery_actions(
+    state: dict,
+    outcomes: list[sc.ScoreOutcome],
+    base,
+    provider_name: str,
+    compare_result,
+    task_records: list[dict],
+    dimensions=None,
+) -> None:
+    if base is None or compare_result is None:
+        return
+    queue_items = list(state.get("queue_items") or [])
+    completed = {(str(outcome.case_id), str(outcome.eval_model)) for outcome in outcomes or []}
+    failed_pairs = {
+        (str(outcome.case_id), str(outcome.eval_model))
+        for outcome in outcomes or []
+        if not outcome.ok and not _is_mock_score_outcome(outcome)
+    }
+    remaining_items = [
+        item for item in queue_items
+        if (str(item.case_id), str(item.model_id)) not in completed
+    ]
+    failed_items = [
+        item for item in queue_items
+        if (str(item.case_id), str(item.model_id)) in failed_pairs
+    ]
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col1:
+        continue_clicked = st.button(
+            "继续未完成评分",
+            key="test_run_continue_score_queue",
+            type="secondary",
+            disabled=not remaining_items,
+            use_container_width=True,
+        )
+    with col2:
+        retry_clicked = st.button(
+            "重试失败评分",
+            key="test_run_retry_failed_score_queue",
+            type="secondary",
+            disabled=not failed_items,
+            use_container_width=True,
+        )
+    with col3:
+        discard_clicked = st.button(
+            "放弃本次评分",
+            key="test_run_discard_score_queue",
+            type="tertiary",
+            use_container_width=True,
+        )
+    dims = list(dimensions or st.session_state.get("test_run_score_dims") or ds.get_rubric_dimensions())
+    if continue_clicked:
+        _execute_score_queue(
+            provider_name,
+            compare_result,
+            base,
+            task_records,
+            dims,
+            queue_items_override=remaining_items,
+            existing_outcomes=outcomes,
+            base_state=state,
+        )
+    if retry_clicked:
+        kept = [outcome for outcome in outcomes if (str(outcome.case_id), str(outcome.eval_model)) not in failed_pairs]
+        _execute_score_queue(
+            provider_name,
+            compare_result,
+            base,
+            task_records,
+            dims,
+            queue_items_override=failed_items,
+            existing_outcomes=kept,
+            base_state=state,
+        )
+    if discard_clicked:
+        _clear_score_state()
+        st.rerun()
 
 
 def _render_score_result_list(score_result, dimensions) -> None:

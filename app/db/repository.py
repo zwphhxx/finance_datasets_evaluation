@@ -30,6 +30,8 @@ TABLE_PRIMARY_KEYS: dict[str, str] = {
     "error_taxonomy": "error_label",
     "live_run_responses": "id",
     "live_run_scores": "id",
+    "live_run_queue": "id",
+    "live_score_queue": "id",
 }
 
 # 写入时由数据库默认值维护、调用方无需显式提供的列。

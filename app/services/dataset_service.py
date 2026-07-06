@@ -24,6 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import os
+import sqlite3
 from pathlib import Path
 
 import pandas as pd
@@ -90,6 +91,54 @@ def database_ready(db_path: Path | None = None) -> bool:
         return False
     try:
         return Repository(path).count("task_cases") > 0
+    except Exception:
+        return False
+
+
+def ensure_recoverable_queue_tables(db_path: Path | None = None) -> bool:
+    """为既有运行期 SQLite 补齐可恢复队列表，不重建或删除任何已有数据。"""
+    path = db_path or get_db_path()
+    if not database_ready(path):
+        return False
+    try:
+        with sqlite3.connect(str(path)) as connection:
+            connection.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS live_run_queue (
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id        TEXT,
+                    case_id       TEXT,
+                    task_type     TEXT,
+                    model_id      TEXT,
+                    provider      TEXT,
+                    status        TEXT NOT NULL DEFAULT 'queued',
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    error_code    TEXT,
+                    error_message TEXT,
+                    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+
+                CREATE TABLE IF NOT EXISTS live_score_queue (
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    score_run_id  TEXT,
+                    run_id        TEXT,
+                    case_id       TEXT,
+                    task_type     TEXT,
+                    eval_model    TEXT,
+                    judge_model   TEXT,
+                    judge_provider TEXT,
+                    status        TEXT NOT NULL DEFAULT 'queued',
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    error_code    TEXT,
+                    error_message TEXT,
+                    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+                """
+            )
+            connection.commit()
+        return True
     except Exception:
         return False
 

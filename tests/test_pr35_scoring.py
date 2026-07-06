@@ -373,6 +373,92 @@ class ScorePersistenceTests(unittest.TestCase):
         self.assertEqual(outcome.case_id, rows[0]["case_id"])
         self.assertEqual(outcome.eval_model, rows[0]["eval_model"])
 
+    def test_score_queue_is_created_before_scoring_and_recovers_status(self):
+        provider = get_provider("mock")
+        compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(2))
+        queue_items = list(compare.outcomes)
+        score_run_id = "SCORE-QUEUE-RECOVER"
+
+        self.assertTrue(
+            sc.initialize_score_queue(
+                score_run_id,
+                compare.run_id,
+                queue_items,
+                "fakejudge",
+                "judge/x",
+                db_path=_DB_PATH,
+            )
+        )
+        queued = sc.load_score_queue(score_run_id, db_path=_DB_PATH)
+        self.assertEqual(2, len(queued))
+        self.assertEqual({"queued"}, {row["status"] for row in queued})
+
+        first = queue_items[0]
+        sc.mark_score_queue_item_running(score_run_id, first.case_id, first.model_id, db_path=_DB_PATH)
+        score = sc.score_single(
+            _FakeJudge(),
+            "judge/x",
+            _sample_tasks(1)[0],
+            first.answer_text,
+            {},
+            _DIMENSIONS,
+            eval_model=first.model_id,
+        )
+        self.assertTrue(
+            sc.persist_score_outcome(
+                score_run_id,
+                compare.run_id,
+                "fakejudge",
+                "judge/x",
+                "live",
+                score,
+                db_path=_DB_PATH,
+            )
+        )
+
+        summary = sc.summarize_score_queue(score_run_id, db_path=_DB_PATH)
+        self.assertEqual(1, summary["success"])
+        self.assertEqual(1, summary["queued"])
+        restored = sc.restore_score_result_from_db(score_run_id, db_path=_DB_PATH)
+        self.assertIsNotNone(restored)
+        self.assertEqual(1, len(restored.outcomes))
+        self.assertEqual("success", restored.outcomes[0].judge_status)
+
+    def test_score_queue_failed_items_do_not_enter_pending_confirmation(self):
+        provider = get_provider("mock")
+        compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(1))
+        score_run_id = "SCORE-QUEUE-FAILED"
+        run_outcome = compare.outcomes[0]
+        sc.initialize_score_queue(
+            score_run_id,
+            compare.run_id,
+            [run_outcome],
+            "fakejudge",
+            "judge/x",
+            db_path=_DB_PATH,
+        )
+        failed = sc.ScoreOutcome(
+            case_id=run_outcome.case_id,
+            task_type=run_outcome.task_type,
+            eval_model=run_outcome.model_id,
+            judge_provider="fakejudge",
+            judge_model="judge/x",
+            judge_status="failed",
+            scores={field["field"]: None for field in _DIMENSIONS},
+            total_score=None,
+            error_code="timeout",
+            error_message="请求超时",
+        )
+        sc.persist_score_outcome(score_run_id, compare.run_id, "fakejudge", "judge/x", "live", failed, db_path=_DB_PATH)
+
+        queue = sc.load_score_queue(score_run_id, db_path=_DB_PATH)
+        self.assertEqual("failed", queue[0]["status"])
+        retry_items = sc.queue_items_for_status(score_run_id, {"failed"}, db_path=_DB_PATH)
+        self.assertEqual([(run_outcome.case_id, run_outcome.model_id)], [(item["case_id"], item["eval_model"]) for item in retry_items])
+        rows = sc.load_score_rows(score_run_id, db_path=_DB_PATH)
+        self.assertEqual("failed", rows[0]["judge_status"])
+        self.assertNotEqual("confirmed", rows[0]["review_status"])
+
     def test_failed_score_row_can_be_updated_by_retry_success_without_duplicate(self):
         failed = sc.ScoreOutcome(
             case_id="C-RETRY",

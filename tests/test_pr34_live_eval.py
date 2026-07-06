@@ -134,6 +134,60 @@ class PersistenceTests(unittest.TestCase):
         # 真实评测结果写入独立表，绝不污染承载评分的 seed model_responses。
         self.assertEqual(before, after)
 
+    def test_run_queue_is_created_before_execution_and_recovers_status(self):
+        tasks = _sample_tasks(2)
+        run_id = "RUN-QUEUE-RECOVER"
+        queue_items = [
+            {"model_id": "mock/chat-base", "case_id": str(task["case_id"]), "task": task}
+            for task in tasks
+        ]
+
+        self.assertTrue(er.initialize_run_queue(run_id, "mock", queue_items, db_path=_DB_PATH))
+        queued = er.load_run_queue(run_id, db_path=_DB_PATH)
+        self.assertEqual(2, len(queued))
+        self.assertEqual({"queued"}, {row["status"] for row in queued})
+
+        er.mark_run_queue_item_running(run_id, queue_items[0]["case_id"], "mock/chat-base", db_path=_DB_PATH)
+        outcome = er.run_single(get_provider("mock"), "mock/chat-base", tasks[0])
+        self.assertTrue(er.persist_run_outcome(run_id, "mock", outcome, db_path=_DB_PATH))
+
+        summary = er.summarize_run_queue(run_id, db_path=_DB_PATH)
+        self.assertEqual(1, summary["success"])
+        self.assertEqual(1, summary["queued"])
+        self.assertEqual(0, summary["failed"])
+        restored = er.restore_compare_result_from_db(run_id, db_path=_DB_PATH)
+        self.assertIsNotNone(restored)
+        self.assertEqual(1, len(restored.outcomes))
+        self.assertEqual(outcome.case_id, restored.outcomes[0].case_id)
+
+    def test_run_queue_retry_only_targets_failed_items(self):
+        tasks = _sample_tasks(2)
+        run_id = "RUN-QUEUE-RETRY"
+        queue_items = [
+            {"model_id": "mock/chat-base", "case_id": str(tasks[0]["case_id"]), "task": tasks[0]},
+            {"model_id": "mock/chat-fail", "case_id": str(tasks[1]["case_id"]), "task": tasks[1]},
+        ]
+        er.initialize_run_queue(run_id, "mock", queue_items, db_path=_DB_PATH)
+        success = er.run_single(get_provider("mock"), "mock/chat-base", tasks[0])
+        er.persist_run_outcome(run_id, "mock", success, db_path=_DB_PATH)
+        failed = er.RunOutcome(
+            case_id=str(tasks[1]["case_id"]),
+            task_type=str(tasks[1]["task_type"]),
+            provider="mock",
+            model_id="mock/chat-fail",
+            run_status="failed",
+            success=False,
+            error_code="timeout",
+            error_message="请求超时",
+        )
+        er.persist_run_outcome(run_id, "mock", failed, db_path=_DB_PATH)
+
+        failed_items = er.queue_items_for_status(run_id, {"failed"}, db_path=_DB_PATH)
+        self.assertEqual(1, len(failed_items))
+        self.assertEqual("mock/chat-fail", failed_items[0]["model_id"])
+        queued_items = er.queue_items_for_status(run_id, {"queued", "running"}, db_path=_DB_PATH)
+        self.assertEqual([], queued_items)
+
 
 class ServiceAndWiringTests(unittest.TestCase):
     def test_list_dataset_versions(self):
