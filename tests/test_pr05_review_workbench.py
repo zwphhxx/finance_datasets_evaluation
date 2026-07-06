@@ -487,14 +487,14 @@ class RedlineAndCopyTests(unittest.TestCase):
 
 
 class TagStyleTests(unittest.TestCase):
-    def test_status_badge_palette_is_semantic_and_restrained(self):
+    def test_status_palette_is_semantic_and_restrained(self):
         css = components.STYLE_CSS
-        for token in ["status-neutral", "status-success", "status-warning", "status-danger", "status-muted"]:
+        for token in ["--fde-success-bg", "--fde-warning-bg", "--fde-danger-bg"]:
             self.assertIn(token, css)
-        self.assertIn("--fde-status-danger-bg", css)
-        self.assertIn(".review-risk-note", css)
-        risk_css = css.split(".review-risk-note {", 1)[1].split(".text-block-label", 1)[0]
-        self.assertNotIn("border-left", risk_css)
+        self.assertIn(".inline-pill", css)
+        self.assertNotIn(".review-risk-note", css)
+        self.assertNotIn(".status-badge", css)
+        self.assertNotIn(".score-badge", css)
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@ presented in business Chinese without leaking raw English field values.
 """
 
 import unittest
+from pathlib import Path
 
 from src.data_service import load_all_data
 from src.ui import case_study, labels
@@ -12,14 +13,17 @@ class CaseStudyPresentationTests(unittest.TestCase):
     def setUp(self):
         self.data = load_all_data()
 
-    def test_summary_items_cover_core_assets_with_live_counts(self):
-        items = dict(case_study.build_dataset_summary_items(self.data))
-        self.assertIn("任务样本", items)
-        self.assertIn("Gold Answer", items)
-        self.assertIn(str(len(self.data.tasks)), items["任务样本"])
+    def test_home_stats_cover_core_assets_with_live_counts(self):
+        stats = {label: value for value, label in case_study._build_home_stats(self.data, {})}
+        self.assertIn("正式样本", stats)
+        self.assertIn("尽调场景", stats)
+        self.assertIn(str(len(self.data.tasks)), stats["正式样本"])
 
-    def test_methodology_steps_unchanged(self):
-        self.assertEqual(5, len(case_study.get_methodology_items()))
+    def test_case_study_source_keeps_three_main_sections(self):
+        source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
+        for section in ("项目定位", "评测流程", "数据边界"):
+            self.assertIn(section, source)
+        self.assertNotIn("04\", \"进入操作", source)
 
 
 class TaskPresentationTests(unittest.TestCase):

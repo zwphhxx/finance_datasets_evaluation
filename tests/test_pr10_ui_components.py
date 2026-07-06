@@ -18,31 +18,62 @@ BANNED_PHRASES = ["AI赋能", "智能洞察", "一键优化", "专家级", "秒�
 
 
 class UIComponentsTests(unittest.TestCase):
-    def test_components_module_exposes_reusable_api_and_css_tokens(self):
+    def test_components_module_exposes_current_lightweight_api(self):
         import src.ui.components as components
 
         expected_functions = [
-            "render_page_header",
-            "render_metric_card",
-            "render_info_panel",
-            "render_warning_panel",
+            "apply_global_styles",
+            "render_html",
+            "render_page_heading",
+            "render_numbered_section",
+            "render_detail_panel",
+            "render_kv_grid",
+            "render_inline_status",
             "render_empty_state",
-            "render_score_badge",
-            "render_status_badge",
-            "render_section_title",
-            "render_model_answer_card",
+            "render_clean_list",
+            "render_compact_hero",
+            "render_status_pill",
         ]
         for name in expected_functions:
             self.assertTrue(hasattr(components, name), name)
             self.assertTrue(callable(getattr(components, name)), name)
 
-        self.assertIn(".metric-card", components.STYLE_CSS)
-        self.assertIn(".score-badge", components.STYLE_CSS)
-        self.assertIn(".status-badge", components.STYLE_CSS)
-        self.assertIn(".empty-state", components.STYLE_CSS)
-        self.assertIn("--fde-blue", components.STYLE_CSS)
+    def test_components_do_not_export_legacy_card_api(self):
+        import src.ui.components as components
 
-    def test_navigation_uses_button_items_in_pr09_order(self):
+        removed_functions = [
+            "render_page_header",
+            "render_page_shell",
+            "render_boundary_bar",
+            "render_metric_card",
+            "render_info_panel",
+            "render_context_grid",
+            "render_context_summary",
+            "render_warning_panel",
+            "render_section_title",
+            "render_fingerprint_cards",
+            "render_redline_verdict",
+            "render_flow_strip",
+            "render_evidence_panel",
+            "render_status_summary",
+            "render_model_answer_card",
+        ]
+        for name in removed_functions:
+            self.assertFalse(hasattr(components, name), name)
+
+        for selector in [
+            ".metric-card",
+            ".score-badge",
+            ".status-badge",
+            ".fingerprint-card",
+            ".boundary-card",
+            ".verdict-card",
+            ".review-risk-note",
+            ".portfolio-hero",
+        ]:
+            self.assertNotIn(selector, components.STYLE_CSS)
+
+    def test_navigation_uses_button_items_in_current_order(self):
         self.assertEqual(EXPECTED_PAGE_ORDER, [config.page_key for config in PAGE_CONFIGS])
         self.assertEqual(EXPECTED_PAGE_ORDER, list(PAGES.keys()))
         for config in PAGE_CONFIGS:
@@ -70,18 +101,19 @@ class UIComponentsTests(unittest.TestCase):
             for phrase in BANNED_PHRASES:
                 self.assertNotIn(phrase, source, file_path)
 
-    def test_component_signatures_match_pr10_contract(self):
+    def test_component_signatures_match_current_contract(self):
         import src.ui.components as components
 
         signatures = {
-            "render_page_header": ["title", "subtitle", "boundary_note"],
-            "render_metric_card": ["label", "value", "help_text"],
-            "render_info_panel": ["title", "content"],
-            "render_warning_panel": ["content"],
+            "render_page_heading": ["title", "description"],
+            "render_numbered_section": ["index", "title", "caption"],
+            "render_detail_panel": ["body_html", "title", "meta"],
+            "render_kv_grid": ["items"],
+            "render_inline_status": ["items"],
             "render_empty_state": ["message"],
-            "render_score_badge": ["score"],
-            "render_status_badge": ["text", "level"],
-            "render_section_title": ["title", "caption"],
+            "render_clean_list": ["items"],
+            "render_compact_hero": ["eyebrow", "title", "question", "stats"],
+            "render_status_pill": ["text", "level"],
         }
         for function_name, parameter_names in signatures.items():
             actual = inspect.signature(getattr(components, function_name))

@@ -1,28 +1,17 @@
-"""PR-A tests: 项目介绍 / 方法论页面。
+"""项目说明页注册、结构和动态统计测试。"""
 
-校验新页面已注册为导航第一项、可正常渲染，且样本统计均从 tasks / gold / 评分维度
-动态计算（不写死数量），并带有明确的样本内观察与使用边界定位。
-"""
-
+import types
 import unittest
 from pathlib import Path
 
+import pandas as pd
+
 from src.data_service import load_all_data
 from src.metrics import SCORE_DIMENSIONS
+from src.ui.case_study import _build_home_stats, _build_sample_scope_text, scored_case_count
 from src.ui.navigation import PAGES, _NAV_GROUPS
 from src.ui.page_config import DEFAULT_PAGE_KEY, PAGE_CONFIG_BY_KEY, PAGE_CONTEXTS
-from src.ui.case_study import (
-    build_dataset_summary_items,
-    build_hero_stats,
-    get_dataset_snapshot_items,
-    get_how_to_read_steps,
-    get_methodology_items,
-    get_project_brief_items,
-    get_redline_triggers,
-    get_rubric_framework_items,
-    get_sample_structure_items,
-    scored_case_count,
-)
+
 
 BANNED_PHRASES = ["AI赋能", "智能洞察", "一键优化", "专家级", "秒级"]
 
@@ -48,13 +37,21 @@ class RegistrationTests(unittest.TestCase):
         for phrase in BANNED_PHRASES:
             self.assertNotIn(phrase, combined)
 
-    def test_source_has_no_banned_phrases_and_uses_shared_components(self):
+    def test_source_uses_current_shared_components_only(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
-        self.assertIn("src.ui.components", source)
         self.assertIn("render_compact_hero", source)
-        self.assertNotIn("render_mockup_stack", source)
-        # 项目说明页保留编号 section block，但不再走作品集 mockup 叙事。
-        self.assertIn("render_story_section", source)
+        self.assertIn("render_numbered_section", source)
+        self.assertIn("render_inline_status", source)
+        self.assertIn("render_clean_list", source)
+        for legacy_name in (
+            "render_mockup_stack",
+            "render_story_section",
+            "render_tag_cloud",
+            "build_dataset_summary_items",
+            "get_methodology_items",
+            "get_rubric_framework_items",
+        ):
+            self.assertNotIn(legacy_name, source)
         for phrase in BANNED_PHRASES:
             self.assertNotIn(phrase, source)
 
@@ -72,118 +69,38 @@ class DynamicStatsTests(unittest.TestCase):
     def setUp(self):
         self.data = load_all_data()
 
-    def test_dataset_summary_counts_match_live_data(self):
-        items = dict(build_dataset_summary_items(self.data))
+    def test_home_stats_match_live_data(self):
+        stats = {label: value for value, label in _build_home_stats(self.data, {})}
         task_count = len(self.data.tasks)
         domain_count = self.data.tasks["domain"].dropna().nunique()
-        gold_count = len(self.data.gold_answer_map)
+        self.assertEqual(str(task_count), stats["正式样本"])
+        self.assertEqual(str(domain_count), stats["尽调场景"])
+        self.assertEqual(str(len(SCORE_DIMENSIONS)), stats["评分维度"])
 
-        self.assertIn(str(task_count), items["任务样本"])
-        self.assertIn(str(domain_count), items["覆盖领域"])
-        self.assertIn(f"{gold_count}/{task_count}", items["Gold Answer"])
-        # 维度数取自 Rubric 配置，而非写死。
-        self.assertIn(str(len(SCORE_DIMENSIONS)), items["评价维度"])
-
-    def test_dataset_summary_tracks_data_changes(self):
-        # 用一个小型替身验证数字随数据变化，避免改动共享缓存对象。
-        import types
-
-        import pandas as pd
-
+    def test_home_stats_track_data_changes(self):
         stub = types.SimpleNamespace(
-            tasks=pd.DataFrame({"domain": ["a", "b"], "task_type": ["x", "x"]}),
-            gold_answer_map={"C1": {}},
-            scores=pd.DataFrame(),
+            tasks=pd.DataFrame({"domain": ["a", "b", "b"]}),
         )
-        items = dict(build_dataset_summary_items(stub))
-        self.assertIn("2", items["任务样本"])
-        self.assertIn("2", items["覆盖领域"])
-        self.assertIn("1/2", items["Gold Answer"])
+        stats = {label: value for value, label in _build_home_stats(stub, {})}
+        self.assertEqual("3", stats["正式样本"])
+        self.assertEqual("2", stats["尽调场景"])
 
-    def test_project_brief_has_four_narrative_cards(self):
-        items = get_project_brief_items()
-        labels = [label for label, _ in items]
-        self.assertEqual(["背景", "问题", "我的方法", "项目输出"], labels)
-        for _, note in items:
-            self.assertTrue(note.strip())
+    def test_sample_scope_text_uses_domain_labels(self):
+        text = _build_sample_scope_text(self.data)
+        self.assertIn("样本来自", text)
+        self.assertIn("已脱敏抽象为可评测任务", text)
+        self.assertIn("不包含真实公司、交易或敏感数据", text)
 
-    def test_methodology_has_five_steps(self):
-        items = get_methodology_items()
-        labels = [label for label, _ in items]
+    def test_sample_scope_text_handles_empty_data(self):
+        stub = types.SimpleNamespace(tasks=pd.DataFrame())
         self.assertEqual(
-            ["样本脱敏抽象", "Gold Answer", "Rubric 多维评分", "红线错误", "评分确认"],
-            labels,
+            "样本来自金融尽调场景，已脱敏抽象为可评测任务；不包含真实公司、交易或敏感数据。",
+            _build_sample_scope_text(stub),
         )
-        for _, note in items:
-            self.assertTrue(note.strip())
-
-    def test_dataset_snapshot_is_dynamic(self):
-        items = dict(get_dataset_snapshot_items(self.data))
-        task_count = len(self.data.tasks)
-        domain_count = self.data.tasks["domain"].dropna().nunique()
-        gold_count = len(self.data.gold_answer_map)
-        output_count = len(self.data.model_outputs)
-        scored = int(self.data.scores["total_score"].notna().sum())
-
-        self.assertIn(str(task_count), items["任务样本"])
-        self.assertIn(str(domain_count), items["覆盖领域"])
-        self.assertIn(f"{gold_count}/{task_count}", items["Gold 覆盖"])
-        self.assertIn(str(scored), items["评分记录"])
-        self.assertIn(str(output_count), items["模型回答"])
-
-    def test_dataset_snapshot_handles_empty_data(self):
-        import types
-
-        import pandas as pd
-
-        stub = types.SimpleNamespace(
-            tasks=pd.DataFrame(),
-            gold_answer_map={},
-            scores=pd.DataFrame(),
-            model_outputs=pd.DataFrame(),
-        )
-        items = dict(get_dataset_snapshot_items(stub))
-        self.assertEqual("0 道", items["任务样本"])
-        self.assertEqual("0/0", items["Gold 覆盖"])
-        self.assertEqual("0 条", items["评分记录"])
-        self.assertEqual("0 条", items["模型回答"])
-
-    def test_how_to_read_steps(self):
-        steps = get_how_to_read_steps()
-        self.assertEqual(
-            ["先检查样本库", "再选择可测样本发起评测", "最后确认评分并纳入正式结论"],
-            steps,
-        )
-
-    def test_hero_stats_are_dynamic(self):
-        stats = {label: value for value, label in build_hero_stats(self.data)}
-        task_count = len(self.data.tasks)
-        domain_count = self.data.tasks["domain"].dropna().nunique()
-        self.assertEqual(str(task_count), stats["尽调任务样本"])
-        self.assertEqual(str(domain_count), stats["专业领域"])
-        self.assertEqual(str(len(SCORE_DIMENSIONS)), stats["Rubric 评分维度"])
-
-    def test_rubric_items_cover_all_dimensions_plus_boundary(self):
-        items = get_rubric_framework_items()
-        labels = [label for label, _ in items]
-        for _, label in SCORE_DIMENSIONS:
-            self.assertIn(label, labels)
-        self.assertIn("边界意识", labels)
-        for _, note in items:
-            self.assertTrue(note.strip())
-
-    def test_structure_and_redline_items_present(self):
-        structure_labels = [label for label, _ in get_sample_structure_items()]
-        for expected in ("Gold Answer", "必须覆盖点", "不可接受错误"):
-            self.assertIn(expected, structure_labels)
-        self.assertEqual(3, len(get_redline_triggers()))
 
     def test_scored_case_count_handles_empty_and_counts_scores(self):
-        import pandas as pd
-
         self.assertEqual(0, scored_case_count(None))
         self.assertEqual(0, scored_case_count(pd.DataFrame()))
-        # seed 数据带评分，计数应等于 total_score 非空行数。
         expected = int(self.data.scores["total_score"].notna().sum())
         self.assertEqual(expected, scored_case_count(self.data.scores))
 

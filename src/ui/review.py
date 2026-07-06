@@ -24,7 +24,6 @@ from src.metrics import (
     get_task_by_case_id,
     normalize_optimization_plan,
 )
-from src.ui.common import has_value
 from src.ui.components import (
     render_clean_list,
     render_empty_state,
@@ -80,6 +79,15 @@ _VERDICT_TIERS = {
     "not_direct": ("不可作为依据", "danger"),
     "none": ("暂无裁判结论", "neutral"),
 }
+
+
+def has_value(value) -> bool:
+    if value is None:
+        return False
+    try:
+        return not pd.isna(value)
+    except TypeError:
+        return True
 
 
 def get_review_sections() -> list[str]:

@@ -26,7 +26,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
 
         test_run_source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
         self.assertNotIn("loop-rail", test_run_source)
-        self.assertTrue(hasattr(components, "render_flow_strip"))
+        self.assertFalse(hasattr(components, "render_flow_strip"))
 
     def test_pages_keep_shared_page_components_available(self):
         import src.ui.components as components
@@ -35,9 +35,10 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertTrue(hasattr(components, "render_page_heading"))
         self.assertTrue(hasattr(components, "render_detail_panel"))
         self.assertTrue(hasattr(components, "render_kv_grid"))
-        self.assertTrue(hasattr(components, "render_context_grid"))
-        self.assertIn(".context-grid", components.STYLE_CSS)
-        self.assertIn(".context-item", components.STYLE_CSS)
+        self.assertTrue(hasattr(components, "render_inline_status"))
+        self.assertTrue(hasattr(components, "render_clean_list"))
+        self.assertIn(".inline-status", components.STYLE_CSS)
+        self.assertIn(".detail-panel", components.STYLE_CSS)
 
         samples_source = Path("src/ui/samples.py").read_text(encoding="utf-8")
         self.assertIn("_render_samples_title_bar", samples_source)
@@ -45,12 +46,21 @@ class UIUXAuditFixesTests(unittest.TestCase):
         case_study_source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         self.assertNotIn("render_mockup_stack", case_study_source, "src/ui/case_study.py")
 
-    def test_pages_still_export_render_page_shell_for_backward_compat(self):
+    def test_legacy_component_exports_are_removed(self):
         import src.ui.components as components
 
-        self.assertTrue(hasattr(components, "render_page_shell"))
-        self.assertIn(".context-grid", components.STYLE_CSS)
-        self.assertIn(".context-item", components.STYLE_CSS)
+        for name in [
+            "render_page_shell",
+            "render_context_grid",
+            "render_metric_card",
+            "render_status_badge",
+            "render_score_badge",
+            "render_evidence_panel",
+            "render_action_cards",
+        ]:
+            self.assertFalse(hasattr(components, name), name)
+        for selector in [".metric-card", ".status-badge", ".score-badge", ".review-risk-note"]:
+            self.assertNotIn(selector, components.STYLE_CSS)
 
     def test_top_navigation_has_five_items_and_no_duplicate_html_buttons(self):
         from src.ui.navigation import PAGES, _TOP_NAV_ITEMS
@@ -274,13 +284,13 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertNotIn("render_evidence_panel", source)
         self.assertNotIn("st.expander", source)
 
-    def test_shared_review_components_remain_available(self):
+    def test_review_uses_current_component_surface(self):
         import src.ui.components as components
 
-        self.assertTrue(hasattr(components, "render_answer_boundary_panel"))
-        self.assertTrue(hasattr(components, "render_preference_comparison"))
-        self.assertIn(".answer-boundary-panel", components.STYLE_CSS)
-        self.assertIn(".comparison-grid", components.STYLE_CSS)
+        self.assertFalse(hasattr(components, "render_answer_boundary_panel"))
+        self.assertFalse(hasattr(components, "render_preference_comparison"))
+        self.assertNotIn(".answer-boundary-panel", components.STYLE_CSS)
+        self.assertNotIn(".comparison-grid", components.STYLE_CSS)
 
         review_path = Path("src/ui/review.py")
         if review_path.exists():

@@ -1,10 +1,4 @@
-"""PR-11 regression tests: internal HTML must never leak as Markdown code.
-
-Streamlit renders Markdown, which turns any line indented four or more spaces
-into a code block and treats a blank line as the end of an HTML block. The
-shared render helpers must therefore emit HTML with no indented or blank lines,
-otherwise the raw tags show up as code instead of rendered cards.
-"""
+"""HTML rendering helpers must not leak indented markup as code blocks."""
 
 import sys
 import types
@@ -12,7 +6,6 @@ import unittest
 
 
 def _capture_render(call):
-    """Run a render helper against a stubbed Streamlit and return emitted HTML."""
     captured = []
 
     stub = types.ModuleType("streamlit")
@@ -48,46 +41,34 @@ class HtmlRenderingTests(unittest.TestCase):
         emitted = _capture_render(
             lambda c: c.render_html(
                 """
-                <div class="context-grid">
-                    <div class="context-item">
+                <div class="detail-panel">
+                    <div class="detail-panel-body">
 
-                        <div class="context-label">边界</div>
+                        <p>正文</p>
                     </div>
                 </div>
                 """
             )
         )
         self._assert_no_code_block(emitted)
-        self.assertIn('<div class="context-grid">', emitted[0])
+        self.assertIn('<div class="detail-panel">', emitted[0])
 
-    def test_grid_loop_and_boundary_fragments_are_not_code_blocks(self):
+    def test_current_fragments_are_not_code_blocks(self):
         cases = [
-            lambda c: c.render_context_grid([("本页回答", "评测"), ("数据边界", "MVP")]),
-            lambda c: c.render_loop_rail(["专业任务", "Gold Answer", "Rubric 评分"]),
-            lambda c: c.render_answer_boundary_panel(
-                "回答边界", [("覆盖要点", "现金流"), ("红线", "无")]
-            ),
-            lambda c: c.render_page_header("标题", "副标题"),
-            lambda c: c.render_metric_card("任务样本", 12, "脱敏样本"),
+            lambda c: c.render_page_heading("标题", "副标题"),
+            lambda c: c.render_numbered_section("01", "样本列表", "说明"),
+            lambda c: c.render_detail_panel("<p>正文</p>", title="标题"),
+            lambda c: c.render_inline_status([("本页回答", "评测"), ("数据边界", "当前样本内观察")]),
+            lambda c: c.render_clean_list(["A", "B"]),
+            lambda c: c.render_compact_hero("项目概览", "项目说明", "说明", [("1", "样本")]),
         ]
         for case in cases:
             self._assert_no_code_block(_capture_render(case))
 
-    def test_model_answer_card_preserves_multiline_content(self):
-        emitted = _capture_render(
-            lambda c: c.render_model_answer_card(
-                "GPT-X", "第一段\n第二段", "75", "扣分A\n扣分B", "领域: 金融"
-            )
-        )
-        self._assert_no_code_block(emitted)
-        html = emitted[0]
-        for token in ("第一段", "第二段", "扣分A", "扣分B", "75", "<br>"):
-            self.assertIn(token, html)
-
     def test_global_styles_hide_dev_chrome(self):
         import src.ui.components as components
 
-        for selector in ('stDeployButton', "#MainMenu", "footer"):
+        for selector in ("stDeployButton", "#MainMenu", "footer"):
             self.assertIn(selector, components.STYLE_CSS)
 
 
