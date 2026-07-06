@@ -452,7 +452,7 @@ class ReviewQueueTests(unittest.TestCase):
                 },
                 {
                     "score_run_id": "SCORE-NEW",
-                    "case_id": "FD-006",
+                    "case_id": "LD-001",
                     "eval_model": "vendor/Model-B",
                     "review_status": "skipped",
                     "created_at": "2026-07-06 10:31:00",
@@ -485,7 +485,7 @@ class ReviewQueueTests(unittest.TestCase):
                 },
                 {
                     "score_run_id": "SCORE-NEW",
-                    "case_id": "FD-006",
+                    "case_id": "LD-001",
                     "eval_model": "vendor/Model-B",
                     "review_status": "pending",
                     "created_at": "2026-07-06 10:30:00",
@@ -515,7 +515,7 @@ class ReviewQueueTests(unittest.TestCase):
                 },
                 {
                     "score_run_id": "SCORE-NEW",
-                    "case_id": "FD-006",
+                    "case_id": "LD-001",
                     "eval_model": "vendor/Model-B",
                     "review_status": "pending",
                     "created_at": "2026-07-06 10:30:00",

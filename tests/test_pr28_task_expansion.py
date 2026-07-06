@@ -1,7 +1,8 @@
-"""PR-28 tests: the active dataset is the expanded IB / finance / legal sample
-set; inactive (e.g. Medical) samples are excluded from every loaded frame and
-from statistics; the validator enforces the active-domain scope. All assertions
-read live data — nothing hardcoded to a specific count beyond the 12–15 range.
+"""PR-28 tests: the active dataset is the final 13 finance/legal/IB sample set.
+
+Historical inactive and example samples have been removed from the seed files;
+runtime model answers and scores are produced in SQLite instead of committed
+as seed rows.
 """
 
 import shutil
@@ -24,13 +25,11 @@ class ActiveScopeTests(unittest.TestCase):
         self.data = load_all_data()
 
     def test_active_task_count_in_target_range(self):
-        self.assertGreaterEqual(len(self.data.tasks), 12)
-        self.assertLessEqual(len(self.data.tasks), 15)
+        self.assertEqual(13, len(self.data.tasks))
 
     def test_only_allowed_domains_remain_active(self):
         domains = set(self.data.tasks["domain"].astype(str))
-        self.assertTrue(domains.issubset(ALLOWED_DOMAINS), domains)
-        self.assertNotIn("Medical", domains)
+        self.assertEqual(ALLOWED_DOMAINS, domains)
 
     def test_inactive_cases_excluded_from_all_frames(self):
         active = set(self.data.tasks["case_id"].astype(str))
@@ -39,15 +38,12 @@ class ActiveScopeTests(unittest.TestCase):
             self.assertTrue(cases.issubset(active), cases - active)
         self.assertEqual(set(self.data.gold_answer_map), active)
 
-    def test_inactive_marker_drives_filtering(self):
-        # The raw file still carries an inactive row; the loader must drop it.
+    def test_final_seed_contains_no_inactive_cases(self):
         raw = __import__("pandas").read_csv(DATA_DIR / "tasks.csv")
         self.assertIn("status", raw.columns)
         inactive = raw[raw["status"].astype(str).str.lower() == "inactive"]
-        self.assertTrue(len(inactive) >= 1)
-        active = active_case_ids(raw)
-        for case_id in inactive["case_id"].astype(str):
-            self.assertNotIn(case_id, active)
+        self.assertEqual(0, len(inactive))
+        self.assertEqual(set(raw["case_id"].astype(str)), active_case_ids(raw))
 
 
 class ActiveSampleQualityTests(unittest.TestCase):
@@ -60,13 +56,9 @@ class ActiveSampleQualityTests(unittest.TestCase):
             self.assertIsNotNone(gold, case_id)
             self.assertTrue(gq.evaluate_gold_quality(gold)["is_usable"], case_id)
 
-    def test_every_active_task_has_scores_and_error_coverage(self):
-        scored_cases = set(self.data.scores["case_id"].astype(str))
-        for case_id in self.data.tasks["case_id"].astype(str):
-            self.assertIn(case_id, scored_cases, case_id)
-        # The active error labels still exercise the full taxonomy.
-        taxonomy_types = {"风险遗漏", "依据错误", "可执行性弱", "推理不足", "场景错配", "表达问题"}
-        self.assertEqual(set(self.data.errors["error_type"].astype(str)), taxonomy_types)
+    def test_final_seed_has_no_legacy_scores_or_error_rows(self):
+        self.assertEqual(0, len(self.data.scores))
+        self.assertEqual(0, len(self.data.errors))
 
 
 class ValidatorScopeTests(unittest.TestCase):

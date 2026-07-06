@@ -88,8 +88,17 @@ class DatasetValidatorNegativeTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             data_dir = self._fresh_copy(tmp)
             errors = pd.read_csv(data_dir / "error_labels.csv")
-            row = errors.iloc[0].copy()
-            row["error_type"] = "未登记标签"
+            tasks = pd.read_csv(data_dir / "tasks.csv")
+            row = {
+                "output_id": "OUT-UNKNOWN-LABEL",
+                "case_id": str(tasks.iloc[0]["case_id"]),
+                "model_name": "Model_A_baseline",
+                "error_type": "未登记标签",
+                "severity": "medium",
+                "error_description": "临时测试未知错误标签。",
+                "correction": "补充标签体系。",
+                "optimization_action": "补充验证样本。",
+            }
             errors = pd.concat([errors, pd.DataFrame([row])], ignore_index=True)
             errors.to_csv(data_dir / "error_labels.csv", index=False)
 

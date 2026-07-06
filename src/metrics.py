@@ -42,7 +42,7 @@ def has_columns(df: pd.DataFrame, columns: list[str]) -> bool:
 def get_overview_metrics(data_bundle: dict) -> dict[str, float | int | None]:
     data = data_bundle["data"]
     average_score = None
-    if "total_score" in data.scores:
+    if "total_score" in data.scores and not data.scores.empty:
         average_score = data.scores["total_score"].mean()
 
     return {
@@ -184,7 +184,12 @@ def get_model_capability_summaries(
 
 def get_error_type_counts(error_df: pd.DataFrame) -> pd.DataFrame:
     if error_df.empty or "error_type" not in error_df:
-        return pd.DataFrame(columns=["error_type", "count"])
+        return pd.DataFrame(
+            {
+                "error_type": pd.Series(dtype="object"),
+                "count": pd.Series(dtype="int64"),
+            }
+        )
     error_counts = error_df["error_type"].value_counts().reset_index()
     error_counts.columns = ["error_type", "count"]
     return error_counts
@@ -219,12 +224,12 @@ def merge_case_outputs_with_scores(
     scores_df: pd.DataFrame,
     case_id: str,
 ) -> pd.DataFrame:
-    if model_outputs_df.empty or "case_id" not in model_outputs_df:
+    if "case_id" not in model_outputs_df:
         return pd.DataFrame(columns=model_outputs_df.columns)
 
     case_outputs = model_outputs_df[model_outputs_df["case_id"] == case_id]
     merge_keys = ["output_id", "case_id", "model_name"]
-    if not scores_df.empty and has_columns(scores_df, merge_keys):
+    if has_columns(scores_df, merge_keys):
         return pd.merge(case_outputs, scores_df, on=merge_keys, how="left")
     return case_outputs.copy()
 

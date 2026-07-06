@@ -4,6 +4,7 @@
 
 ## 读取口径
 
+- 当前种子样本固定为 13 条：`FD-001` 至 `FD-005`、`LD-001` 至 `LD-004`、`CM-001` 至 `CM-004`。
 - SQLite 已初始化且可用时，`app/services/dataset_service.py` 优先读取 SQLite。
 - SQLite 未初始化时，项目回退读取 `data/` 下的种子文件。
 - 样本 CRUD 在 SQLite 可用时会同步正式评测资产；文件模式仍可浏览种子数据和轻量管理视图。
@@ -16,13 +17,26 @@
 | task_cases | `task_cases` | `data/tasks.csv` | 任务题、业务背景、场景、难度、风险等级和状态。 |
 | gold_answers | `gold_answers` | `data/gold_answers.json` | 专业标准答案。 |
 | rubrics | `rubrics` | `data/dataset_manifest.yml` | 评分维度、满分、满分标准和扣分规则。 |
-| model responses | `model_responses` / `live_run_responses` | `data/model_outputs.csv` | 种子模型回答与真实运行回答分离保存。 |
-| score records | `score_records` / `live_run_scores` | `data/scores.csv` | 已沉淀评分、评分草稿和已处理评分。 |
+| model responses | `model_responses` / `live_run_responses` | `data/model_outputs.csv` | 当前 seed 仅保留表头；真实运行回答写入 live 表。 |
+| score records | `score_records` / `live_run_scores` | `data/scores.csv` | 当前 seed 仅保留表头；评分草稿和已处理评分写入 live 表。 |
 | error labels | `error_annotations` | `data/error_labels.csv` | 错误类型、严重程度、错误表现、纠正方向。 |
 | improvement actions | `improvement_actions` | `data/optimization_plan.csv` | 数据补强动作和验证方向。 |
 | samples | `data/samples.json` | `data/samples.json` | 样本库轻量管理视图、导入导出和兼容备份。 |
 
 辅助对象包括 `evaluation_runs` / `data/evaluation_runs.csv`、错误标签体系 `error_taxonomy` / `data/label_taxonomy.yml`，以及用于扩展分析的 `preference_pairs.csv`、`optimization_comparison.csv`。
+
+## 样本整体替换
+
+`data/final_replacement_samples_13.csv` 是当前 13 条样本的唯一替换来源。重复执行以下命令可覆盖重写 seed 文件、样本库管理视图，并重建运行期 SQLite：
+
+```bash
+PYTHONPATH=. python scripts/replace_samples.py \
+  --csv data/final_replacement_samples_13.csv \
+  --data-dir data \
+  --db app/db/findueval.db
+```
+
+该脚本会清空旧模型回答、旧评分、旧错误标签、旧优化建议和旧评测批次 seed 行；运行期 SQLite 会被重建以避免旧 `case_id` 继续出现在页面中。SQLite 数据库文件仍属于运行期状态，不提交到 Git。
 
 ## 字段说明
 

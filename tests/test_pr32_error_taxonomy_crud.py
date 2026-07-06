@@ -130,7 +130,16 @@ class ImprovementActionCrudTests(unittest.TestCase):
         self.assertEqual(after["action_id"].nunique(), len(after))
 
     def test_deactivate_action_is_soft_delete(self):
-        action_id = int(ds.list_improvement_actions(_DB_PATH)["id"].iloc[0])
+        label = next(iter(ds.active_error_labels(_DB_PATH)))
+        ds.create_improvement_action(
+            {
+                "related_error_label": label,
+                "action_type": "补样本",
+                "action_description": "用于停用测试的临时动作",
+            },
+            db_path=_DB_PATH,
+        )
+        action_id = int(ds.list_improvement_actions(_DB_PATH)["id"].iloc[-1])
         ds.set_improvement_action_status(action_id, ds.INACTIVE_STATUS, db_path=_DB_PATH)
         self.assertEqual(ds.get_improvement_action(action_id, _DB_PATH)["status"], "inactive")
 
@@ -147,8 +156,36 @@ class ConfigurationCheckTests(unittest.TestCase):
         from app.services import dataset_service
 
         repository = dataset_service._repository(_DB_PATH)
-        annotations = repository.list_df("error_annotations", order_by="id")
-        used_label = str(annotations["error_type"].dropna().astype(str).iloc[0])
+        used_label = next(iter(ds.active_error_labels(_DB_PATH)))
+        case_id = str(ds.list_task_cases(_DB_PATH).iloc[0]["case_id"])
+        repository.insert(
+            "model_responses",
+            {
+                "output_id": 320001,
+                "case_id": case_id,
+                "model_name": "Model_A_baseline",
+                "answer_text": "临时模型回答。",
+            },
+        )
+        repository.insert(
+            "error_annotations",
+            {
+                "output_id": 320001,
+                "case_id": case_id,
+                "model_name": "Model_A_baseline",
+                "error_type": used_label,
+                "severity": "中",
+                "error_description": "测试停用标签引用。",
+            },
+        )
+        ds.create_improvement_action(
+            {
+                "related_error_label": used_label,
+                "action_type": "补样本",
+                "action_description": "用于孤立动作测试的临时动作",
+            },
+            db_path=_DB_PATH,
+        )
         ds.set_error_label_status(used_label, ds.INACTIVE_STATUS, db_path=_DB_PATH)
 
         issues = ds.evaluate_error_configuration(_DB_PATH)

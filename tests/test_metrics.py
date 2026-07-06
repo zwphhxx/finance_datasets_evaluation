@@ -26,7 +26,7 @@ class MetricsTests(unittest.TestCase):
 
         self.assertEqual(len(self.data.tasks), metrics["task_count"])
         self.assertEqual(self.data.model_outputs["model_name"].nunique(), metrics["model_count"])
-        self.assertEqual(self.data.scores["total_score"].mean(), metrics["average_total_score"])
+        self.assertIsNone(metrics["average_total_score"])
         self.assertEqual(len(self.data.errors), metrics["error_label_count"])
         self.assertEqual(len(self.data.optimizations), metrics["optimization_count"])
 

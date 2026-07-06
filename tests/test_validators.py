@@ -56,8 +56,25 @@ class ValidatorTests(unittest.TestCase):
         )
 
     def test_score_out_of_range_is_an_error(self):
-        data = self.data
-        data.scores.loc[data.scores.index[0], "total_score"] = 101
+        data = deepcopy(self.data)
+        data.model_outputs.loc[len(data.model_outputs)] = {
+            "output_id": "OUT-RANGE",
+            "case_id": "CM-001",
+            "model_name": "Model_A_baseline",
+            "answer_text": "临时模型回答。",
+        }
+        data.scores.loc[len(data.scores)] = {
+            "output_id": "OUT-RANGE",
+            "case_id": "CM-001",
+            "model_name": "Model_A_baseline",
+            "accuracy_score": 30,
+            "reasoning_score": 20,
+            "coverage_score": 20,
+            "evidence_score": 15,
+            "expression_score": 15,
+            "total_score": 101,
+            "review_note": "range check",
+        }
 
         result = validate_evaluation_data(data)
 
@@ -67,8 +84,20 @@ class ValidatorTests(unittest.TestCase):
         )
 
     def test_missing_optional_associations_are_warnings(self):
+        model_outputs = pd.DataFrame(
+            [
+                {
+                    "output_id": "OUT-MISSING-OPTIONAL",
+                    "case_id": "CM-001",
+                    "model_name": "Model_A_baseline",
+                    "answer_text": "临时模型回答。",
+                }
+            ],
+            columns=self.data.model_outputs.columns,
+        )
         data = replace(
             self.data,
+            model_outputs=model_outputs,
             scores=pd.DataFrame(columns=self.data.scores.columns),
             errors=pd.DataFrame(columns=self.data.errors.columns),
             gold_answers=self.data.gold_answers[:-1],

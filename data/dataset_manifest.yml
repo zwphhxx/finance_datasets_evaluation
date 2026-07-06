@@ -1,20 +1,7 @@
-# 数据集清单（Dataset Manifest）
-#
-# 用途：描述 FinDueEval 评测数据集的版本、资产结构、样本范围、Rubric 维度与适用边界。
-# 该文件面向数据资产管理与质量校验，不参与 Streamlit Demo 页面渲染。
-# 新增任务题、模型回答、评分或错误标签时，应同步更新本清单的范围与版本，
-# 再运行 scripts/validate_dataset.py 校验数据一致性。
-
 dataset: FinDueEval-MVP
-version: "0.2.0"
-updated: "2026-06-28"
-description: >-
-  金融尽职调查方向的模型评测样例数据集，active 范围聚焦投行业务、财务尽调与法律合规
-  （含并购交易与资本市场判断），覆盖任务题、Gold Answer、Rubric、模型回答、评分记录、
-  错误标签与数据补强建议，用于演示评测闭环与数据建设方法。非该范围的历史样本以
-  tasks.csv 的 status=inactive 标记，不参与统计与评测。
-
-# 数据资产清单：每类资产对应一个数据文件及其主键（无单列主键时记为 null）。
+version: 1.0.0
+updated: '2026-07-07'
+description: 最终 13 条脱敏专业任务样本，覆盖财务场景、法律场景和投行场景；seed 文件只用于初始化，运行结果由 SQLite 在运行期产生。
 assets:
   tasks:
     file: tasks.csv
@@ -27,11 +14,11 @@ assets:
   model_outputs:
     file: model_outputs.csv
     primary_key: output_id
-    description: 各模型对任务的回答记录。
+    description: 模型回答记录；当前 seed 仅保留表头，真实回答在运行期产生。
   scores:
     file: scores.csv
     primary_key: output_id
-    description: 模型回答的 Rubric 维度评分记录。
+    description: 模型回答的评分维度记录；当前 seed 仅保留表头，真实评分在运行期产生。
   error_labels:
     file: error_labels.csv
     primary_key: null
@@ -52,101 +39,57 @@ assets:
     file: evaluation_runs.csv
     primary_key: run_id
     description: 评测批次记录。
-
-# 样本范围：声明数据集当前覆盖的领域、任务类型、难度与模型范围。
-# 校验脚本据此核对数据文件中的取值是否落在声明范围内。
 scope:
   domains:
-    - Capital Markets
-    - Financial
-    - Legal
+  - Capital Markets
+  - Financial
+  - Legal
   task_types:
-    - Regulatory Analysis
-    - Revenue Verification
-    - Inventory Assessment
-    - Legal Compliance
-    - Gross Margin Analysis
-    - Receivables Risk
-    - Cash Flow Analysis
-    - Related Party Funds
-    - Contract Review
-    - Related Party Compliance
-    - Control Change Review
-    - Performance Commitment
-    - IPO Inquiry Review
-    - M&A Analysis
+  - Financial Judgment
+  - Legal Judgment
+  - Investment Banking Judgment
   difficulties:
-    - Medium
-    - Hard
+  - Easy
+  - Medium
+  - Hard
   models:
-    - Model_A_baseline
-    - Model_B_rag
-    - Model_C_prompt_v2
-
-# Rubric 维度与权重：各维度满分相加应等于 total。
-# scores.csv 须包含全部维度字段，total_score 字段记录维度合计。
+  - Model_A_baseline
+  - Model_B_rag
+  - Model_C_prompt_v2
 rubric:
   total: 100
   total_field: total_score
   dimensions:
-    - field: accuracy_score
-      name: 专业准确性
-      weight: 30
-      full_mark_standard: >-
-        结论与 Gold Answer 的核心判断一致，关键财务、法律或监管要点无事实性错误，
-        对题目给出的数据和事实使用准确，并能识别影响结论的必要前提。
-      deduction_rules: >-
-        结论方向错误、引用事实错误或忽略关键前提时扣重分；关键计算、法规适用或主体关系
-        存在局部错误时按影响程度扣分；只给结论但缺少必要事实支撑时扣分。
-    - field: reasoning_score
-      name: 推理与场景适配
-      weight: 20
-      full_mark_standard: >-
-        分析路径与当前任务场景匹配，能说明判断步骤、关键假设和不确定性，
-        推理链条完整且前后结论一致。
-      deduction_rules: >-
-        推理跳跃、场景套用不当、只罗列结论不说明路径时扣分；遗漏关键假设、
-        前后表述矛盾或未解释边界条件时按严重程度扣分。
-    - field: coverage_score
-      name: 风险覆盖
-      weight: 20
-      full_mark_standard: >-
-        覆盖 Gold Answer 中的必须关注点，能识别主要风险、核查事项和不可接受错误边界，
-        对高风险事项给出清楚提示。
-      deduction_rules: >-
-        漏掉必须覆盖点、未识别重大风险或未提示红线错误时扣重分；风险事项覆盖不全、
-        核查建议过泛或遗漏次要风险时按影响程度扣分。
-    - field: evidence_score
-      name: 依据可靠性
-      weight: 15
-      full_mark_standard: >-
-        依据来自题目材料、财务数据、法规口径或需核查文件，能区分已知事实与待核验事项，
-        不编造不存在的材料或结论。
-      deduction_rules: >-
-        编造事实、法规、文件或数据时扣重分；依据来源含糊、未区分事实与假设、
-        缺少关键材料核查路径时按影响程度扣分。
-    - field: expression_score
-      name: 专业表达
-      weight: 15
-      full_mark_standard: >-
-        表达清晰、审慎、结构完整，符合财务/法律/投行业务底稿或评审意见的专业语气，
-        能用简洁语言呈现结论、依据和后续核查事项。
-      deduction_rules: >-
-        表述武断、口语化、结构混乱或遗漏必要保留意见时扣分；冗长重复、
-        术语使用不当或无法支撑人工复核时按影响程度扣分。
-
-# Gold Answer 质量门槛：
-#   required_fields 为每条 Gold Answer 必须具备的核心要素；
-#   boundary_any_of 表示答案边界与红线错误至少具备其一。
+  - field: accuracy_score
+    name: 专业准确性
+    weight: 30
+    full_mark_standard: 结论与 Gold Answer 的核心判断一致，关键财务、法律或监管要点无事实性错误， 对题目给出的数据和事实使用准确，并能识别影响结论的必要前提。
+    deduction_rules: 结论方向错误、引用事实错误或忽略关键前提时扣重分；关键计算、法规适用或主体关系 存在局部错误时按影响程度扣分；只给结论但缺少必要事实支撑时扣分。
+  - field: reasoning_score
+    name: 推理与场景适配
+    weight: 20
+    full_mark_standard: 分析路径与当前任务场景匹配，能说明判断步骤、关键假设和不确定性， 推理链条完整且前后结论一致。
+    deduction_rules: 推理跳跃、场景套用不当、只罗列结论不说明路径时扣分；遗漏关键假设、 前后表述矛盾或未解释边界条件时按严重程度扣分。
+  - field: coverage_score
+    name: 风险覆盖
+    weight: 20
+    full_mark_standard: 覆盖 Gold Answer 中的必须关注点，能识别主要风险、核查事项和不可接受错误边界， 对高风险事项给出清楚提示。
+    deduction_rules: 漏掉必须覆盖点、未识别重大风险或未提示红线错误时扣重分；风险事项覆盖不全、 核查建议过泛或遗漏次要风险时按影响程度扣分。
+  - field: evidence_score
+    name: 依据可靠性
+    weight: 15
+    full_mark_standard: 依据来自题目材料、财务数据、法规口径或需核查文件，能区分已知事实与待核验事项， 不编造不存在的材料或结论。
+    deduction_rules: 编造事实、法规、文件或数据时扣重分；依据来源含糊、未区分事实与假设、 缺少关键材料核查路径时按影响程度扣分。
+  - field: expression_score
+    name: 专业表达
+    weight: 15
+    full_mark_standard: 表达清晰、审慎、结构完整，符合财务/法律/投行业务底稿或评审意见的专业语气， 能用简洁语言呈现结论、依据和后续核查事项。
+    deduction_rules: 表述武断、口语化、结构混乱或遗漏必要保留意见时扣分；冗长重复、 术语使用不当或无法支撑人工复核时按影响程度扣分。
 gold_answer:
   required_fields:
-    - core_conclusion
-    - key_evidence
+  - core_conclusion
+  - key_evidence
   boundary_any_of:
-    - boundary_conditions
-    - unacceptable_errors
-
-# 适用边界：说明数据集规模与结论的有效范围。
-boundary: >-
-  当前数据集为 MVP 样例规模，用于展示数据资产结构、质量门槛、版本管理与可扩展接入方式，
-  样本量有限，不代表真实生产环境或大规模实验结论。
+  - boundary_conditions
+  - unacceptable_errors
+boundary: 当前数据集仅包含 13 条脱敏专业任务样本，用于展示财务、法律、投行场景下模型回答质量、主要问题与使用边界；不代表脱离样本范围的泛化结论。

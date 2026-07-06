@@ -1,4 +1,1 @@
 run_id,run_name,model_name,model_version,prompt_version,eval_scope,run_date,note
-RUN-20260628-001,PR-04 seed evaluation baseline,Model_A_baseline,baseline,prompt_v1,all_seed_tasks,2026-06-28,用于记录基础模型在五道种子任务上的评测批次。
-RUN-20260628-002,PR-04 seed evaluation rag,Model_B_rag,rag,prompt_v1,all_seed_tasks,2026-06-28,用于记录检索增强模型在五道种子任务上的评测批次。
-RUN-20260628-003,PR-04 seed evaluation prompt v2,Model_C_prompt_v2,prompt_v2,prompt_v2,all_seed_tasks,2026-06-28,用于记录提示词优化模型在五道种子任务上的评测批次。

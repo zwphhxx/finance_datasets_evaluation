@@ -17,6 +17,9 @@ DOMAIN_LABELS = {
     "investment_banking": "投行场景",
 }
 TASK_TYPE_LABELS = {
+    "Financial Judgment": "财务专业判断",
+    "Legal Judgment": "法律专业判断",
+    "Investment Banking Judgment": "投行专业判断",
     "Regulatory Analysis": "监管合规分析",
     "Revenue Verification": "收入核查",
     "Inventory Assessment": "存货评估",

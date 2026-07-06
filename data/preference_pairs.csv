@@ -1,6 +1,1 @@
 pair_id,case_id,preferred_output_id,rejected_output_id,preference_dimension,preference_reason,improvement_instruction,reviewer,review_status
-PP-001,CM-001,3,1,专业准确性,偏好回答覆盖比例测算和监管程序，拒绝回答仅给出概括判断。,补充交易指标测算和审议披露程序,Legal Reviewer,reviewed
-PP-002,FD-001,6,4,可执行性,偏好回答列明合同发票流水等核查材料，拒绝回答缺少操作步骤。,增加收入真实性核查清单和交叉验证路径,Financial Reviewer,reviewed
-PP-003,FD-002,9,7,风险覆盖,偏好回答覆盖减值迹象和测试材料，拒绝回答未充分说明减值判断边界。,补充减值测试流程和关键假设核查,Financial Reviewer,reviewed
-PP-004,LD-001,12,10,依据可靠性,偏好回答能够区分事实判断和待核查事项，拒绝回答依据表达不足。,增加合同条款和争议材料的引用说明,Legal Reviewer,reviewed
-PP-005,MED-001,15,13,专业表达,偏好回答保留医学合规边界并说明资料限制，拒绝回答结论过于笼统。,补充适应症证据和合规风险边界,Medical Reviewer,reviewed

@@ -159,7 +159,7 @@ class TaskPresentationTests(unittest.TestCase):
         record_by_case = {r["case_id"]: r for r in self.records}
         sample = record_by_case["CM-001"]
         self.assertEqual("投行场景", sample["domain_label"])
-        self.assertEqual("监管合规分析", sample["task_type_label"])
+        self.assertEqual("投行专业判断", sample["task_type_label"])
         self.assertEqual("高难度", sample["difficulty_label"])
         self.assertEqual("高风险", sample["risk_label"])
         self.assertEqual("high", sample["difficulty_badge"])

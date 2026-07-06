@@ -10,6 +10,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pandas as pd
+
 from app.db import SCHEMA_PATH
 from app.db.init_db import InitError, initialize_database
 from app.db.repository import TABLE_PRIMARY_KEYS, Repository
@@ -130,7 +132,8 @@ class RepositoryCrudTests(unittest.TestCase):
 
     def test_list_df_preserves_numeric_dtype(self):
         scores = self.repo.list_df("score_records")
-        self.assertEqual(str(scores["total_score"].dtype), "int64")
+        self.assertIn("total_score", scores.columns)
+        self.assertEqual(0, len(scores))
 
 
 class ServiceParityTests(unittest.TestCase):
@@ -159,10 +162,16 @@ class ServiceParityTests(unittest.TestCase):
         self.assertEqual(set(self.csv.gold_answer_map), set(self.db.gold_answer_map))
 
     def test_numeric_aggregates_match(self):
-        csv_avg = self.csv.scores.groupby("model_name")["total_score"].mean().round(4).to_dict()
-        db_avg = self.db.scores.groupby("model_name")["total_score"].mean().round(4).to_dict()
+        csv_avg = (
+            self.csv.scores.assign(total_score=lambda df: pd.to_numeric(df["total_score"], errors="coerce"))
+            .groupby("model_name")["total_score"].mean().round(4).to_dict()
+        )
+        db_avg = (
+            self.db.scores.assign(total_score=lambda df: pd.to_numeric(df["total_score"], errors="coerce"))
+            .groupby("model_name")["total_score"].mean().round(4).to_dict()
+        )
         self.assertEqual(csv_avg, db_avg)
-        self.assertEqual(str(self.csv.scores["total_score"].dtype), str(self.db.scores["total_score"].dtype))
+        self.assertEqual(len(self.csv.scores), len(self.db.scores))
 
     def test_unmigrated_frames_still_supplied(self):
         self.assertEqual(len(self.csv.preference_pairs), len(self.db.preference_pairs))

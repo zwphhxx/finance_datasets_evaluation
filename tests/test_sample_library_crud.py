@@ -132,14 +132,14 @@ class SampleRepositoryTests(unittest.TestCase):
             self.assertTrue(sample.sample_id)
             self.assertTrue(sample.title)
 
-    def test_seed_enriches_related_data(self):
-        """初始化时应聚合 error_labels、model_outputs 与 optimization_plan。"""
+    def test_final_seed_does_not_carry_legacy_run_history(self):
+        """最终 13 条样本 seed 不应再挂载旧模型回答、错误标签或优化建议。"""
         samples = sr.seed_samples_from_tasks()
-        enriched = [
-            s for s in samples
-            if s.error_tags or s.model_answers or s.improvement_suggestions
-        ]
-        self.assertGreater(len(enriched), 0)
+        self.assertGreater(len(samples), 0)
+        for sample in samples:
+            self.assertEqual([], sample.error_tags)
+            self.assertEqual([], sample.model_answers)
+            self.assertEqual([], sample.improvement_suggestions)
 
     def test_get_eligible_case_ids_returns_approved_only(self):
         sr.create_sample(self._sample_values("SM-ELIGIBLE"))

@@ -1,5 +1,1 @@
 experiment_id,version,change_type,change_description,avg_score,hallucination_rate,evidence_score,reasoning_score,red_line_error_rate,note
-EXP-001,Baseline,基线,初始提示词与样例数据组合，用于记录优化前表现。,72.4,0.18,68.0,70.2,0.10,MVP 样例基线，非真实生产实验。
-EXP-002,Prompt v2,Prompt,补充审慎表达、拒答边界和引用要求，减少无依据判断。,76.8,0.14,72.5,74.8,0.07,仅反映当前评测集观察。
-EXP-003,RAG seed,RAG,加入结构化法规摘要和尽调材料索引，提升依据覆盖。,80.1,0.10,78.3,76.9,0.05,使用模拟检索结果，不连接外部服务。
-EXP-004,Data patch,数据补强,增加 IPO、再融资、重大资产重组边界对比样本和红线错误样本。,82.0,0.08,79.1,79.5,0.03,用于展示数据建设方向，仍需更多样本复测。
