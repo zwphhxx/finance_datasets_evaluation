@@ -22,6 +22,7 @@ from app.services import eval_state
 from app.services import model_display as md
 from app.services import scorer as sc
 from src.ui.components import (
+    render_aux_action_bar,
     render_empty_state,
     render_html,
     render_inline_status,
@@ -331,6 +332,15 @@ def build_score_draft_detail_panel(outcome: sc.ScoreOutcome, dimensions) -> dict
     else:
         markdown = _score_failure_markdown(outcome)
     return {"title": title, "meta": meta, "markdown": markdown}
+
+
+def has_confirmable_score_drafts(score_result) -> bool:
+    """Return whether a score result contains success drafts that can enter review."""
+    return any(
+        getattr(outcome, "ok", False)
+        and str(getattr(outcome, "review_status", "pending") or "pending").strip().lower() == "pending"
+        for outcome in getattr(score_result, "outcomes", []) or []
+    )
 
 
 def build_score_queue_items(compare_result) -> list[er.RunOutcome]:
@@ -1532,7 +1542,18 @@ def _render_results(provider_name: str, temperature, max_tokens, task_records: l
 
     _render_answer_viewer(result, task_records)
 
-    if st.button("查看技术明细", key="test_run_technical_details", type="tertiary"):
+    aux_clicked = render_aux_action_bar(
+        "辅助查看",
+        [
+            {
+                "id": "technical_details",
+                "label": "查看技术明细",
+                "key": "test_run_technical_details",
+                "type": "tertiary",
+            }
+        ],
+    )
+    if aux_clicked == "technical_details":
         _render_technical_details_dialog(result)
 
 
@@ -1875,14 +1896,26 @@ def _render_score_results(base, provider_name: str, task_records: list[dict]) ->
     _render_score_detail_viewer(score_result, dimensions)
     if not (state and state.get("status") in {"running", "interrupted", "failed"}):
         _render_retry_failed_scores_action(base, provider_name, score_result, compare_result, task_records, dimensions)
-    if st.button("查看评分对比表", key="test_run_score_compare_details", type="tertiary"):
+    aux_clicked = render_aux_action_bar(
+        "辅助查看",
+        [
+            {
+                "id": "score_compare",
+                "label": "查看评分对比表",
+                "key": "test_run_score_compare_details",
+                "type": "secondary",
+            }
+        ],
+    )
+    if aux_clicked == "score_compare":
         _render_score_compare_dialog(score_result, dimensions)
 
-    if ds.database_ready():
+    has_confirmable = has_confirmable_score_drafts(score_result)
+    if ds.database_ready() and has_confirmable:
         if st.button("进入评分确认", key="test_run_to_review", type="secondary"):
             st.session_state.current_page = "review"
             st.rerun()
-    else:
+    elif has_confirmable:
         st.caption("SQLite 数据层未初始化，评分草稿仅在当前会话展示，暂不能进入评分确认页。")
 
 

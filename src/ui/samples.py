@@ -853,7 +853,7 @@ def render_samples_page(data_bundle: dict) -> None:
 
     render_numbered_section("03", "当前样本", "选择一个样本，查看评测资产结构。")
     _render_sample_detail(filtered, readiness_map, task_records, gold_map, rubric_dimensions)
-    _render_test_run_entry(samples, readiness_map)
+    _render_test_run_availability_note(samples, readiness_map)
 
     _render_pending_dialogs(rubric_dimensions)
 
@@ -995,7 +995,7 @@ def _render_sample_detail(
     return sample
 
 
-def _render_test_run_entry(
+def _render_test_run_availability_note(
     samples: list[sr.Sample],
     readiness_map: dict[str, ds.SampleReadiness],
 ) -> None:
@@ -1006,22 +1006,10 @@ def _render_test_run_entry(
         ) == "可测试"
         for sample in samples
     )
-    col1, col2 = st.columns([1.15, 4], gap="small")
-    with col1:
-        if st.button(
-            "进入发起评测",
-            key="samples_go_test_run",
-            type="secondary",
-            disabled=not has_testable,
-            use_container_width=True,
-        ):
-            st.session_state.current_page = "test_run"
-            st.rerun()
-    with col2:
-        if has_testable:
-            st.caption("完整且已入库的样本可以进入发起评测。")
-        else:
-            st.caption("当前没有可测试样本。请先补充任务内容、Gold Answer 和 Rubric。")
+    if has_testable:
+        st.caption("完整且已入库的样本可在“发起评测”页使用。")
+    else:
+        st.caption("当前没有可测试样本。请先补充任务内容、Gold Answer 和 Rubric。")
 
 
 def _render_sample_detail_toolbar(sample: sr.Sample, readiness: ds.SampleReadiness) -> None:

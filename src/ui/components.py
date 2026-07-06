@@ -239,6 +239,36 @@ header,
     font-weight: 650;
     line-height: 1.45;
 }
+.aux-action-bar {
+    border-top: 1px solid var(--fde-line);
+    color: var(--fde-muted);
+    font-size: 0.82rem;
+    font-weight: 680;
+    line-height: 1.45;
+    margin: 0.5rem 0 0.35rem 0;
+    padding-top: 0.58rem;
+}
+.aux-action-bar-label {
+    color: var(--fde-muted);
+    font-size: 0.82rem;
+    font-weight: 680;
+    line-height: 1.45;
+}
+.aux-action-static-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0.1rem 0 0.75rem 0;
+}
+.aux-action-static {
+    border: 1px solid var(--fde-line);
+    border-radius: 8px;
+    color: var(--fde-text);
+    display: inline-flex;
+    font-size: 0.86rem;
+    font-weight: 650;
+    padding: 0.32rem 0.62rem;
+}
 .empty-state {
     border: 1px solid var(--fde-line);
     border-radius: var(--fde-radius);
@@ -723,6 +753,36 @@ def render_inline_status(items: list[tuple[str, str]]) -> None:
         for label, value in items
     )
     render_html(f'<div class="inline-status">{parts}</div>')
+
+
+def render_aux_action_bar(title: str, actions: list[dict[str, object]]) -> str | None:
+    """Render a low-emphasis action row and return the clicked action id."""
+    usable_actions = [action for action in actions or [] if action.get("label")]
+    render_html(f'<div class="aux-action-bar"><span class="aux-action-bar-label">{escape(str(title))}</span></div>')
+    if not usable_actions:
+        return None
+
+    if not hasattr(st, "button"):
+        static_actions = "".join(
+            f'<span class="aux-action-static">{escape(str(action.get("label") or ""))}</span>'
+            for action in usable_actions
+        )
+        render_html(f'<div class="aux-action-static-row">{static_actions}</div>')
+        return None
+
+    clicked: str | None = None
+    for action in usable_actions:
+        label = str(action.get("label") or "")
+        action_id = str(action.get("id") or action.get("key") or label)
+        if st.button(
+            label,
+            key=str(action.get("key") or action_id),
+            type=str(action.get("type") or "secondary"),
+            disabled=bool(action.get("disabled", False)),
+            use_container_width=bool(action.get("use_container_width", False)),
+        ):
+            clicked = action_id
+    return clicked
 
 
 def render_kv_grid(items: list[tuple[str, object]]) -> None:

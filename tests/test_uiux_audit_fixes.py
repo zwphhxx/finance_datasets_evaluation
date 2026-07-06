@@ -36,9 +36,11 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertTrue(hasattr(components, "render_detail_panel"))
         self.assertTrue(hasattr(components, "render_kv_grid"))
         self.assertTrue(hasattr(components, "render_inline_status"))
+        self.assertTrue(hasattr(components, "render_aux_action_bar"))
         self.assertTrue(hasattr(components, "render_clean_list"))
         self.assertIn(".inline-status", components.STYLE_CSS)
         self.assertIn(".detail-panel", components.STYLE_CSS)
+        self.assertIn(".aux-action-bar", components.STYLE_CSS)
 
         samples_source = Path("src/ui/samples.py").read_text(encoding="utf-8")
         self.assertIn("_render_samples_title_bar", samples_source)
@@ -207,6 +209,9 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn("samples_csv_upload", samples_source)
         self.assertIn("跳过重复样本", samples_source)
         self.assertIn("更新已有样本", samples_source)
+        self.assertNotIn('"进入发起评测"', samples_source)
+        self.assertNotIn("samples_go_test_run", samples_source)
+        self.assertIn("完整且已入库的样本可在“发起评测”页使用。", samples_source)
         self.assertNotIn("samples_current_sample_select", samples_source)
         self.assertIn("当前样本", samples_source)
         self.assertIn("编辑样本", samples_source)
@@ -260,11 +265,24 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn('"运行模型回答", type="primary"', source)
         self.assertIn('button_label = "仅对已完成回答生成评分草稿" if partial_run else "生成评分草稿"', source)
         self.assertIn('button_label, type="primary"', source)
+        self.assertIn("has_confirmable_score_drafts(score_result)", source)
+        self.assertIn('"进入评分确认"', source)
         self.assertIn('"确认选择"', source)
         self.assertIn('key="test_run_sample_dialog_confirm"', source)
         self.assertIn('key="test_run_model_dialog_confirm"', source)
         self.assertIn('disabled=not selected_cases', source)
         self.assertIn('disabled=not chosen_models', source)
+
+    def test_auxiliary_view_entries_use_shared_action_bar(self):
+        test_run_source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+        components_source = Path("src/ui/components.py").read_text(encoding="utf-8")
+
+        self.assertIn("render_aux_action_bar", test_run_source)
+        self.assertIn('"辅助查看"', test_run_source)
+        self.assertIn('"查看评分对比表"', test_run_source)
+        self.assertIn('"type": "secondary"', test_run_source)
+        self.assertIn("def render_aux_action_bar", components_source)
+        self.assertIn("aux-action-bar-label", components_source)
 
     def test_review_seed_mode_hides_direct_confirmation_for_examples(self):
         page_source = Path("src/ui/review.py").read_text(encoding="utf-8")

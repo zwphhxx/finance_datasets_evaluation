@@ -27,6 +27,7 @@ from src.ui.test_run import (
     filter_sample_selection_options,
     get_advanced_setting_items,
     get_test_run_steps,
+    has_confirmable_score_drafts,
     _model_short_name,
     _siliconflow_balance_text,
 )
@@ -166,6 +167,8 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("评分依据", source)
         self.assertIn("未返回明确依据", source)
         self.assertIn("查看评分对比表", source)
+        self.assertIn("render_aux_action_bar", score_source)
+        self.assertIn('"辅助查看"', score_source)
         self.assertNotIn("st.spinner", score_source)
         self.assertNotIn("sc.score_compare(", score_source)
         self.assertNotIn('st.expander("评分对比表"', source)
@@ -737,6 +740,93 @@ class ScoreDraftTests(unittest.TestCase):
         self.assertIn("**模拟评分**", panel["markdown"])
         self.assertIn("未配置真实模型服务，未产生真实评分。", panel["markdown"])
         self.assertIn("该结果仅用于链路调试，不进入正式结论。", panel["markdown"])
+
+    def test_confirm_review_entry_only_shows_for_pending_success_scores(self):
+        result = sc.ScoreResult(
+            score_run_id="S1",
+            run_id="R1",
+            judge_provider="siliconflow",
+            judge_model="judge/model",
+            mode="live",
+            created_at="2026-07-05T12:00:00",
+            outcomes=(
+                sc.ScoreOutcome(
+                    case_id="CM-001",
+                    task_type="analysis",
+                    eval_model="vendor/model-a",
+                    judge_provider="siliconflow",
+                    judge_model="judge/model",
+                    judge_status="success",
+                    total_score=80,
+                    review_status="pending",
+                ),
+            ),
+        )
+        self.assertTrue(has_confirmable_score_drafts(result))
+
+        confirmed = sc.ScoreResult(
+            score_run_id="S2",
+            run_id="R1",
+            judge_provider="siliconflow",
+            judge_model="judge/model",
+            mode="live",
+            created_at="2026-07-05T12:00:00",
+            outcomes=(
+                sc.ScoreOutcome(
+                    case_id="CM-001",
+                    task_type="analysis",
+                    eval_model="vendor/model-a",
+                    judge_provider="siliconflow",
+                    judge_model="judge/model",
+                    judge_status="success",
+                    total_score=80,
+                    review_status="confirmed",
+                ),
+            ),
+        )
+        failed = sc.ScoreResult(
+            score_run_id="S3",
+            run_id="R1",
+            judge_provider="siliconflow",
+            judge_model="judge/model",
+            mode="live",
+            created_at="2026-07-05T12:00:00",
+            outcomes=(
+                sc.ScoreOutcome(
+                    case_id="CM-001",
+                    task_type="analysis",
+                    eval_model="vendor/model-a",
+                    judge_provider="siliconflow",
+                    judge_model="judge/model",
+                    judge_status="failed",
+                    total_score=None,
+                    review_status="pending",
+                ),
+            ),
+        )
+        mock = sc.ScoreResult(
+            score_run_id="S4",
+            run_id="R1",
+            judge_provider="mock",
+            judge_model="judge/model",
+            mode="mock",
+            created_at="2026-07-05T12:00:00",
+            outcomes=(
+                sc.ScoreOutcome(
+                    case_id="CM-001",
+                    task_type="analysis",
+                    eval_model="vendor/model-a",
+                    judge_provider="mock",
+                    judge_model="judge/model",
+                    judge_status="mock",
+                    total_score=None,
+                    review_status="pending",
+                ),
+            ),
+        )
+        self.assertFalse(has_confirmable_score_drafts(confirmed))
+        self.assertFalse(has_confirmable_score_drafts(failed))
+        self.assertFalse(has_confirmable_score_drafts(mock))
 
     def test_failed_score_retry_items_only_retry_failed_scores_with_successful_answers(self):
         import src.ui.test_run as tr
