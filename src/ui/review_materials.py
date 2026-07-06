@@ -131,7 +131,7 @@ def render_score_materials_dialog(
 
     st.markdown("**任务背景**")
     render_inline_status([
-        ("领域", display_label(task_info.get("domain"), DOMAIN_LABELS)),
+        ("专业场景", display_label(task_info.get("domain"), DOMAIN_LABELS)),
         ("类型", display_label(task_info.get("task_type"), TASK_TYPE_LABELS)),
         ("难度", DIFFICULTY_LABELS.get(text(task_info.get("difficulty")), text(task_info.get("difficulty")))),
         ("风险", RISK_LABELS.get(text(task_info.get("risk_level")), text(task_info.get("risk_level")))),
@@ -140,12 +140,12 @@ def render_score_materials_dialog(
     st.markdown("**任务题**")
     st.markdown(text(task_info.get("question"), text(task_info.get("scenario"), "暂无任务题")))
 
-    st.markdown("**理想回复标准 / Gold Answer**")
+    st.markdown("**专业标准答案**")
     if isinstance(gold, dict):
         render_inline_status([
-            ("核心结论", field_text(gold, "core_conclusion", "待补充")),
+            ("标准结论", field_text(gold, "core_conclusion", "待补充")),
             ("关键依据", field_text(gold, "key_evidence", "待补充")),
-            ("边界条件", field_text(gold, "boundary_conditions", "待补充")),
+            ("边界与需核查事项", field_text(gold, "boundary_conditions", "待补充")),
         ])
         must_points = field_list(gold, "must_have_points")
         red_lines = field_list(gold, "unacceptable_errors")
@@ -156,7 +156,7 @@ def render_score_materials_dialog(
             st.markdown("**不可接受错误**")
             render_clean_list(red_lines)
     else:
-        st.caption("该任务暂无理想回复标准 / Gold Answer。")
+        st.caption("该任务暂无专业标准答案。")
 
     render_markdown_detail_panel("模型回答", text(row.get("answer_text"), "暂无回答内容。"))
 
@@ -168,7 +168,7 @@ def render_score_materials_dialog(
     if rubric_rows:
         st.dataframe(pd.DataFrame(rubric_rows), hide_index=True, use_container_width=True)
     else:
-        st.caption("暂无 Rubric 评分标准。")
+        st.caption("暂无评分标准。")
 
     st.markdown("**错误标签**")
     error_rows = build_error_attribution_rows(errors_df, optimization_df, row.get("output_id"))

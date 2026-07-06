@@ -43,7 +43,7 @@ class SampleListSummaryTests(unittest.TestCase):
         rows = build_sample_table_rows([sample], {"CASE-1": readiness})
 
         self.assertEqual(
-            ["样本编号", "任务标题", "领域", "测试状态", "完整度", "更新时间", "操作"],
+            ["样本编号", "任务标题", "专业场景", "测试状态", "完整度", "更新时间", "操作"],
             list(rows[0].keys()),
         )
         self.assertEqual("可测试", rows[0]["测试状态"])
@@ -97,7 +97,7 @@ class GoldAnswerDisplayTests(unittest.TestCase):
         display = parse_gold_answer_for_display(raw)
 
         self.assertTrue(display["parsed"])
-        self.assertEqual("核心结论", display["fields"]["核心结论"])
+        self.assertEqual("核心结论", display["fields"]["标准结论"])
         self.assertEqual(["覆盖点一", "覆盖点二"], display["lists"]["必须覆盖点"])
         self.assertEqual(["错误一"], display["lists"]["不可接受错误"])
         self.assertEqual("", display["fallback_text"])
@@ -107,7 +107,7 @@ class GoldAnswerDisplayTests(unittest.TestCase):
 
         self.assertFalse(display["parsed"])
         self.assertEqual("无法解析的自由文本", display["fallback_text"])
-        self.assertEqual("待补充", display["fields"]["核心结论"])
+        self.assertEqual("待补充", display["fields"]["标准结论"])
 
 
 class RubricDisplayTests(unittest.TestCase):
@@ -187,12 +187,12 @@ class AssetSectionTests(unittest.TestCase):
 
         self.assertEqual(
             [
-                "样本基础信息",
+                "基础信息",
                 "任务内容",
-                "理想回复标准 / Gold Answer",
-                "Rubric 评分标准",
-                "错误标签与数据优化建议",
-                "状态、完整度与复核记录",
+                "专业标准答案",
+                "评分标准",
+                "历史运行与优化",
+                "准入检查",
             ],
             [section["title"] for section in sections],
         )

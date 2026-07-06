@@ -65,7 +65,7 @@ class RegistrationTests(unittest.TestCase):
         self.assertIn("回答质量", source)
         self.assertIn("主要问题", source)
         self.assertNotIn("本项目不判断哪个模型最好", source)
-        self.assertIn("被测模型不会看到 Gold Answer、必须覆盖点、不可接受错误或 Rubric", source)
+        self.assertIn("被测模型不会看到专业标准答案、必须覆盖点、不可接受错误或评分标准", source)
         self.assertIn("待确认、暂不采用、评分失败或示例评价均不进入正式结论", source)
 
 
@@ -78,8 +78,8 @@ class DynamicStatsTests(unittest.TestCase):
         task_count = len(self.data.tasks)
         domain_count = self.data.tasks["domain"].dropna().nunique()
         self.assertEqual(f"{task_count} 个", stats["当前样本"])
-        self.assertEqual(f"{domain_count} 类", stats["覆盖领域"])
-        self.assertEqual(f"{len(SCORE_DIMENSIONS)} 个", stats["Rubric 维度"])
+        self.assertEqual(f"{domain_count} 类", stats["覆盖专业场景"])
+        self.assertEqual(f"{len(SCORE_DIMENSIONS)} 个", stats["评分维度"])
 
     def test_home_stats_track_data_changes(self):
         stub = types.SimpleNamespace(
@@ -87,7 +87,7 @@ class DynamicStatsTests(unittest.TestCase):
         )
         stats = {label: value for value, label in _build_home_stats(stub, {})}
         self.assertEqual("3 个", stats["当前样本"])
-        self.assertEqual("2 类", stats["覆盖领域"])
+        self.assertEqual("2 类", stats["覆盖专业场景"])
 
     def test_sample_scope_text_uses_domain_labels(self):
         text = _build_sample_scope_text(self.data)
@@ -98,7 +98,7 @@ class DynamicStatsTests(unittest.TestCase):
     def test_sample_scope_text_handles_empty_data(self):
         stub = types.SimpleNamespace(tasks=pd.DataFrame())
         self.assertEqual(
-            "样本来自金融尽调场景，已脱敏抽象为可评测任务；不包含真实公司、交易或敏感数据。",
+            "样本来自财务场景、法律场景和投行场景，已脱敏抽象为可评测任务；不包含真实公司、交易或敏感数据。",
             _build_sample_scope_text(stub),
         )
 

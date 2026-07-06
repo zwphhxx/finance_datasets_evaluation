@@ -217,7 +217,7 @@ class RubricMaterialDisplayTests(unittest.TestCase):
         ])
 
         self.assertFalse(state["complete"])
-        self.assertEqual("Rubric 维度配置", state["title"])
+        self.assertEqual("评分维度配置", state["title"])
         self.assertIn("尚未完整维护满分标准与扣分规则", state["note"])
         self.assertEqual(["维度", "满分", "缺失项"], list(state["rows"][0].keys()))
         self.assertEqual("缺少满分标准；缺少扣分规则", state["rows"][0]["缺失项"])
@@ -236,7 +236,7 @@ class RubricMaterialDisplayTests(unittest.TestCase):
         ])
 
         self.assertTrue(state["complete"])
-        self.assertEqual("Rubric 评分标准", state["title"])
+        self.assertEqual("评分标准", state["title"])
         self.assertEqual(["维度", "满分", "满分标准", "扣分规则"], list(state["rows"][0].keys()))
         self.assertEqual("结论准确且依据充分。", state["rows"][0]["满分标准"])
 

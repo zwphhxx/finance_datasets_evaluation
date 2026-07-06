@@ -61,7 +61,7 @@ class PageFramingTests(unittest.TestCase):
 
     def test_boundary_mentions_prompt_separation(self):
         config = PAGE_CONFIG_BY_KEY["test_run"]
-        self.assertIn("不看到理想回复标准 / Gold Answer", config.boundary)
+        self.assertIn("不看到专业标准答案", config.boundary)
 
     def test_page_keeps_live_run_boundary_and_auxiliary_details(self):
         self.assertIn("RUN_BOUNDARY_NOTE", _PAGE_SOURCE)

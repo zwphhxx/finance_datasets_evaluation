@@ -33,7 +33,7 @@ class ReadmeCurrentFlowTests(unittest.TestCase):
             self.assertIn(line, text)
 
         required_boundaries = [
-            "被测模型不看到 Gold Answer",
+            "被测模型不看到专业标准答案",
             "裁判评分只是评分草稿",
             "确认生效后才进入正式结论",
             "待确认草稿、暂不采用记录和示例评价不进入正式结论",
@@ -215,7 +215,7 @@ class FormalConclusionStatusGuardrailTests(unittest.TestCase):
 class SampleLibraryGuardrailTests(unittest.TestCase):
     def test_sample_table_contract_and_current_sample_actions(self):
         self.assertEqual(
-            ["样本编号", "任务标题", "领域", "测试状态", "完整度", "更新时间", "操作"],
+            ["样本编号", "任务标题", "专业场景", "测试状态", "完整度", "更新时间", "操作"],
             samples._SAMPLE_TABLE_COLUMNS,
         )
 

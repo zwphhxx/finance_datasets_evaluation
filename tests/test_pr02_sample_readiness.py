@@ -51,7 +51,7 @@ class SampleReadinessTests(unittest.TestCase):
     def test_missing_gold_answer_is_not_testable(self):
         readiness = self._assess(gold=None)
         self.assertFalse(readiness.is_testable)
-        self.assertIn("缺少理想回复标准 / Gold Answer", readiness.missing_items)
+        self.assertIn("缺少专业标准答案", readiness.missing_items)
 
     def test_missing_must_have_points_is_not_testable(self):
         readiness = self._assess(gold={"core_conclusion": "有结论", "unacceptable_errors": ["错误"]})
@@ -66,15 +66,15 @@ class SampleReadinessTests(unittest.TestCase):
     def test_missing_rubric_is_not_testable(self):
         readiness = self._assess(rubric=[])
         self.assertFalse(readiness.is_testable)
-        self.assertIn("缺少 Rubric 维度配置", readiness.missing_items)
+        self.assertIn("缺少评分维度配置", readiness.missing_items)
 
     def test_rubric_with_only_dimension_and_full_mark_is_not_testable(self):
         rubric = [{"field": "accuracy_score", "name": "准确性", "full_mark": 30}]
         self.assertFalse(ds.has_rubric_criteria(rubric))
         readiness = self._assess(rubric=rubric)
         self.assertFalse(readiness.is_testable)
-        self.assertIn("缺少 Rubric 满分标准", readiness.missing_items)
-        self.assertIn("缺少 Rubric 扣分规则", readiness.missing_items)
+        self.assertIn("缺少评分标准满分标准", readiness.missing_items)
+        self.assertIn("缺少评分标准扣分规则", readiness.missing_items)
 
     def test_rubric_missing_full_mark_standard_is_not_testable(self):
         rubric = [{
@@ -84,7 +84,7 @@ class SampleReadinessTests(unittest.TestCase):
             "deduction_rules": "事实错误扣分。",
         }]
         self.assertFalse(ds.has_rubric_criteria(rubric))
-        self.assertIn("缺少 Rubric 满分标准", self._assess(rubric=rubric).missing_items)
+        self.assertIn("缺少评分标准满分标准", self._assess(rubric=rubric).missing_items)
 
     def test_rubric_missing_deduction_rules_is_not_testable(self):
         rubric = [{
@@ -94,7 +94,7 @@ class SampleReadinessTests(unittest.TestCase):
             "full_mark_standard": "结论准确且依据充分。",
         }]
         self.assertFalse(ds.has_rubric_criteria(rubric))
-        self.assertIn("缺少 Rubric 扣分规则", self._assess(rubric=rubric).missing_items)
+        self.assertIn("缺少评分标准扣分规则", self._assess(rubric=rubric).missing_items)
 
     def test_complete_rubric_is_testable(self):
         self.assertTrue(ds.has_rubric_criteria(self.rubric))

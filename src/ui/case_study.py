@@ -35,8 +35,8 @@ def _build_home_stats(base, eval_status: dict | None) -> list[tuple[str, str]]:
     domain_count = _distinct_count(tasks, "domain")
     return [
         (f"{task_count} 个", "当前样本"),
-        (f"{domain_count} 类", "覆盖领域"),
-        (f"{len(SCORE_DIMENSIONS)} 个", "Rubric 维度"),
+        (f"{domain_count} 类", "覆盖专业场景"),
+        (f"{len(SCORE_DIMENSIONS)} 个", "评分维度"),
     ]
 
 
@@ -45,7 +45,7 @@ def _build_sample_scope_text(data) -> str:
     from src.ui.labels import DOMAIN_LABELS, display_label
     tasks = getattr(data, "tasks", None)
     if tasks is None or tasks.empty or "domain" not in tasks.columns:
-        return "样本来自金融尽调场景，已脱敏抽象为可评测任务；不包含真实公司、交易或敏感数据。"
+        return "样本来自财务场景、法律场景和投行场景，已脱敏抽象为可评测任务；不包含真实公司、交易或敏感数据。"
     domains = [
         display_label(domain, DOMAIN_LABELS)
         for domain in tasks["domain"].dropna().astype(str).unique()
@@ -56,8 +56,8 @@ def _build_sample_scope_text(data) -> str:
         suffix = "等" if len(domains) > len(shown) else ""
         domain_text = "、".join(shown) + suffix
     else:
-        domain_text = "金融尽调"
-    return f"样本来自{domain_text}场景，已脱敏抽象为可评测任务；不包含真实公司、交易或敏感数据。"
+        domain_text = "财务场景、法律场景和投行场景"
+    return f"样本来自{domain_text}，已脱敏抽象为可评测任务；不包含真实公司、交易或敏感数据。"
 
 
 def render_case_study_page(data_bundle: dict) -> None:
@@ -94,7 +94,7 @@ def render_case_study_page(data_bundle: dict) -> None:
         title="评测流程",
         lead="从专业样本到人工确认，形成可追溯的评分闭环。",
         body=[
-            "样本库维护任务题、业务背景、Gold Answer、必须覆盖点、不可接受错误和 Rubric。发起评测时，被测模型只基于任务题和必要背景生成回答，裁判模型再基于 Gold Answer 和 Rubric 形成评分草稿。",
+            "样本库维护任务题、业务背景、专业标准答案、必须覆盖点、不可接受错误和评分标准。发起评测时，被测模型只基于任务题和必要背景生成回答，裁判模型再基于专业标准答案和评分标准形成评分草稿。",
             "评分草稿不会直接进入正式结论。所有评分需要经过人工确认、修订后确认或暂不采用。评测结论仅汇总已确认评分，用于展示当前样本下不同模型的质量表现、主要问题和使用边界。",
         ],
     )
@@ -107,7 +107,7 @@ def render_case_study_page(data_bundle: dict) -> None:
         body=[
             _build_sample_scope_text(base),
             "当前结论是当前样本内观察，只反映已确认评分覆盖的样本范围，不代表模型在全部财务、法律或投行业务中的稳定表现。",
-            "被测模型不会看到 Gold Answer、必须覆盖点、不可接受错误或 Rubric。上述材料仅用于裁判评分和人工复核。",
+            "被测模型不会看到专业标准答案、必须覆盖点、不可接受错误或评分标准。上述材料仅用于裁判评分和人工复核。",
             "正式结论由真实运行结果、裁判评分草稿和人工确认共同形成。待确认、暂不采用、评分失败或示例评价均不进入正式结论。",
         ],
     )

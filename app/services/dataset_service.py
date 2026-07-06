@@ -5,11 +5,11 @@
   - SQLite 是正式评测资产源；`task_cases` / `gold_answers` / `rubrics` 决定样本能否
     进入发起评测，`live_run_responses` / `live_run_scores` 保存真实运行结果和评分确认结果。
   - `data/samples.json` 是样本库管理视图、导入导出和备份，由 sample_repository 负责同步。
-  - `data/tasks.csv`、`data/gold_answers.json`、manifest/Rubric 等 seed 文件只用于初始化
+  - `data/tasks.csv`、`data/gold_answers.json`、manifest 评分标准等 seed 文件只用于初始化
     或数据库不可用时的兼容回退。
 
-  - 当 SQLite 数据库已初始化时，从 repository 读取核心对象（任务题、Gold Answer、
-    Rubric 评分、模型回答、错误标签、数据补强动作、评测批次），并投影回与原始
+  - 当 SQLite 数据库已初始化时，从 repository 读取核心对象（任务题、专业标准答案、
+    评分标准、模型回答、错误标签、数据补强动作、评测批次），并投影回与原始
     CSV/JSON 完全一致的列结构，确保页面展示结果不变。
   - 当数据库尚未初始化时，回退到现有 CSV/JSON 加载（src.data_service），实现「逐步切换、
     旧数据兼容」。
@@ -162,7 +162,7 @@ def _project(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
 
 
 def _gold_answers_from_db(repository: Repository) -> list[dict]:
-    """从 raw_json 还原 Gold Answer 原始条目，保持与 gold_answers.json 一致。"""
+    """从 raw_json 还原专业标准答案原始条目，保持与 gold_answers.json 一致。"""
     frame = repository.list_df("gold_answers")
     answers = []
     for raw in frame["raw_json"].tolist():
@@ -171,7 +171,7 @@ def _gold_answers_from_db(repository: Repository) -> list[dict]:
         try:
             answers.append(json.loads(raw))
         except (TypeError, json.JSONDecodeError) as exc:
-            raise DataLoadError(f"Gold Answer raw_json 解析失败：{exc}") from exc
+            raise DataLoadError(f"专业标准答案 raw_json 解析失败：{exc}") from exc
     return answers
 
 
@@ -222,7 +222,7 @@ def _load_from_db(db_path_value: str, _mtime: float) -> EvaluationData:
 # repository，页面层不出现任何 SQL。
 # --------------------------------------------------------------------------- #
 
-# Gold Answer 中以 JSON 数组存储的要素与标量要素（与 init_db 的导入口径一致）。
+# 专业标准答案中以 JSON 数组存储的要素与标量要素（与 init_db 的导入口径一致）。
 _GOLD_LIST_FIELDS = ("must_have_points", "unacceptable_errors")
 _GOLD_SCALAR_FIELDS = (
     "core_conclusion",
@@ -246,7 +246,7 @@ TASK_EDITABLE_FIELDS = (
     "risk_level",
 )
 
-# 样本评判标准字段（Gold Answer 核心要素）
+# 样本评判标准字段（专业标准答案核心要素）
 JUDGMENT_CRITERIA_FIELDS = (
     "core_conclusion",
     "must_have_points",
@@ -286,7 +286,7 @@ class SampleReadiness:
 
 
 def has_judgment_criteria(gold_record: dict | None) -> bool:
-    """检查样本是否具备完整的评判标准（Gold Answer 核心要素）。"""
+    """检查样本是否具备完整的评判标准（专业标准答案核心要素）。"""
     if not isinstance(gold_record, dict):
         return False
     # 必须同时存在核心结论、必须覆盖点、不可接受错误
@@ -321,23 +321,23 @@ def sample_status_label(status: str | None) -> str:
 
 
 def has_rubric_criteria(rubric_dimensions: list[dict] | None) -> bool:
-    """检查正式 Rubric 是否具备完整评分标准。"""
+    """检查正式评分标准是否具备完整配置。"""
     return not rubric_criteria_missing_items(rubric_dimensions)
 
 
 def rubric_criteria_missing_items(rubric_dimensions: list[dict] | None) -> list[str]:
-    """返回 Rubric 缺失项，区分维度配置、满分、满分标准和扣分规则。"""
+    """返回评分标准缺失项，区分维度配置、满分、满分标准和扣分规则。"""
     if not rubric_dimensions:
-        return ["缺少 Rubric 维度配置"]
+        return ["缺少评分维度配置"]
     missing: list[str] = []
     for dimension in rubric_dimensions:
         for item in rubric_dimension_missing_items(dimension):
-            missing.append("缺少 Rubric " + item.replace("缺少", "", 1))
+            missing.append("缺少评分标准" + item.replace("缺少", "", 1))
     return _dedupe(missing)
 
 
 def rubric_dimension_missing_items(dimension: dict | None) -> list[str]:
-    """返回单个 Rubric 维度缺失项，用于样本库和评分材料展示。"""
+    """返回单个评分维度缺失项，用于样本库和评分材料展示。"""
     if not isinstance(dimension, dict):
         return ["缺少维度配置"]
     missing: list[str] = []
@@ -361,7 +361,7 @@ def assess_sample_readiness(
 ) -> SampleReadiness:
     """评估样本完整度与是否可进入正式测试。
 
-    判断只基于正式评测数据结构：任务题、Gold Answer、Rubric 与任务状态。
+    判断只基于正式评测数据结构：任务题、专业标准答案、评分标准与任务状态。
     """
     task = task_record if isinstance(task_record, dict) else {}
     gold = gold_record if isinstance(gold_record, dict) else None
@@ -382,20 +382,20 @@ def assess_sample_readiness(
     record(_clean(task.get("scenario")) is not None, "存在场景", "缺少场景")
 
     has_gold = bool(gold)
-    record(has_gold, "存在理想回复标准 / Gold Answer", "缺少理想回复标准 / Gold Answer")
+    record(has_gold, "存在专业标准答案", "缺少专业标准答案")
     record(
         bool(field_value(gold, "core_conclusion")) if gold else False,
-        "Gold Answer 包含核心结论",
-        "缺少核心结论",
+        "专业标准答案包含标准结论",
+        "缺少标准结论",
     )
     record(
         bool(field_list(gold, "must_have_points")) if gold else False,
-        "Gold Answer 包含必须覆盖点",
+        "专业标准答案包含必须覆盖点",
         "缺少必须覆盖点",
     )
     record(
         bool(field_list(gold, "unacceptable_errors")) if gold else False,
-        "Gold Answer 包含不可接受错误",
+        "专业标准答案包含不可接受错误",
         "缺少不可接受错误",
     )
 
@@ -404,10 +404,10 @@ def assess_sample_readiness(
         missing.extend(rubric_missing)
     else:
         satisfied.extend([
-            "存在 Rubric 维度配置",
-            "Rubric 满分完整",
-            "Rubric 满分标准完整",
-            "Rubric 扣分规则完整",
+            "存在评分维度配置",
+            "评分标准满分完整",
+            "评分标准满分标准完整",
+            "评分标准扣分规则完整",
         ])
 
     if status == INACTIVE_STATUS:
@@ -450,7 +450,7 @@ def assess_case_readiness(case_id: str, db_path: Path | None = None) -> SampleRe
 
 
 def get_testable_rubric_dimensions(db_path: Path | None = None) -> list[dict]:
-    """返回用于测试准入的 Rubric 维度。
+    """返回用于测试准入的评分维度。
 
     SQLite 可用时必须确有未停用的 rubrics 行；未初始化时回退到现有配置维度。
     """
@@ -561,9 +561,9 @@ def set_task_case_status(case_id: str, status: str, *, db_path: Path | None = No
     _invalidate_caches()
 
 
-# -- Gold Answer ------------------------------------------------------------- #
+# -- Professional answer ----------------------------------------------------- #
 def list_gold_answer_case_ids(db_path: Path | None = None) -> list[str]:
-    """返回已有 Gold Answer 的任务编号列表，供管理页选择编辑。"""
+    """返回已有专业标准答案的任务编号列表，供管理页选择编辑。"""
     frame = _repository(db_path).list_df("gold_answers")
     if "case_id" not in frame.columns:
         return []
@@ -571,7 +571,7 @@ def list_gold_answer_case_ids(db_path: Path | None = None) -> list[str]:
 
 
 def get_gold_answer_record(case_id: str, db_path: Path | None = None) -> dict | None:
-    """返回某题 Gold Answer 的原始条目（以 raw_json 为准），供编辑回显。"""
+    """返回某题专业标准答案的原始条目（以 raw_json 为准），供编辑回显。"""
     row = _repository(db_path).get("gold_answers", case_id)
     if row is None:
         return None
@@ -616,7 +616,7 @@ def _coerce_gold_answer_entry(case_id: str, value: object) -> dict:
 
 
 def _gold_payload(case_id: str, value: object) -> dict:
-    """把页面 Gold Answer 输入规整为 gold_answers 的结构化列与 raw_json。"""
+    """把页面专业标准答案输入规整为 gold_answers 的结构化列与 raw_json。"""
     entry = _coerce_gold_answer_entry(case_id, value)
     payload: dict[str, object] = {"case_id": case_id}
     for field in _GOLD_SCALAR_FIELDS:
@@ -631,22 +631,22 @@ def _gold_payload(case_id: str, value: object) -> dict:
 
 
 def create_gold_answer(case_id: str, fields: dict | str, *, db_path: Path | None = None) -> None:
-    """新增 Gold Answer，结构化列与 raw_json 同步写入。"""
+    """新增专业标准答案，结构化列与 raw_json 同步写入。"""
     normalized_case_id = _clean(case_id)
     if not normalized_case_id:
-        raise DataLoadError("Gold Answer 任务编号（case_id）不能为空。")
+        raise DataLoadError("专业标准答案任务编号（case_id）不能为空。")
     repository = _repository(db_path)
     if repository.get("gold_answers", normalized_case_id) is not None:
-        raise DataLoadError(f"Gold Answer 已存在：{normalized_case_id}。")
+        raise DataLoadError(f"专业标准答案已存在：{normalized_case_id}。")
     repository.insert("gold_answers", _gold_payload(normalized_case_id, fields))
     _invalidate_caches()
 
 
 def upsert_gold_answer(case_id: str, fields: dict | str, *, db_path: Path | None = None) -> None:
-    """按 case_id 新增或覆盖 Gold Answer，确保 raw_json 与结构化字段一致。"""
+    """按 case_id 新增或覆盖专业标准答案，确保 raw_json 与结构化字段一致。"""
     normalized_case_id = _clean(case_id)
     if not normalized_case_id:
-        raise DataLoadError("Gold Answer 任务编号（case_id）不能为空。")
+        raise DataLoadError("专业标准答案任务编号（case_id）不能为空。")
     repository = _repository(db_path)
     payload = _gold_payload(normalized_case_id, fields)
     if repository.get("gold_answers", normalized_case_id) is None:
@@ -658,7 +658,7 @@ def upsert_gold_answer(case_id: str, fields: dict | str, *, db_path: Path | None
 
 
 def update_gold_answer(case_id: str, fields: dict, *, db_path: Path | None = None) -> None:
-    """编辑 Gold Answer 的核心要素，结构化列与 raw_json 同步更新。
+    """编辑专业标准答案的核心要素，结构化列与 raw_json 同步更新。
 
     raw_json 始终作为页面展示的权威来源：在原始条目上就地修改被编辑的键，
     其余键原样保留，确保无损兼容，不破坏现有展示。
@@ -666,7 +666,7 @@ def update_gold_answer(case_id: str, fields: dict, *, db_path: Path | None = Non
     repository = _repository(db_path)
     row = repository.get("gold_answers", case_id)
     if row is None:
-        raise DataLoadError(f"未找到 Gold Answer：{case_id}。")
+        raise DataLoadError(f"未找到专业标准答案：{case_id}。")
 
     entry = get_gold_answer_record(case_id, db_path) or {"case_id": case_id}
     changes: dict[str, object] = {}
@@ -690,7 +690,7 @@ def update_gold_answer(case_id: str, fields: dict, *, db_path: Path | None = Non
     _invalidate_caches()
 
 
-# -- Rubric ------------------------------------------------------------------ #
+# -- Scoring standard -------------------------------------------------------- #
 def list_rubrics(db_path: Path | None = None) -> pd.DataFrame:
     """返回全部评分维度（含权重、满分标准与扣分规则），用于管理页展示。"""
     return _repository(db_path).list_df("rubrics")
@@ -751,11 +751,11 @@ def update_rubric(dimension_field: str, changes: dict, *, db_path: Path | None =
 
 
 def _coerce_rubric_dimensions(value: object) -> list[dict]:
-    """把样本管理中的 Rubric 输入规整为可维护的维度列表。
+    """把样本管理中的评分标准输入规整为可维护的维度列表。
 
-    MVP 继续复用正式数据层的全局 Rubric 表；样本表单若提供 JSON 维度对象，
+    MVP 继续复用正式数据层的全局评分标准表；样本表单若提供 JSON 维度对象，
     就更新对应维度的满分标准、扣分规则等字段。普通文本仍可保存在样本管理视图，
-    但不会臆造新的 Rubric 维度。
+    但不会臆造新的评分维度。
     """
     parsed = _parse_json_value(value)
     raw = parsed if parsed is not None else value
@@ -785,7 +785,7 @@ def _coerce_rubric_dimensions(value: object) -> list[dict]:
 
 
 def upsert_rubric_dimensions(value: object, *, db_path: Path | None = None) -> int:
-    """新增或更新正式 Rubric 维度，返回实际写入的维度数。"""
+    """新增或更新正式评分维度，返回实际写入的维度数。"""
     dimensions = _coerce_rubric_dimensions(value)
     if not dimensions:
         return 0
@@ -825,7 +825,7 @@ def upsert_rubric_dimensions(value: object, *, db_path: Path | None = None) -> i
 def upsert_sample_assets(sample: dict, *, db_path: Path | None = None) -> None:
     """将样本库记录写入正式评测资产层。
 
-    `samples.json` 只保留管理视图；任务题、Gold Answer 与结构化 Rubric 在
+    `samples.json` 只保留管理视图；任务题、专业标准答案与结构化评分标准在
     SQLite 可用时以这里写入的数据为准。
     """
     path = db_path or get_db_path()
@@ -1032,7 +1032,7 @@ def evaluate_error_configuration(db_path: Path | None = None) -> list:
 
 # -- 小工具 ------------------------------------------------------------------ #
 def _manifest_rubric_defaults() -> dict[str, dict]:
-    """从 dataset_manifest.yml 读取 Rubric 默认标准，作为正式 seed 配置。"""
+    """从 dataset_manifest.yml 读取评分标准默认配置，作为正式 seed 配置。"""
     try:
         data_dir = get_data_dir()
         manifest = _read_yaml_file("dataset_manifest.yml", data_dir)

@@ -93,7 +93,7 @@ def build_review_scoring_matrix_rows(
     errors_df: pd.DataFrame | None,
     rubric_dimensions: list[dict] | None = None,
 ) -> list[dict[str, str]]:
-    """Build the legacy review matrix rows from dynamic Rubric dimensions."""
+    """Build the legacy review matrix rows from dynamic scoring dimensions."""
     row = score_row if isinstance(score_row, pd.Series) else pd.Series(score_row or {})
     dimensions = rubric_dimensions if rubric_dimensions is not None else get_rubric_dimensions()
     output_id = row.get("output_id")
@@ -208,7 +208,7 @@ def build_review_recommendation(
     redline_hits = detect_redline_hits(errors_df if isinstance(errors_df, pd.DataFrame) else pd.DataFrame(), output_id, gold)
     if redline_hits:
         danger = True
-        reasons.append("命中 Gold Answer 红线")
+        reasons.append("命中专业标准答案红线")
 
     severe_dims: list[str] = []
     weak_dims: list[str] = []
@@ -345,7 +345,7 @@ def build_redline_blocks(
 
     red_lines = field_list(gold, "unacceptable_errors") if isinstance(gold, dict) else []
     if red_lines:
-        blocks.append({"title": "Gold Answer 中的不可接受错误", "items": [str(item) for item in red_lines]})
+        blocks.append({"title": "专业标准答案中的不可接受错误", "items": [str(item) for item in red_lines]})
     return blocks
 
 
@@ -421,7 +421,7 @@ def render_scoring_basis(output_row: pd.Series | None, errors_df) -> None:
         return
     rows = build_review_basis_rows(output_row, errors_df)
     if not rows:
-        render_empty_state("当前模型回答尚未配置 Rubric 评分标准。")
+        render_empty_state("当前模型回答尚未配置评分标准。")
         return
     st.dataframe(
         pd.DataFrame(rows),
@@ -511,7 +511,7 @@ def rubric_material_rows(dimensions: list[dict]) -> list[dict[str, str]]:
 
 
 def build_rubric_material_display(dimensions: list[dict]) -> dict[str, object]:
-    """Build dynamic Rubric material display metadata for complete/incomplete standards."""
+    """Build dynamic scoring-standard display metadata for complete/incomplete standards."""
     rows: list[dict[str, str]] = []
     complete = bool(dimensions)
     for dim in dimensions or []:
@@ -541,14 +541,14 @@ def build_rubric_material_display(dimensions: list[dict]) -> dict[str, object]:
     if complete:
         return {
             "complete": True,
-            "title": "Rubric 评分标准",
+            "title": "评分标准",
             "note": "",
             "rows": rows,
         }
     return {
         "complete": False,
-        "title": "Rubric 维度配置",
-        "note": "当前 Rubric 仅维护评分维度和满分，尚未完整维护满分标准与扣分规则。该样本不应作为完整可测样本进入正式评测。",
+        "title": "评分维度配置",
+        "note": "当前评分标准仅维护评分维度和满分，尚未完整维护满分标准与扣分规则。该样本不应作为完整可测样本进入正式评测。",
         "rows": rows,
     }
 

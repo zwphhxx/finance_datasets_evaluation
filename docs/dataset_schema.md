@@ -14,10 +14,10 @@
 | 对象 | SQLite 表 | 文件回退 | 说明 |
 | --- | --- | --- | --- |
 | task_cases | `task_cases` | `data/tasks.csv` | 任务题、业务背景、场景、难度、风险等级和状态。 |
-| gold_answers | `gold_answers` | `data/gold_answers.json` | 理想回复标准 / Gold Answer。 |
-| rubrics | `rubrics` | `data/dataset_manifest.yml` | Rubric 评分维度、满分、满分标准和扣分规则。 |
+| gold_answers | `gold_answers` | `data/gold_answers.json` | 专业标准答案。 |
+| rubrics | `rubrics` | `data/dataset_manifest.yml` | 评分维度、满分、满分标准和扣分规则。 |
 | model responses | `model_responses` / `live_run_responses` | `data/model_outputs.csv` | 种子模型回答与真实运行回答分离保存。 |
-| score records | `score_records` / `live_run_scores` | `data/scores.csv` | 已沉淀评分、评分草稿和已复核归档评分。 |
+| score records | `score_records` / `live_run_scores` | `data/scores.csv` | 已沉淀评分、评分草稿和已处理评分。 |
 | error labels | `error_annotations` | `data/error_labels.csv` | 错误类型、严重程度、错误表现、纠正方向。 |
 | improvement actions | `improvement_actions` | `data/optimization_plan.csv` | 数据补强动作和验证方向。 |
 | samples | `data/samples.json` | `data/samples.json` | 样本库轻量管理视图、导入导出和兼容备份。 |
@@ -31,7 +31,7 @@
 | 字段 | 含义 |
 | --- | --- |
 | `case_id` | 任务编号，样本不可修改的主键。 |
-| `domain` | 专业领域。 |
+| `domain` | 底层专业场景字段，前台统一展示为财务场景、法律场景、投行场景。 |
 | `scenario` | 业务场景。 |
 | `task_type` | 任务类型。 |
 | `difficulty` | 难度。 |
@@ -41,7 +41,7 @@
 | `risk_level` | 任务风险等级。 |
 | `status` | 底层状态：`draft` / `active` / `inactive`。 |
 
-样本库页面展示中文业务状态：待复核、已入库、需优化、已归档。它们分别映射到底层状态 `draft`、`active`、`draft`、`inactive`。
+样本库页面展示中文业务状态：待复核、已入库、需优化、已移出测试。它们分别映射到底层状态 `draft`、`active`、`draft`、`inactive`。
 
 ### gold_answers
 
@@ -56,7 +56,7 @@
 | `must_have_points` | 必须覆盖点，JSON 数组。 |
 | `unacceptable_errors` | 不可接受错误 / 红线错误，JSON 数组。 |
 | `manual_review_notes` | 人工复核提示。 |
-| `raw_json` | Gold Answer 原始结构，用于无损展示和编辑。 |
+| `raw_json` | 专业标准答案原始结构，用于兼容读取和同步。 |
 
 测试准入至少要求存在核心结论、必须覆盖点和不可接受错误。
 
@@ -71,7 +71,7 @@
 | `deduction_rules` | 扣分规则。 |
 | `status` | 维度状态。 |
 
-维度字段和满分优先复用 `src/metrics.py` 与正式 Rubric 数据层，不在页面硬编码第二套评分维度。
+维度字段和满分优先复用 `src/metrics.py` 与正式评分标准数据层，不在页面硬编码第二套评分维度。
 
 ### model responses
 
@@ -84,7 +84,7 @@
 | `answer_text` | 模型回答。 |
 | `run_status` | 真实运行状态：success / failed / mock。 |
 
-被测模型输入由 `app/services/eval_runner.py` 构造，只包含任务题、业务背景和输出要求，不包含 Gold Answer 或 Rubric。
+被测模型输入由 `app/services/eval_runner.py` 构造，只包含任务题、业务背景和输出要求，不包含专业标准答案或评分标准。
 
 ### score records
 
@@ -92,7 +92,7 @@
 | --- | --- |
 | `case_id` | 任务编号。 |
 | `model_name` / `eval_model` | 被测模型。 |
-| Rubric 维度字段 | 各维度得分。 |
+| 评分维度字段 | 各维度得分。 |
 | `total_score` | 总分。 |
 | `review_note` | 裁判或人工复核说明。 |
 | `review_status` | live 评分复核状态：pending / confirmed。 |
@@ -120,4 +120,4 @@ rubrics ── score dimension fields
 
 ## 正式结论口径
 
-正式结论只统计已沉淀评分和已复核归档评分。待复核草稿不进入正式结论。模型使用边界由 `app/services/conclusions.py` 统一计算，结合平均分、红线错误、关键维度短板、高风险任务表现、样本数量和复核说明。
+正式结论只统计已确认评分。待复核草稿不进入正式结论。模型使用边界由 `app/services/conclusions.py` 统一计算，结合平均分、红线错误、关键维度短板、高风险任务表现、样本数量和复核说明。

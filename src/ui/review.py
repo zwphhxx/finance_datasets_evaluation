@@ -164,7 +164,7 @@ def render_review_page(data_bundle: dict) -> None:
     render_numbered_section("02", REVIEW_SECTIONS[1], "确认这条评分对应的样本、模型、总分和建议处理。")
     _render_score_summary(item, verdict, errors_df, optimizations_df)
 
-    render_numbered_section("03", REVIEW_SECTIONS[2], "按 Rubric 维度查看得分、评分依据和需关注点。")
+    render_numbered_section("03", REVIEW_SECTIONS[2], "按评分标准维度查看得分、评分依据和需关注点。")
     _render_scoring_basis(output_row, errors_df)
 
     render_numbered_section("04", REVIEW_SECTIONS[3], "人工确认生效、修订后确认，或暂不采用。")

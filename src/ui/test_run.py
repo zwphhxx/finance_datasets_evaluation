@@ -1,7 +1,7 @@
 """发起评测页面。
 - 选择可进入测试的样本与被测模型。
 - 裁判模型使用系统默认配置，页面不提供裁判模型输入。
-- 被测模型提示词不包含理想回复标准 / Gold Answer。
+- 被测模型提示词不包含专业标准答案。
 - 默认仅选择一道样本，降低面试演示时的等待时间。
 """
 
@@ -39,12 +39,12 @@ RUN_BOUNDARY_NOTE = (
     "不会覆盖正式结论；只有人工确认后才会纳入正式结论。"
 )
 PROMPT_ISOLATION_NOTE = (
-    "被测模型只看到任务题、业务背景和输出要求，不看到 Gold Answer、必须覆盖点、不可接受错误或 Rubric；"
-    "裁判评分链路才读取 Gold Answer 和 Rubric。评分结果是建议分，需人工确认后才纳入正式结论。"
+    "被测模型只看到任务题、业务背景和输出要求，不看到专业标准答案、必须覆盖点、不可接受错误或评分标准；"
+    "裁判评分链路才读取专业标准答案和评分标准。评分结果是建议分，需人工确认后才纳入正式结论。"
 )
 NO_TESTABLE_SAMPLE_MESSAGE = (
     "当前没有可测样本。可测样本需同时满足：正式题库存在任务题、"
-    "Gold Answer 具备完整评判标准，Rubric 满分标准和扣分规则完整，且样本状态为已入库。"
+    "专业标准答案具备完整评判标准，评分标准满分标准和扣分规则完整，且样本状态为已入库。"
 )
 
 TEST_RUN_STEPS = ["评测配置", "模型回答", "评分草稿"]
@@ -281,7 +281,7 @@ def build_model_selection_options(models, keyword: str, limit: int = _MODEL_OPTI
 
 
 def build_score_summary_rows(score_result, dimensions) -> list[dict[str, str]]:
-    """Build the score comparison rows with dynamic Rubric dimensions."""
+    """Build the score comparison rows with dynamic scoring dimensions."""
     rows: list[dict[str, str]] = []
     for outcome in sorted(score_result.outcomes, key=lambda o: (0 if o.ok else 1, -(o.total_score or 0))):
         row = {
@@ -656,7 +656,7 @@ def _render_sample_selection_dialog(sample_options: list[dict]) -> None:
     st.session_state["test_run_cases_dialog_selected"] = selected_cases
     st.caption(
         f"已选样本：{len(selected_cases)} 个。仅展示已入库且通过完整度校验的样本；"
-        "被测模型不会看到 Gold Answer 或 Rubric。"
+        "被测模型不会看到专业标准答案或评分标准。"
     )
     col1, col2 = st.columns(2)
     with col1:
@@ -1819,7 +1819,7 @@ def _render_scoring(base, provider_name: str, task_records: list[dict]) -> None:
     if partial_run:
         st.caption("本次运行未完成；如生成评分草稿，将仅对已完成且成功的回答评分。")
     else:
-        st.caption("评分草稿需人工确认后才纳入正式结论；被测模型未看到 Gold Answer 或 Rubric。")
+        st.caption("评分草稿需人工确认后才纳入正式结论；被测模型未看到专业标准答案或评分标准。")
     st.caption(
         f"可评分回答：{score_plan['scoreable']} 条 · "
         f"跳过失败回答：{score_plan['skipped']} 条。失败回答不会进入评分草稿。"

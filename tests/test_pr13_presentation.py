@@ -16,7 +16,7 @@ class CaseStudyPresentationTests(unittest.TestCase):
     def test_home_stats_cover_core_assets_with_live_counts(self):
         stats = {label: value for value, label in case_study._build_home_stats(self.data, {})}
         self.assertIn("当前样本", stats)
-        self.assertIn("覆盖领域", stats)
+        self.assertIn("覆盖专业场景", stats)
         self.assertIn(str(len(self.data.tasks)), stats["当前样本"])
 
     def test_case_study_source_keeps_three_main_sections(self):
@@ -31,7 +31,7 @@ class CaseStudyPresentationTests(unittest.TestCase):
         self.assertIn("本项目评估大模型在财务、法律、投行等专业场景中的回答质量", source)
         self.assertIn("主要问题", source)
         self.assertIn("使用边界", source)
-        self.assertIn("被测模型不会看到 Gold Answer、必须覆盖点、不可接受错误或 Rubric", source)
+        self.assertIn("被测模型不会看到专业标准答案、必须覆盖点、不可接受错误或评分标准", source)
         self.assertIn("待确认、暂不采用、评分失败或示例评价均不进入正式结论", source)
         self.assertNotIn("维护样本", source)
         self.assertNotIn("确认可测", source)
@@ -158,7 +158,7 @@ class TaskPresentationTests(unittest.TestCase):
     def test_known_field_values_are_translated_to_chinese(self):
         record_by_case = {r["case_id"]: r for r in self.records}
         sample = record_by_case["CM-001"]
-        self.assertEqual("资本市场", sample["domain_label"])
+        self.assertEqual("投行场景", sample["domain_label"])
         self.assertEqual("监管合规分析", sample["task_type_label"])
         self.assertEqual("高难度", sample["difficulty_label"])
         self.assertEqual("高风险", sample["risk_label"])
@@ -177,7 +177,7 @@ class TaskPresentationTests(unittest.TestCase):
 
     def test_table_uses_business_chinese_headers_in_order(self):
         self.assertEqual(
-            ["案例编号", "领域", "任务类型", "难度", "风险等级", "考察能力", "任务摘要"],
+            ["案例编号", "专业场景", "任务类型", "难度", "风险等级", "考察能力", "任务摘要"],
             list(self.table.columns),
         )
 

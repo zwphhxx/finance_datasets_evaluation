@@ -4,7 +4,7 @@
 历史 inactive 状态在读取时会规范为已移出测试。
 数据源层级固定为：
 
-- seed 文件（`data/tasks.csv`、`data/gold_answers.json`、manifest/Rubric）只用于初始化。
+- seed 文件（`data/tasks.csv`、`data/gold_answers.json`、manifest 评分标准）只用于初始化。
 - `data/samples.json` 是样本库管理视图、导入导出与兼容备份。
 - SQLite 中的 `task_cases` / `gold_answers` / `rubrics` 是正式评测资产源。
 
@@ -546,7 +546,7 @@ def sample_data_source_status(*, db_path: Path | None = None) -> dict[str, Any]:
 def sync_all_samples_to_formal_assets(*, db_path: Path | None = None) -> dict[str, Any]:
     """将 samples.json 管理视图批量同步到 SQLite 正式资产层。
 
-    该操作只写入任务题、Gold Answer 和 Rubric，不触碰 live 运行结果或评分记录。
+    该操作只写入任务题、专业标准答案和评分标准，不触碰 live 运行结果或评分记录。
     """
     samples = load_samples()
     try:
@@ -702,7 +702,7 @@ def _resolve_formal_db_path(db_path: Path | None = None) -> Path | None:
 
 
 def _sync_sample_assets_to_formal_layer(sample: Sample, *, db_path: Path) -> bool:
-    """将样本记录写入正式任务、Gold Answer 与 Rubric 数据层。"""
+    """将样本记录写入正式任务、专业标准答案与评分标准数据层。"""
     from app.services import dataset_service as ds
 
     payload = sample.to_dict()

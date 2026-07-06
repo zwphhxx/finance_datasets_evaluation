@@ -7,9 +7,14 @@ import pandas as pd
 # Chinese labels. Unmapped values fall back to the raw value so new data is
 # never dropped or hidden. These are presentation labels, not invented data.
 DOMAIN_LABELS = {
-    "Capital Markets": "资本市场",
-    "Financial": "财务尽调",
-    "Legal": "法律审核",
+    "Capital Markets": "投行场景",
+    "Financial": "财务场景",
+    "Legal": "法律场景",
+    "finance": "财务场景",
+    "financial": "财务场景",
+    "legal": "法律场景",
+    "ib": "投行场景",
+    "investment_banking": "投行场景",
 }
 TASK_TYPE_LABELS = {
     "Regulatory Analysis": "监管合规分析",
@@ -36,7 +41,7 @@ SUMMARY_LIMIT = 140
 
 TABLE_COLUMNS = [
     ("case_id", "案例编号", None),
-    ("domain", "领域", DOMAIN_LABELS),
+    ("domain", "专业场景", DOMAIN_LABELS),
     ("task_type", "任务类型", TASK_TYPE_LABELS),
     ("difficulty", "难度", DIFFICULTY_LABELS),
     ("risk_level", "风险等级", RISK_LABELS),

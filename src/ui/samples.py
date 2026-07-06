@@ -1,7 +1,7 @@
 """样本库页面。
 
 基于 app.services.sample_repository 的样本库数据维护：
-- 支持按关键词、领域、测试状态和完整度筛选；
+- 支持按关键词、专业场景、测试状态和完整度筛选；
 - 紧凑样本索引只展示当前查询结果；
 - 当前样本区用于查看、编辑和移出测试。
 """
@@ -36,32 +36,72 @@ from src.ui.labels import (
 
 _TEST_STATUS_OPTIONS = ["全部", "可测试", "待补充", "不可测试", "已移出测试"]
 _COMPLETENESS_OPTIONS = ["全部", "通过", "待补充", "已移出测试"]
-_SAMPLE_TABLE_COLUMNS = ["样本编号", "任务标题", "领域", "测试状态", "完整度", "更新时间", "操作"]
+PROFESSIONAL_SCENE_OPTIONS = ["财务场景", "法律场景", "投行场景"]
+_PROFESSIONAL_SCENE_TO_DOMAIN = {
+    "财务场景": "Financial",
+    "法律场景": "Legal",
+    "投行场景": "Capital Markets",
+}
+_DOMAIN_TO_PROFESSIONAL_SCENE = {
+    "finance": "财务场景",
+    "financial": "财务场景",
+    "财务": "财务场景",
+    "财务尽调": "财务场景",
+    "财务场景": "财务场景",
+    "legal": "法律场景",
+    "法律": "法律场景",
+    "法律审阅": "法律场景",
+    "法律审核": "法律场景",
+    "法律场景": "法律场景",
+    "ib": "投行场景",
+    "investment_banking": "投行场景",
+    "investment banking": "投行场景",
+    "capital markets": "投行场景",
+    "资本市场": "投行场景",
+    "投行": "投行场景",
+    "投行场景": "投行场景",
+}
+OUTPUT_REQUIREMENT_OPTIONS = [
+    "结论 + 主要依据 + 需核查事项",
+    "问题判断 + 风险说明 + 整改建议",
+    "条款判断 + 依据 + 修改建议",
+    "财务影响判断 + 核查路径 + 风险边界",
+    "自定义",
+]
+DIFFICULTY_FORM_OPTIONS = ["基础", "中等", "复杂"]
+RISK_LEVEL_OPTIONS = ["低", "中", "高"]
+_SAMPLE_TABLE_COLUMNS = ["样本编号", "任务标题", "专业场景", "测试状态", "完整度", "更新时间", "操作"]
 _CSV_TEMPLATE_COLUMNS = [
     "case_id",
     "title",
-    "domain",
-    "task_type",
+    "professional_scene",
+    "status",
+    "question",
+    "context",
+    "output_requirement",
+    "standard_conclusion",
+    "key_evidence",
+    "must_have_points",
+    "unacceptable_errors",
+    "boundary_and_check_items",
     "difficulty",
     "risk_level",
-    "scenario",
-    "context",
-    "question",
-    "expected_capability",
-    "gold_core_conclusion",
-    "gold_key_evidence",
-    "gold_must_have_points",
-    "gold_unacceptable_errors",
-    "gold_boundary_conditions",
-    "gold_manual_review_notes",
-    "rubric_dimension_field",
-    "rubric_dimension_name",
-    "rubric_full_mark",
-    "rubric_full_mark_standard",
-    "rubric_deduction_rules",
-    "status",
+    "manual_review_notes",
+    "reviewer_note",
+    "scoring_focus",
 ]
-_REQUIRED_CSV_COLUMNS = [
+_SIMPLIFIED_REQUIRED_CSV_COLUMNS = [
+    "case_id",
+    "title",
+    "professional_scene",
+    "status",
+    "question",
+    "context",
+    "standard_conclusion",
+    "must_have_points",
+    "unacceptable_errors",
+]
+_LEGACY_REQUIRED_CSV_COLUMNS = [
     "case_id",
     "title",
     "scenario",
@@ -96,7 +136,70 @@ def _truncate(value, limit: int = 40) -> str:
 
 
 def _difficulty_label(value) -> str:
-    return DIFFICULTY_LABELS.get(str(value).strip(), str(value).strip() or "未标注")
+    text = str(value or "").strip()
+    mapped = {
+        "Easy": "基础",
+        "Medium": "中等",
+        "Hard": "复杂",
+        "低": "基础",
+        "中": "中等",
+        "高": "复杂",
+    }
+    return mapped.get(text) or DIFFICULTY_LABELS.get(text, text or "未标注")
+
+
+def _professional_scene_from_value(value) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    direct = _DOMAIN_TO_PROFESSIONAL_SCENE.get(text)
+    if direct:
+        return direct
+    lower = text.lower().replace("-", "_")
+    return _DOMAIN_TO_PROFESSIONAL_SCENE.get(lower, "")
+
+
+def _domain_from_professional_scene(value) -> str:
+    scene = _professional_scene_from_value(value) or str(value or "").strip()
+    return _PROFESSIONAL_SCENE_TO_DOMAIN.get(scene, "")
+
+
+def _professional_scene_label(task_record: dict | None, sample: sr.Sample | None = None) -> str:
+    task_record = task_record or {}
+    scene = _professional_scene_from_value(task_record.get("domain"))
+    if scene:
+        return scene
+    if sample is not None:
+        scene = _professional_scene_from_value(getattr(sample, "domain", ""))
+        if scene:
+            return scene
+    return "待补充"
+
+
+def _difficulty_form_value(value) -> str:
+    label = _difficulty_label(value)
+    return label if label in DIFFICULTY_FORM_OPTIONS else "中等"
+
+
+def _risk_level_form_value(value) -> str:
+    text = str(value or "").strip()
+    mapping = {
+        "Low": "低",
+        "Medium": "中",
+        "High": "高",
+        "低风险": "低",
+        "中风险": "中",
+        "高风险": "高",
+    }
+    normalized = mapping.get(text, text)
+    return normalized if normalized in RISK_LEVEL_OPTIONS else "中"
+
+
+def _output_requirement_for_form(value) -> tuple[str, str]:
+    text = str(value or "").strip()
+    if text in OUTPUT_REQUIREMENT_OPTIONS[:-1]:
+        return text, ""
+    return "自定义", text
 
 
 def _test_status_label(sample: sr.Sample, readiness: ds.SampleReadiness) -> str:
@@ -114,14 +217,7 @@ def _sample_status_label(sample: sr.Sample) -> str:
 
 
 def _domain_label(task_record: dict, sample: sr.Sample | None = None) -> str:
-    domain = display_label((task_record or {}).get("domain"), DOMAIN_LABELS)
-    if domain and domain != "未标注":
-        return domain
-    sample_domain = display_label(getattr(sample, "domain", ""), DOMAIN_LABELS) if sample is not None else ""
-    if sample_domain and sample_domain != "未标注":
-        return sample_domain
-    scenario = getattr(sample, "scenario", "") if sample is not None else ""
-    return _truncate(scenario, 18) if scenario else "未标注"
+    return _professional_scene_label(task_record, sample)
 
 
 def _completeness_label(sample: sr.Sample, readiness: ds.SampleReadiness) -> str:
@@ -167,7 +263,6 @@ def _searchable_text(sample: sr.Sample) -> str:
         sample.task_prompt,
         sample.business_context,
         sample.reviewer_note,
-        " ".join(sample.error_tags),
     ]
     return " ".join(str(p) for p in parts if p).lower()
 
@@ -226,7 +321,7 @@ def build_sample_table_rows(
         rows.append({
             "样本编号": sample.sample_id or "待补充",
             "任务标题": _truncate(sample.title, 44),
-            "领域": _domain_label(task_record, sample),
+            "专业场景": _professional_scene_label(task_record, sample),
             "测试状态": test_status,
             "完整度": _completeness_label(sample, readiness),
             "更新时间": _format_date(sample.updated_at),
@@ -251,7 +346,7 @@ def _filter_samples_for_index(
     if domain != "全部":
         filtered = [
             sample for sample in filtered
-            if _domain_label(task_by_case.get(sample.sample_id) or {}, sample) == domain
+            if _professional_scene_label(task_by_case.get(sample.sample_id) or {}, sample) == domain
         ]
     if test_status != "全部":
         filtered = [
@@ -280,7 +375,7 @@ def _filter_samples_for_index(
 
 
 def parse_gold_answer_for_display(value) -> dict:
-    """解析 Gold Answer 为详情页展示结构。JSON 异常时保留原文。"""
+    """解析专业标准答案为详情页展示结构。JSON 异常时保留原文。"""
     parsed = value if isinstance(value, dict) else None
     fallback_text = ""
     if parsed is None:
@@ -298,10 +393,14 @@ def parse_gold_answer_for_display(value) -> dict:
     return {
         "parsed": isinstance(parsed, dict),
         "fields": {
-            "核心结论": field_text(gold, "core_conclusion", "待补充"),
+            "标准结论": field_text(gold, "core_conclusion", "待补充"),
             "关键依据": field_text(gold, "key_evidence", "待补充"),
-            "边界条件": field_text(gold, "boundary_conditions", "待补充"),
+            "边界与需核查事项": (
+                field_text(gold, "boundary_conditions", "")
+                or field_text(gold, "materials_to_check", "待补充")
+            ),
             "人工复核提示": field_text(gold, "manual_review_notes", "待补充"),
+            "本题评分关注点": field_text(gold, "scoring_focus", "待补充"),
         },
         "lists": {
             "必须覆盖点": field_list(gold, "must_have_points"),
@@ -347,7 +446,7 @@ def build_rubric_rows_for_display(
     rubric_dimensions: list[dict] | None,
     rubric_source=None,
 ) -> list[dict[str, str]]:
-    """构建 Rubric 展示矩阵，维度来自正式数据层或统一配置。"""
+    """构建评分标准展示矩阵，维度来自正式数据层或统一配置。"""
     if not rubric_dimensions:
         return []
     overrides = _rubric_overrides(rubric_source)
@@ -397,23 +496,23 @@ def build_sample_asset_sections(
     rubric_rows: list[dict],
 ) -> list[dict[str, object]]:
     """返回样本详情的评测资产分区定义。"""
-    rubric_title = "Rubric 评分标准" if _rubric_rows_are_complete(rubric_rows) else "Rubric 维度配置"
+    rubric_title = "评分标准" if _rubric_rows_are_complete(rubric_rows) else "评分维度配置"
     rubric_caption = (
         "裁判评分链路使用的维度、满分标准和扣分规则。"
-        if rubric_title == "Rubric 评分标准"
-        else "当前仅展示 Rubric 维度和满分，缺失项需补齐后才可作为完整评分标准。"
+        if rubric_title == "评分标准"
+        else "当前仅展示评分维度和满分，缺失项需补齐后才可作为完整评分标准。"
     )
     return [
         {
-            "title": "样本基础信息",
+            "title": "基础信息",
             "caption": "样本在样本库中的业务状态和基础标识。",
         },
         {
             "title": "任务内容",
-            "caption": "被测模型只看到任务题、业务背景和输出要求，不看到理想回复标准、Rubric 或红线错误。",
+            "caption": "被测模型只看到任务题、业务背景和输出要求，不看到专业标准答案、评分标准或红线错误。",
         },
         {
-            "title": "理想回复标准 / Gold Answer",
+            "title": "专业标准答案",
             "caption": "裁判评分链路使用的评判锚点，包含应答方向、关键依据和红线边界。",
         },
         {
@@ -421,11 +520,11 @@ def build_sample_asset_sections(
             "caption": rubric_caption,
         },
         {
-            "title": "错误标签与数据优化建议",
-            "caption": "用于解释常见模型问题，并把错误归因转化为后续数据集改进方向。",
+            "title": "历史运行与优化",
+            "caption": "只读展示历史模型回答、错误标签和数据优化建议，不在新增或编辑时填写。",
         },
         {
-            "title": "状态、完整度与复核记录",
+            "title": "准入检查",
             "caption": "说明样本为什么可以或不能进入发起评测，并保留人工复核备注。",
         },
     ]
@@ -435,7 +534,7 @@ def build_sample_asset_sections(
 # Backward-compatible helpers (kept for existing tests)
 # --------------------------------------------------------------------------- #
 def build_case_overview_rows(data) -> list[dict]:
-    """One compact row per task, with Gold Answer / model-answer / error-label
+    """One compact row per task, with answer-standard / model-answer / error-label
     status derived from the linked data files. Includes judgment criteria completeness (draft vs active)."""
     tasks_df = data.tasks
     if tasks_df.empty or "case_id" not in tasks_df.columns:
@@ -485,7 +584,7 @@ def _build_sample_coverage_summary(rows) -> list[tuple[str, str]]:
     with_criteria = sum(1 for r in rows if r["has_criteria"])
     return [
         ("任务总数", f"{total} 道"),
-        ("Gold Answer 覆盖", f"{with_gold}/{total}"),
+        ("专业标准答案覆盖", f"{with_gold}/{total}"),
         ("评判标准完整", f"{with_criteria}/{total}"),
     ]
 
@@ -546,10 +645,11 @@ def _gold_defaults(value) -> dict[str, str]:
     lists = display.get("lists", {})
     fallback = str(display.get("fallback_text") or "").strip()
     return {
-        "core_conclusion": _empty_if_pending(fields.get("核心结论", "")) or fallback,
+        "core_conclusion": _empty_if_pending(fields.get("标准结论", "")) or fallback,
         "key_evidence": _empty_if_pending(fields.get("关键依据", "")),
-        "boundary_conditions": _empty_if_pending(fields.get("边界条件", "")),
+        "boundary_conditions": _empty_if_pending(fields.get("边界与需核查事项", "")),
         "manual_review_notes": _empty_if_pending(fields.get("人工复核提示", "")),
+        "scoring_focus": _empty_if_pending(fields.get("本题评分关注点", "")),
         "must_have_points": _as_lines(lists.get("必须覆盖点", [])),
         "unacceptable_errors": _as_lines(lists.get("不可接受错误", [])),
     }
@@ -564,6 +664,7 @@ def _build_gold_answer_json(
     unacceptable_errors: str,
     boundary_conditions: str,
     manual_review_notes: str,
+    scoring_focus: str = "",
 ) -> str:
     payload = {
         "case_id": str(sample_id or "").strip(),
@@ -572,7 +673,9 @@ def _build_gold_answer_json(
         "must_have_points": _parse_lines(must_have_points),
         "unacceptable_errors": _parse_lines(unacceptable_errors),
         "boundary_conditions": str(boundary_conditions or "").strip(),
+        "materials_to_check": str(boundary_conditions or "").strip(),
         "manual_review_notes": str(manual_review_notes or "").strip(),
+        "scoring_focus": str(scoring_focus or "").strip(),
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
@@ -655,6 +758,27 @@ def _build_rubric_json(
     if field and not replaced:
         next_items.append(updated)
     return json.dumps(next_items, ensure_ascii=False, indent=2)
+
+
+def _default_scoring_standard_json(rubric_dimensions: list[dict] | None) -> str:
+    items: list[dict] = []
+    for dimension in rubric_dimensions or []:
+        if not isinstance(dimension, dict):
+            continue
+        field = _rubric_field(dimension)
+        name = str(dimension.get("name") or dimension.get("dimension") or field).strip()
+        if not field and not name:
+            continue
+        items.append({
+            "dimension_field": field or name,
+            "field": field or name,
+            "name": name or field,
+            "full_mark": _to_int(dimension.get("full_mark") or dimension.get("weight"), fallback=0),
+            "full_mark_standard": str(dimension.get("full_mark_standard") or "").strip(),
+            "deduction_rules": str(dimension.get("deduction_rules") or "").strip(),
+            "status": dimension.get("status") or ds.ACTIVE_STATUS,
+        })
+    return json.dumps(items, ensure_ascii=False, indent=2) if items else ""
 
 
 def _rubric_dimensions_for_check(
@@ -863,13 +987,7 @@ def _render_filters(
     task_records: list[dict],
     readiness_map: dict[str, ds.SampleReadiness],
 ) -> tuple[str, str, str, str]:
-    task_by_case = {str(row.get("case_id") or ""): row for row in task_records}
-    domains = sorted({
-        _domain_label(task_by_case.get(sample.sample_id) or {}, sample)
-        for sample in samples
-        if _domain_label(task_by_case.get(sample.sample_id) or {}, sample) != "未标注"
-    })
-    domain_options = ["全部"] + domains
+    domain_options = ["全部"] + PROFESSIONAL_SCENE_OPTIONS
 
     col1, col2, col3, col4 = st.columns(4)
     keyword = col1.text_input(
@@ -877,7 +995,7 @@ def _render_filters(
         placeholder="编号、标题、任务题、业务背景",
         key="samples_keyword_search",
     )
-    domain = col2.selectbox("领域", domain_options, key="samples_filter_domain")
+    domain = col2.selectbox("专业场景", domain_options, key="samples_filter_domain")
     test_status = col3.selectbox("测试状态", _TEST_STATUS_OPTIONS, key="samples_filter_test_status")
     completeness = col4.selectbox("完整度", _COMPLETENESS_OPTIONS, key="samples_filter_completeness")
     return keyword, domain, test_status, completeness
@@ -925,7 +1043,7 @@ def _sample_table_column_config() -> dict:
     return {
         "样本编号": st.column_config.TextColumn("样本编号", width="small"),
         "任务标题": st.column_config.TextColumn("任务标题", width="large"),
-        "领域": st.column_config.TextColumn("领域", width="medium"),
+        "专业场景": st.column_config.TextColumn("专业场景", width="medium"),
         "测试状态": st.column_config.TextColumn("测试状态", width="small"),
         "完整度": st.column_config.TextColumn("完整度", width="small"),
         "更新时间": st.column_config.TextColumn("更新时间", width="small"),
@@ -1009,7 +1127,7 @@ def _render_test_run_availability_note(
     if has_testable:
         st.caption("完整且已入库的样本可在“发起评测”页使用。")
     else:
-        st.caption("当前没有可测试样本。请先补充任务内容、Gold Answer 和 Rubric。")
+        st.caption("当前没有可测试样本。请先补充任务内容、专业标准答案和评分标准。")
 
 
 def _render_sample_detail_toolbar(sample: sr.Sample, readiness: ds.SampleReadiness) -> None:
@@ -1063,14 +1181,14 @@ def render_sample_detail_panel(
     task_prompt, business_context, output_requirement = _task_markdown_values(sample, task_record)
     test_status = _test_status_label(sample, readiness)
     completeness = _completeness_label(sample, readiness)
-    rubric_title = "Rubric 评分标准" if _rubric_rows_are_complete(rubric_rows) else "Rubric 维度配置"
+    scoring_title = "评分标准" if _rubric_rows_are_complete(rubric_rows) else "评分维度配置"
     body = "".join([
         _detail_section_html("基本信息", _basic_info_html(sample, readiness, task_record, test_status, completeness)),
-        _detail_section_html("任务场景", _scenario_detail_html(sample, task_record)),
         _detail_section_html("任务内容", _task_detail_html(task_prompt, business_context, output_requirement)),
-        _detail_section_html("理想回复标准 / Gold Answer", _gold_detail_html(gold_display)),
-        _detail_section_html(rubric_title, _rubric_detail_html(rubric_rows)),
+        _detail_section_html("专业标准答案", _gold_detail_html(gold_display)),
+        _detail_section_html(scoring_title, _rubric_detail_html(rubric_rows)),
         _detail_section_html("准入状态", _readiness_detail_html(sample, readiness)),
+        _detail_section_html("历史运行与优化", _error_optimization_detail_html(sample)),
     ])
     render_detail_panel(body)
 
@@ -1091,12 +1209,9 @@ def _basic_info_html(
     test_status: str,
     completeness: str,
 ) -> str:
-    domain = display_label(task_record.get("domain") or getattr(sample, "domain", ""), DOMAIN_LABELS)
-    task_type = display_label(task_record.get("task_type") or getattr(sample, "task_type", ""), TASK_TYPE_LABELS)
     risk_level = task_record.get("risk_level") or getattr(sample, "risk_level", "") or "待补充"
     rows = [
-        ("领域", domain or "待补充"),
-        ("任务类型", task_type or "待补充"),
+        ("专业场景", _professional_scene_label(task_record, sample)),
         ("难度", _difficulty_label(sample.difficulty or task_record.get("difficulty"))),
         ("风险等级", risk_level),
         ("测试状态", test_status),
@@ -1124,15 +1239,18 @@ def _gold_detail_html(gold_display: dict) -> str:
     lists = gold_display.get("lists", {})
     fallback = str(gold_display.get("fallback_text") or "").strip()
     parts = [
-        _field_block_html("核心结论", fields.get("核心结论", "待补充")),
+        _field_block_html("标准结论", fields.get("标准结论", "待补充")),
         _field_block_html("关键依据", fields.get("关键依据", "待补充")),
         _list_block_html("必须覆盖点", lists.get("必须覆盖点", [])),
         _list_block_html("不可接受错误", lists.get("不可接受错误", [])),
-        _field_block_html("边界条件", fields.get("边界条件", "待补充")),
+        _field_block_html("边界与需核查事项", fields.get("边界与需核查事项", "待补充")),
         _field_block_html("人工复核提示", fields.get("人工复核提示", "待补充")),
     ]
+    scoring_focus = _empty_if_pending(fields.get("本题评分关注点", ""))
+    if scoring_focus:
+        parts.append(_field_block_html("本题评分关注点", scoring_focus))
     if fallback:
-        parts.append(_field_block_html("Gold Answer 原文", fallback))
+        parts.append(_field_block_html("标准答案原文", fallback))
     return "".join(parts)
 
 
@@ -1159,7 +1277,7 @@ def _rubric_detail_html(rubric_rows: list[dict[str, str]]) -> str:
         if complete
         else (
             '<p class="sample-detail-text">'
-            "当前 Rubric 仅维护评分维度和满分，尚未完整维护满分标准与扣分规则。"
+            "当前评分标准仅维护评分维度和满分，尚未完整维护满分标准与扣分规则。"
             "该样本不应作为完整可测样本进入正式评测。"
             "</p>"
         )
@@ -1186,7 +1304,7 @@ def _readiness_detail_html(sample: sr.Sample, readiness: ds.SampleReadiness) -> 
     satisfied = readiness.satisfied_items or ["待补充"]
     visibility_note = "可进入发起评测" if readiness.is_testable else "—"
     if sample.status == "已入库" and not readiness.is_testable:
-        visibility_note = "该样本未进入发起评测：Gold Answer 或 Rubric 未同步到正式资产。"
+        visibility_note = "该样本未进入发起评测：专业标准答案或评分标准未同步到正式资产。"
         if readiness.missing_items:
             visibility_note += " " + "；".join(readiness.missing_items[:4])
     rows = [
@@ -1201,6 +1319,8 @@ def _readiness_detail_html(sample: sr.Sample, readiness: ds.SampleReadiness) -> 
 
 
 def _error_optimization_detail_html(sample: sr.Sample) -> str:
+    if not sample.error_tags and not sample.model_answers and not sample.improvement_suggestions:
+        return '<p class="sample-detail-text">暂无历史运行信息</p>'
     return "".join([
         _list_block_html("错误标签", sample.error_tags, fallback="暂无关联错误标签"),
         _list_block_html("常见问题", sample.model_answers, fallback="暂无历史模型回答记录"),
@@ -1272,9 +1392,81 @@ def _csv_dimension_field(name: str, field: str = "") -> str:
 
 
 def _parse_samples_csv(frame: pd.DataFrame) -> tuple[list[dict], list[str]]:
-    missing_columns = [column for column in _REQUIRED_CSV_COLUMNS if column not in frame.columns]
-    if missing_columns:
-        return [], ["缺少必要字段：" + "、".join(missing_columns)]
+    if set(_SIMPLIFIED_REQUIRED_CSV_COLUMNS).issubset(set(frame.columns)):
+        return _parse_simplified_samples_csv(frame)
+    if set(_LEGACY_REQUIRED_CSV_COLUMNS).issubset(set(frame.columns)):
+        return _parse_legacy_samples_csv(frame)
+
+    missing_columns = [column for column in _SIMPLIFIED_REQUIRED_CSV_COLUMNS if column not in frame.columns]
+    legacy_missing = [column for column in _LEGACY_REQUIRED_CSV_COLUMNS if column not in frame.columns]
+    missing_text = "、".join(missing_columns)
+    legacy_text = "、".join(legacy_missing)
+    return [], [f"缺少必要字段：{missing_text}。如使用旧模板，还缺少：{legacy_text}。"]
+
+
+def _parse_simplified_samples_csv(frame: pd.DataFrame) -> tuple[list[dict], list[str]]:
+    if frame.empty:
+        return [], ["CSV 文件没有可导入记录。"]
+
+    rubric = _default_scoring_standard_json(ds.get_testable_rubric_dimensions() or ds.get_rubric_dimensions())
+    records: list[dict] = []
+    errors: list[str] = []
+    seen_ids: set[str] = set()
+    for idx, row in frame.fillna("").iterrows():
+        row_no = int(idx) + 2
+        sample_id = str(row.get("case_id", "")).strip()
+        if not sample_id:
+            errors.append(f"第 {row_no} 行缺少 case_id。")
+            continue
+        if sample_id in seen_ids:
+            errors.append(f"第 {row_no} 行 case_id {sample_id} 在文件内重复。")
+            continue
+        seen_ids.add(sample_id)
+
+        status = sr.normalize_sample_status(row.get("status", "待复核"))
+        scene = str(row.get("professional_scene", "")).strip()
+        domain = _domain_from_professional_scene(scene)
+        if not domain:
+            errors.append(f"第 {row_no} 行 professional_scene 只能为：{'、'.join(PROFESSIONAL_SCENE_OPTIONS)}。")
+            continue
+        gold_answer = _build_gold_answer_json(
+            sample_id=sample_id,
+            core_conclusion=str(row.get("standard_conclusion", "")).strip(),
+            key_evidence=str(row.get("key_evidence", "")).strip(),
+            must_have_points=_csv_list(row.get("must_have_points", "")),
+            unacceptable_errors=_csv_list(row.get("unacceptable_errors", "")),
+            boundary_conditions=str(row.get("boundary_and_check_items", "")).strip(),
+            manual_review_notes=str(row.get("manual_review_notes", "")).strip(),
+            scoring_focus=str(row.get("scoring_focus", "")).strip(),
+        )
+        values = {
+            "sample_id": sample_id,
+            "title": str(row.get("title", "")).strip(),
+            "scenario": str(row.get("title", "")).strip(),
+            "task_prompt": str(row.get("question", "")).strip(),
+            "business_context": str(row.get("context", "")).strip(),
+            "domain": domain,
+            "task_type": "",
+            "risk_level": _risk_level_form_value(row.get("risk_level", "")),
+            "expected_capability": str(row.get("output_requirement", "")).strip(),
+            "gold_answer": gold_answer,
+            "rubric": rubric,
+            "model_answers": [],
+            "error_tags": [],
+            "improvement_suggestions": [],
+            "status": status,
+            "difficulty": _difficulty_form_value(row.get("difficulty", "")),
+            "reviewer_note": str(row.get("reviewer_note", "")).strip(),
+        }
+        item_errors = sr.validate_sample(values, existing_ids=set())
+        if item_errors:
+            errors.append(f"第 {row_no} 行（{sample_id}）：{'；'.join(item_errors)}")
+            continue
+        records.append(values)
+    return records, errors
+
+
+def _parse_legacy_samples_csv(frame: pd.DataFrame) -> tuple[list[dict], list[str]]:
     if frame.empty:
         return [], ["CSV 文件没有可导入记录。"]
 
@@ -1392,8 +1584,8 @@ def _render_import_csv_dialog(rubric_dimensions: list[dict] | None) -> None:
         key="samples_csv_template_download",
     )
     st.caption(
-        "模板中的 domain、task_type、risk_level 会作为任务元数据保存；"
-        "Gold Answer 与 Rubric 字段用于生成评分所需的结构化资产。"
+        "默认模板只包含专业场景、任务内容、专业标准答案和可选复核信息；"
+        "评分标准由正式数据层统一维护。"
     )
     uploaded = st.file_uploader("上传 CSV 文件", type=["csv"], key="samples_csv_upload")
     if uploaded is None:
@@ -1497,8 +1689,10 @@ def _render_sample_editor_dialog_body(
     is_edit = sample is not None
     prefix = f"samples_{mode}_{sample.sample_id if sample else 'new'}"
     gold_defaults = _gold_defaults(sample.gold_answer if sample else {})
-    rubric_defaults = _rubric_defaults(sample.rubric if sample else "", rubric_dimensions)
-    difficulty_options = _difficulty_options(sample.difficulty if sample else "")
+    current_scene = _professional_scene_from_value(sample.domain if sample else "") or PROFESSIONAL_SCENE_OPTIONS[0]
+    output_selection, custom_output = _output_requirement_for_form(sample.expected_capability if sample else "")
+    difficulty_value = _difficulty_form_value(sample.difficulty if sample else "")
+    risk_level_value = _risk_level_form_value(sample.risk_level if sample else "")
 
     st.caption("样本编号保存后不可修改；如需更换编号，请新建样本。")
     with st.form(f"{prefix}_form", clear_on_submit=not is_edit):
@@ -1507,18 +1701,16 @@ def _render_sample_editor_dialog_body(
             sample_id = st.text_input("样本编号", value=sample.sample_id, disabled=True, key=f"{prefix}_sample_id")
         else:
             sample_id = st.text_input("样本编号", key=f"{prefix}_sample_id")
-        title = st.text_input("标题", value=sample.title if sample else "", key=f"{prefix}_title")
-        col1, col2, col3 = st.columns(3)
-        scenario = col1.text_input("场景", value=sample.scenario if sample else "", key=f"{prefix}_scenario")
-        difficulty = col2.selectbox(
-            "难度",
-            difficulty_options,
-            index=_index_of(difficulty_options, sample.difficulty if sample else ""),
-            format_func=lambda v: DIFFICULTY_LABELS.get(v, v) if v else "未标注",
-            key=f"{prefix}_difficulty",
+        title = st.text_input("样本标题", value=sample.title if sample else "", key=f"{prefix}_title")
+        col1, col2 = st.columns(2)
+        professional_scene = col1.selectbox(
+            "专业场景",
+            PROFESSIONAL_SCENE_OPTIONS,
+            index=_index_of(PROFESSIONAL_SCENE_OPTIONS, current_scene),
+            key=f"{prefix}_professional_scene",
         )
-        status = col3.selectbox(
-            "状态",
+        status = col2.selectbox(
+            "样本状态",
             sr.SAMPLE_STATUSES,
             index=_index_of(sr.SAMPLE_STATUSES, sample.status if sample else "待复核"),
             key=f"{prefix}_status",
@@ -1526,7 +1718,7 @@ def _render_sample_editor_dialog_body(
 
         st.markdown("**任务内容**")
         task_prompt = st.text_area(
-            "任务题（含输出要求或考察能力）",
+            "任务题",
             value=sample.task_prompt if sample else "",
             height=110,
             key=f"{prefix}_task_prompt",
@@ -1537,10 +1729,24 @@ def _render_sample_editor_dialog_body(
             height=90,
             key=f"{prefix}_business_context",
         )
+        output_requirement_choice = st.selectbox(
+            "输出要求",
+            OUTPUT_REQUIREMENT_OPTIONS,
+            index=_index_of(OUTPUT_REQUIREMENT_OPTIONS, output_selection),
+            key=f"{prefix}_output_requirement",
+        )
+        output_requirement_custom = ""
+        if output_requirement_choice == "自定义":
+            output_requirement_custom = st.text_area(
+                "自定义输出要求",
+                value=custom_output,
+                height=64,
+                key=f"{prefix}_output_requirement_custom",
+            )
 
-        st.markdown("**理想回复标准 / Gold Answer**")
+        st.markdown("**专业标准答案**")
         core_conclusion = st.text_area(
-            "核心结论",
+            "标准结论",
             value=gold_defaults["core_conclusion"],
             height=72,
             key=f"{prefix}_gold_core",
@@ -1565,7 +1771,7 @@ def _render_sample_editor_dialog_body(
             key=f"{prefix}_gold_unacceptable",
         )
         boundary_conditions = st.text_area(
-            "边界条件",
+            "边界与需核查事项",
             value=gold_defaults["boundary_conditions"],
             height=70,
             key=f"{prefix}_gold_boundary",
@@ -1577,63 +1783,19 @@ def _render_sample_editor_dialog_body(
             key=f"{prefix}_gold_review",
         )
 
-        st.markdown("**Rubric 评分标准**")
-        dimension_options = _rubric_dimension_options(rubric_dimensions, str(rubric_defaults["field"]))
-        if dimension_options:
-            dimension_field = st.selectbox(
-                "评分维度",
-                dimension_options,
-                index=_index_of(dimension_options, str(rubric_defaults["field"])),
-                format_func=lambda field: _rubric_dimension_label(field, rubric_dimensions),
-                key=f"{prefix}_rubric_field",
-            )
-            dimension_name = _rubric_dimension_label(dimension_field, rubric_dimensions)
-        else:
-            dimension_field = st.text_input(
-                "评分维度",
-                value=str(rubric_defaults["field"]),
-                key=f"{prefix}_rubric_field_text",
-            )
-            dimension_name = dimension_field
-        rubric_key_suffix = re.sub(r"\W+", "_", str(dimension_field or "dimension"))
-        full_mark = st.number_input(
-            "满分",
-            min_value=1,
-            value=max(1, int(rubric_defaults["full_mark"] or 10)),
-            step=1,
-            key=f"{prefix}_rubric_full_mark_{rubric_key_suffix}",
+        st.markdown("**高级信息**")
+        col3, col4 = st.columns(2)
+        difficulty = col3.selectbox(
+            "难度",
+            DIFFICULTY_FORM_OPTIONS,
+            index=_index_of(DIFFICULTY_FORM_OPTIONS, difficulty_value),
+            key=f"{prefix}_difficulty",
         )
-        full_mark_standard = st.text_area(
-            "满分标准",
-            value=str(rubric_defaults["full_mark_standard"]),
-            height=78,
-            key=f"{prefix}_rubric_standard",
-        )
-        deduction_rules = st.text_area(
-            "扣分规则",
-            value=str(rubric_defaults["deduction_rules"]),
-            height=78,
-            key=f"{prefix}_rubric_deduction",
-        )
-
-        st.markdown("**错误标签与优化建议**")
-        model_answers = st.text_area(
-            "历史模型回答标识（每行一条）",
-            value=_as_lines(sample.model_answers) if sample else "",
-            height=70,
-            key=f"{prefix}_model_answers",
-        )
-        error_tags = st.text_area(
-            "错误标签（每行一条）",
-            value=_as_lines(sample.error_tags) if sample else "",
-            height=70,
-            key=f"{prefix}_error_tags",
-        )
-        improvement_suggestions = st.text_area(
-            "数据补强方向（每行一条）",
-            value=_as_lines(sample.improvement_suggestions) if sample else "",
-            height=70,
-            key=f"{prefix}_improvements",
+        risk_level = col4.selectbox(
+            "风险等级",
+            RISK_LEVEL_OPTIONS,
+            index=_index_of(RISK_LEVEL_OPTIONS, risk_level_value),
+            key=f"{prefix}_risk_level",
         )
         reviewer_note = st.text_area(
             "复核备注",
@@ -1641,6 +1803,13 @@ def _render_sample_editor_dialog_body(
             height=60,
             key=f"{prefix}_reviewer_note",
         )
+        scoring_focus = st.text_area(
+            "本题评分关注点",
+            value=gold_defaults["scoring_focus"],
+            height=60,
+            key=f"{prefix}_scoring_focus",
+        )
+        st.caption("评分标准由正式数据层统一维护；这里只填写本题特有的复核关注点。")
 
         submitted = st.form_submit_button("保存样本", type="primary", use_container_width=True)
 
@@ -1652,6 +1821,11 @@ def _render_sample_editor_dialog_body(
         return
 
     normalized_sample_id = (sample.sample_id if is_edit else sample_id).strip()
+    output_requirement = (
+        output_requirement_custom
+        if output_requirement_choice == "自定义"
+        else output_requirement_choice
+    )
     gold_answer = _build_gold_answer_json(
         sample_id=normalized_sample_id,
         core_conclusion=core_conclusion,
@@ -1660,26 +1834,24 @@ def _render_sample_editor_dialog_body(
         unacceptable_errors=unacceptable_errors,
         boundary_conditions=boundary_conditions,
         manual_review_notes=manual_review_notes,
+        scoring_focus=scoring_focus,
     )
-    rubric = _build_rubric_json(
-        existing_rubric=sample.rubric if sample else "",
-        dimension_field=str(dimension_field),
-        dimension_name=str(dimension_name),
-        full_mark=int(full_mark),
-        full_mark_standard=full_mark_standard,
-        deduction_rules=deduction_rules,
+    scoring_standard = (
+        sample.rubric
+        if sample is not None and str(sample.rubric or "").strip()
+        else _default_scoring_standard_json(rubric_dimensions)
     )
     values = {
         "sample_id": normalized_sample_id,
         "title": title,
-        "scenario": scenario,
+        "scenario": sample.scenario if sample is not None and sample.scenario else title,
         "task_prompt": task_prompt,
         "business_context": business_context,
+        "domain": _domain_from_professional_scene(professional_scene),
+        "risk_level": risk_level,
+        "expected_capability": output_requirement,
         "gold_answer": gold_answer,
-        "rubric": rubric,
-        "model_answers": _parse_lines(model_answers),
-        "error_tags": _parse_lines(error_tags),
-        "improvement_suggestions": _parse_lines(improvement_suggestions),
+        "rubric": scoring_standard,
         "status": status,
         "difficulty": difficulty,
         "reviewer_note": reviewer_note,
