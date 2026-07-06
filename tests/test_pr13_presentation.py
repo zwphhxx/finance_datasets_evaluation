@@ -69,10 +69,11 @@ class CaseStudyPresentationTests(unittest.TestCase):
             "border-left: 2px solid var(--fde-accent);",
             ".home-section-first",
             "border-top: 0;",
-            "grid-template-columns: 5rem minmax(0, 1fr);",
-            "margin-left: 6.35rem;",
-            "font-size: 2.4rem;",
-            "font-size: 1.58rem;",
+            "grid-template-columns: 4.8rem minmax(0, 1fr);",
+            "align-items: baseline;",
+            "margin-left: 6.05rem;",
+            "font-size: 2.15rem;",
+            "font-size: 1.62rem;",
             "grid-template-columns: 3.4rem minmax(0, 1fr);",
             "font-size: 1.28rem;",
         ]:
@@ -99,6 +100,8 @@ class CaseStudyPresentationTests(unittest.TestCase):
         self.assertIn('class="home-section home-section-first"', html)
         self.assertIn("home-section-heading", html)
         self.assertIn("home-section-heading-main", html)
+        self.assertIn('<span class="home-section-number">01</span>', html)
+        self.assertNotIn('<div class="home-section-number">01</div>', html)
         self.assertIn("home-section-body", html)
         self.assertLess(html.index("home-section-heading"), html.index("home-section-body"))
 

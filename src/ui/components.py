@@ -255,7 +255,7 @@ header,
 }
 .home-section {
     margin: 2.25rem 0 0 0;
-    padding: 1.6rem 0 0 0;
+    padding: 1.55rem 0 0 0;
     border-top: 1px solid var(--fde-line-strong);
 }
 .home-section-first {
@@ -264,24 +264,23 @@ header,
 }
 .home-section-heading {
     display: grid;
-    grid-template-columns: 5rem minmax(0, 1fr);
-    gap: 1.35rem;
-    align-items: start;
+    grid-template-columns: 4.8rem minmax(0, 1fr);
+    column-gap: 1.25rem;
+    align-items: baseline;
     margin-bottom: 0.9rem;
 }
 .home-section-number {
     color: var(--fde-accent);
-    font-size: 2.4rem;
+    font-size: 2.15rem;
     font-weight: 820;
-    line-height: 1.08;
+    line-height: 1;
     letter-spacing: 0;
-    padding-top: 0.02rem;
 }
 .home-section-title {
     color: var(--fde-ink);
-    font-size: 1.58rem;
+    font-size: 1.62rem;
     font-weight: 820;
-    line-height: 1.15;
+    line-height: 1.12;
     margin: 0;
 }
 .home-section-lead {
@@ -289,10 +288,10 @@ header,
     font-size: 1.03rem;
     font-weight: 680;
     line-height: 1.55;
-    margin: 0.42rem 0 0 0;
+    margin: 0.48rem 0 0 0;
 }
 .home-section-body {
-    margin-left: 6.35rem;
+    margin-left: 6.05rem;
 }
 .home-section-body p {
     color: var(--fde-text);
@@ -305,7 +304,7 @@ header,
     display: grid;
     grid-template-columns: 3.4rem minmax(0, 1fr);
     gap: 1rem;
-    align-items: start;
+    align-items: baseline;
     margin: 1.9rem 0 0.95rem 0;
     padding-top: 1rem;
     border-top: 1px solid var(--fde-line);
@@ -807,6 +806,7 @@ div[data-testid="stDialog"] {
     .numbered-section {
         grid-template-columns: 1fr;
         gap: 0.22rem;
+        align-items: start;
     }
     .brief-title {
         font-size: 1.78rem;
@@ -817,12 +817,13 @@ div[data-testid="stDialog"] {
     .home-section-heading {
         grid-template-columns: 1fr;
         gap: 0.35rem;
+        align-items: start;
     }
     .home-section-number {
-        font-size: 1.75rem;
+        font-size: 1.55rem;
     }
     .home-section-title {
-        font-size: 1.32rem;
+        font-size: 1.34rem;
     }
     .home-section-body {
         margin-left: 0;
@@ -936,7 +937,7 @@ def render_home_section(
         f"""
         <section class="{section_class}">
             <div class="home-section-heading">
-                <div class="home-section-number">{escape(str(number))}</div>
+                <span class="home-section-number">{escape(str(number))}</span>
                 <div class="home-section-heading-main">
                     <h2 class="home-section-title">{escape(str(title))}</h2>
                     <div class="home-section-lead">{escape(str(lead))}</div>
