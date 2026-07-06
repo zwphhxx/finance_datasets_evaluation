@@ -601,26 +601,40 @@ def _filter_live_score_frame(scores: pd.DataFrame) -> pd.DataFrame:
 
 
 def _select_score_run_id(scores: pd.DataFrame, eval_status: dict) -> str | None:
-    run_ids = [str(value) for value in scores.get("score_run_id", pd.Series(dtype=str)).dropna().unique().tolist()]
-    run_ids = [value for value in run_ids if value]
+    run_ids = _score_run_ids(scores)
     if not run_ids:
         return None
 
-    latest = _latest_score_run_id(scores)
-    preferred = str(eval_status.get("score_run_id") or "")
-    default = preferred if preferred in run_ids else latest
+    st.caption("评分批次用于区分不同时间生成的评分草稿。默认展示最新批次。")
+    default = default_score_run_id(scores, eval_status)
     index = run_ids.index(default) if default in run_ids else 0
     if len(run_ids) == 1:
-        st.caption(f"评分批次：{_score_run_label(scores, run_ids[0])}")
+        summary = build_score_run_summary(scores, run_ids[0])
+        created = summary["created_at"] if summary["created_at"] != "—" else "生成时间未记录"
+        st.markdown(f"当前评分批次：{created} 生成，{summary['pending']} 条评分待处理。")
+        _render_score_run_summary(scores, run_ids[0])
         return run_ids[0]
     selected = st.selectbox(
         "评分批次",
         run_ids,
         index=index,
-        format_func=lambda run_id: _score_run_label(scores, run_id),
+        format_func=lambda run_id: score_run_option_label(scores, run_id),
         key="review_score_run_select",
     )
+    _render_score_run_summary(scores, str(selected))
     return str(selected)
+
+
+def _score_run_ids(scores: pd.DataFrame) -> list[str]:
+    if not isinstance(scores, pd.DataFrame) or scores.empty or "score_run_id" not in scores:
+        return []
+    rows = scores.copy()
+    if "id" in rows:
+        rows = rows.sort_values("id", ascending=False)
+    elif "created_at" in rows:
+        rows = rows.sort_values("created_at", ascending=False)
+    ids = [str(value) for value in rows["score_run_id"].dropna().unique().tolist()]
+    return [value for value in ids if value]
 
 
 def _latest_score_run_id(scores: pd.DataFrame) -> str:
@@ -635,13 +649,115 @@ def _latest_score_run_id(scores: pd.DataFrame) -> str:
     return str(row.get("score_run_id") or "")
 
 
-def _score_run_label(scores: pd.DataFrame, score_run_id: str) -> str:
+def build_score_run_summary(scores: pd.DataFrame, score_run_id: str) -> dict:
     rows = scores[scores["score_run_id"].astype(str) == str(score_run_id)]
-    created = _format_datetime(rows.get("created_at", pd.Series(dtype=str)).dropna().astype(str).max())
-    pending = int((rows.get("review_status", pd.Series(dtype=str)).astype(str).str.lower() == "pending").sum())
-    total = len(rows)
-    suffix = f" · {created}" if created != "—" else ""
-    return f"{score_run_id} · 待确认 {pending}/{total}{suffix}"
+    status = rows.get("review_status", pd.Series(dtype=str)).astype(str).str.strip().str.lower()
+    pending = int((status == "pending").sum())
+    confirmed = int((status == "confirmed").sum())
+    skipped = int((status == "skipped").sum())
+    processed = int(status.isin(["confirmed", "skipped"]).sum())
+    models = _unique_display_models(rows)
+    cases = _unique_texts(rows.get("case_id", pd.Series(dtype=str)).tolist())
+    return {
+        "score_run_id": str(score_run_id),
+        "created_at": _score_run_created_at(rows),
+        "total": int(len(rows)),
+        "pending": pending,
+        "confirmed": confirmed,
+        "skipped": skipped,
+        "processed": processed,
+        "models": models,
+        "cases": cases,
+        "model_count": len(models),
+        "case_count": len(cases),
+    }
+
+
+def score_run_option_label(scores: pd.DataFrame, score_run_id: str) -> str:
+    summary = build_score_run_summary(scores, score_run_id)
+    prefix = "最新批次" if str(score_run_id) == _latest_score_run_id(scores) else "历史批次"
+    status_text = (
+        f"{summary['pending']} 条待处理"
+        if summary["pending"]
+        else f"已处理 {summary['processed']} 条"
+    )
+    return (
+        f"{prefix}｜{summary['created_at']}｜{status_text}｜"
+        f"{summary['model_count']} 个模型｜{summary['case_count']} 个样本"
+    )
+
+
+def default_score_run_id(scores: pd.DataFrame, eval_status: dict) -> str:
+    run_ids = _score_run_ids(scores)
+    if not run_ids:
+        return ""
+    preferred = str((eval_status or {}).get("score_run_id") or "")
+    if preferred in run_ids and build_score_run_summary(scores, preferred)["pending"] > 0:
+        return preferred
+    for run_id in run_ids:
+        if build_score_run_summary(scores, run_id)["pending"] > 0:
+            return run_id
+    latest = _latest_score_run_id(scores)
+    return latest if latest in run_ids else run_ids[0]
+
+
+def _render_score_run_summary(scores: pd.DataFrame, score_run_id: str) -> None:
+    summary = build_score_run_summary(scores, score_run_id)
+    render_inline_status(
+        [
+            ("本批次评分", f"{summary['total']} 条"),
+            ("待处理", f"{summary['pending']} 条"),
+            ("已确认", f"{summary['confirmed']} 条"),
+            ("暂不采用", f"{summary['skipped']} 条"),
+            ("覆盖模型", _compact_texts(summary["models"])),
+            ("覆盖样本", _compact_texts(summary["cases"])),
+        ]
+    )
+    st.caption(f"批次 ID：{score_run_id}")
+
+
+def _score_run_created_at(rows: pd.DataFrame) -> str:
+    if not isinstance(rows, pd.DataFrame) or rows.empty or "created_at" not in rows:
+        return "—"
+    values = rows["created_at"].dropna().astype(str)
+    if values.empty:
+        return "—"
+    parsed = pd.to_datetime(values, errors="coerce")
+    if parsed.notna().any():
+        return parsed.max().strftime("%Y-%m-%d %H:%M")
+    return _format_datetime(values.max())
+
+
+def _unique_display_models(rows: pd.DataFrame) -> list[str]:
+    if not isinstance(rows, pd.DataFrame) or rows.empty:
+        return []
+    source = rows["eval_model"] if "eval_model" in rows else rows.get("model_name", pd.Series(dtype=str))
+    values = _unique_texts(source.tolist())
+    return [md.display_model_name(value, source="live") for value in values]
+
+
+def _unique_texts(values) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = _clean(value)
+        if text and text not in seen:
+            seen.add(text)
+            result.append(text)
+    return result
+
+
+def _compact_texts(values: list[str], limit: int = 3) -> str:
+    cleaned = [str(value).strip() for value in values if str(value).strip()]
+    if not cleaned:
+        return "—"
+    if len(cleaned) <= limit:
+        return "、".join(cleaned)
+    return f"{'、'.join(cleaned[:limit])} 等 {len(cleaned)} 个"
+
+
+def _score_run_label(scores: pd.DataFrame, score_run_id: str) -> str:
+    return score_run_option_label(scores, score_run_id)
 
 
 def _build_live_review_items(base, score_rows: pd.DataFrame, responses: pd.DataFrame) -> list[dict]:
@@ -781,7 +897,7 @@ def has_pending_review_items(items: list[dict]) -> bool:
 def review_empty_message(items: list[dict]) -> str:
     if has_pending_review_items(items):
         return "当前筛选条件下暂无评分记录。"
-    return "当前没有待处理评分。"
+    return "当前批次暂无待处理评分。"
 
 
 def should_show_no_pending_after_action(items: list[dict], action_recent: bool) -> bool:
@@ -887,7 +1003,7 @@ def _render_review_action_feedback(items: list[dict]) -> None:
     if has_pending_review_items(items):
         st.caption("已切换到下一条待处理评分。")
     else:
-        st.caption("当前没有待处理评分。")
+        st.caption("当前批次暂无待处理评分。")
     if result.get("show_conclusions_link") and st.button(
         "查看评测结论",
         type="secondary",

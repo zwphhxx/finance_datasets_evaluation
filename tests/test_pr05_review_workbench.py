@@ -305,10 +305,119 @@ class ReviewQueueTests(unittest.TestCase):
 
         self.assertFalse(review.has_pending_review_items([confirmed_item, skipped_item]))
         self.assertTrue(review.has_pending_review_items([confirmed_item, pending_item]))
-        self.assertEqual("当前没有待处理评分。", review.review_empty_message([confirmed_item, skipped_item]))
+        self.assertEqual("当前批次暂无待处理评分。", review.review_empty_message([confirmed_item, skipped_item]))
         self.assertEqual("当前筛选条件下暂无评分记录。", review.review_empty_message([confirmed_item, pending_item]))
         self.assertTrue(review.should_show_no_pending_after_action([confirmed_item, skipped_item], True))
         self.assertFalse(review.should_show_no_pending_after_action([confirmed_item, pending_item], True))
+
+    def test_score_run_summary_counts_status_models_and_cases(self):
+        scores = pd.DataFrame(
+            [
+                {
+                    "score_run_id": "SCORE-OLD",
+                    "case_id": "CM-001",
+                    "eval_model": "provider/Model-A",
+                    "review_status": "confirmed",
+                    "created_at": "2026-07-06 09:45:00",
+                    "id": 1,
+                },
+                {
+                    "score_run_id": "SCORE-NEW",
+                    "case_id": "CM-001",
+                    "eval_model": "provider/Model-A",
+                    "review_status": "pending",
+                    "created_at": "2026-07-06 10:30:00",
+                    "id": 2,
+                },
+                {
+                    "score_run_id": "SCORE-NEW",
+                    "case_id": "FD-006",
+                    "eval_model": "vendor/Model-B",
+                    "review_status": "skipped",
+                    "created_at": "2026-07-06 10:31:00",
+                    "id": 3,
+                },
+            ]
+        )
+
+        summary = review.build_score_run_summary(scores, "SCORE-NEW")
+
+        self.assertEqual("2026-07-06 10:31", summary["created_at"])
+        self.assertEqual(2, summary["total"])
+        self.assertEqual(1, summary["pending"])
+        self.assertEqual(0, summary["confirmed"])
+        self.assertEqual(1, summary["skipped"])
+        self.assertEqual(2, summary["model_count"])
+        self.assertEqual(2, summary["case_count"])
+        self.assertEqual(["Model-A", "Model-B"], summary["models"])
+
+    def test_score_run_option_label_hides_technical_id(self):
+        scores = pd.DataFrame(
+            [
+                {
+                    "score_run_id": "SCORE-OLD",
+                    "case_id": "CM-001",
+                    "eval_model": "provider/Model-A",
+                    "review_status": "confirmed",
+                    "created_at": "2026-07-06 09:45:00",
+                    "id": 1,
+                },
+                {
+                    "score_run_id": "SCORE-NEW",
+                    "case_id": "FD-006",
+                    "eval_model": "vendor/Model-B",
+                    "review_status": "pending",
+                    "created_at": "2026-07-06 10:30:00",
+                    "id": 2,
+                },
+            ]
+        )
+
+        latest_label = review.score_run_option_label(scores, "SCORE-NEW")
+        old_label = review.score_run_option_label(scores, "SCORE-OLD")
+
+        self.assertTrue(latest_label.startswith("最新批次｜2026-07-06 10:30｜1 条待处理"))
+        self.assertTrue(old_label.startswith("历史批次｜2026-07-06 09:45｜已处理 1 条"))
+        self.assertNotIn("SCORE-NEW", latest_label)
+        self.assertNotIn("SCORE-OLD", old_label)
+
+    def test_default_score_run_prefers_current_pending_then_latest_pending(self):
+        scores = pd.DataFrame(
+            [
+                {
+                    "score_run_id": "SCORE-OLD",
+                    "case_id": "CM-001",
+                    "eval_model": "provider/Model-A",
+                    "review_status": "pending",
+                    "created_at": "2026-07-06 09:45:00",
+                    "id": 1,
+                },
+                {
+                    "score_run_id": "SCORE-NEW",
+                    "case_id": "FD-006",
+                    "eval_model": "vendor/Model-B",
+                    "review_status": "pending",
+                    "created_at": "2026-07-06 10:30:00",
+                    "id": 2,
+                },
+            ]
+        )
+
+        self.assertEqual(
+            "SCORE-OLD",
+            review.default_score_run_id(scores, {"score_run_id": "SCORE-OLD"}),
+        )
+
+        processed_preferred = scores.copy()
+        processed_preferred.loc[processed_preferred["score_run_id"] == "SCORE-OLD", "review_status"] = "confirmed"
+        self.assertEqual(
+            "SCORE-NEW",
+            review.default_score_run_id(processed_preferred, {"score_run_id": "SCORE-OLD"}),
+        )
+
+        all_processed = processed_preferred.copy()
+        all_processed["review_status"] = "confirmed"
+        self.assertEqual("SCORE-NEW", review.default_score_run_id(all_processed, {}))
 
 
 class ErrorAttributionTests(unittest.TestCase):
