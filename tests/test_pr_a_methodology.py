@@ -40,9 +40,8 @@ class RegistrationTests(unittest.TestCase):
     def test_source_uses_current_shared_components_only(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         self.assertIn("render_brief_intro", source)
+        self.assertIn("render_home_section", source)
         self.assertIn("render_process_line", source)
-        self.assertIn("render_numbered_section", source)
-        self.assertIn("render_clean_list", source)
         for legacy_name in (
             "render_mockup_stack",
             "render_story_section",
@@ -63,8 +62,11 @@ class RegistrationTests(unittest.TestCase):
         self.assertNotIn("查看样本库", source)
         self.assertIn("当前样本内观察", source)
         self.assertIn("使用边界", source)
+        self.assertIn("回答质量", source)
+        self.assertIn("主要问题", source)
+        self.assertNotIn("本项目不判断哪个模型最好", source)
         self.assertIn("被测模型不会看到 Gold Answer、必须覆盖点、不可接受错误或 Rubric", source)
-        self.assertIn("正式结论 = 真实运行结果 + 裁判评分草稿 + 人工确认", source)
+        self.assertIn("待确认、暂不采用、评分失败或示例评价均不进入正式结论", source)
 
 
 class DynamicStatsTests(unittest.TestCase):

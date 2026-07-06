@@ -244,6 +244,49 @@ header,
     line-height: 1.5;
     margin: 0.85rem 0 0.35rem 0;
 }
+.brief-note {
+    color: var(--fde-text);
+    font-size: 0.95rem;
+    line-height: 1.62;
+    margin: 0.55rem 0 0 0;
+    max-width: 48rem;
+}
+.home-section {
+    display: grid;
+    grid-template-columns: 4.4rem minmax(0, 1fr);
+    gap: 1.1rem;
+    margin: 1.7rem 0 0 0;
+    padding: 1.3rem 0 0 0;
+    border-top: 1px solid var(--fde-line);
+}
+.home-section-number {
+    color: var(--fde-accent);
+    font-size: 2rem;
+    font-weight: 760;
+    line-height: 1;
+    letter-spacing: 0;
+}
+.home-section-title {
+    color: var(--fde-ink);
+    font-size: 1.28rem;
+    font-weight: 780;
+    line-height: 1.28;
+    margin: 0;
+}
+.home-section-lead {
+    color: var(--fde-accent);
+    font-size: 1rem;
+    font-weight: 680;
+    line-height: 1.55;
+    margin: 0.32rem 0 0.7rem 0;
+}
+.home-section-body p {
+    color: var(--fde-text);
+    font-size: 0.95rem;
+    font-weight: 400;
+    line-height: 1.72;
+    margin: 0 0 0.72rem 0;
+}
 .numbered-section {
     display: grid;
     grid-template-columns: 2.4rem minmax(0, 1fr);
@@ -754,6 +797,13 @@ div[data-testid="stDialog"] {
     .process-line-separator {
         width: 1.2rem;
     }
+    .home-section {
+        grid-template-columns: 1fr;
+        gap: 0.4rem;
+    }
+    .home-section-number {
+        font-size: 1.6rem;
+    }
 }
 </style>
 """
@@ -822,6 +872,7 @@ def render_compact_hero(
 def render_brief_intro(
     title: str,
     subtitle: str,
+    note: str | None = None,
     stats: list[tuple[str, str]] | None = None,
     process_text: str | None = None,
 ) -> None:
@@ -834,14 +885,37 @@ def render_brief_intro(
         if process_text
         else ""
     )
+    note_html = f'<p class="brief-note">{escape(str(note))}</p>' if note else ""
     render_html(
         f"""
         <div class="brief-intro">
             <h1 class="brief-title">{escape(str(title))}</h1>
             <p class="brief-subtitle">{escape(str(subtitle))}</p>
+            {note_html}
             {stats_html}
             {process_html}
         </div>
+        """
+    )
+
+
+def render_home_section(
+    number: str,
+    title: str,
+    lead: str,
+    body: list[str],
+) -> None:
+    body_html = "".join(f"<p>{escape(str(paragraph))}</p>" for paragraph in body if str(paragraph).strip())
+    render_html(
+        f"""
+        <section class="home-section">
+            <div class="home-section-number">{escape(str(number))}</div>
+            <div>
+                <h2 class="home-section-title">{escape(str(title))}</h2>
+                <div class="home-section-lead">{escape(str(lead))}</div>
+                <div class="home-section-body">{body_html}</div>
+            </div>
+        </section>
         """
     )
 

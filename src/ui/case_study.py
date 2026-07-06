@@ -2,20 +2,17 @@
 
 from __future__ import annotations
 
-import streamlit as st
-
 from src.metrics import SCORE_DIMENSIONS
 from src.ui.components import (
     PROJECT_DISPLAY_NAME,
     render_brief_intro,
-    render_clean_list,
-    render_numbered_section,
+    render_home_section,
     render_process_line,
 )
 
 
-PROCESS_STEPS = ["样本库", "发起评测", "评分确认", "评测结论"]
-PROCESS_TEXT = "样本库 ── 发起评测 ── 评分确认 ── 评测结论"
+PROCESS_STEPS = ["样本库", "发起评测", "评分草稿", "人工确认", "评测结论"]
+PROCESS_TEXT = "样本库 → 发起评测 → 评分草稿 → 人工确认 → 评测结论"
 
 
 def _distinct_count(df, column: str) -> int:
@@ -72,54 +69,46 @@ def render_case_study_page(data_bundle: dict) -> None:
     render_brief_intro(
         title=PROJECT_DISPLAY_NAME,
         subtitle=(
-            "用脱敏专业任务样本，对比模型在财务、法律、投行场景下的回答质量、"
-            "评分依据和使用边界。"
+            "用脱敏专业任务样本，对比模型回答在结论准确性、依据充分性、推理完整性、"
+            "风险识别和专业表达上的表现。"
+        ),
+        note=(
+            "本项目评估大模型在财务、法律、投行等专业场景中的回答质量，"
+            "并在当前样本范围内判断模型表现、主要问题和使用边界。"
         ),
         stats=_build_home_stats(base, eval_status),
         process_text=PROCESS_TEXT,
     )
 
-    render_numbered_section("01", "项目定位")
-    st.markdown(
-        "本项目用于评估大模型在专业场景中的回答是否具备参考价值。评测对象不是通用问答能力，"
-        "而是财务尽调、法律审阅、投行判断等高风险任务中的结论准确性、推理完整性、风险覆盖、"
-        "依据可靠性和专业表达。"
-    )
-    st.markdown(
-        "本项目不判断哪个模型最好，而是在当前专业样本内观察模型回答是否可参考、需复核或不应采用。"
-        "模型回答只作为评分输入，正式结论必须经过人工确认后才生效。"
+    render_home_section(
+        number="01",
+        title="项目定位",
+        lead="评估模型在财务、法律、投行场景中的回答质量。",
+        body=[
+            "本项目面向财务尽调、法律审阅、投行判断等专业任务，评估大模型回答是否具备业务参考价值。评测重点不是通用问答能力，而是模型在具体专业场景中的结论准确性、依据充分性、推理完整性、风险识别和专业表达。",
+            "评测结果用于观察不同模型在当前样本范围内的质量差异，并进一步判断其可作为初稿参考、需要人工复核，还是不宜作为专业判断依据。",
+        ],
     )
 
-    render_numbered_section("02", "评测流程")
+    render_home_section(
+        number="02",
+        title="评测流程",
+        lead="从专业样本到人工确认，形成可追溯的评分闭环。",
+        body=[
+            "样本库维护任务题、业务背景、Gold Answer、必须覆盖点、不可接受错误和 Rubric。发起评测时，被测模型只基于任务题和必要背景生成回答，裁判模型再基于 Gold Answer 和 Rubric 形成评分草稿。",
+            "评分草稿不会直接进入正式结论。所有评分需要经过人工确认、修订后确认或暂不采用。评测结论仅汇总已确认评分，用于展示当前样本下不同模型的质量表现、主要问题和使用边界。",
+        ],
+    )
     render_process_line(PROCESS_STEPS)
-    render_clean_list([
-        "样本库：维护任务题、业务背景、Gold Answer 和 Rubric。",
-        "发起评测：选择样本和模型，生成模型回答和评分草稿。",
-        "评分确认：人工确认、修订或暂不采用评分草稿。",
-        "评测结论：仅汇总已确认评分，形成当前样本内观察。",
-    ])
 
-    render_numbered_section("03", "数据边界")
-    st.markdown(_build_sample_scope_text(base))
-    st.markdown(
-        "当前结论只代表已确认评分覆盖的样本范围，不代表模型在全部财务、法律或投行业务中的稳定表现。"
+    render_home_section(
+        number="03",
+        title="数据边界",
+        lead="结论只代表当前已确认样本，不做脱离样本的泛化排名。",
+        body=[
+            _build_sample_scope_text(base),
+            "当前结论是当前样本内观察，只反映已确认评分覆盖的样本范围，不代表模型在全部财务、法律或投行业务中的稳定表现。",
+            "被测模型不会看到 Gold Answer、必须覆盖点、不可接受错误或 Rubric。上述材料仅用于裁判评分和人工复核。",
+            "正式结论由真实运行结果、裁判评分草稿和人工确认共同形成。待确认、暂不采用、评分失败或示例评价均不进入正式结论。",
+        ],
     )
-    st.markdown(
-        "被测模型不会看到 Gold Answer、必须覆盖点、不可接受错误或 Rubric；这些材料只用于裁判评分和人工复核。"
-    )
-    st.markdown(
-        "正式结论 = 真实运行结果 + 裁判评分草稿 + 人工确认。待确认、暂不采用、评分失败和示例评价均不进入正式结论。"
-    )
-    st.markdown("**评分依据**")
-    eval_items = []
-    for key, label in SCORE_DIMENSIONS:
-        note = {
-            "accuracy_score": "结论与事实、法规、财务口径是否准确",
-            "reasoning_score": "推理是否完整、贴合具体业务场景",
-            "coverage_score": "关键风险是否覆盖到位",
-            "evidence_score": "结论是否给出可核查的依据",
-            "expression_score": "表达是否专业克制、结构清楚",
-        }.get(key, "")
-        eval_items.append(f"{label}：{note}")
-    render_clean_list(eval_items)
-    st.caption("高分只能作为初稿参考，红线错误仍需人工判断。")
