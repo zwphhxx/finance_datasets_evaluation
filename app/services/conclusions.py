@@ -129,6 +129,49 @@ def split_live_scores(live_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame
     return confirmed, pending
 
 
+def summarize_runtime_scores(live_df: pd.DataFrame) -> dict[str, Any]:
+    """统计运行期真实评分状态，用于页面解释数据源和空状态原因。
+
+    该摘要不改变正式结论口径；正式结论仍由 split_live_scores + confirmed 过滤决定。
+    """
+    base = {
+        "data_source": "SQLite 运行期数据",
+        "total": 0,
+        "confirmed": 0,
+        "pending": 0,
+        "skipped": 0,
+        "failed_or_mock": 0,
+        "models": 0,
+        "cases": 0,
+    }
+    if not isinstance(live_df, pd.DataFrame) or live_df.empty:
+        return base
+
+    df = live_df.copy()
+    if "status" in df.columns:
+        df = df[df["status"].astype(str).str.strip().str.lower() != "inactive"]
+    if "eval_model" in df.columns:
+        df = df[~df["eval_model"].apply(md.is_seed_model)]
+    if df.empty:
+        return base
+
+    judge_status = df.get("judge_status", pd.Series(dtype=str)).astype(str).str.strip().str.lower()
+    success = df[judge_status == "success"].copy()
+    review_status = success.get("review_status", pd.Series(dtype=str)).astype(str).str.strip().str.lower()
+    base.update(
+        {
+            "total": int(len(success)),
+            "confirmed": int((review_status == "confirmed").sum()),
+            "pending": int((review_status == "pending").sum()),
+            "skipped": int((review_status == "skipped").sum()),
+            "failed_or_mock": int(len(df) - len(success)),
+            "models": int(success["eval_model"].nunique()) if "eval_model" in success.columns else 0,
+            "cases": int(success["case_id"].nunique()) if "case_id" in success.columns else 0,
+        }
+    )
+    return base
+
+
 def _normalize_live_scores(live_df: pd.DataFrame) -> pd.DataFrame:
     """把 live_run_scores 行投影为正式打分表列（eval_model → model_name）。"""
     if not isinstance(live_df, pd.DataFrame) or live_df.empty:

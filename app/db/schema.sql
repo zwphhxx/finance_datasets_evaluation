@@ -1,4 +1,4 @@
--- FinDueEval SQLite 数据层 schema（PR-30）
+-- 项目 SQLite 数据层 schema（PR-30）
 --
 -- 设计原则：
 --   1. 每张表的业务列与现有 data/ 种子文件（CSV/JSON 与 manifest）的字段一一对应，
@@ -210,7 +210,7 @@ CREATE TABLE live_run_responses (
 
 -- 真实模型评测的 LLM-as-judge 评分（PR-35）。本表不来自任何 seed 文件，仅承载「真实模型评测」
 -- 页由裁判模型对照 Gold Answer + Rubric 产出的「机器建议分」，与 seed 的 score_records 分离。
--- 评分为机器建议，需人工复核：review_status 为 pending（待复核）/ confirmed（已复核归档）。
+-- 评分为机器建议，需人工复核：review_status 为 pending（待复核）/ confirmed（已确认）/ skipped（暂不采用）。
 -- judge_status 为裁判调用业务状态（success/failed/mock）；mock 模式不产生真实分数（维度列为空）。
 -- eval_model 为被评测模型，judge_model 为裁判模型；不存储任何认证信息。
 CREATE TABLE live_run_scores (

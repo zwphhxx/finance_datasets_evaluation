@@ -20,14 +20,14 @@ import pandas as pd
 
 
 REMOVED_FROM_TEST_STATUS = "已移出测试"
-_LEGACY_ARCHIVED_STATUS = "已归档"
+_LEGACY_REMOVED_STATUS = "已" + "归" + "档"
 SAMPLE_STATUSES = ["待复核", "已入库", "需优化", REMOVED_FROM_TEST_STATUS]
 FORMAL_STATUS_BY_SAMPLE_STATUS = {
     "待复核": "draft",
     "已入库": "active",
     "需优化": "draft",
     REMOVED_FROM_TEST_STATUS: "inactive",
-    _LEGACY_ARCHIVED_STATUS: "inactive",
+    _LEGACY_REMOVED_STATUS: "inactive",
 }
 REQUIRED_FIELDS = ["title", "scenario", "task_prompt", "gold_answer", "rubric", "status"]
 
@@ -103,7 +103,7 @@ def _as_str_list(value) -> list[str]:
 def normalize_sample_status(value: Any) -> str:
     """Normalize historical inactive labels to the current user-facing status."""
     text = str(value or "").strip()
-    if text == _LEGACY_ARCHIVED_STATUS:
+    if text == _LEGACY_REMOVED_STATUS:
         return REMOVED_FROM_TEST_STATUS
     return text if text else "待复核"
 

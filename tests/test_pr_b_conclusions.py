@@ -118,6 +118,23 @@ class FormalConclusionTests(unittest.TestCase):
         self.assertEqual(len(confirmed), 1)
         self.assertEqual(len(pending), 1)
 
+    def test_runtime_score_summary_explains_live_status_counts(self):
+        live = pd.DataFrame([
+            _live_row("C1", "vendor/live-a", "confirmed", total=80),
+            _live_row("C2", "vendor/live-a", "pending", total=70),
+            _live_row("C3", "vendor/live-b", "skipped", total=50),
+            _live_row("C4", "Model_A_baseline", "confirmed", total=99),
+        ])
+        summary = cc.summarize_runtime_scores(live)
+
+        self.assertEqual("SQLite 运行期数据", summary["data_source"])
+        self.assertEqual(3, summary["total"])
+        self.assertEqual(1, summary["confirmed"])
+        self.assertEqual(1, summary["pending"])
+        self.assertEqual(1, summary["skipped"])
+        self.assertEqual(2, summary["models"])
+        self.assertEqual(3, summary["cases"])
+
 
 class DraftRowTests(unittest.TestCase):
     def test_build_draft_rows_joins_answer_and_marks_pending(self):

@@ -14,7 +14,10 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import json
+import math
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -23,9 +26,63 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from app.models.base import ModelProvider, STATUS_FAILED, STATUS_MOCK, STATUS_SUCCESS
+from app.services import model_display as md
 
 # Fixed judge model for scoring (PR-LOGIC1)
 DEFAULT_JUDGE_MODEL = "deepseek-ai/DeepSeek-V4-Pro"
+SCORE_EXPORT_TYPE = "findueval_live_scores"
+SCORE_EXPORT_SCHEMA_VERSION = 1
+
+SCORE_EXPORT_COLUMNS = [
+    "score_run_id",
+    "run_id",
+    "case_id",
+    "task_type",
+    "eval_model",
+    "judge_provider",
+    "judge_model",
+    "judge_mode",
+    "judge_status",
+    "accuracy_score",
+    "reasoning_score",
+    "coverage_score",
+    "evidence_score",
+    "expression_score",
+    "total_score",
+    "rationale",
+    "review_note",
+    "review_status",
+    "latency_ms",
+    "input_tokens",
+    "output_tokens",
+    "total_tokens",
+    "trace_id",
+    "error_code",
+    "error_message",
+    "status",
+    "created_at",
+    "updated_at",
+]
+SCORE_IMPORT_REQUIRED_FIELDS = {
+    "score_run_id",
+    "run_id",
+    "case_id",
+    "eval_model",
+    "judge_model",
+    "judge_status",
+    "total_score",
+    "review_status",
+}
+SCORE_IMPORT_ALLOWED_REVIEW_STATUS = {"confirmed", "pending", "skipped"}
+SENSITIVE_IMPORT_FIELDS = {
+    "api_key",
+    "apikey",
+    "authorization",
+    "auth",
+    "headers",
+    "request_headers",
+    "response_headers",
+}
 
 _JUDGE_SYSTEM_PROMPT = (
     "你是金融与专业尽调领域的资深评审。你的任务是依据给定的 Gold Answer 与评分量表（Rubric），"
@@ -574,9 +631,329 @@ def load_score_row_for_case(score_run_id: str, case_id: str, eval_model: str, db
     return None
 
 
+def load_exportable_score_rows(
+    *,
+    include_pending: bool = False,
+    db_path: Path | None = None,
+) -> list[dict[str, Any]]:
+    """读取可导出的真实评分行。
+
+    默认只导出 review_status=confirmed 且 judge_status=success 的真实运行评分；
+    include_pending=True 时额外包含 pending 草稿，便于演示环境迁移未处理批次。
+    暂不采用记录、seed 模型和 inactive 行始终不导出。
+    """
+    try:
+        from app.services.dataset_service import database_ready, get_db_path
+        from app.db.repository import Repository
+
+        path = db_path or get_db_path()
+        if not database_ready(path):
+            return []
+        frame = Repository(path).list_df("live_run_scores")
+        if frame.empty:
+            return []
+
+        rows = frame.copy()
+        if "judge_status" in rows.columns:
+            rows = rows[rows["judge_status"].astype(str).str.strip().str.lower() == STATUS_SUCCESS]
+        if "status" in rows.columns:
+            rows = rows[rows["status"].astype(str).str.strip().str.lower() != "inactive"]
+        if "eval_model" in rows.columns:
+            rows = rows[~rows["eval_model"].apply(md.is_seed_model)]
+        allowed_statuses = {"confirmed", "pending"} if include_pending else {"confirmed"}
+        if "review_status" in rows.columns:
+            rows = rows[rows["review_status"].astype(str).str.strip().str.lower().isin(allowed_statuses)]
+        else:
+            return []
+        if "id" in rows.columns:
+            rows = rows.sort_values("id")
+        return [_score_export_row(row.to_dict()) for _, row in rows.iterrows()]
+    except Exception:
+        return []
+
+
+def build_score_export_payload(rows: Sequence[Mapping[str, Any]], *, include_pending: bool = False) -> dict[str, Any]:
+    """构造项目内历史评分导出 payload；不包含 API Key 或请求头。"""
+    clean_rows = [_score_export_row(dict(row)) for row in rows]
+    return {
+        "export_type": SCORE_EXPORT_TYPE,
+        "schema_version": SCORE_EXPORT_SCHEMA_VERSION,
+        "exported_at": datetime.now().isoformat(timespec="seconds"),
+        "scope": "confirmed_and_pending" if include_pending else "confirmed",
+        "row_count": len(clean_rows),
+        "rows": clean_rows,
+    }
+
+
+def export_score_payload(
+    *,
+    include_pending: bool = False,
+    db_path: Path | None = None,
+) -> dict[str, Any]:
+    """读取并构造历史评分导出 payload。"""
+    rows = load_exportable_score_rows(include_pending=include_pending, db_path=db_path)
+    return build_score_export_payload(rows, include_pending=include_pending)
+
+
+def serialize_score_export_payload(payload: Mapping[str, Any]) -> str:
+    """序列化导出 payload 为 JSON 文本。"""
+    return json.dumps(_jsonable(payload), ensure_ascii=False, indent=2)
+
+
+def parse_score_import_content(file_name: str, content: bytes | str) -> dict[str, Any]:
+    """解析项目导出的历史评分文件，返回 rows/errors。
+
+    JSON 需带 findueval_live_scores 导出标识；CSV 需至少包含必需字段。
+    """
+    name = str(file_name or "").strip().lower()
+    raw = content.decode("utf-8-sig") if isinstance(content, (bytes, bytearray)) else str(content or "")
+    if not raw.strip():
+        return {"ok": False, "rows": [], "errors": ["文件为空。"]}
+
+    if name.endswith(".json"):
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            return {"ok": False, "rows": [], "errors": ["JSON 文件无法解析。"]}
+        if not isinstance(payload, Mapping) or payload.get("export_type") != SCORE_EXPORT_TYPE:
+            return {"ok": False, "rows": [], "errors": ["该 JSON 不是项目导出的历史评分文件。"]}
+        rows = payload.get("rows")
+        if not isinstance(rows, list):
+            return {"ok": False, "rows": [], "errors": ["导出文件缺少 rows。"]}
+        return validate_score_import_rows(rows)
+
+    if name.endswith(".csv"):
+        try:
+            rows = list(csv.DictReader(io.StringIO(raw)))
+        except csv.Error:
+            return {"ok": False, "rows": [], "errors": ["CSV 文件无法解析。"]}
+        return validate_score_import_rows(rows)
+
+    return {"ok": False, "rows": [], "errors": ["仅支持导入 JSON 或 CSV 文件。"]}
+
+
+def validate_score_import_rows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """校验并标准化历史评分导入行。"""
+    errors: list[str] = []
+    normalized_rows: list[dict[str, Any]] = []
+    if not rows:
+        return {"ok": False, "rows": [], "errors": ["文件中没有评分记录。"]}
+
+    for index, raw_row in enumerate(rows, start=1):
+        if not isinstance(raw_row, Mapping):
+            errors.append(f"第 {index} 行不是有效记录。")
+            continue
+        row = {str(key).strip(): value for key, value in raw_row.items() if str(key).strip()}
+        sensitive = sorted({key.lower() for key in row} & SENSITIVE_IMPORT_FIELDS)
+        if sensitive:
+            errors.append(f"第 {index} 行包含敏感字段：{', '.join(sensitive)}。")
+            continue
+        missing = sorted(field for field in SCORE_IMPORT_REQUIRED_FIELDS if not _clean(row.get(field)))
+        if missing:
+            errors.append(f"第 {index} 行缺少必要字段：{', '.join(missing)}。")
+            continue
+        if md.is_seed_model(row.get("eval_model")):
+            errors.append(f"第 {index} 行为示例模型记录，不能导入真实评分表。")
+            continue
+        review_status = _clean(row.get("review_status")).lower()
+        if review_status not in SCORE_IMPORT_ALLOWED_REVIEW_STATUS:
+            errors.append(f"第 {index} 行 review_status 不支持：{review_status or '空'}。")
+            continue
+        judge_status = _clean(row.get("judge_status")).lower()
+        if judge_status != STATUS_SUCCESS:
+            errors.append(f"第 {index} 行裁判状态不是 success，不能导入。")
+            continue
+        normalized_rows.append(_normalize_import_score_row(row))
+
+    return {"ok": bool(normalized_rows) and not errors, "rows": normalized_rows, "errors": errors}
+
+
+def import_score_rows(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    duplicate_action: str = "skip",
+    db_path: Path | None = None,
+) -> dict[str, Any]:
+    """导入历史评分到 live_run_scores。
+
+    duplicate_action:
+      - skip: 按 (score_run_id, case_id, eval_model) 跳过重复记录；
+      - update: 更新已有记录；
+      - cancel: 不执行导入。
+    """
+    if duplicate_action == "cancel":
+        return _import_result(0, 0, 0, ["已取消导入。"])
+    if duplicate_action not in {"skip", "update"}:
+        return _import_result(0, 0, 0, ["重复记录处理方式不支持。"])
+
+    validation = validate_score_import_rows(rows)
+    valid_rows = validation.get("rows") or []
+    errors = list(validation.get("errors") or [])
+    if not valid_rows:
+        return _import_result(0, 0, 0, errors or ["没有可导入的评分记录。"])
+
+    try:
+        from app.services.dataset_service import database_ready, get_db_path
+        from app.db.repository import Repository
+
+        path = db_path or get_db_path()
+        if not database_ready(path):
+            return _import_result(0, 0, 0, ["SQLite 数据层不可用。"])
+        repo = Repository(path)
+        existing = repo.list_df("live_run_scores")
+        existing_by_key: dict[tuple[str, str, str], int] = {}
+        if not existing.empty:
+            for _, row in existing.iterrows():
+                key = _score_unique_key(row)
+                if all(key):
+                    existing_by_key[key] = int(row.get("id"))
+
+        imported = 0
+        updated = 0
+        skipped = 0
+        for row in valid_rows:
+            key = _score_unique_key(row)
+            existing_id = existing_by_key.get(key)
+            payload = {column: row.get(column) for column in SCORE_EXPORT_COLUMNS if column in row}
+            payload.setdefault("status", "active")
+            if existing_id is None:
+                payload.pop("updated_at", None)
+                new_id = repo.insert("live_run_scores", payload)
+                existing_by_key[key] = new_id
+                imported += 1
+                continue
+            if duplicate_action == "skip":
+                skipped += 1
+                continue
+            changes = {
+                key_name: value
+                for key_name, value in payload.items()
+                if key_name not in {"created_at", "updated_at"}
+            }
+            repo.update("live_run_scores", existing_id, changes)
+            updated += 1
+        return _import_result(imported, updated, skipped, errors)
+    except Exception:
+        return _import_result(0, 0, 0, ["导入失败：请检查 SQLite 数据层是否已初始化。"])
+
+
 # --------------------------------------------------------------------------- #
 # 内部工具
 # --------------------------------------------------------------------------- #
+def _score_export_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        column: _jsonable(row.get(column))
+        for column in SCORE_EXPORT_COLUMNS
+        if column in row
+    }
+
+
+def _normalize_import_score_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    normalized: dict[str, Any] = {}
+    text_fields = {
+        "score_run_id",
+        "run_id",
+        "case_id",
+        "task_type",
+        "eval_model",
+        "judge_provider",
+        "judge_model",
+        "judge_mode",
+        "judge_status",
+        "review_note",
+        "review_status",
+        "trace_id",
+        "error_code",
+        "error_message",
+        "status",
+        "created_at",
+        "updated_at",
+    }
+    numeric_fields = {
+        "accuracy_score",
+        "reasoning_score",
+        "coverage_score",
+        "evidence_score",
+        "expression_score",
+        "total_score",
+        "latency_ms",
+        "input_tokens",
+        "output_tokens",
+        "total_tokens",
+    }
+    for field_name in text_fields:
+        value = _clean(row.get(field_name))
+        if value:
+            normalized[field_name] = value
+    for field_name in numeric_fields:
+        number = _as_number(row.get(field_name))
+        if number is not None:
+            normalized[field_name] = int(round(number))
+    rationale = row.get("rationale")
+    if isinstance(rationale, Mapping):
+        normalized["rationale"] = json.dumps(_jsonable(dict(rationale)), ensure_ascii=False)
+    else:
+        text = _clean(rationale)
+        if text:
+            normalized["rationale"] = text
+    normalized.setdefault("judge_mode", "live")
+    normalized.setdefault("judge_provider", "")
+    normalized.setdefault("status", "active")
+    return normalized
+
+
+def _score_unique_key(row: Mapping[str, Any]) -> tuple[str, str, str]:
+    getter = row.get if hasattr(row, "get") else lambda key, default=None: default
+    return (
+        _clean(getter("score_run_id")),
+        _clean(getter("case_id")),
+        _clean(getter("eval_model")),
+    )
+
+
+def _import_result(imported: int, updated: int, skipped: int, errors: Sequence[str] | None = None) -> dict[str, Any]:
+    messages: list[str] = []
+    if imported:
+        messages.append(f"已导入 {imported} 条")
+    if updated:
+        messages.append(f"已更新 {updated} 条")
+    if skipped:
+        messages.append(f"跳过 {skipped} 条重复记录")
+    if not messages:
+        messages.append("未导入评分记录")
+    if errors:
+        messages.append("；".join(str(error) for error in errors[:3]))
+    return {
+        "imported_count": int(imported),
+        "updated_count": int(updated),
+        "skipped_count": int(skipped),
+        "failed_count": int(len(errors or [])),
+        "errors": list(errors or []),
+        "summary": "，".join(messages) + "。",
+        "ok": bool(imported or updated) and not errors,
+    }
+
+
+def _jsonable(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        return None if math.isnan(value) else value
+    if hasattr(value, "item"):
+        try:
+            return _jsonable(value.item())
+        except Exception:
+            pass
+    if isinstance(value, Mapping):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    text = str(value)
+    return None if text.lower() in {"nan", "none", "nat"} else text
+
+
 _GOLD_TEXT_FIELDS = (
     ("core_conclusion", "核心结论"),
     ("key_evidence", "关键依据"),

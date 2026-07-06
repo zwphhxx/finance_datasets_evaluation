@@ -300,6 +300,118 @@ class ScorePersistenceTests(unittest.TestCase):
         after = Repository(_DB_PATH).count("score_records")
         self.assertEqual(before, after)
 
+    def test_export_defaults_to_confirmed_and_can_include_pending(self):
+        provider = get_provider("mock")
+        compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(2))
+        tasks_by_case = {str(r["case_id"]): r for r in _sample_tasks(2)}
+        result = sc.score_compare(_FakeJudge(), compare, {}, tasks_by_case, _DIMENSIONS, judge_model_id="judge/x")
+
+        self.assertTrue(sc.persist_score_result(result, db_path=_DB_PATH))
+        rows = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)
+        self.assertEqual(2, len(rows))
+        first_id = int(rows[0]["id"])
+        edited = {
+            "accuracy_score": 25,
+            "reasoning_score": 15,
+            "coverage_score": 15,
+            "evidence_score": 10,
+            "expression_score": 10,
+        }
+        self.assertTrue(sc.confirm_score_review(first_id, edited, "确认用于导出", db_path=_DB_PATH))
+
+        confirmed_only = [
+            row for row in sc.load_exportable_score_rows(db_path=_DB_PATH)
+            if row["score_run_id"] == result.score_run_id
+        ]
+        self.assertEqual(1, len(confirmed_only))
+        self.assertEqual("confirmed", confirmed_only[0]["review_status"])
+
+        with_pending = [
+            row for row in sc.load_exportable_score_rows(include_pending=True, db_path=_DB_PATH)
+            if row["score_run_id"] == result.score_run_id
+        ]
+        self.assertEqual(["confirmed", "pending"], sorted(row["review_status"] for row in with_pending))
+        payload = sc.build_score_export_payload(confirmed_only)
+        text = sc.serialize_score_export_payload(payload)
+        self.assertIn(sc.SCORE_EXPORT_TYPE, text)
+        self.assertNotIn("api_key", text.lower())
+        self.assertNotIn("authorization", text.lower())
+
+    def test_import_project_exported_scores_and_skip_duplicates(self):
+        source_rows = [
+            {
+                "score_run_id": "SCORE-IMPORT-1",
+                "run_id": "RUN-IMPORT-1",
+                "case_id": "CM-001",
+                "task_type": "demo",
+                "eval_model": "vendor/model-import",
+                "judge_provider": "fakejudge",
+                "judge_model": "judge/x",
+                "judge_mode": "live",
+                "judge_status": "success",
+                "accuracy_score": 25,
+                "reasoning_score": 15,
+                "coverage_score": 15,
+                "evidence_score": 10,
+                "expression_score": 10,
+                "total_score": 75,
+                "rationale": {"accuracy_score": "依据充分"},
+                "review_note": "导入确认记录",
+                "review_status": "confirmed",
+                "status": "active",
+            }
+        ]
+        payload = sc.build_score_export_payload(source_rows)
+        text = sc.serialize_score_export_payload(payload)
+        parsed = sc.parse_score_import_content("confirmed_scores.json", text)
+        self.assertTrue(parsed["ok"], parsed["errors"])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target_db = Path(tmp) / "imported.db"
+            ds.initialize_database(target_db, force=True)
+            result = sc.import_score_rows(parsed["rows"], db_path=target_db)
+            self.assertEqual(1, result["imported_count"])
+            self.assertEqual(0, result["failed_count"])
+
+            imported = Repository(target_db).list_df("live_run_scores")
+            matched = imported[imported["score_run_id"] == "SCORE-IMPORT-1"]
+            self.assertEqual(1, len(matched))
+            self.assertEqual("confirmed", matched.iloc[0]["review_status"])
+
+            duplicate = sc.import_score_rows(parsed["rows"], duplicate_action="skip", db_path=target_db)
+            self.assertEqual(0, duplicate["imported_count"])
+            self.assertEqual(1, duplicate["skipped_count"])
+
+    def test_import_rejects_seed_models_and_sensitive_fields(self):
+        bad_rows = [
+            {
+                "score_run_id": "SCORE-BAD",
+                "run_id": "RUN-BAD",
+                "case_id": "CM-001",
+                "eval_model": "Model_A_baseline",
+                "judge_model": "judge/x",
+                "judge_status": "success",
+                "total_score": 80,
+                "review_status": "confirmed",
+            },
+            {
+                "score_run_id": "SCORE-BAD2",
+                "run_id": "RUN-BAD",
+                "case_id": "CM-001",
+                "eval_model": "vendor/model",
+                "judge_model": "judge/x",
+                "judge_status": "success",
+                "total_score": 80,
+                "review_status": "confirmed",
+                "Authorization": "secret",
+            },
+        ]
+        parsed = sc.validate_score_import_rows(bad_rows)
+        self.assertFalse(parsed["ok"])
+        self.assertEqual([], parsed["rows"])
+        self.assertTrue(any("示例模型" in error for error in parsed["errors"]))
+        self.assertTrue(any("敏感字段" in error for error in parsed["errors"]))
+
 
 class ServiceAndWiringTests(unittest.TestCase):
     def test_get_rubric_dimensions_returns_five(self):
