@@ -31,8 +31,12 @@ from app.services import model_display as md
 
 # Fixed judge model for scoring (PR-LOGIC1)
 DEFAULT_JUDGE_MODEL = "deepseek-ai/DeepSeek-V4-Pro"
-SCORE_EXPORT_TYPE = "findueval_live_scores"
+PROJECT_DISPLAY_NAME = "财务/法律/投行场景大模型对比评测"
+SCORE_EXPORT_TYPE = "confirmed_score_export"
 SCORE_EXPORT_SCHEMA_VERSION = 1
+DEMO_CONFIRMED_SCORE_EXPORT_PATH = (
+    Path(__file__).resolve().parents[2] / "data" / "confirmed_score_exports" / "demo_confirmed_scores.json"
+)
 DEFAULT_JUDGE_RETRY_DELAYS: tuple[float, float] = (3.0, 8.0)
 RETRYABLE_JUDGE_ERRORS = {
     "timeout",
@@ -69,13 +73,6 @@ SCORE_EXPORT_COLUMNS = [
     "rationale",
     "review_note",
     "review_status",
-    "latency_ms",
-    "input_tokens",
-    "output_tokens",
-    "total_tokens",
-    "trace_id",
-    "error_code",
-    "error_message",
     "status",
     "created_at",
     "updated_at",
@@ -758,10 +755,11 @@ def build_score_export_payload(rows: Sequence[Mapping[str, Any]], *, include_pen
     return {
         "export_type": SCORE_EXPORT_TYPE,
         "schema_version": SCORE_EXPORT_SCHEMA_VERSION,
+        "project_name": PROJECT_DISPLAY_NAME,
         "exported_at": datetime.now().isoformat(timespec="seconds"),
         "scope": "confirmed_and_pending" if include_pending else "confirmed",
         "row_count": len(clean_rows),
-        "rows": clean_rows,
+        "records": clean_rows,
     }
 
 
@@ -783,7 +781,7 @@ def serialize_score_export_payload(payload: Mapping[str, Any]) -> str:
 def parse_score_import_content(file_name: str, content: bytes | str) -> dict[str, Any]:
     """解析项目导出的历史评分文件，返回 rows/errors。
 
-    JSON 需带 findueval_live_scores 导出标识；CSV 需至少包含必需字段。
+    JSON 需带 confirmed_score_export 导出标识；CSV 需至少包含必需字段。
     """
     name = str(file_name or "").strip().lower()
     raw = content.decode("utf-8-sig") if isinstance(content, (bytes, bytearray)) else str(content or "")
@@ -797,9 +795,11 @@ def parse_score_import_content(file_name: str, content: bytes | str) -> dict[str
             return {"ok": False, "rows": [], "errors": ["JSON 文件无法解析。"]}
         if not isinstance(payload, Mapping) or payload.get("export_type") != SCORE_EXPORT_TYPE:
             return {"ok": False, "rows": [], "errors": ["该 JSON 不是项目导出的历史评分文件。"]}
-        rows = payload.get("rows")
+        if int(payload.get("schema_version") or 0) != SCORE_EXPORT_SCHEMA_VERSION:
+            return {"ok": False, "rows": [], "errors": ["评分文件版本不受支持。"]}
+        rows = payload.get("records")
         if not isinstance(rows, list):
-            return {"ok": False, "rows": [], "errors": ["导出文件缺少 rows。"]}
+            return {"ok": False, "rows": [], "errors": ["导出文件缺少 records。"]}
         return validate_score_import_rows(rows)
 
     if name.endswith(".csv"):
@@ -917,15 +917,54 @@ def import_score_rows(
         return _import_result(0, 0, 0, ["导入失败：请检查 SQLite 数据层是否已初始化。"])
 
 
+def load_demo_score_export_payload(path: Path | None = None) -> dict[str, Any]:
+    """Load the committed demo score export payload, returning an empty valid payload if absent."""
+    source = path or DEMO_CONFIRMED_SCORE_EXPORT_PATH
+    if not source.exists():
+        return build_score_export_payload([])
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return build_score_export_payload([])
+    if not isinstance(payload, Mapping):
+        return build_score_export_payload([])
+    return dict(payload)
+
+
+def import_demo_confirmed_scores(
+    *,
+    path: Path | None = None,
+    duplicate_action: str = "skip",
+    db_path: Path | None = None,
+) -> dict[str, Any]:
+    """Restore the committed demo confirmed-score export into live_run_scores."""
+    payload = load_demo_score_export_payload(path)
+    if payload.get("export_type") != SCORE_EXPORT_TYPE:
+        return _import_result(0, 0, 0, ["演示评分文件不是项目导出的评分文件。"])
+    records = payload.get("records")
+    if not isinstance(records, list):
+        return _import_result(0, 0, 0, ["演示评分文件缺少 records。"])
+    return import_score_rows(records, duplicate_action=duplicate_action, db_path=db_path)
+
+
 # --------------------------------------------------------------------------- #
 # 内部工具
 # --------------------------------------------------------------------------- #
 def _score_export_row(row: Mapping[str, Any]) -> dict[str, Any]:
-    return {
+    exported = {
         column: _jsonable(row.get(column))
         for column in SCORE_EXPORT_COLUMNS
         if column in row
     }
+    rationale = exported.get("rationale")
+    if isinstance(rationale, str):
+        try:
+            parsed = json.loads(rationale)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, Mapping):
+            exported["rationale"] = _jsonable(dict(parsed))
+    return exported
 
 
 def _normalize_import_score_row(row: Mapping[str, Any]) -> dict[str, Any]:

@@ -11,8 +11,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pandas as pd
+
 from app.models.base import GenerationResult, ModelProvider, STATUS_FAILED, STATUS_SUCCESS
 from app.models.registry import get_provider
+from app.services import conclusions as cc
 from app.services import dataset_service as ds
 from app.services import eval_runner as er
 from app.services import scorer as sc
@@ -511,9 +514,65 @@ class ScorePersistenceTests(unittest.TestCase):
         self.assertEqual(["confirmed", "pending"], sorted(row["review_status"] for row in with_pending))
         payload = sc.build_score_export_payload(confirmed_only)
         text = sc.serialize_score_export_payload(payload)
+        self.assertEqual("confirmed_score_export", payload["export_type"])
+        self.assertEqual(1, payload["schema_version"])
+        self.assertEqual("财务/法律/投行场景大模型对比评测", payload["project_name"])
+        self.assertEqual("confirmed", payload["scope"])
+        self.assertEqual(1, len(payload["records"]))
+        self.assertNotIn("rows", payload)
         self.assertIn(sc.SCORE_EXPORT_TYPE, text)
         self.assertNotIn("api_key", text.lower())
         self.assertNotIn("authorization", text.lower())
+        forbidden = {"trace_id", "error_code", "error_message", "latency_ms", "input_tokens", "output_tokens", "total_tokens"}
+        self.assertTrue(forbidden.isdisjoint(payload["records"][0]))
+
+    def test_export_excludes_skipped_failed_seed_and_inactive_rows(self):
+        repo = Repository(_DB_PATH)
+        score_run_id = "SCORE-EXPORT-FILTER"
+        base = {
+            "score_run_id": score_run_id,
+            "run_id": "RUN-EXPORT-FILTER",
+            "case_id": "CM-001",
+            "task_type": "demo",
+            "judge_provider": "fakejudge",
+            "judge_model": "judge/x",
+            "judge_mode": "live",
+            "judge_status": "success",
+            "accuracy_score": 25,
+            "reasoning_score": 15,
+            "coverage_score": 15,
+            "evidence_score": 10,
+            "expression_score": 10,
+            "total_score": 75,
+            "rationale": "{}",
+            "review_note": "导出过滤测试",
+            "status": "active",
+        }
+        rows = [
+            {**base, "case_id": "CM-001", "eval_model": "vendor/model-confirmed", "review_status": "confirmed"},
+            {**base, "case_id": "CM-002", "eval_model": "vendor/model-pending", "review_status": "pending"},
+            {**base, "case_id": "CM-003", "eval_model": "vendor/model-skipped", "review_status": "skipped"},
+            {**base, "case_id": "CM-004", "eval_model": "vendor/model-failed", "judge_status": "failed", "review_status": "confirmed"},
+            {**base, "case_id": "CM-005", "eval_model": "Model_A_baseline", "review_status": "confirmed"},
+            {**base, "case_id": "CM-006", "eval_model": "vendor/model-inactive", "review_status": "confirmed", "status": "inactive"},
+        ]
+        for row in rows:
+            repo.insert("live_run_scores", row)
+
+        confirmed_only = [
+            row for row in sc.load_exportable_score_rows(db_path=_DB_PATH)
+            if row["score_run_id"] == score_run_id
+        ]
+        self.assertEqual(["vendor/model-confirmed"], [row["eval_model"] for row in confirmed_only])
+
+        with_pending = [
+            row for row in sc.load_exportable_score_rows(include_pending=True, db_path=_DB_PATH)
+            if row["score_run_id"] == score_run_id
+        ]
+        self.assertEqual(
+            ["vendor/model-confirmed", "vendor/model-pending"],
+            sorted(row["eval_model"] for row in with_pending),
+        )
 
     def test_import_project_exported_scores_and_skip_duplicates(self):
         source_rows = [
@@ -555,6 +614,10 @@ class ScorePersistenceTests(unittest.TestCase):
             matched = imported[imported["score_run_id"] == "SCORE-IMPORT-1"]
             self.assertEqual(1, len(matched))
             self.assertEqual("confirmed", matched.iloc[0]["review_status"])
+            confirmed, pending = cc.split_live_scores(imported)
+            summary = cc.summarize_formal(pd.DataFrame(), confirmed)
+            self.assertEqual(1, summary["confirmed_rows"])
+            self.assertEqual(0, len(pending))
 
             duplicate = sc.import_score_rows(parsed["rows"], duplicate_action="skip", db_path=target_db)
             self.assertEqual(0, duplicate["imported_count"])
@@ -589,6 +652,28 @@ class ScorePersistenceTests(unittest.TestCase):
         self.assertEqual([], parsed["rows"])
         self.assertTrue(any("示例模型" in error for error in parsed["errors"]))
         self.assertTrue(any("敏感字段" in error for error in parsed["errors"]))
+
+    def test_import_rejects_non_project_export_and_missing_fields(self):
+        not_project = sc.parse_score_import_content(
+            "other.json",
+            '{"export_type":"other","schema_version":1,"records":[]}',
+        )
+        self.assertFalse(not_project["ok"])
+        self.assertTrue(any("不是项目导出的" in error for error in not_project["errors"]))
+
+        missing = sc.parse_score_import_content(
+            "confirmed_scores.json",
+            '{"export_type":"confirmed_score_export","schema_version":1,"records":[{"case_id":"C1"}]}',
+        )
+        self.assertFalse(missing["ok"])
+        self.assertTrue(any("缺少必要字段" in error for error in missing["errors"]))
+
+    def test_demo_score_export_file_can_be_loaded_or_reports_missing(self):
+        payload = sc.load_demo_score_export_payload()
+
+        self.assertEqual("confirmed_score_export", payload["export_type"])
+        self.assertEqual(1, payload["schema_version"])
+        self.assertIn("records", payload)
 
 
 class ServiceAndWiringTests(unittest.TestCase):

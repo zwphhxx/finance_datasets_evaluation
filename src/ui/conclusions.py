@@ -52,21 +52,21 @@ def render_conclusions_page(data_bundle: dict) -> None:
 # --------------------------------------------------------------------------- #
 def _render_data_source_notice(live_scores: pd.DataFrame) -> None:
     summary = cc.summarize_runtime_scores(live_scores)
-    st.caption(
-        "当前结论来源：运行期 SQLite；seed 文件只作为示例，不进入正式结论。"
-        "正式结论仅包含已确认评分；待确认和暂不采用记录不会纳入。"
+    source_line = (
+        f"当前结论来源：{summary['data_source']}｜"
+        f"已确认 {summary['confirmed']} 条｜"
+        f"待确认 {summary['pending']} 条｜"
+        f"暂不采用 {summary['skipped']} 条"
     )
-    st.caption("运行期 SQLite 不随 Git 提交；重新部署或重建数据库后，可通过导入历史评分恢复演示结论。")
-    render_inline_status(
-        [
-            ("数据源", summary["data_source"]),
-            ("已确认评分", f"{summary['confirmed']} 条"),
-            ("待确认评分", f"{summary['pending']} 条"),
-            ("暂不采用", f"{summary['skipped']} 条"),
-        ]
-    )
+    col_text, col_action = st.columns([4.6, 1.0], gap="small")
+    with col_text:
+        st.caption(source_line)
+        st.caption("正式结论仅包含已确认评分；待确认和暂不采用记录不会纳入。")
+    with col_action:
+        if st.button("数据维护", type="secondary", key="conclusion_data_maintenance", use_container_width=True):
+            _render_score_data_maintenance_dialog()
     if not ds.database_ready():
-        st.caption("当前 SQLite 尚不可用。请先运行发起评测并生成评分草稿，或导入历史评分。")
+        st.caption("当前 SQLite 尚不可用。请先运行发起评测并生成评分草稿，或通过数据维护导入评分文件。")
 
     message = st.session_state.get("conclusion_score_io_message")
     if isinstance(message, dict) and message.get("text"):
@@ -78,6 +78,11 @@ def _render_data_source_notice(live_scores: pd.DataFrame) -> None:
         else:
             st.info(str(message["text"]))
 
+
+@st.dialog("历史评分数据", width="large")
+def _render_score_data_maintenance_dialog() -> None:
+    st.markdown("**导出**")
+    st.caption("默认只导出已确认评分；待确认草稿不会进入正式结论。")
     include_pending = st.checkbox(
         "导出时包含待确认草稿",
         value=False,
@@ -86,31 +91,24 @@ def _render_data_source_notice(live_scores: pd.DataFrame) -> None:
     )
     payload = sc.export_score_payload(include_pending=include_pending)
     export_text = sc.serialize_score_export_payload(payload)
-    file_name = f"confirmed_scores_{datetime.now():%Y%m%d}.json"
+    file_name = f"confirmed_scores_{datetime.now():%Y%m%d_%H%M}.json"
     if include_pending:
-        file_name = f"confirmed_and_pending_scores_{datetime.now():%Y%m%d}.json"
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        st.download_button(
-            "导出已确认评分",
-            data=export_text,
-            file_name=file_name,
-            mime="application/json",
-            type="tertiary",
-            disabled=not bool(payload.get("rows")),
-            key="conclusion_export_scores",
-        )
-    with col2:
-        if st.button("导入历史评分", type="tertiary", key="conclusion_import_scores"):
-            _render_import_scores_dialog()
+        file_name = f"confirmed_and_pending_scores_{datetime.now():%Y%m%d_%H%M}.json"
+    st.download_button(
+        "导出已确认评分",
+        data=export_text,
+        file_name=file_name,
+        mime="application/json",
+        type="secondary",
+        disabled=not bool(payload.get("records")),
+        key="conclusion_export_scores",
+    )
 
-
-@st.dialog("导入历史评分", width="large")
-def _render_import_scores_dialog() -> None:
-    st.markdown("仅导入本项目导出的历史评分文件。导入后，已确认评分会进入评测结论。")
+    st.markdown("**导入**")
+    st.caption("仅导入本项目导出的评分 JSON；重复记录按 score_run_id、case_id 和 eval_model 判断。")
     uploaded = st.file_uploader(
-        "上传 JSON 或 CSV 文件",
-        type=["json", "csv"],
+        "上传评分 JSON 文件",
+        type=["json"],
         key="conclusion_import_scores_file",
     )
     duplicate_label = st.radio(
@@ -125,37 +123,38 @@ def _render_import_scores_dialog() -> None:
         "取消导入": "cancel",
     }
     if not uploaded:
-        st.caption("重复记录按 score_run_id、case_id 和 eval_model 判断。")
-        return
-
-    parsed = sc.parse_score_import_content(uploaded.name, uploaded.getvalue())
-    rows = parsed.get("rows") or []
-    errors = parsed.get("errors") or []
-    render_inline_status(
-        [
-            ("可导入记录", f"{len(rows)} 条"),
-            ("校验问题", f"{len(errors)} 条"),
-        ]
-    )
-    if errors:
-        st.warning("；".join(str(error) for error in errors[:3]))
-    if not rows:
-        st.caption("没有可导入的评分记录。")
-        return
-
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("确认导入", type="primary", key="conclusion_import_scores_submit", use_container_width=True):
+        st.caption("可上传已确认评分导出文件，或使用下方演示评分文件恢复。")
+    else:
+        parsed = sc.parse_score_import_content(uploaded.name, uploaded.getvalue())
+        rows = parsed.get("rows") or []
+        errors = parsed.get("errors") or []
+        render_inline_status(
+            [
+                ("可导入记录", f"{len(rows)} 条"),
+                ("校验问题", f"{len(errors)} 条"),
+            ]
+        )
+        if errors:
+            st.warning("；".join(str(error) for error in errors[:3]))
+        if rows and st.button("导入评分文件", type="primary", key="conclusion_import_scores_submit"):
             result = sc.import_score_rows(rows, duplicate_action=action_map[duplicate_label])
-            level = "success" if result.get("imported_count") or result.get("updated_count") else "warning"
-            st.session_state["conclusion_score_io_message"] = {
-                "level": level,
-                "text": result.get("summary") or "导入已处理。",
-            }
+            _record_score_io_message(result)
             st.rerun()
-    with col2:
-        if st.button("取消", type="tertiary", key="conclusion_import_scores_cancel", use_container_width=True):
-            st.rerun()
+
+    st.markdown("**演示恢复**")
+    st.caption("从仓库中的脱敏演示评分文件恢复已确认评分，不会删除现有评分。")
+    if st.button("从演示评分文件恢复", type="secondary", key="conclusion_restore_demo_scores"):
+        result = sc.import_demo_confirmed_scores(duplicate_action=action_map[duplicate_label])
+        _record_score_io_message(result)
+        st.rerun()
+
+
+def _record_score_io_message(result: dict) -> None:
+    level = "success" if result.get("imported_count") or result.get("updated_count") else "warning"
+    st.session_state["conclusion_score_io_message"] = {
+        "level": level,
+        "text": result.get("summary") or "导入已处理。",
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -177,7 +176,8 @@ def _render_current_conclusion(confirmed_live, draft_rows: list[dict]) -> None:
             "- 尚未在评分确认页确认生效；\n"
             "- 当前部署环境的运行期 SQLite 已重建；\n"
             "- 仅存在示例评价或待确认草稿，未进入正式结论。\n\n"
-            "请先在“发起评测”页生成评分草稿，并在“评分确认”页确认生效。"
+            "请先在“发起评测”页生成评分草稿，并在“评分确认”页确认生效；"
+            "也可以通过“数据维护”导入已确认评分文件恢复演示结论。"
         )
         return
 
