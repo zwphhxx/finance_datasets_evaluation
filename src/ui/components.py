@@ -254,25 +254,34 @@ header,
     padding-left: 0.85rem;
 }
 .home-section {
-    display: grid;
-    grid-template-columns: 5.4rem minmax(0, 1fr);
-    gap: 1.35rem;
-    margin: 2.1rem 0 0 0;
-    padding: 1.55rem 0 0 0;
+    margin: 2.25rem 0 0 0;
+    padding: 1.6rem 0 0 0;
     border-top: 1px solid var(--fde-line-strong);
+}
+.home-section-first {
+    border-top: 0;
+    padding-top: 0;
+}
+.home-section-heading {
+    display: grid;
+    grid-template-columns: 5rem minmax(0, 1fr);
+    gap: 1.35rem;
+    align-items: start;
+    margin-bottom: 0.9rem;
 }
 .home-section-number {
     color: var(--fde-accent);
-    font-size: 2.45rem;
+    font-size: 2.4rem;
     font-weight: 820;
-    line-height: 1;
+    line-height: 1.08;
     letter-spacing: 0;
+    padding-top: 0.02rem;
 }
 .home-section-title {
     color: var(--fde-ink);
-    font-size: 1.55rem;
+    font-size: 1.58rem;
     font-weight: 820;
-    line-height: 1.22;
+    line-height: 1.15;
     margin: 0;
 }
 .home-section-lead {
@@ -280,7 +289,10 @@ header,
     font-size: 1.03rem;
     font-weight: 680;
     line-height: 1.55;
-    margin: 0.38rem 0 0.85rem 0;
+    margin: 0.42rem 0 0 0;
+}
+.home-section-body {
+    margin-left: 6.35rem;
 }
 .home-section-body p {
     color: var(--fde-text);
@@ -291,31 +303,32 @@ header,
 }
 .numbered-section {
     display: grid;
-    grid-template-columns: 3.1rem minmax(0, 1fr);
-    gap: 0.9rem;
+    grid-template-columns: 3.4rem minmax(0, 1fr);
+    gap: 1rem;
     align-items: start;
-    margin: 1.8rem 0 0.85rem 0;
-    padding-top: 0.85rem;
+    margin: 1.9rem 0 0.95rem 0;
+    padding-top: 1rem;
     border-top: 1px solid var(--fde-line);
 }
 .numbered-section-index {
     color: var(--fde-accent);
-    font-size: 0.98rem;
+    font-size: 1.05rem;
     font-weight: 820;
     letter-spacing: 0.02em;
-    padding-top: 0.1rem;
+    line-height: 1.25;
+    padding-top: 0.12rem;
 }
 .numbered-section-title {
     color: var(--fde-ink);
-    font-size: 1.22rem;
+    font-size: 1.28rem;
     font-weight: 820;
-    line-height: 1.3;
+    line-height: 1.24;
 }
 .numbered-section-caption {
     color: var(--fde-muted);
-    font-size: 0.92rem;
+    font-size: 0.94rem;
     line-height: 1.55;
-    margin-top: 0.22rem;
+    margin-top: 0.28rem;
 }
 .inline-status {
     display: grid;
@@ -801,15 +814,18 @@ div[data-testid="stDialog"] {
     .process-line-separator {
         width: 1.2rem;
     }
-    .home-section {
+    .home-section-heading {
         grid-template-columns: 1fr;
-        gap: 0.45rem;
+        gap: 0.35rem;
     }
     .home-section-number {
         font-size: 1.75rem;
     }
     .home-section-title {
         font-size: 1.32rem;
+    }
+    .home-section-body {
+        margin-left: 0;
     }
 }
 </style>
@@ -911,17 +927,22 @@ def render_home_section(
     title: str,
     lead: str,
     body: list[str],
+    *,
+    first: bool = False,
 ) -> None:
     body_html = "".join(f"<p>{escape(str(paragraph))}</p>" for paragraph in body if str(paragraph).strip())
+    section_class = "home-section home-section-first" if first else "home-section"
     render_html(
         f"""
-        <section class="home-section">
-            <div class="home-section-number">{escape(str(number))}</div>
-            <div>
-                <h2 class="home-section-title">{escape(str(title))}</h2>
-                <div class="home-section-lead">{escape(str(lead))}</div>
-                <div class="home-section-body">{body_html}</div>
+        <section class="{section_class}">
+            <div class="home-section-heading">
+                <div class="home-section-number">{escape(str(number))}</div>
+                <div class="home-section-heading-main">
+                    <h2 class="home-section-title">{escape(str(title))}</h2>
+                    <div class="home-section-lead">{escape(str(lead))}</div>
+                </div>
             </div>
+            <div class="home-section-body">{body_html}</div>
         </section>
         """
     )

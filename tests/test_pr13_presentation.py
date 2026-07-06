@@ -50,6 +50,7 @@ class CaseStudyPresentationTests(unittest.TestCase):
             self.assertIn(f'title="{title}"', source)
             self.assertIn(f'lead="{lead}"', source)
         self.assertNotIn("render_numbered_section", source)
+        self.assertIn("first=True", source)
 
     def test_case_study_keeps_process_line_only_in_flow_section(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
@@ -66,13 +67,40 @@ class CaseStudyPresentationTests(unittest.TestCase):
             "font-weight: 820;",
             "letter-spacing: 0;",
             "border-left: 2px solid var(--fde-accent);",
-            "grid-template-columns: 5.4rem minmax(0, 1fr);",
-            "font-size: 2.45rem;",
-            "font-size: 1.55rem;",
-            "grid-template-columns: 3.1rem minmax(0, 1fr);",
-            "font-size: 1.22rem;",
+            ".home-section-first",
+            "border-top: 0;",
+            "grid-template-columns: 5rem minmax(0, 1fr);",
+            "margin-left: 6.35rem;",
+            "font-size: 2.4rem;",
+            "font-size: 1.58rem;",
+            "grid-template-columns: 3.4rem minmax(0, 1fr);",
+            "font-size: 1.28rem;",
         ]:
             self.assertIn(snippet, css)
+
+    def test_home_section_html_groups_number_title_lead_and_body(self):
+        import src.ui.components as components
+
+        captured = []
+        original = components.render_html
+        try:
+            components.render_html = lambda html, container=None: captured.append(str(html))
+            components.render_home_section(
+                number="01",
+                title="项目定位",
+                lead="评估模型在财务、法律、投行场景中的回答质量。",
+                body=["正文"],
+                first=True,
+            )
+        finally:
+            components.render_html = original
+
+        html = "".join(captured)
+        self.assertIn('class="home-section home-section-first"', html)
+        self.assertIn("home-section-heading", html)
+        self.assertIn("home-section-heading-main", html)
+        self.assertIn("home-section-body", html)
+        self.assertLess(html.index("home-section-heading"), html.index("home-section-body"))
 
 
 class TaskPresentationTests(unittest.TestCase):
