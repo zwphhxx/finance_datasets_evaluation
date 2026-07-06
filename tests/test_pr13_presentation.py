@@ -15,15 +15,25 @@ class CaseStudyPresentationTests(unittest.TestCase):
 
     def test_home_stats_cover_core_assets_with_live_counts(self):
         stats = {label: value for value, label in case_study._build_home_stats(self.data, {})}
-        self.assertIn("正式样本", stats)
-        self.assertIn("尽调场景", stats)
-        self.assertIn(str(len(self.data.tasks)), stats["正式样本"])
+        self.assertIn("当前样本", stats)
+        self.assertIn("覆盖领域", stats)
+        self.assertIn(str(len(self.data.tasks)), stats["当前样本"])
 
     def test_case_study_source_keeps_three_main_sections(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         for section in ("项目定位", "评测流程", "数据边界"):
             self.assertIn(section, source)
         self.assertNotIn("04\", \"进入操作", source)
+
+    def test_case_study_reads_as_professional_brief(self):
+        source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
+        self.assertIn("本项目不判断哪个模型最好", source)
+        self.assertIn("样本库 ── 发起评测 ── 评分确认 ── 评测结论", source)
+        self.assertIn("被测模型不会看到 Gold Answer、必须覆盖点、不可接受错误或 Rubric", source)
+        self.assertIn("正式结论 = 真实运行结果 + 裁判评分草稿 + 人工确认", source)
+        self.assertNotIn("维护样本", source)
+        self.assertNotIn("确认可测", source)
+        self.assertNotIn("render_inline_status", source)
 
 
 class TaskPresentationTests(unittest.TestCase):

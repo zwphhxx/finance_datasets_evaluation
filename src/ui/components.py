@@ -190,6 +190,60 @@ header,
     font-size: 0.78rem;
     margin-top: 0.2rem;
 }
+.brief-intro {
+    margin: 0.35rem 0 1.45rem 0;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--fde-line);
+}
+.brief-title {
+    color: var(--fde-ink);
+    font-size: 2rem;
+    font-weight: 780;
+    line-height: 1.18;
+    letter-spacing: 0;
+    margin: 0;
+    max-width: 54rem;
+}
+.brief-subtitle {
+    color: var(--fde-muted);
+    font-size: 0.98rem;
+    line-height: 1.62;
+    margin: 0.7rem 0 0 0;
+    max-width: 46rem;
+}
+.brief-meta {
+    color: var(--fde-muted);
+    font-size: 0.88rem;
+    line-height: 1.5;
+    margin-top: 0.9rem;
+}
+.brief-meta strong {
+    color: var(--fde-ink);
+    font-weight: 720;
+}
+.process-line {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.58rem;
+    margin: 1rem 0 0.25rem 0;
+    color: var(--fde-ink);
+    font-size: 0.94rem;
+    font-weight: 680;
+}
+.process-line-separator {
+    width: 2.2rem;
+    height: 1px;
+    background: var(--fde-line-strong);
+    flex: 0 0 auto;
+}
+.process-line-text {
+    color: var(--fde-ink);
+    font-size: 0.94rem;
+    font-weight: 680;
+    line-height: 1.5;
+    margin: 0.85rem 0 0.35rem 0;
+}
 .numbered-section {
     display: grid;
     grid-template-columns: 2.4rem minmax(0, 1fr);
@@ -694,6 +748,12 @@ div[data-testid="stDialog"] {
         grid-template-columns: 1fr;
         gap: 0.18rem;
     }
+    .brief-title {
+        font-size: 1.62rem;
+    }
+    .process-line-separator {
+        width: 1.2rem;
+    }
 }
 </style>
 """
@@ -757,6 +817,44 @@ def render_compact_hero(
         </div>
         """
     )
+
+
+def render_brief_intro(
+    title: str,
+    subtitle: str,
+    stats: list[tuple[str, str]] | None = None,
+    process_text: str | None = None,
+) -> None:
+    stat_parts = []
+    for value, label in stats or []:
+        stat_parts.append(f'<strong>{escape(str(label))}</strong> {escape(str(value))}')
+    stats_html = f'<div class="brief-meta">{" · ".join(stat_parts)}</div>' if stat_parts else ""
+    process_html = (
+        f'<div class="process-line-text">{escape(str(process_text))}</div>'
+        if process_text
+        else ""
+    )
+    render_html(
+        f"""
+        <div class="brief-intro">
+            <h1 class="brief-title">{escape(str(title))}</h1>
+            <p class="brief-subtitle">{escape(str(subtitle))}</p>
+            {stats_html}
+            {process_html}
+        </div>
+        """
+    )
+
+
+def render_process_line(steps: list[str]) -> None:
+    if not steps:
+        return
+    parts: list[str] = []
+    for index, step in enumerate(steps):
+        if index:
+            parts.append('<span class="process-line-separator"></span>')
+        parts.append(f'<span>{escape(str(step))}</span>')
+    render_html(f'<div class="process-line">{"".join(parts)}</div>')
 
 
 def render_numbered_section(index: str, title: str, caption: str | None = None) -> None:

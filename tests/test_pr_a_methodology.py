@@ -39,9 +39,9 @@ class RegistrationTests(unittest.TestCase):
 
     def test_source_uses_current_shared_components_only(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
-        self.assertIn("render_compact_hero", source)
+        self.assertIn("render_brief_intro", source)
+        self.assertIn("render_process_line", source)
         self.assertIn("render_numbered_section", source)
-        self.assertIn("render_inline_status", source)
         self.assertIn("render_clean_list", source)
         for legacy_name in (
             "render_mockup_stack",
@@ -63,6 +63,8 @@ class RegistrationTests(unittest.TestCase):
         self.assertNotIn("查看样本库", source)
         self.assertIn("当前样本内观察", source)
         self.assertIn("使用边界", source)
+        self.assertIn("被测模型不会看到 Gold Answer、必须覆盖点、不可接受错误或 Rubric", source)
+        self.assertIn("正式结论 = 真实运行结果 + 裁判评分草稿 + 人工确认", source)
 
 
 class DynamicStatsTests(unittest.TestCase):
@@ -73,17 +75,17 @@ class DynamicStatsTests(unittest.TestCase):
         stats = {label: value for value, label in _build_home_stats(self.data, {})}
         task_count = len(self.data.tasks)
         domain_count = self.data.tasks["domain"].dropna().nunique()
-        self.assertEqual(str(task_count), stats["正式样本"])
-        self.assertEqual(str(domain_count), stats["尽调场景"])
-        self.assertEqual(str(len(SCORE_DIMENSIONS)), stats["评分维度"])
+        self.assertEqual(f"{task_count} 个", stats["当前样本"])
+        self.assertEqual(f"{domain_count} 类", stats["覆盖领域"])
+        self.assertEqual(f"{len(SCORE_DIMENSIONS)} 个", stats["Rubric 维度"])
 
     def test_home_stats_track_data_changes(self):
         stub = types.SimpleNamespace(
             tasks=pd.DataFrame({"domain": ["a", "b", "b"]}),
         )
         stats = {label: value for value, label in _build_home_stats(stub, {})}
-        self.assertEqual("3", stats["正式样本"])
-        self.assertEqual("2", stats["尽调场景"])
+        self.assertEqual("3 个", stats["当前样本"])
+        self.assertEqual("2 类", stats["覆盖领域"])
 
     def test_sample_scope_text_uses_domain_labels(self):
         text = _build_sample_scope_text(self.data)
