@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from html import escape
+
 import pandas as pd
 import streamlit as st
 
@@ -10,14 +12,18 @@ from app.services import model_display as md
 from app.services import scorer as sc
 from src.gold_quality import field_list, field_text
 from src.metrics import get_errors_for_output, normalize_optimization_plan
-from src.ui.components import render_clean_list, render_inline_status
+from src.ui.components import (
+    render_clean_list,
+    render_html,
+    render_inline_status,
+    render_markdown_detail_panel,
+)
 from src.ui.labels import (
     DIFFICULTY_LABELS,
     DOMAIN_LABELS,
     RISK_LABELS,
     TASK_TYPE_LABELS,
     display_label,
-    summarize_text,
 )
 from src.ui.review_scoring import (
     attention_items,
@@ -37,33 +43,89 @@ def render_score_summary(
     errors_df: pd.DataFrame,
     optimization_df: pd.DataFrame,
 ) -> None:
+    panel = build_score_summary_panel(item, errors_df)
+    with st.container(border=True):
+        title_col, action_col = st.columns([4.8, 1.15], gap="small")
+        with title_col:
+            render_html(
+                f"""
+                <div class="review-summary-toolbar-title">
+                    <div>{escape(panel["title"])}</div>
+                    <span>{escape(panel["meta"])}</span>
+                    <span>模型 ID：{escape(panel["model_id"])}</span>
+                </div>
+                """
+            )
+        with action_col:
+            if st.button(
+                "查看评分材料",
+                type="secondary",
+                key=f"review_materials::{item['case_id']}::{safe_key(panel['model_id'])}",
+                use_container_width=True,
+            ):
+                render_score_materials_dialog(item, verdict, errors_df, optimization_df)
+        render_html(_score_summary_body_html(panel))
+
+
+def build_score_summary_panel(item: dict, errors_df: pd.DataFrame | None) -> dict[str, object]:
     row = item["output_row"]
-    recommendation = item["recommendation"]
-    reasons = recommendation.get("reasons") or ["暂无原因"]
-    model_id = item["model_name"]
-    summary_rows = [
-        ("样本", item["case_id"]),
-        ("模型", item["display_model"]),
-        ("完整模型 ID", model_id),
-        ("总分", f"{score_text(row.get('total_score'))} / 100"),
-        ("建议处理", str(recommendation.get("recommendation") or "待判断")),
-        ("主要原因", summarize_text("；".join(reasons[:3]), 96)),
+    recommendation = item.get("recommendation") or {}
+    reasons = [str(reason).strip() for reason in recommendation.get("reasons") or [] if str(reason).strip()]
+    model_id = text(item.get("model_name") or row.get("eval_model"), "—")
+    judge_model = md.display_model_name(row.get("judge_model") or sc.DEFAULT_JUDGE_MODEL)
+    attention = attention_items(
+        row,
+        errors_df if isinstance(errors_df, pd.DataFrame) else pd.DataFrame(),
+        item.get("gold"),
+        item.get("task_info"),
+        item.get("rubric_rows") or [],
+    )
+    return {
+        "title": f'{text(item.get("case_id"), "—")}｜{text(item.get("display_model"), "—")}',
+        "meta": (
+            f"总分 {score_text(row.get('total_score'))} / 100｜"
+            f"建议处理：{text(recommendation.get('recommendation'), '待判断')}｜"
+            f"裁判模型：{judge_model}"
+        ),
+        "model_id": model_id,
+        "reason": "；".join(reasons[:3]) or "暂无明确原因",
+        "attention": attention,
+        "review_note": text(row.get("review_note"), ""),
+    }
+
+
+def _score_summary_body_html(panel: dict[str, object]) -> str:
+    sections = [
+        _summary_section_html(
+            "主要原因",
+            f'<p class="review-summary-text">{escape(str(panel.get("reason") or "暂无明确原因"))}</p>',
+        ),
     ]
-    render_inline_status(summary_rows)
-
-    attention = attention_items(row, errors_df, item["gold"], item["task_info"], item.get("rubric_rows") or [])
+    review_note = str(panel.get("review_note") or "").strip()
+    if review_note:
+        sections.append(
+            _summary_section_html(
+                "复核提示",
+                f'<p class="review-summary-text">{escape(review_note)}</p>',
+            )
+        )
+    attention = [str(item).strip() for item in panel.get("attention") or [] if str(item).strip()]
     if attention:
-        st.markdown("**需要关注**")
-        render_markdown_bullets(attention)
+        items = "".join(f"<li>{escape(item)}</li>" for item in attention)
+        attention_html = f'<ul class="review-summary-list">{items}</ul>'
     else:
-        st.caption("当前摘要未发现需额外关注的低分维度或红线提示。")
+        attention_html = '<p class="review-summary-text">暂无特别关注点。</p>'
+    sections.append(_summary_section_html("需要关注", attention_html))
+    return f'<div class="review-summary-panel-body">{"".join(sections)}</div>'
 
-    if st.button(
-        "查看评分材料",
-        type="tertiary",
-        key=f"review_materials::{item['case_id']}::{safe_key(model_id)}",
-    ):
-        render_score_materials_dialog(item, verdict, errors_df, optimization_df)
+
+def _summary_section_html(title: str, body_html: str) -> str:
+    return (
+        '<section class="review-summary-section">'
+        f'<div class="review-summary-section-title">{escape(title)}</div>'
+        f"{body_html}"
+        "</section>"
+    )
 
 
 @st.dialog("评分材料", width="large")
@@ -107,8 +169,7 @@ def render_score_materials_dialog(
     else:
         st.caption("该任务暂无理想回复标准 / Gold Answer。")
 
-    st.markdown("**模型回答**")
-    st.markdown(text(row.get("answer_text"), "暂无回答内容。"))
+    render_markdown_detail_panel("模型回答", text(row.get("answer_text"), "暂无回答内容。"))
 
     st.markdown("**Rubric 原始要求**")
     rubric_rows = rubric_material_rows(ds.get_rubric_dimensions())

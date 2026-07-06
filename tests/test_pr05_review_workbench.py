@@ -7,6 +7,7 @@ import pandas as pd
 
 from src.ui import components
 from src.ui import review
+from src.ui import review_materials
 from src.ui import review_queue
 
 
@@ -78,6 +79,52 @@ class ReviewStructureTests(unittest.TestCase):
         materials_source = Path("src/ui/review_materials.py").read_text(encoding="utf-8")
         self.assertIn('@st.dialog("评分材料"', materials_source)
         self.assertIn('"查看评分材料"', materials_source)
+
+    def test_current_score_summary_uses_detail_panel_with_materials_action(self):
+        materials_source = Path("src/ui/review_materials.py").read_text(encoding="utf-8")
+        components_source = Path("src/ui/components.py").read_text(encoding="utf-8")
+        summary_source = materials_source.split("def render_score_summary", 1)[1].split("@st.dialog", 1)[0]
+
+        self.assertIn("build_score_summary_panel", materials_source)
+        self.assertIn("review-summary-toolbar-title", components_source)
+        self.assertIn("st.container(border=True)", summary_source)
+        self.assertIn("review-summary-panel-body", summary_source)
+        self.assertIn('"查看评分材料"', summary_source)
+        self.assertIn('type="secondary"', summary_source)
+        self.assertIn("主要原因", summary_source)
+        self.assertIn("需要关注", summary_source)
+        self.assertNotIn("render_inline_status(summary_rows)", summary_source)
+
+    def test_score_summary_panel_separates_compact_fields_and_long_text(self):
+        item = {
+            "case_id": "CASE-1",
+            "display_model": "model-x",
+            "model_name": "provider/model-x",
+            "gold": {},
+            "task_info": {"risk_level": "高"},
+            "rubric_rows": [],
+            "output_row": _score_row(
+                judge_model="judge/model-y",
+                review_note="复核提示需要单独展示",
+                answer_text="回答内容",
+                judge_status="success",
+            ),
+            "recommendation": {
+                "recommendation": "建议复核",
+                "reasons": ["总分处于中间区间", "任务风险等级较高"],
+            },
+        }
+
+        panel = review_materials.build_score_summary_panel(item, pd.DataFrame())
+
+        self.assertEqual("CASE-1｜model-x", panel["title"])
+        self.assertIn("总分 55 / 100", panel["meta"])
+        self.assertIn("建议处理：建议复核", panel["meta"])
+        self.assertIn("裁判模型：model-y", panel["meta"])
+        self.assertEqual("provider/model-x", panel["model_id"])
+        self.assertEqual("总分处于中间区间；任务风险等级较高", panel["reason"])
+        self.assertEqual("复核提示需要单独展示", panel["review_note"])
+        self.assertTrue(any("任务风险等级较高" in item for item in panel["attention"]))
 
 
 class ReviewMatrixTests(unittest.TestCase):

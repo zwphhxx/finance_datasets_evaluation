@@ -405,6 +405,72 @@ header,
     margin-top: 0.5rem;
     overflow-wrap: anywhere;
 }
+[data-testid="stVerticalBlockBorderWrapper"]:has(.review-summary-toolbar-title) {
+    border-color: var(--fde-line) !important;
+    border-radius: var(--fde-radius) !important;
+    background: var(--fde-surface) !important;
+    box-shadow: none !important;
+    margin: 0.55rem 0 1rem 0;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:has(.review-summary-toolbar-title)
+    [data-testid="stVerticalBlock"] {
+    gap: 0.25rem;
+}
+[data-testid="stHorizontalBlock"]:has(.review-summary-toolbar-title) {
+    align-items: start;
+    gap: 0.65rem;
+    padding-bottom: 0.62rem;
+    border-bottom: 1px solid var(--fde-line);
+}
+.review-summary-toolbar-title div {
+    color: var(--fde-ink);
+    font-size: 1.01rem;
+    font-weight: 720;
+    line-height: 1.44;
+    overflow-wrap: anywhere;
+}
+.review-summary-toolbar-title span {
+    display: block;
+    color: var(--fde-muted);
+    font-size: 0.84rem;
+    line-height: 1.5;
+    margin-top: 0.18rem;
+    overflow-wrap: anywhere;
+}
+.review-summary-panel-body {
+    padding-top: 0.5rem;
+}
+.review-summary-section {
+    margin-top: 0.92rem;
+}
+.review-summary-section:first-child {
+    margin-top: 0;
+}
+.review-summary-section-title {
+    color: var(--fde-muted);
+    font-size: 0.84rem;
+    font-weight: 760;
+    margin-bottom: 0.42rem;
+}
+.review-summary-text {
+    color: var(--fde-ink);
+    font-size: 0.94rem;
+    font-weight: 400;
+    line-height: 1.62;
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+.review-summary-list {
+    color: var(--fde-ink);
+    font-size: 0.94rem;
+    font-weight: 400;
+    line-height: 1.62;
+    margin: 0 0 0.1rem 1.1rem;
+    padding: 0;
+}
+.review-summary-list li {
+    margin: 0.16rem 0;
+}
 .markdown-detail-body {
     color: var(--fde-ink);
     font-size: 0.94rem;
