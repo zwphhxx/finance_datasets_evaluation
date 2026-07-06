@@ -294,6 +294,70 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("<strong>准确性</strong>", table_html)
         self.assertIn('class="markdown-detail-inline-code"', table_html)
 
+    def test_answer_markdown_section_numbers_render_as_subtitles(self):
+        html = ui_components.markdown_detail_html(
+            "1. 结论\n\n"
+            "模型回答正文。\n\n"
+            "2. 主要依据\n\n"
+            "结合题目材料判断。\n\n"
+            "3. 风险与核查边界\n\n"
+            "仍需核查底稿。"
+        )
+
+        self.assertEqual(3, html.count('class="markdown-detail-heading"'))
+        self.assertIn("1. 结论", html)
+        self.assertIn("2. 主要依据", html)
+        self.assertIn("3. 风险与核查边界", html)
+        self.assertNotIn("<ol", html)
+
+    def test_answer_markdown_chinese_section_numbers_render_as_subtitles(self):
+        html = ui_components.markdown_detail_html("一、结论\n\n正文\n\n二、主要依据\n\n正文")
+
+        self.assertEqual(2, html.count('class="markdown-detail-heading"'))
+        self.assertIn("一、结论", html)
+        self.assertIn("二、主要依据", html)
+        self.assertNotIn("<ol", html)
+
+    def test_answer_markdown_parenthesized_section_numbers_render_as_subtitles(self):
+        html = ui_components.markdown_detail_html("（一）结论\n\n正文\n\n（二）主要依据\n\n正文")
+
+        self.assertEqual(2, html.count('class="markdown-detail-heading"'))
+        self.assertIn("（一）结论", html)
+        self.assertIn("（二）主要依据", html)
+        self.assertNotIn("<ol", html)
+
+    def test_answer_markdown_arabic_parenthesized_sections_render_as_subtitles(self):
+        html = ui_components.markdown_detail_html("1）结论\n\n正文\n\n2) 主要依据\n\n正文")
+
+        self.assertEqual(2, html.count('class="markdown-detail-heading"'))
+        self.assertIn("1）结论", html)
+        self.assertIn("2) 主要依据", html)
+        self.assertNotIn("<ol", html)
+
+    def test_answer_markdown_keeps_true_ordered_lists(self):
+        html = ui_components.markdown_detail_html("1. 核查交易协议\n2. 核查审计报告\n3. 核查评估报告")
+
+        self.assertIn('<ol class="markdown-detail-list">', html)
+        self.assertIn("<li>核查交易协议</li>", html)
+        self.assertIn("<li>核查审计报告</li>", html)
+        self.assertIn("<li>核查评估报告</li>", html)
+        self.assertNotIn('class="markdown-detail-heading"', html)
+
+    def test_answer_markdown_preserves_ordered_list_start_number(self):
+        html = ui_components.markdown_detail_html("2. 第二项\n3. 第三项")
+
+        self.assertIn('<ol class="markdown-detail-list" start="2">', html)
+        self.assertIn("<li>第二项</li>", html)
+        self.assertIn("<li>第三项</li>", html)
+        self.assertNotIn('class="markdown-detail-heading"', html)
+
+    def test_answer_markdown_keeps_numbered_lines_inside_code_blocks(self):
+        html = ui_components.markdown_detail_html("```text\n1. code\n2. code\n```")
+
+        self.assertIn('<pre class="markdown-detail-code"><code>1. code\n2. code</code></pre>', html)
+        self.assertNotIn("<ol", html)
+        self.assertNotIn('class="markdown-detail-heading"', html)
+
 
 class SampleSelectionTests(unittest.TestCase):
     def test_sample_options_use_unified_readiness_and_compact_labels(self):

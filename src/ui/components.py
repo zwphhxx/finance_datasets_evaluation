@@ -749,6 +749,12 @@ def render_detail_panel(body_html: str, title: str | None = None, meta: str | No
     )
 
 
+_ORDERED_ITEM_RE = re.compile(r"^\s*(?P<number>\d+)(?:\.\s+|\)\s*|）\s*)(?P<text>.+?)\s*$")
+_CHINESE_SECTION_RE = re.compile(
+    r"^\s*(?:[一二三四五六七八九十百千万]+、|[（(][一二三四五六七八九十百千万]+[）)])\s*(?P<text>.+?)\s*$"
+)
+
+
 def markdown_detail_html(markdown_text: str) -> str:
     """Render model-authored Markdown into a constrained detail-pane HTML subset."""
     lines = str(markdown_text or "").splitlines()
@@ -807,6 +813,12 @@ def markdown_detail_html(markdown_text: str) -> str:
             index += 1
             continue
 
+        if _is_chinese_section_heading(line):
+            close_list()
+            parts.append(f'<div class="markdown-detail-heading">{_inline_markdown_html(stripped)}</div>')
+            index += 1
+            continue
+
         unordered = re.match(r"^\s*[-*]\s+(.+)$", line)
         if unordered:
             if list_type != "ul":
@@ -817,13 +829,21 @@ def markdown_detail_html(markdown_text: str) -> str:
             index += 1
             continue
 
-        ordered = re.match(r"^\s*\d+[.)]\s+(.+)$", line)
+        ordered = _ordered_item_match(line)
         if ordered:
+            number = int(ordered.group("number"))
+            item_text = ordered.group("text")
+            if _is_numbered_section_heading(lines, index, ordered):
+                close_list()
+                parts.append(f'<div class="markdown-detail-heading">{_inline_markdown_html(stripped)}</div>')
+                index += 1
+                continue
             if list_type != "ol":
                 close_list()
                 list_type = "ol"
-                parts.append('<ol class="markdown-detail-list">')
-            parts.append(f"<li>{_inline_markdown_html(ordered.group(1))}</li>")
+                start_attr = f' start="{number}"' if number != 1 else ""
+                parts.append(f'<ol class="markdown-detail-list"{start_attr}>')
+            parts.append(f"<li>{_inline_markdown_html(item_text)}</li>")
             index += 1
             continue
 
@@ -855,6 +875,55 @@ def _inline_markdown_html(text: str) -> str:
     html = re.sub(r"`([^`]+)`", r'<code class="markdown-detail-inline-code">\1</code>', html)
     html = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", html)
     return html
+
+
+def _ordered_item_match(line: str) -> re.Match[str] | None:
+    return _ORDERED_ITEM_RE.match(str(line or ""))
+
+
+def _is_chinese_section_heading(line: str) -> bool:
+    match = _CHINESE_SECTION_RE.match(str(line or ""))
+    return bool(match and _is_concise_detail_heading(match.group("text")))
+
+
+def _is_numbered_section_heading(lines: list[str], index: int, match: re.Match[str]) -> bool:
+    """Treat short numbered lines followed by body copy as detail-pane headings."""
+    text = match.group("text")
+    if not _is_concise_detail_heading(text):
+        return False
+
+    next_index = _next_nonempty_index(lines, index + 1)
+    if next_index is None:
+        return False
+
+    next_line = lines[next_index]
+    if _ordered_item_match(next_line):
+        return False
+    if re.match(r"^\s*[-*]\s+", next_line):
+        return False
+    if re.match(r"^\s{0,3}#{1,6}\s+", next_line):
+        return False
+    if next_line.strip().startswith(("```", "~~~")):
+        return False
+    if _is_markdown_table_start(lines, next_index):
+        return False
+    return True
+
+
+def _next_nonempty_index(lines: list[str], start: int) -> int | None:
+    for cursor in range(start, len(lines)):
+        if str(lines[cursor]).strip():
+            return cursor
+    return None
+
+
+def _is_concise_detail_heading(text: str) -> bool:
+    clean = re.sub(r"[*_`]+", "", str(text or "")).strip()
+    if not clean:
+        return False
+    if len(clean) > 48:
+        return False
+    return not clean.endswith(("。", "！", "？", "；", ".", "!", "?", ";"))
 
 
 def _is_markdown_table_start(lines: list[str], index: int) -> bool:
