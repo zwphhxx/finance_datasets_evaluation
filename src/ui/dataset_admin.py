@@ -54,7 +54,7 @@ _ISSUE_BADGE = {"error": "danger", "warning": "warning"}
 def render_dataset_admin_page(data_bundle: dict) -> None:
     config = get_page_config("dataset_admin")
     render_compact_hero(
-        eyebrow="FinDueEval",
+        eyebrow="财务/法律/投行场景大模型对比评测",
         title=config.title,
         question=config.question,
     )

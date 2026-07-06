@@ -410,7 +410,7 @@ def render_case_detail_page(data_bundle: dict) -> None:
 
     config = get_page_config("case_detail")
     render_compact_hero(
-        eyebrow="FinDueEval",
+        eyebrow="财务/法律/投行场景大模型对比评测",
         title=config.title,
         question=config.question,
     )

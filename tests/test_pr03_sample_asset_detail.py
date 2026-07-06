@@ -37,13 +37,15 @@ class SampleListSummaryTests(unittest.TestCase):
         rows = build_sample_table_rows([sample], {"CASE-1": readiness})
 
         self.assertEqual(
-            ["样本编号", "任务标题", "场景", "测试状态", "难度", "更新时间"],
+            ["样本编号", "任务标题", "领域", "测试状态", "完整度", "更新时间", "操作"],
             list(rows[0].keys()),
         )
         self.assertEqual("可测试", rows[0]["测试状态"])
+        self.assertEqual("通过", rows[0]["完整度"])
+        self.assertEqual("查看", rows[0]["操作"])
         self.assertEqual("2026-07-05", rows[0]["更新时间"])
         self.assertNotIn("状态", rows[0])
-        self.assertNotIn("完整度", rows[0])
+        self.assertNotIn("难度", rows[0])
         self.assertNotIn("缺失项摘要", rows[0])
         self.assertNotIn("task_prompt", rows[0])
         self.assertNotIn("gold_answer", rows[0])

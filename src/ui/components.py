@@ -6,6 +6,9 @@ import pandas as pd
 import streamlit as st
 
 
+PROJECT_DISPLAY_NAME = "财务/法律/投行场景大模型对比评测"
+
+
 STYLE_CSS = """
 <style>
 :root {
@@ -87,90 +90,62 @@ header,
     background: #ffffff;
     border-right: 1px solid var(--fde-line);
 }
-/* Top nav bar styling */
-.top-nav {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.15rem 0 0.45rem 0;
-    border-bottom: 1px solid var(--fde-line);
-    background: transparent;
+/* Single-line product navigation. */
+[data-testid="stHorizontalBlock"]:has(.top-nav-brand) {
     position: sticky;
     top: 0;
     z-index: 100;
-    margin: 0 0 0.35rem 0;
+    min-height: 56px;
+    align-items: center;
+    padding: 0.28rem 0 0.38rem 0;
+    margin: 0 0 0.65rem 0;
+    border-bottom: 1px solid var(--fde-line);
+    background: rgba(250, 251, 252, 0.96);
+    backdrop-filter: blur(8px);
 }
-.top-nav-kicker {
+.top-nav-brand {
     color: var(--fde-ink);
-    font-size: 0.82rem;
+    font-size: 0.98rem;
     font-weight: 760;
-    letter-spacing: 0.02em;
-    white-space: nowrap;
+    line-height: 1.35;
+    letter-spacing: 0;
+    padding-top: 0.18rem;
 }
-.top-nav-flow {
-    color: var(--fde-muted);
-    font-size: 0.78rem;
-    white-space: nowrap;
-}
-.top-nav-links {
-    display: flex;
-    gap: 0.25rem;
-    flex-wrap: wrap;
-}
-.top-nav-link {
-    display: inline-block;
-    padding: 0.4rem 0.85rem;
-    font-size: 0.88rem;
-    font-weight: 650;
-    color: var(--portfolio-muted);
-    text-decoration: none;
-    border-radius: 8px;
-    transition: all 0.15s ease;
-    cursor: pointer;
-    border: none;
-    background: transparent;
-}
-.top-nav-link:hover,
-.top-nav-link.active {
-    color: var(--portfolio-text);
-    background: var(--fde-surface-muted);
-}
-.top-nav-link.active {
-    font-weight: 750;
-}
-@media (max-width: 768px) {
-    .top-nav { flex-wrap: wrap; padding: 0.2rem 0 0.35rem 0; }
-    .top-nav-kicker { font-size: 0.8rem; }
-    .top-nav-flow { display: none; }
-    .top-nav-link { padding: 0.3rem 0.6rem; font-size: 0.82rem; }
-}
-.top-nav .stButton > button,
-[data-testid="stMarkdownContainer"]:has(.top-nav) + div[data-testid="stHorizontalBlock"] .stButton > button {
-    min-height: 2.15rem;
-    padding: 0.34rem 0.4rem;
-    border-radius: 0;
-    border: 0;
+[data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton > button {
+    min-height: 2.1rem;
+    padding: 0.28rem 0.38rem;
+    border-radius: 7px;
+    border: 1px solid transparent;
     border-bottom: 2px solid transparent;
     background: transparent;
     color: var(--fde-muted);
-    font-size: 0.9rem;
-    font-weight: 650;
+    font-size: 0.86rem;
+    font-weight: 620;
     box-shadow: none;
+    white-space: nowrap;
 }
-.top-nav .stButton > button[kind="secondary"],
-[data-testid="stMarkdownContainer"]:has(.top-nav) + div[data-testid="stHorizontalBlock"] .stButton > button[kind="secondary"] {
-    border: 1px solid var(--fde-line);
-    border-bottom: 2px solid var(--fde-ink);
-    background: #ffffff;
-    color: var(--fde-ink);
-    font-weight: 760;
-}
-.top-nav .stButton > button:hover,
-[data-testid="stMarkdownContainer"]:has(.top-nav) + div[data-testid="stHorizontalBlock"] .stButton > button:hover {
-    border-bottom-color: var(--fde-line-strong);
+[data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton > button[kind="secondary"] {
+    border-color: var(--fde-line);
+    border-bottom-color: var(--fde-ink);
     background: var(--fde-status-muted-bg);
     color: var(--fde-ink);
+    font-weight: 740;
+}
+[data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton > button:hover {
+    border-color: var(--fde-line-strong);
+    border-bottom-color: var(--fde-line-strong);
+    background: #ffffff;
+    color: var(--fde-ink);
+}
+@media (max-width: 860px) {
+    [data-testid="stHorizontalBlock"]:has(.top-nav-brand) {
+        position: relative;
+        flex-wrap: wrap;
+        min-height: auto;
+    }
+    .top-nav-brand {
+        font-size: 0.92rem;
+    }
 }
 .nav-brand {
     border: 1px solid var(--fde-line);
@@ -178,6 +153,36 @@ header,
     background: var(--fde-surface);
     padding: 0.9rem 1rem;
     margin: 0.25rem 0 1rem 0;
+}
+.page-title-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 0.35rem 0 1rem 0;
+}
+.page-title-main {
+    min-width: 0;
+}
+.page-title-eyebrow {
+    color: var(--fde-muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1.35;
+    margin-bottom: 0.18rem;
+}
+.page-title-heading {
+    color: var(--fde-ink);
+    font-size: 1.36rem;
+    font-weight: 780;
+    line-height: 1.24;
+    margin: 0;
+}
+.page-title-copy {
+    color: var(--fde-muted);
+    font-size: 0.94rem;
+    line-height: 1.55;
+    margin-top: 0.32rem;
 }
 .nav-brand-title {
     color: var(--fde-blue);
@@ -466,11 +471,39 @@ header,
     margin-bottom: 0.6rem;
 }
 .sample-detail-panel {
-    margin: 0.75rem 0 1rem 0;
+    margin: 0.25rem 0 0.9rem 0;
     border: 1px solid var(--fde-line);
     border-radius: 12px;
     background: rgba(255, 255, 255, 0.82);
     overflow: hidden;
+}
+.sample-detail-toolbar-title {
+    border: 1px solid var(--fde-line);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.86);
+    padding: 0.78rem 0.92rem;
+    min-height: 3.3rem;
+}
+.sample-detail-toolbar-title div {
+    color: var(--fde-ink);
+    font-size: 1.02rem;
+    line-height: 1.36;
+    font-weight: 760;
+    overflow-wrap: anywhere;
+}
+.sample-detail-toolbar-title span {
+    display: block;
+    color: var(--fde-muted);
+    font-size: 0.84rem;
+    line-height: 1.45;
+    margin-top: 0.28rem;
+}
+[data-testid="stHorizontalBlock"]:has(.sample-detail-toolbar-title) {
+    align-items: stretch;
+    margin: 0.15rem 0 0.34rem 0;
+}
+[data-testid="stHorizontalBlock"]:has(.sample-detail-toolbar-title) .stButton > button {
+    min-height: 3.3rem;
 }
 .sample-detail-panel-header {
     padding: 0.86rem 1rem 0.72rem 1rem;
@@ -1996,7 +2029,7 @@ def render_page_header(title: str, subtitle: str, boundary_note: str | None = No
     render_html(
         f"""
         <div class="page-header">
-            <div class="page-eyebrow">FinDueEval</div>
+            <div class="page-eyebrow">{escape(PROJECT_DISPLAY_NAME)}</div>
             <h1>{safe_title}</h1>
             <p>{safe_subtitle}</p>
         </div>
@@ -2008,7 +2041,7 @@ def render_page_header(title: str, subtitle: str, boundary_note: str | None = No
 # every page header. These are project-wide caveats about the demo's data nature
 # (not business metrics, sample counts, model names or scores), so they stay a
 # fixed constant rather than being read per-page.
-GLOBAL_BOUNDARY_CHIPS = ["MVP 样本", "脱敏任务", "裁判建议分待复核", "仅用于样本内观察"]
+GLOBAL_BOUNDARY_CHIPS = ["脱敏样本", "脱敏任务", "裁判建议分待复核", "仅用于样本内观察"]
 
 
 def render_boundary_bar(chips=None) -> None:
@@ -2651,7 +2684,7 @@ def render_status_summary(status_items: list[tuple[str, str, str]]) -> None:
 
 def render_portfolio_page_shell(
     page_config,
-    eyebrow: str = "FinDueEval",
+    eyebrow: str = PROJECT_DISPLAY_NAME,
     hero_stats: list[tuple[str, str]] | None = None,
 ) -> None:
     """Unified page wrapper: compact hero + optional numbered sections start.

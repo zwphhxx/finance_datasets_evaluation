@@ -289,7 +289,7 @@ def render_model_diagnosis_page(data_bundle: dict) -> None:
 
     config = get_page_config("model_diagnosis")
     render_compact_hero(
-        eyebrow="FinDueEval",
+        eyebrow="财务/法律/投行场景大模型对比评测",
         title=config.title,
         question=config.question,
     )
@@ -351,7 +351,7 @@ def _render_boundary_line(data) -> None:
     )
     task_count = len(data.tasks)
     st.caption(
-        f"评测边界：当前为 MVP 样本（{task_count} 道任务 · {model_count} 个模型 · "
+        f"评测边界：当前为脱敏样本（{task_count} 道任务 · {model_count} 个模型 · "
         f"{output_count} 条模型回答），回答来自首页评测控制台的运行结果，结论仅用于当前评测集观察。"
     )
 

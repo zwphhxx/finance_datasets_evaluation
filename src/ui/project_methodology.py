@@ -79,7 +79,7 @@ def render_project_methodology_page(data_bundle: dict) -> None:
     # --- Hero: two-column with huge title, checklist, mockups ---
     # Portfolio case-study structure uses render_hero + render_section_block + render_feature_card
     render_portfolio_landing_hero(
-        title="FinDueEval",
+        title="财务/法律/投行场景大模型对比评测",
         subtitle="专业尽调场景下的大模型可用边界评测",
         description=(
             "基于投资投行、财务与法律尽调经验，不是模型排行榜；"

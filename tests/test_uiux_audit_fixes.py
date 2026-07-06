@@ -28,7 +28,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
         test_run_source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
         self.assertNotIn("loop-rail", test_run_source)
 
-    def test_pages_use_compact_hero(self):
+    def test_pages_keep_shared_page_components_available(self):
         import src.ui.components as components
 
         self.assertTrue(hasattr(components, "render_compact_hero"))
@@ -36,15 +36,9 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn(".context-grid", components.STYLE_CSS)
         self.assertIn(".context-item", components.STYLE_CSS)
 
-        for file_path in [
-            "src/ui/case_study.py",
-            "src/ui/samples.py",
-            "src/ui/test_run.py",
-            "src/ui/review.py",
-            "src/ui/conclusions.py",
-        ]:
-            source = Path(file_path).read_text(encoding="utf-8")
-            self.assertIn("render_compact_hero", source, file_path)
+        samples_source = Path("src/ui/samples.py").read_text(encoding="utf-8")
+        self.assertIn("_render_samples_title_bar", samples_source)
+        self.assertNotIn("render_compact_hero", samples_source)
         case_study_source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         self.assertNotIn("render_mockup_stack", case_study_source, "src/ui/case_study.py")
 
@@ -61,21 +55,24 @@ class UIUXAuditFixesTests(unittest.TestCase):
 
         self.assertEqual(5, len(_TOP_NAV_ITEMS))
         self.assertEqual(sorted([key for _, key in _TOP_NAV_ITEMS]), sorted(PAGES.keys()))
-        self.assertIn(".top-nav", components.STYLE_CSS)
+        self.assertIn(".top-nav-brand", components.STYLE_CSS)
 
         navigation_source = Path("src/ui/navigation.py").read_text(encoding="utf-8")
         # 侧边栏不再渲染页面按钮，避免与顶部导航重复。
         self.assertNotIn("st.sidebar.button", navigation_source)
+        self.assertIn("财务/法律/投行场景大模型对比评测", navigation_source)
+        self.assertNotIn("尽调评测工作台", navigation_source)
+        self.assertNotIn("样本库 > 测试", navigation_source)
 
     def test_top_navigation_is_lightweight_not_primary_cta(self):
         navigation_source = Path("src/ui/navigation.py").read_text(encoding="utf-8")
         components_source = Path("src/ui/components.py").read_text(encoding="utf-8")
 
-        self.assertNotIn("top-nav-brand", navigation_source)
+        self.assertIn("top-nav-brand", navigation_source)
         self.assertNotIn('type="primary" if current == page_key else "secondary"', navigation_source)
         self.assertIn('"tertiary"', navigation_source)
-        self.assertIn(".top-nav .stButton > button", components_source)
-        self.assertIn("border-bottom: 2px solid var(--fde-ink)", components_source)
+        self.assertIn('[data-testid="stHorizontalBlock"]:has(.top-nav-brand)', components_source)
+        self.assertIn("border-bottom-color: var(--fde-ink)", components_source)
 
     def test_primary_buttons_are_not_used_for_navigation(self):
         navigation_source = Path("src/ui/navigation.py").read_text(encoding="utf-8")
@@ -160,13 +157,14 @@ class UIUXAuditFixesTests(unittest.TestCase):
 
         self.assertIn("st.dataframe", samples_source)
         self.assertIn('"测试状态"', samples_source)
-        self.assertNotIn('"操作"', samples_source)
+        self.assertIn('"操作"', samples_source)
+        self.assertIn('"查看"', samples_source)
         self.assertNotIn('"缺失项摘要"', samples_source)
         self.assertNotIn("sample-index-grid", samples_source)
         self.assertNotIn("samples_view_", samples_source)
         self.assertNotIn("for sample, row in zip", samples_source)
-        self.assertNotIn("selection_mode=", samples_source)
-        self.assertNotIn("on_select=", samples_source)
+        self.assertIn("selection_mode=\"single-row\"", samples_source)
+        self.assertIn("on_select=\"rerun\"", samples_source)
         self.assertNotIn("samples_index_dataframe", samples_source)
         self.assertIn("[data-testid=\"stDataFrame\"]", components_source)
         self.assertNotIn(".sample-operation-selected", components_source)
@@ -177,33 +175,36 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn("@st.dialog(\"新增样本\"", samples_source)
         self.assertIn("@st.dialog(\"编辑样本\"", samples_source)
         self.assertIn("@st.dialog(\"确认移出测试\"", samples_source)
+        self.assertIn("@st.dialog(\"更多操作\"", samples_source)
         self.assertIn("samples_create_open", samples_source)
-        self.assertIn("samples_current_sample_select", samples_source)
+        self.assertNotIn("samples_current_sample_select", samples_source)
         self.assertIn("当前样本", samples_source)
-        self.assertIn("编辑当前样本", samples_source)
+        self.assertIn("编辑样本", samples_source)
         self.assertIn("移出测试", samples_source)
         self.assertIn("历史记录仍保留", samples_source)
+        self.assertIn("当前版本暂不支持删除样本", samples_source)
         self.assertNotIn("点击表格行可查看当前样本。", samples_source)
         self.assertNotIn("_render_sample_selectbox_fallback", samples_source)
         self.assertNotIn("samples_index_select_fallback", samples_source)
         self.assertNotIn('"选择样本"', samples_source)
-        self.assertNotIn('"查看"', samples_source)
+        self.assertIn('"查看"', samples_source)
         self.assertNotIn('with st.expander("样本管理"', samples_source)
         self.assertNotIn("st.tabs([\"新增样本\", \"编辑样本\", \"状态管理\", \"导入导出\"])", samples_source)
 
-    def test_sample_library_has_four_main_sections_and_detail_panel(self):
+    def test_sample_library_has_three_main_sections_and_detail_panel(self):
         samples_source = Path("src/ui/samples.py").read_text(encoding="utf-8")
         components_source = Path("src/ui/components.py").read_text(encoding="utf-8")
         page_config_source = Path("src/ui/page_config.py").read_text(encoding="utf-8")
 
-        self.assertIn('render_numbered_section("01", "查询样本")', samples_source)
+        self.assertIn('render_numbered_section("01", "查询与筛选")', samples_source)
         self.assertIn('render_numbered_section("02", "样本列表", "展示当前查询结果。")', samples_source)
         self.assertIn('render_numbered_section("03", "当前样本", "选择一个样本，查看评测资产结构。")', samples_source)
-        self.assertIn('render_numbered_section("04", "样本操作"', samples_source)
+        self.assertNotIn('render_numbered_section("04", "样本操作"', samples_source)
         self.assertIn("展示当前查询结果。", samples_source)
         self.assertIn("选择一个样本，查看评测资产结构。", samples_source)
         self.assertIn("render_sample_detail_panel", samples_source)
         self.assertIn("sample-detail-panel", samples_source)
+        self.assertIn("sample-detail-toolbar-title", components_source)
         self.assertIn(".sample-detail-panel", components_source)
         self.assertIn("sample-detail-section-title", components_source)
         self.assertIn("_detail_section_html(\"任务内容\"", samples_source)
@@ -214,7 +215,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertNotIn('st.expander("任务内容", expanded=False)', samples_source)
         self.assertNotIn(".current-sample-summary", components_source)
         self.assertIn("维护正式评测样本。完整且已入库的样本可以进入发起评测。", page_config_source)
-        self.assertIn("查询样本、样本列表、当前样本、样本操作。", page_config_source)
+        self.assertIn("查询与筛选、样本列表、当前样本。", page_config_source)
         self.assertNotIn("新增和编辑会同步任务题", samples_source)
 
     def test_test_run_keeps_primary_buttons_for_confirmation_and_execution(self):

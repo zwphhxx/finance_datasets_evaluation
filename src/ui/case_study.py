@@ -106,7 +106,7 @@ def render_case_study_page(data_bundle: dict) -> None:
 
     render_numbered_section("01", "项目定位")
     st.markdown(
-        "这是一个面试 MVP，用脱敏尽调样本评估模型回答的可参考程度、复核需求和使用边界。"
+        "这是一个面试演示原型，用脱敏尽调样本评估模型回答的可参考程度、复核需求和使用边界。"
         "页面围绕样本、评分草稿、评分确认和正式结论组织，不替代专业判断。"
     )
 

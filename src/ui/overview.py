@@ -116,10 +116,10 @@ def render_overview_page(data_bundle: dict) -> None:
     render_page_shell(get_page_config("overview"))
 
     # 01 项目背景与目的
-    render_section_title("项目背景与目的", "为什么做 FinDueEval")
+    render_section_title("项目背景与目的", "为什么做财务/法律/投行场景大模型对比评测")
     st.markdown(
         """
-        FinDueEval 面向投行、财务与法律尽职调查场景，评估大模型在专业尽调任务上的回答质量，
+        财务/法律/投行场景大模型对比评测面向投行、财务与法律尽职调查场景，评估大模型在专业尽调任务上的回答质量，
         并把评测中暴露的问题反向沉淀为数据补强。核心只回答一个问题：
         **在尽调这种高风险、强合规的工作里，模型的回答哪些能直接用、哪些必须人工复核、哪些不能用。**
         """
@@ -178,7 +178,7 @@ def render_overview_page(data_bundle: dict) -> None:
     # 05 边界与说明
     render_info_panel(
         "边界与说明",
-        "题库与 Gold Answer 为 MVP 脱敏样本；模型回答来自评测控制台的真实运行；"
+        "题库与 Gold Answer 为脱敏样本；模型回答来自评测控制台的真实运行；"
         "裁判给出的是建议分，需人工确认后才纳入正式结论；所有结论均为样本内观察，"
         "不构成模型采购或业务决策建议。",
     )

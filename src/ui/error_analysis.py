@@ -161,7 +161,7 @@ def build_error_improvement_table(actions_df, error_df) -> pd.DataFrame:
 def render_error_analysis(data_bundle):
     config = get_page_config("error_analysis")
     render_compact_hero(
-        eyebrow="FinDueEval",
+        eyebrow="财务/法律/投行场景大模型对比评测",
         title=config.title,
         question=config.question,
     )

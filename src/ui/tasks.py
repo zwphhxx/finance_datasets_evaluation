@@ -240,7 +240,7 @@ def render_tasks_page(data_bundle: dict) -> None:
         (str(int(domain_count)), "专业领域"),
     ]
     render_compact_hero(
-        eyebrow="FinDueEval",
+        eyebrow="财务/法律/投行场景大模型对比评测",
         title=config.title,
         question=config.question,
         stats=hero_stats,

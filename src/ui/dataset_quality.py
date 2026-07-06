@@ -36,7 +36,7 @@ from src.ui.components import (
 
 
 MVP_MATRIX_NOTE = (
-    "覆盖矩阵基于当前 MVP 样本，用于展示任务覆盖结构，不代表完整生产数据集。"
+    "覆盖矩阵基于当前脱敏样本，用于展示任务覆盖结构，不代表完整生产数据集。"
     "样本较少时空白单元仅表示该组合暂未收录，可作为后续扩展的补样方向。"
 )
 
@@ -296,7 +296,7 @@ def render_dataset_quality_page(data_bundle: dict) -> None:
 
     config = get_page_config("dataset_quality")
     render_compact_hero(
-        eyebrow="FinDueEval",
+        eyebrow="财务/法律/投行场景大模型对比评测",
         title=config.title,
         question=config.question,
     )

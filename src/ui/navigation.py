@@ -10,6 +10,8 @@ from src.ui.conclusions import render_conclusions_page
 from src.ui.components import render_html
 from src.ui.page_config import DEFAULT_PAGE_KEY, PAGE_CONFIG_BY_KEY
 
+PROJECT_DISPLAY_NAME = "财务/法律/投行场景大模型对比评测"
+
 
 PAGES = {
     "case_study": render_case_study_page,
@@ -43,16 +45,10 @@ def _set_current_page(page_key: str) -> None:
 def render_top_navigation() -> None:
     """Render a lightweight tab-style top navigation."""
     current = st.session_state.get("current_page", DEFAULT_PAGE_KEY)
-    render_html(
-        """
-        <div class="top-nav">
-            <span class="top-nav-kicker">尽调评测工作台</span>
-            <span class="top-nav-flow">样本库 → 测试 → 复核 → 结论</span>
-        </div>
-        """
-    )
-    cols = st.columns(len(_TOP_NAV_ITEMS))
-    for col, (label, page_key) in zip(cols, _TOP_NAV_ITEMS):
+    cols = st.columns([3.4, 0.86, 0.86, 0.96, 0.96, 0.96], gap="small")
+    with cols[0]:
+        render_html(f'<div class="top-nav-brand">{PROJECT_DISPLAY_NAME}</div>')
+    for col, (label, page_key) in zip(cols[1:], _TOP_NAV_ITEMS):
         with col:
             if st.button(
                 label,
