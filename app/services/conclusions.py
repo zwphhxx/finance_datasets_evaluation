@@ -117,6 +117,8 @@ def split_live_scores(live_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame
         df = df[df["judge_status"].astype(str) == "success"]
     if "status" in df.columns:
         df = df[df["status"].astype(str).str.strip().str.lower() != "inactive"]
+    if "eval_model" in df.columns:
+        df = df[~df["eval_model"].apply(md.is_seed_model)]
     if df.empty:
         return empty, empty
 
