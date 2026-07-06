@@ -27,10 +27,10 @@ from src.metrics import (
 from src.ui.common import has_value
 from src.ui.components import (
     render_clean_list,
-    render_compact_hero,
     render_empty_state,
     render_inline_status,
     render_numbered_section,
+    render_page_heading,
 )
 from src.ui.page_config import get_page_config
 from src.ui.tasks import (
@@ -517,14 +517,7 @@ def render_review_page(data_bundle: dict) -> None:
     optimizations_df = getattr(base, "optimizations", pd.DataFrame())
 
     config = get_page_config("review")
-    render_compact_hero(
-        eyebrow="评分确认",
-        title=config.title,
-        question=config.question,
-    )
-    st.caption(
-        "本页用于确认评分草稿。确认后的结果才进入正式结论；未确认结果仅作为机器建议。"
-    )
+    render_page_heading(config.title, config.question)
 
     items, selected_score_run_id = _load_live_review_items(base, eval_status)
     if not items:

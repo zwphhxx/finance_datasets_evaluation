@@ -14,9 +14,9 @@ from app.services import conclusions as cc
 from app.services import eval_state
 from src.ui.page_config import get_page_config
 from src.ui.components import (
-    render_compact_hero,
     render_empty_state,
     render_numbered_section,
+    render_page_heading,
 )
 
 
@@ -33,12 +33,7 @@ def render_conclusions_page(data_bundle: dict) -> None:
         draft_rows = _session_draft_rows()
 
     config = get_page_config("conclusions")
-    render_compact_hero(
-        eyebrow="正式结论",
-        title=config.title,
-        question=config.question,
-    )
-    st.caption("本页只汇总已确认评分。待确认评分不会进入正式结论，结论仅代表当前样本内观察。")
+    render_page_heading(config.title, config.question)
 
     _render_current_conclusion(confirmed_live, draft_rows)
     _render_model_recommendations(model_summaries)

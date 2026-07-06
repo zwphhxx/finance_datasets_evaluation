@@ -47,6 +47,10 @@ class Sample:
     scenario: str
     task_prompt: str
     business_context: str = ""
+    domain: str = ""
+    task_type: str = ""
+    risk_level: str = ""
+    expected_capability: str = ""
     gold_answer: str = ""
     rubric: str = ""
     model_answers: list[str] = field(default_factory=list)
@@ -69,6 +73,10 @@ class Sample:
             scenario=str(data.get("scenario", "")),
             task_prompt=str(data.get("task_prompt", "")),
             business_context=str(data.get("business_context", "")),
+            domain=str(data.get("domain", "")),
+            task_type=str(data.get("task_type", "")),
+            risk_level=str(data.get("risk_level", "")),
+            expected_capability=str(data.get("expected_capability", "")),
             gold_answer=str(data.get("gold_answer", "")),
             rubric=str(data.get("rubric", "")),
             model_answers=_as_str_list(data.get("model_answers")),
@@ -232,6 +240,10 @@ def seed_samples_from_tasks() -> list[Sample]:
                 scenario=str(row.get("scenario", "")).strip(),
                 task_prompt=str(row.get("question", "")).strip(),
                 business_context=str(row.get("context", "")).strip(),
+                domain=str(row.get("domain", "")).strip(),
+                task_type=str(row.get("task_type", "")).strip(),
+                risk_level=str(row.get("risk_level", "")).strip(),
+                expected_capability=str(row.get("expected_capability", "")).strip(),
                 gold_answer=gold_text,
                 rubric="",
                 model_answers=model_answers_map.get(case_id, []),

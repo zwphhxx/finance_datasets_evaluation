@@ -755,10 +755,14 @@ def upsert_sample_assets(sample: dict, *, db_path: Path | None = None) -> None:
     formal_status = FORMAL_STATUS_BY_BUSINESS_STATUS.get(raw_status, raw_status)
     task_payload = {
         "case_id": case_id,
+        "domain": _clean(sample.get("domain")),
         "scenario": _clean(sample.get("scenario")),
+        "task_type": _clean(sample.get("task_type")),
         "difficulty": _clean(sample.get("difficulty")),
         "question": _clean(sample.get("task_prompt")),
         "context": _clean(sample.get("business_context")),
+        "expected_capability": _clean(sample.get("expected_capability")),
+        "risk_level": _clean(sample.get("risk_level")),
         "status": formal_status,
     }
     gold_entry = _coerce_gold_answer_entry(case_id, sample.get("gold_answer") or {})

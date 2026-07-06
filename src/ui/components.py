@@ -97,10 +97,10 @@ header,
     z-index: 100;
     min-height: 56px;
     align-items: center;
-    padding: 0.28rem 0 0.38rem 0;
-    margin: 0 0 0.65rem 0;
+    padding: 0.24rem 0 0.32rem 0;
+    margin: 0 0 0.72rem 0;
     border-bottom: 1px solid var(--fde-line);
-    background: rgba(250, 251, 252, 0.96);
+    background: rgba(255, 255, 255, 0.98);
     backdrop-filter: blur(8px);
 }
 .top-nav-brand {
@@ -112,11 +112,10 @@ header,
     padding-top: 0.18rem;
 }
 [data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton > button {
-    min-height: 2.1rem;
-    padding: 0.28rem 0.38rem;
-    border-radius: 7px;
-    border: 1px solid transparent;
-    border-bottom: 2px solid transparent;
+    min-height: 2rem;
+    padding: 0.26rem 0.34rem;
+    border-radius: 6px;
+    border: 0;
     background: transparent;
     color: var(--fde-muted);
     font-size: 0.86rem;
@@ -125,16 +124,12 @@ header,
     white-space: nowrap;
 }
 [data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton > button[kind="secondary"] {
-    border-color: var(--fde-line);
-    border-bottom-color: var(--fde-ink);
     background: var(--fde-status-muted-bg);
     color: var(--fde-ink);
     font-weight: 740;
 }
 [data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton > button:hover {
-    border-color: var(--fde-line-strong);
-    border-bottom-color: var(--fde-line-strong);
-    background: #ffffff;
+    background: var(--fde-status-neutral-bg);
     color: var(--fde-ink);
 }
 @media (max-width: 860px) {
@@ -2014,6 +2009,59 @@ def render_html(html: str, container=None) -> None:
 
 def apply_global_styles() -> None:
     render_html(STYLE_CSS)
+
+
+def render_page_heading(title: str, description: str | None = None) -> None:
+    """Render the lightweight page heading used by the five main pages."""
+    description_html = (
+        f'<div class="page-title-copy">{escape(str(description))}</div>'
+        if description
+        else ""
+    )
+    render_html(
+        f"""
+        <div class="page-title-row">
+            <div class="page-title-main">
+                <div class="page-title-heading">{escape(str(title))}</div>
+                {description_html}
+            </div>
+        </div>
+        """
+    )
+
+
+def render_kv_grid(items: list[tuple[str, object]]) -> None:
+    """Render a compact key-value grid for detail panes."""
+    item_html = "".join(
+        f"""
+        <div class="sample-detail-kv">
+            <span>{escape(str(label))}</span>
+            <strong>{escape(str(value if value not in (None, '') else '待补充'))}</strong>
+        </div>
+        """
+        for label, value in items
+    )
+    render_html(f'<div class="sample-detail-kv-grid">{item_html}</div>')
+
+
+def render_detail_panel(body_html: str, title: str | None = None, meta: str | None = None) -> None:
+    """Render a low-noise bordered detail panel."""
+    header = ""
+    if title or meta:
+        header = (
+            '<div class="sample-detail-panel-header">'
+            f'<div class="sample-detail-panel-title">{escape(str(title or ""))}</div>'
+            f'<div class="sample-detail-panel-meta">{escape(str(meta or ""))}</div>'
+            '</div>'
+        )
+    render_html(
+        f"""
+        <div class="sample-detail-panel">
+            {header}
+            <div class="sample-detail-panel-body">{body_html}</div>
+        </div>
+        """
+    )
 
 
 def render_page_header(title: str, subtitle: str, boundary_note: str | None = None) -> None:

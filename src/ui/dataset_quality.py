@@ -35,7 +35,7 @@ from src.ui.components import (
 )
 
 
-MVP_MATRIX_NOTE = (
+CURRENT_MATRIX_NOTE = (
     "覆盖矩阵基于当前脱敏样本，用于展示任务覆盖结构，不代表完整生产数据集。"
     "样本较少时空白单元仅表示该组合暂未收录，可作为后续扩展的补样方向。"
 )
@@ -350,7 +350,7 @@ def _render_coverage(data) -> None:
         rendered_any = True
 
     if rendered_any:
-        st.caption(MVP_MATRIX_NOTE)
+        st.caption(CURRENT_MATRIX_NOTE)
     else:
         render_empty_state("暂无任务样本，无法生成覆盖矩阵。")
 

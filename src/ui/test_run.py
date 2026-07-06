@@ -24,11 +24,11 @@ from app.services import eval_state
 from app.services import model_display as md
 from app.services import scorer as sc
 from src.ui.components import (
-    render_compact_hero,
     render_empty_state,
     render_html,
     render_inline_status,
     render_numbered_section,
+    render_page_heading,
 )
 from src.ui.page_config import get_page_config
 from src.ui.tasks import TASK_TYPE_LABELS, display_label, summarize_text
@@ -330,12 +330,7 @@ def render_test_run_page(data_bundle: dict) -> None:
     base = data_bundle["base"]
 
     config = get_page_config("test_run")
-    render_compact_hero(
-        eyebrow="评测执行",
-        title=config.title,
-        question=config.question,
-    )
-    st.caption(MAIN_PROMPT)
+    render_page_heading(config.title, config.question)
 
     tasks_df = base.tasks
     if tasks_df is None or tasks_df.empty:

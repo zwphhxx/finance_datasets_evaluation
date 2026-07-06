@@ -19,9 +19,11 @@ from app.services import dataset_service as ds
 from app.services import sample_repository as sr
 from src.gold_quality import field_list, field_text, field_value
 from src.ui.components import (
+    render_detail_panel,
     render_empty_state,
     render_html,
     render_numbered_section,
+    render_page_heading,
 )
 from src.ui.page_config import get_page_config
 from src.ui.tasks import (
@@ -35,6 +37,44 @@ from src.ui.tasks import (
 _TEST_STATUS_OPTIONS = ["全部", "可测试", "待补充", "不可测试", "已移出测试"]
 _COMPLETENESS_OPTIONS = ["全部", "通过", "待补充", "已移出测试"]
 _SAMPLE_TABLE_COLUMNS = ["样本编号", "任务标题", "领域", "测试状态", "完整度", "更新时间", "操作"]
+_CSV_TEMPLATE_COLUMNS = [
+    "case_id",
+    "title",
+    "domain",
+    "task_type",
+    "difficulty",
+    "risk_level",
+    "scenario",
+    "context",
+    "question",
+    "expected_capability",
+    "gold_core_conclusion",
+    "gold_key_evidence",
+    "gold_must_have_points",
+    "gold_unacceptable_errors",
+    "gold_boundary_conditions",
+    "gold_manual_review_notes",
+    "rubric_dimension_field",
+    "rubric_dimension_name",
+    "rubric_full_mark",
+    "rubric_full_mark_standard",
+    "rubric_deduction_rules",
+    "status",
+]
+_REQUIRED_CSV_COLUMNS = [
+    "case_id",
+    "title",
+    "scenario",
+    "question",
+    "gold_core_conclusion",
+    "gold_must_have_points",
+    "gold_unacceptable_errors",
+    "rubric_dimension_name",
+    "rubric_full_mark",
+    "rubric_full_mark_standard",
+    "rubric_deduction_rules",
+    "status",
+]
 
 _DIFFICULTY_OPTIONS = list(DIFFICULTY_LABELS.keys())
 
@@ -77,6 +117,9 @@ def _domain_label(task_record: dict, sample: sr.Sample | None = None) -> str:
     domain = display_label((task_record or {}).get("domain"), DOMAIN_LABELS)
     if domain and domain != "未标注":
         return domain
+    sample_domain = display_label(getattr(sample, "domain", ""), DOMAIN_LABELS) if sample is not None else ""
+    if sample_domain and sample_domain != "未标注":
+        return sample_domain
     scenario = getattr(sample, "scenario", "") if sample is not None else ""
     return _truncate(scenario, 18) if scenario else "未标注"
 
@@ -643,7 +686,7 @@ def _validate_active_dialog_values(values: dict, rubric_dimensions: list[dict] |
 
 
 def _clear_dialog_state() -> None:
-    for key in ("samples_dialog_mode", "samples_edit_id", "samples_archive_confirm_id", "samples_more_id"):
+    for key in ("samples_dialog_mode", "samples_edit_id", "samples_archive_confirm_id"):
         st.session_state.pop(key, None)
 
 
@@ -659,17 +702,16 @@ def _open_edit_dialog(sample_id: str) -> None:
     st.session_state.pop("samples_archive_confirm_id", None)
 
 
+def _open_import_csv_dialog() -> None:
+    st.session_state["samples_dialog_mode"] = "import_csv"
+    st.session_state.pop("samples_edit_id", None)
+    st.session_state.pop("samples_archive_confirm_id", None)
+
+
 def _open_archive_dialog(sample_id: str) -> None:
     st.session_state["samples_archive_confirm_id"] = sample_id
     st.session_state.pop("samples_dialog_mode", None)
     st.session_state.pop("samples_edit_id", None)
-
-
-def _open_more_dialog(sample_id: str) -> None:
-    st.session_state["samples_dialog_mode"] = "more"
-    st.session_state["samples_more_id"] = sample_id
-    st.session_state.pop("samples_edit_id", None)
-    st.session_state.pop("samples_archive_confirm_id", None)
 
 
 def _select_sample(sample_id: str) -> None:
@@ -680,23 +722,20 @@ def _select_sample(sample_id: str) -> None:
 # New sample-library UI
 # --------------------------------------------------------------------------- #
 def _render_samples_title_bar(config) -> None:
-    col1, col2 = st.columns([4.2, 1], gap="large")
+    col1, col2, col3 = st.columns([4.1, 0.95, 0.95], gap="small")
     with col1:
-        render_html(
-            f"""
-            <div class="page-title-row">
-                <div class="page-title-main">
-                    <div class="page-title-eyebrow">样本维护</div>
-                    <div class="page-title-heading">{escape(str(config.title))}</div>
-                    <div class="page-title-copy">{escape(str(config.question))}</div>
-                </div>
-            </div>
-            """
-        )
+        render_page_heading(config.title, config.question)
     with col2:
         st.write("")
         if st.button("新增样本", key="samples_create_open", type="secondary", use_container_width=True):
             _open_create_dialog()
+    with col3:
+        st.write("")
+        if st.button("导入 CSV", key="samples_import_csv_open", type="secondary", use_container_width=True):
+            _open_import_csv_dialog()
+    result = st.session_state.get("samples_import_result")
+    if result:
+        st.success(str(result))
 
 
 def render_samples_page(data_bundle: dict) -> None:
@@ -915,7 +954,7 @@ def _render_sample_detail_toolbar(sample: sr.Sample, readiness: ds.SampleReadine
         f"更新：{_format_date(sample.updated_at)}",
     ])
     is_archived = sample.status == sr.REMOVED_FROM_TEST_STATUS
-    col_title, col_edit, col_remove, col_more = st.columns([4.4, 0.9, 0.9, 0.7], gap="small")
+    col_title, col_edit, col_remove = st.columns([5.0, 0.9, 0.9], gap="small")
     with col_title:
         render_html(
             f"""
@@ -937,9 +976,6 @@ def _render_sample_detail_toolbar(sample: sr.Sample, readiness: ds.SampleReadine
             use_container_width=True,
         ):
             _open_archive_dialog(sample.sample_id)
-    with col_more:
-        if st.button("更多", key=f"samples_toolbar_more_{sample.sample_id}", type="tertiary", use_container_width=True):
-            _open_more_dialog(sample.sample_id)
 
 
 def _sample_option_label(sample_id: str, samples: list[sr.Sample]) -> str:
@@ -961,19 +997,13 @@ def render_sample_detail_panel(
     completeness = _completeness_label(sample, readiness)
     body = "".join([
         _detail_section_html("基本信息", _basic_info_html(sample, readiness, task_record, test_status, completeness)),
+        _detail_section_html("任务场景", _scenario_detail_html(sample, task_record)),
         _detail_section_html("任务内容", _task_detail_html(task_prompt, business_context, output_requirement)),
         _detail_section_html("理想回复标准 / Gold Answer", _gold_detail_html(gold_display)),
         _detail_section_html("Rubric 评分标准", _rubric_detail_html(rubric_rows)),
-        _detail_section_html("准入状态与完整度", _readiness_detail_html(sample, readiness)),
-        _detail_section_html("错误标签与优化建议", _error_optimization_detail_html(sample)),
+        _detail_section_html("准入状态", _readiness_detail_html(sample, readiness)),
     ])
-    render_html(
-        f"""
-        <div class="sample-detail-panel">
-            <div class="sample-detail-panel-body">{body}</div>
-        </div>
-        """
-    )
+    render_detail_panel(body)
 
 
 def _detail_section_html(title: str, content_html: str) -> str:
@@ -992,19 +1022,24 @@ def _basic_info_html(
     test_status: str,
     completeness: str,
 ) -> str:
-    domain = display_label(task_record.get("domain"), DOMAIN_LABELS)
-    task_type = display_label(task_record.get("task_type"), TASK_TYPE_LABELS)
+    domain = display_label(task_record.get("domain") or getattr(sample, "domain", ""), DOMAIN_LABELS)
+    task_type = display_label(task_record.get("task_type") or getattr(sample, "task_type", ""), TASK_TYPE_LABELS)
+    risk_level = task_record.get("risk_level") or getattr(sample, "risk_level", "") or "待补充"
     rows = [
-        ("场景", sample.scenario or task_record.get("scenario") or "待补充"),
         ("领域", domain or "待补充"),
         ("任务类型", task_type or "待补充"),
         ("难度", _difficulty_label(sample.difficulty or task_record.get("difficulty"))),
-        ("风险等级", task_record.get("risk_level") or "待补充"),
+        ("风险等级", risk_level),
         ("测试状态", test_status),
         ("样本状态", _sample_status_label(sample)),
         ("完整度", completeness or readiness.label),
+        ("更新时间", _format_date(sample.updated_at)),
     ]
     return _kv_grid_html(rows)
+
+
+def _scenario_detail_html(sample: sr.Sample, task_record: dict) -> str:
+    return _field_block_html("任务场景", sample.scenario or task_record.get("scenario") or "待补充")
 
 
 def _task_detail_html(task_prompt: str, business_context: str, output_requirement: str) -> str:
@@ -1037,7 +1072,9 @@ def _task_markdown_values(sample: sr.Sample, task_record: dict) -> tuple[str, st
     context = task_record.get("context") or sample.business_context or "待补充"
     output_requirement = (
         task_record.get("expected_capability")
+        or getattr(sample, "expected_capability", "")
         or task_record.get("task_type")
+        or getattr(sample, "task_type", "")
         or "按任务题和业务背景输出尽调判断、依据与需进一步核查事项。"
     )
     return str(task_prompt), str(context), str(output_requirement)
@@ -1117,29 +1154,122 @@ def _html_multiline(value, fallback: str = "待补充") -> str:
     return _html_text(value, fallback=fallback).replace("\n", "<br>")
 
 
-def _render_backup_controls() -> None:
-    st.markdown("**备份与恢复**")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.download_button(
-            label="导出样本库 JSON",
-            data=sr.export_samples_json(),
-            file_name="samples.json",
-            mime="application/json",
-            key="samples_export",
+def _csv_template_bytes() -> bytes:
+    frame = pd.DataFrame(columns=_CSV_TEMPLATE_COLUMNS)
+    return frame.to_csv(index=False).encode("utf-8-sig")
+
+
+def _csv_list(value) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    parts = re.split(r"[\n；;|]+", text)
+    return "\n".join(part.strip() for part in parts if part.strip())
+
+
+def _csv_dimension_field(name: str, field: str = "") -> str:
+    explicit = str(field or "").strip()
+    if explicit:
+        return explicit
+    text = str(name or "").strip()
+    if not text:
+        return ""
+    normalized = re.sub(r"\W+", "_", text).strip("_")
+    return normalized or text
+
+
+def _parse_samples_csv(frame: pd.DataFrame) -> tuple[list[dict], list[str]]:
+    missing_columns = [column for column in _REQUIRED_CSV_COLUMNS if column not in frame.columns]
+    if missing_columns:
+        return [], ["缺少必要字段：" + "、".join(missing_columns)]
+    if frame.empty:
+        return [], ["CSV 文件没有可导入记录。"]
+
+    records: list[dict] = []
+    errors: list[str] = []
+    seen_ids: set[str] = set()
+    for idx, row in frame.fillna("").iterrows():
+        row_no = int(idx) + 2
+        sample_id = str(row.get("case_id", "")).strip()
+        if not sample_id:
+            errors.append(f"第 {row_no} 行缺少 case_id。")
+            continue
+        if sample_id in seen_ids:
+            errors.append(f"第 {row_no} 行 case_id {sample_id} 在文件内重复。")
+            continue
+        seen_ids.add(sample_id)
+
+        status = sr.normalize_sample_status(row.get("status", "待复核"))
+        dimension_name = str(row.get("rubric_dimension_name", "")).strip()
+        dimension_field = _csv_dimension_field(dimension_name, str(row.get("rubric_dimension_field", "")).strip())
+        full_mark = _to_int(row.get("rubric_full_mark"), fallback=10)
+        gold_answer = _build_gold_answer_json(
+            sample_id=sample_id,
+            core_conclusion=str(row.get("gold_core_conclusion", "")).strip(),
+            key_evidence=str(row.get("gold_key_evidence", "")).strip(),
+            must_have_points=_csv_list(row.get("gold_must_have_points", "")),
+            unacceptable_errors=_csv_list(row.get("gold_unacceptable_errors", "")),
+            boundary_conditions=str(row.get("gold_boundary_conditions", "")).strip(),
+            manual_review_notes=str(row.get("gold_manual_review_notes", "")).strip(),
         )
-    with col2:
-        uploaded = st.file_uploader("导入样本库 JSON", type=["json"], key="samples_import")
-        if uploaded is not None:
-            if st.button("确认导入并合并", key="samples_import_confirm"):
-                try:
-                    raw = json.loads(uploaded.getvalue().decode("utf-8"))
-                    sr.import_samples(raw, db_path=_formal_db_path_for_ui())
-                except Exception as exc:
-                    st.error(str(exc))
-                else:
-                    st.success("导入成功，样本已合并到当前库。")
-                    st.rerun()
+        rubric = _build_rubric_json(
+            existing_rubric="",
+            dimension_field=dimension_field,
+            dimension_name=dimension_name or dimension_field,
+            full_mark=max(1, full_mark),
+            full_mark_standard=str(row.get("rubric_full_mark_standard", "")).strip(),
+            deduction_rules=str(row.get("rubric_deduction_rules", "")).strip(),
+        )
+        values = {
+            "sample_id": sample_id,
+            "title": str(row.get("title", "")).strip(),
+            "scenario": str(row.get("scenario", "")).strip(),
+            "task_prompt": str(row.get("question", "")).strip(),
+            "business_context": str(row.get("context", "")).strip(),
+            "domain": str(row.get("domain", "")).strip(),
+            "task_type": str(row.get("task_type", "")).strip(),
+            "risk_level": str(row.get("risk_level", "")).strip(),
+            "expected_capability": str(row.get("expected_capability", "")).strip(),
+            "gold_answer": gold_answer,
+            "rubric": rubric,
+            "model_answers": [],
+            "error_tags": [],
+            "improvement_suggestions": [],
+            "status": status,
+            "difficulty": str(row.get("difficulty", "")).strip(),
+            "reviewer_note": "",
+        }
+        item_errors = sr.validate_sample(values, existing_ids=set())
+        if item_errors:
+            errors.append(f"第 {row_no} 行（{sample_id}）：{'；'.join(item_errors)}")
+            continue
+        records.append(values)
+    return records, errors
+
+
+def _import_csv_records(records: list[dict], duplicate_policy: str) -> tuple[int, int, int, list[str]]:
+    existing_ids = {sample.sample_id for sample in sr.load_samples()}
+    imported = 0
+    updated = 0
+    skipped = 0
+    errors: list[str] = []
+    for values in records:
+        sample_id = str(values.get("sample_id") or "").strip()
+        try:
+            if sample_id in existing_ids:
+                if duplicate_policy == "跳过重复样本":
+                    skipped += 1
+                    continue
+                changes = {key: value for key, value in values.items() if key != "sample_id"}
+                sr.update_sample(sample_id, changes, db_path=_formal_db_path_for_ui())
+                updated += 1
+            else:
+                sr.create_sample(values, db_path=_formal_db_path_for_ui())
+                existing_ids.add(sample_id)
+                imported += 1
+        except Exception as exc:
+            errors.append(f"{sample_id}：{exc}")
+    return imported, updated, skipped, errors
 
 
 def _render_pending_dialogs(rubric_dimensions: list[dict] | None) -> None:
@@ -1150,28 +1280,101 @@ def _render_pending_dialogs(rubric_dimensions: list[dict] | None) -> None:
         sample_id = st.session_state.get("samples_edit_id")
         if sample_id:
             _render_edit_sample_dialog(str(sample_id), rubric_dimensions)
-    elif mode == "more":
-        _render_more_actions_dialog(str(st.session_state.get("samples_more_id") or ""))
+    elif mode == "import_csv":
+        _render_import_csv_dialog(rubric_dimensions)
 
     archive_id = st.session_state.get("samples_archive_confirm_id")
     if archive_id:
         _render_archive_dialog(str(archive_id))
 
 
-@st.dialog("更多操作", width="medium")
-def _render_more_actions_dialog(sample_id: str) -> None:
-    sample = sr.get_sample(sample_id) if sample_id else None
-    if sample is not None:
-        st.caption(f"{sample.sample_id}｜{sample.title or '未命名样本'}")
-    if not ds.database_ready():
-        st.caption("SQLite 未初始化时，新增或编辑不会进入正式测试。")
-    st.markdown("**删除样本**")
-    st.caption("当前版本暂不支持删除样本。请使用“移出测试”；该方式不会删除历史评测记录。")
-    st.button("删除样本", key=f"samples_delete_disabled_{sample_id or 'none'}", type="tertiary", disabled=True)
-    _render_backup_controls()
-    if st.button("关闭", key="samples_more_close", type="tertiary"):
-        _clear_dialog_state()
-        st.rerun()
+@st.dialog("导入 CSV", width="large")
+def _render_import_csv_dialog(rubric_dimensions: list[dict] | None) -> None:
+    st.caption("CSV 用于批量新增或更新样本资产。字段校验通过后才会写入样本库。")
+    st.download_button(
+        "下载 CSV 模板",
+        data=_csv_template_bytes(),
+        file_name="samples_template.csv",
+        mime="text/csv",
+        key="samples_csv_template_download",
+    )
+    st.caption(
+        "模板中的 domain、task_type、risk_level 会作为任务元数据保存；"
+        "Gold Answer 与 Rubric 字段用于生成评分所需的结构化资产。"
+    )
+    uploaded = st.file_uploader("上传 CSV 文件", type=["csv"], key="samples_csv_upload")
+    if uploaded is None:
+        if st.button("取消", key="samples_csv_cancel_empty", type="tertiary"):
+            _clear_dialog_state()
+            st.rerun()
+        return
+
+    try:
+        frame = pd.read_csv(uploaded, dtype=str).fillna("")
+    except Exception as exc:
+        st.error(f"CSV 解析失败：{exc}")
+        return
+
+    records, errors = _parse_samples_csv(frame)
+    st.markdown("**导入前校验**")
+    if errors:
+        st.error("字段校验未通过。")
+        for error in errors[:8]:
+            st.caption(error)
+        if len(errors) > 8:
+            st.caption(f"另有 {len(errors) - 8} 条错误未展示。")
+        if st.button("取消", key="samples_csv_cancel_error", type="tertiary"):
+            _clear_dialog_state()
+            st.rerun()
+        return
+
+    existing_ids = {sample.sample_id for sample in sr.load_samples()}
+    duplicate_ids = sorted(
+        str(record.get("sample_id"))
+        for record in records
+        if str(record.get("sample_id")) in existing_ids
+    )
+    if duplicate_ids:
+        shown = "、".join(duplicate_ids[:5])
+        suffix = f" 等 {len(duplicate_ids)} 条" if len(duplicate_ids) > 5 else ""
+        st.warning(f"发现重复样本：{shown}{suffix}。请选择处理方式。")
+        duplicate_policy = st.radio(
+            "重复样本处理",
+            ["跳过重复样本", "更新已有样本", "取消导入"],
+            horizontal=True,
+            key="samples_csv_duplicate_policy",
+        )
+    else:
+        duplicate_policy = "跳过重复样本"
+
+    st.caption(f"校验通过：{len(records)} 条记录；重复样本：{len(duplicate_ids)} 条。")
+    col1, col2 = st.columns(2)
+    with col1:
+        disabled = duplicate_policy == "取消导入" or not records
+        if st.button("确认导入", key="samples_csv_import_confirm", type="primary", disabled=disabled, use_container_width=True):
+            imported, updated, skipped, import_errors = _import_csv_records(records, duplicate_policy)
+            if import_errors:
+                st.error("导入未完全成功。")
+                for error in import_errors[:8]:
+                    st.caption(error)
+                return
+            if records:
+                for record in records:
+                    sample_id = str(record.get("sample_id") or "")
+                    if duplicate_policy == "跳过重复样本" and sample_id in existing_ids:
+                        continue
+                    if sample_id:
+                        _select_sample(sample_id)
+                        break
+            st.session_state["samples_import_result"] = (
+                f"已导入 {imported} 条样本，更新 {updated} 条，跳过 {skipped} 条重复记录。"
+            )
+            _clear_dialog_state()
+            st.rerun()
+    with col2:
+        if st.button("取消", key="samples_csv_import_cancel", type="tertiary", use_container_width=True):
+            _clear_dialog_state()
+            st.rerun()
 
 
 @st.dialog("新增样本", width="large")
