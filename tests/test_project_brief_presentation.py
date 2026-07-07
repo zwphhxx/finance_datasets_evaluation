@@ -65,13 +65,14 @@ class CaseStudyPresentationTests(unittest.TestCase):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         self.assertNotIn("PROCESS_TEXT", source)
         self.assertNotIn("process_text=", source)
-        self.assertEqual(1, source.count("render_process_line(PROCESS_STEPS)"))
+        self.assertNotIn("render_process_line(PROCESS_STEPS)", source)
+        self.assertEqual(1, source.count("process_steps=PROCESS_STEPS"))
         self.assertIn(
             'PROCESS_STEPS = ["人工录入样本库", "发起模型评测", "生成评分草稿", "人工确认评分", "进入评测结论"]',
             source,
         )
         self.assertIn('title="评测流程"', source)
-        self.assertLess(source.index('title="评测流程"'), source.index("render_process_line(PROCESS_STEPS)"))
+        self.assertLess(source.index('title="评测流程"'), source.index("process_steps=PROCESS_STEPS"))
 
     def test_brief_and_section_title_styles_are_stronger(self):
         css = Path("src/ui/components.py").read_text(encoding="utf-8")
@@ -147,6 +148,30 @@ class CaseStudyPresentationTests(unittest.TestCase):
         self.assertNotIn("home-section-heading", html)
         self.assertIn("home-section-body", html)
         self.assertLess(html.index("section-heading"), html.index("home-section-body"))
+
+    def test_home_section_process_line_is_inside_body_column(self):
+        import src.ui.components as components
+
+        captured = []
+        original = components.render_html
+        try:
+            components.render_html = lambda html, container=None: captured.append(str(html))
+            components.render_home_section(
+                number="02",
+                title="评测流程",
+                lead="从专业样本到人工确认后的正式结论。",
+                body=["正文"],
+                process_steps=["人工录入样本库", "发起模型评测"],
+            )
+        finally:
+            components.render_html = original
+
+        html = "".join(captured)
+        body_start = html.index('<div class="home-section-body">')
+        body_end = html.index("</div>", body_start)
+        process_index = html.index('class="process-line"')
+        self.assertGreater(process_index, body_start)
+        self.assertLess(process_index, body_end)
 
     def test_section_heading_renders_home_and_page_variants(self):
         import src.ui.components as components

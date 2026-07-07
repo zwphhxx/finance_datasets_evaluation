@@ -6,7 +6,6 @@ from src.ui.components import (
     PROJECT_DISPLAY_NAME,
     render_brief_intro,
     render_home_section,
-    render_process_line,
 )
 
 
@@ -78,8 +77,8 @@ def render_case_study_page(data_bundle: dict) -> None:
             "样本库包括任务题、业务背景、专业标准答案、必须覆盖点、不可接受错误和评分标准。发起评测时，被测模型只看到任务题、业务背景和输出要求，不会看到专业标准答案或评分标准。模型生成回答后，裁判模型根据专业标准答案和评分标准形成评分草稿。",
             "评分草稿不会直接进入正式结论，需要经过人工确认、修订后确认或暂不采用。评测结论只汇总已确认的评分，用于展示当前样本下不同模型的质量表现、主要问题和使用边界。",
         ],
+        process_steps=PROCESS_STEPS,
     )
-    render_process_line(PROCESS_STEPS)
 
     render_home_section(
         number="03",

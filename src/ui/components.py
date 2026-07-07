@@ -896,8 +896,11 @@ def render_home_section(
     body: list[str],
     *,
     first: bool = False,
+    process_steps: list[str] | None = None,
 ) -> None:
     body_html = "".join(f"<p>{escape(str(paragraph))}</p>" for paragraph in body if str(paragraph).strip())
+    if process_steps:
+        body_html += _process_line_html(process_steps)
     section_class = "home-section home-section-first" if first else "home-section"
     heading_html = _section_heading_html(number, title, lead, variant="home")
     render_html(
@@ -913,12 +916,16 @@ def render_home_section(
 def render_process_line(steps: list[str]) -> None:
     if not steps:
         return
+    render_html(_process_line_html(steps))
+
+
+def _process_line_html(steps: list[str]) -> str:
     parts: list[str] = []
     for index, step in enumerate(steps):
         if index:
             parts.append('<span class="process-line-separator"></span>')
         parts.append(f'<span>{escape(str(step))}</span>')
-    render_html(f'<div class="process-line">{"".join(parts)}</div>')
+    return f'<div class="process-line">{"".join(parts)}</div>'
 
 
 def _section_heading_html(
