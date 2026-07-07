@@ -34,6 +34,23 @@ _DIMENSIONS = [
     {"field": "expression_score", "name": "专业表达", "full_mark": 15},
 ]
 
+_DETAILED_DIMENSIONS = [
+    {
+        "field": "accuracy_score",
+        "name": "专业准确性",
+        "full_mark": 30,
+        "full_mark_standard": "结论与专业标准答案一致，并准确使用题目数据。",
+        "deduction_rules": "已给模拟数据却只说无法判断时扣分。",
+    },
+    {
+        "field": "evidence_score",
+        "name": "依据可靠性",
+        "full_mark": 15,
+        "full_mark_standard": "依据来自题目材料或需核查文件。",
+        "deduction_rules": "未引用关键数据或编造依据时扣分。",
+    },
+]
+
 
 def setUpModule():
     ds.initialize_database(_DB_PATH, force=True)
@@ -157,7 +174,14 @@ class MultiModelRunTests(unittest.TestCase):
 
 class JudgePromptBoundaryTests(unittest.TestCase):
     def test_judge_sees_gold_but_eval_model_never_does(self):
-        task = {"case_id": "X-1", "task_type": "T", "scenario": "S", "question": "Q", "context": "C"}
+        task = {
+            "case_id": "X-1",
+            "task_type": "T",
+            "scenario": "S",
+            "question": "Q",
+            "context": "C",
+            "output_requirement": "请基于已提供模拟数据先形成初步判断。",
+        }
         gold = {
             "core_conclusion": "GOLD-结论-应进入裁判",
             "must_have_points": ["GOLD要点A"],
@@ -168,6 +192,7 @@ class JudgePromptBoundaryTests(unittest.TestCase):
         # 裁判应当看到 Gold。
         self.assertIn("GOLD-结论-应进入裁判", judge_joined)
         self.assertIn("GOLD红线", judge_joined)
+        self.assertIn("请基于已提供模拟数据先形成初步判断", judge_joined)
         # 回归守卫：被评测模型的 prompt 仍不含 Gold。
         eval_joined = " ".join(m["content"] for m in er.build_messages({**task, **gold}))
         for leak in ["GOLD-结论-应进入裁判", "GOLD要点A", "GOLD红线"]:
@@ -179,6 +204,39 @@ class JudgePromptBoundaryTests(unittest.TestCase):
         for dim in _DIMENSIONS:
             self.assertIn(dim["field"], joined)
             self.assertIn(str(dim["full_mark"]), joined)
+
+    def test_judge_prompt_uses_chinese_terms_and_data_based_deduction_rules(self):
+        task = {
+            "scenario": "财务场景",
+            "question": "请判断收入真实性。",
+            "context": "2025 年收入 12,000 万元，应收账款 5,400 万元。",
+            "output_requirement": "第一段必须基于已提供模拟数据形成初步判断。",
+        }
+        gold = {
+            "core_conclusion": "基于已提供模拟数据，回款异常风险较高。",
+            "must_have_points": ["必须分析应收账款占收入比例"],
+            "unacceptable_errors": ["只说资料不足、无法判断"],
+        }
+
+        messages = sc.build_judge_messages(task, "资料不足，无法直接判定，需要进一步核查。", gold, _DETAILED_DIMENSIONS)
+        joined = "\n".join(message["content"] for message in messages)
+
+        self.assertIn("【输出要求】\n第一段必须基于已提供模拟数据形成初步判断。", joined)
+        self.assertIn("【专业标准答案参考（仅供评分，请勿照抄）】", joined)
+        self.assertIn("【评分标准】", joined)
+        self.assertNotIn("Gold Answer", joined)
+        self.assertNotIn("Rubric", joined)
+        self.assertNotIn("评分量表", joined)
+        self.assertIn("已给模拟数据但只说“资料不足、无法判断”", joined)
+        self.assertIn("把后续核查事项当成主要结论，推理与场景适配扣分", joined)
+
+    def test_judge_prompt_rubric_includes_standard_and_deduction_rules(self):
+        messages = sc.build_judge_messages({"question": "Q"}, "模型回答", {}, _DETAILED_DIMENSIONS)
+        joined = "\n".join(message["content"] for message in messages)
+
+        self.assertIn("专业准确性（字段 accuracy_score，满分 30）", joined)
+        self.assertIn("满分标准：结论与专业标准答案一致，并准确使用题目数据。", joined)
+        self.assertIn("扣分规则：已给模拟数据却只说无法判断时扣分。", joined)
 
 
 class JudgeParseTests(unittest.TestCase):

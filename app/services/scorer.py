@@ -1,12 +1,12 @@
 """真实模型评测的 LLM-as-judge 评分编排（PR-35）。
 
-在 eval_runner 生成被评测模型回答之后，由「裁判模型」对照该题 Gold Answer 与 Rubric
+在 eval_runner 生成被评测模型回答之后，由「裁判模型」对照该题专业标准答案与评分标准
 各维度打分，产出**机器建议分**。建议分需经人工复核（review_status: pending → confirmed）
 才计入结果，本模块不自动定稿、不下「哪个模型最好」的结论。
 
 边界（重要）：
-  - 裁判模型可以看到 Gold Answer（评分必需）；这与「被评测模型绝不可见 Gold」是两条独立链路，
-    被评测模型的 prompt 仍由 eval_runner.build_messages 构造，白名单不含 Gold。
+  - 裁判模型可以看到专业标准答案（评分必需）；这与「被评测模型绝不可见专业标准答案」是两条独立链路，
+    被评测模型的 prompt 仍由 eval_runner.build_messages 构造，白名单不含专业标准答案。
   - 无 API Key（mock provider）时不产生任何真实分数：各维度留空、judge_status=mock。
   - 评分写入独立表 live_run_scores，与 seed 的 score_records 分离，不污染既有分析页。
 本模块不依赖 Streamlit 运行时，便于单元测试。
@@ -99,12 +99,27 @@ SENSITIVE_IMPORT_FIELDS = {
 }
 
 _JUDGE_SYSTEM_PROMPT = (
-    "你是金融与专业尽调领域的资深评审。你的任务是依据给定的 Gold Answer 与评分量表（Rubric），"
-    "对「被评测模型的回答」逐维度打分。"
-    "请基于证据与量表客观评分，对照 Gold Answer 的核心结论、必须覆盖点与不可接受错误，"
-    "不要拔高也不要苛责，不要编造 Gold Answer 中没有的标准。"
+    "你是财务、法律与投行尽调场景下的资深评审。你的任务是依据题目材料、"
+    "被评测模型回答、专业标准答案和评分标准，对被评测模型回答逐维度打分。"
+    "请重点判断被评测模型是否在已提供模拟数据范围内形成了明确的初步判断，"
+    "是否准确引用关键数据，是否覆盖专业标准答案中的必须覆盖点，是否触犯不可接受错误。"
+    "如果题目已经提供模拟数据、财务数据、合同条款、交易安排或比例测算，"
+    "而被评测模型仍以“资料不足”“无法直接判定”“需要进一步核查”作为主要结论，"
+    "且没有基于已给数据形成初步判断，应在专业准确性、推理与场景适配、风险覆盖和依据可靠性维度扣分。"
+    "允许模型在后续核查边界中说明仍需进一步核查，但不得将核查边界替代当前数据下的初步判断。"
+    "请仅依据题目和专业标准答案评分，不要编造题目没有的事实，不要拔高也不要苛责。"
     "每个维度给出 0 到该维度满分之间的整数分，并给出一句简短依据。"
-    "你只输出评分，不改写或续写被评测回答，也不替用户下最终结论；分数仅为机器建议，仍需人工复核。"
+    "评分结果只是机器建议分，仍需人工复核。"
+)
+
+_GENERAL_DEDUCTION_RULES = (
+    "通用扣分规则：\n"
+    "1. 已给模拟数据但未引用关键数据，依据可靠性扣分。\n"
+    "2. 已给模拟数据但只说“资料不足、无法判断”，专业准确性和推理维度扣分。\n"
+    "3. 漏掉专业标准答案中的必须覆盖点，风险覆盖维度扣分。\n"
+    "4. 出现不可接受错误，相关维度应明显扣分。\n"
+    "5. 编造题目未提供的数据、法规、合同或结论，专业准确性和依据可靠性扣重分。\n"
+    "6. 把后续核查事项当成主要结论，推理与场景适配扣分。"
 )
 
 # 要求裁判严格输出的 JSON 结构说明（仅结构，不含任何示例分数，避免诱导造数）。
@@ -182,7 +197,7 @@ def build_judge_messages(
     gold: Mapping[str, Any],
     dimensions: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, str]]:
-    """构造发送给裁判模型的消息：任务 + 被评测回答 + Gold 参考 + Rubric 维度。"""
+    """构造发送给裁判模型的消息：任务 + 被评测回答 + 专业标准答案 + 评分标准。"""
     lines: list[str] = []
 
     scenario = _clean(task.get("scenario"))
@@ -194,19 +209,23 @@ def build_judge_messages(
     context = _clean(task.get("context"))
     if context:
         lines.append(f"【背景信息】{context}")
+    output_requirement = _clean(task.get("output_requirement") or task.get("expected_capability"))
+    if output_requirement:
+        lines.append(f"【输出要求】\n{output_requirement}")
 
     lines.append("【被评测模型的回答】\n" + (answer_text or "（空）"))
 
     gold_block = _format_gold(gold)
     if gold_block:
-        lines.append("【Gold Answer 参考（仅供你评分，请勿照抄）】\n" + gold_block)
+        lines.append("【专业标准答案参考（仅供评分，请勿照抄）】\n" + gold_block)
 
-    lines.append("【评分量表】\n" + _format_rubric(dimensions))
+    lines.append("【评分标准】\n" + _format_rubric(dimensions))
+    lines.append(_GENERAL_DEDUCTION_RULES)
 
     score_keys = ", ".join(f'"{d["field"]}": 整数' for d in dimensions)
     rationale_keys = ", ".join(f'"{d["field"]}": "依据"' for d in dimensions)
     lines.append(
-        "【输出要求】"
+        "【JSON 输出要求】"
         + _JUDGE_OUTPUT_INSTRUCTION.format(score_keys=score_keys, rationale_keys=rationale_keys)
     )
 
@@ -1397,10 +1416,21 @@ def _format_gold(gold: Mapping[str, Any]) -> str:
 
 
 def _format_rubric(dimensions: Sequence[Mapping[str, Any]]) -> str:
-    return "\n".join(
-        f"- {d.get('name', d['field'])}（字段 {d['field']}，满分 {d.get('full_mark')}）"
-        for d in dimensions
-    )
+    lines: list[str] = []
+    for dimension in dimensions:
+        field = _clean(dimension.get("field"))
+        name = _clean(dimension.get("name")) or field
+        full_mark = dimension.get("full_mark")
+        if full_mark is None:
+            full_mark = dimension.get("weight")
+        lines.append(f"- {name}（字段 {field}，满分 {full_mark}）")
+        full_mark_standard = _clean(dimension.get("full_mark_standard"))
+        if full_mark_standard:
+            lines.append(f"  满分标准：{full_mark_standard}")
+        deduction_rules = _clean(dimension.get("deduction_rules"))
+        if deduction_rules:
+            lines.append(f"  扣分规则：{deduction_rules}")
+    return "\n".join(lines)
 
 
 def _extract_json_object(text: str) -> dict | None:
