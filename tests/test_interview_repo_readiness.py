@@ -83,22 +83,38 @@ def test_seed_assets_are_exactly_the_final_sample_set() -> None:
     assert {sample["domain"] for sample in samples} <= EXPECTED_DOMAINS
 
 
-def test_interview_readme_opens_with_project_value_and_boundaries() -> None:
+def test_readme_uses_concise_project_submission_structure() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     first_screen = "\n".join(readme.splitlines()[:40])
 
-    assert "## 面试官快速阅读" in first_screen
+    assert "# 财务/法律/投行场景大模型对比评测" in first_screen
+    assert "## 面试官快速阅读" not in readme
+    assert "## 数据对象与数据流" not in readme
+    assert len(readme.splitlines()) < 120
+    for heading in [
+        "## 项目定位",
+        "## 核心能力",
+        "## 主流程",
+        "## 当前样本集",
+        "## 评测边界",
+        "## 本地运行",
+        "## 模型服务配置",
+        "## 演示与恢复",
+        "## 文档索引",
+    ]:
+        assert heading in readme
     for phrase in [
         "不是通用 Chatbot",
-        "不是模型排名页",
+        "不做脱离样本范围的泛化模型排名",
         "专业样本",
         "专业标准答案",
         "评分标准",
         "裁判评分",
         "人工确认",
         "使用边界",
+        "详细字段、数据结构和 SQLite / 文件映射见 `docs/dataset_schema.md`",
     ]:
-        assert phrase in first_screen
+        assert phrase in readme
 
 
 def test_env_example_uses_interview_safe_runtime_defaults() -> None:

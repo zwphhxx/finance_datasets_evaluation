@@ -23,7 +23,7 @@ class ReadmeCurrentFlowTests(unittest.TestCase):
         text = Path("README.md").read_text(encoding="utf-8")
 
         self.assertIn(f"# {PROJECT_NAME}", text)
-        self.assertIn("## 当前主流程", text)
+        self.assertIn("## 主流程", text)
         for line in [
             "1. **样本库**",
             "2. **发起评测**",
@@ -35,11 +35,9 @@ class ReadmeCurrentFlowTests(unittest.TestCase):
         required_boundaries = [
             "被测模型不看到专业标准答案",
             "裁判评分只是评分草稿",
-            "确认生效后才进入正式结论",
-            "待确认草稿、暂不采用记录和示例评价不进入正式结论",
-            "seed 示例评价不等于正式结论",
-            "SQLite 是运行期数据",
-            "Streamlit 重新部署可能丢失 live 结论",
+            "正式结论只统计已确认评分",
+            "待确认、暂不采用、失败评分和示例评价不进入正式结论",
+            "本地 SQLite 数据库属于运行期产物",
             "导出 / 导入",
         ]
         for phrase in required_boundaries:
@@ -55,27 +53,22 @@ class ReadmeCurrentFlowTests(unittest.TestCase):
         for phrase in retired_page_phrases:
             self.assertNotIn(phrase, text)
 
-    def test_readme_documents_scoring_timeout_recovery(self):
+    def test_readme_keeps_runtime_configuration_and_recovery_concise(self):
         text = Path("README.md").read_text(encoding="utf-8")
 
         for phrase in [
-            "## 运行稳定性与失败恢复",
-            "SILICONFLOW_TIMEOUT_SECONDS=120",
-            'SILICONFLOW_TIMEOUT_SECONDS = "120"',
-            "普通模型建议 90-120 秒",
-            "LongCat、R1、reasoning / thinking 类慢模型建议 180-240 秒",
+            "## 模型服务配置",
+            "SILICONFLOW_API_KEY",
+            "SILICONFLOW_TIMEOUT_SECONDS",
             "FINDUEVAL_EVAL_MAX_TOKENS",
-            "响应超时和回答截断是两类问题",
-            "finish_reason=length` 会使用压缩提示词自动重试 1 次",
-            "timeout 过长会导致页面等待时间变长",
-            "评分失败通常是裁判模型超时，不代表样本失败",
-            "重试失败评分",
-            "发起评测页默认支持批处理运行",
-            "可继续未完成项或重试失败项",
-            "提前生成并确认评分结果",
+            "FINDUEVAL_EVAL_TEMPERATURE",
+            "## 演示与恢复",
+            "外部模型服务可能受网络、限流、模型响应时间和输出长度影响",
+            "未完成项可继续运行",
+            "失败项可单独重试",
         ]:
             self.assertIn(phrase, text)
-        for phrase in ["建议分批运行", "超过 50 条回答需要确认后再运行"]:
+        for phrase in ["建议分批运行", "超过 50 条回答需要确认后再运行", "## 运行稳定性与失败恢复"]:
             self.assertNotIn(phrase, text)
 
 
