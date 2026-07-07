@@ -87,6 +87,19 @@ class ActiveSampleQualityTests(unittest.TestCase):
             self.assertTrue(conclusion.startswith("基于已提供模拟数据"), case_id)
             self.assertNotRegex(conclusion[:80], r"资料不足|无法判断", case_id)
 
+    def test_output_requirements_force_preliminary_judgment(self):
+        for _, task in self.data.tasks.iterrows():
+            case_id = str(task.get("case_id") or "")
+            requirement = str(task.get("expected_capability") or "").strip()
+            self.assertIn("初步判断", requirement, case_id)
+            self.assertIn("不得以“资料不足、无法直接判定、需进一步核查”作为主要结论", requirement, case_id)
+            if case_id.startswith("FD-"):
+                self.assertIn("关键财务数据", requirement, case_id)
+            elif case_id.startswith("LD-"):
+                self.assertIn("法律规则", requirement, case_id)
+            elif case_id.startswith("CM-"):
+                self.assertIn("监管指标", requirement, case_id)
+
     def test_model_prompt_uses_context_but_not_standard_answer_fields(self):
         task = self.data.tasks[self.data.tasks["case_id"] == "FD-001"].iloc[0].to_dict()
         gold = self.data.gold_answer_map["FD-001"]
@@ -97,6 +110,7 @@ class ActiveSampleQualityTests(unittest.TestCase):
 
         self.assertIn("2025", prompt)
         self.assertIn("应收账款", prompt)
+        self.assertIn("初步判断", prompt)
         for leak in [
             str(gold["core_conclusion"])[:40],
             str(gold["key_evidence"])[:40],

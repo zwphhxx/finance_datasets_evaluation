@@ -213,6 +213,41 @@ class PromptBoundaryTests(unittest.TestCase):
         self.assertIn("某公司收购尽调", joined)
         self.assertIn("请评估收入确认的合规性。", joined)
 
+    def test_eval_prompt_includes_sample_output_requirement(self):
+        """被评测模型应看到样本级输出要求，但不看到专业标准答案字段。"""
+        task = {
+            "case_id": "X-2",
+            "scenario": "财务场景",
+            "question": "请判断收入质量。",
+            "context": "2025 年收入 12,000 万元，应收账款 5,400 万元。",
+            "output_requirement": "请基于已提供模拟数据先形成初步判断，并列示关键数据依据。",
+            "core_conclusion": "GOLD-专业标准答案-不应外泄",
+            "must_have_points": ["GOLD-必须覆盖点"],
+            "unacceptable_errors": ["GOLD-不可接受错误"],
+            "scoring_focus": "GOLD-评分关注点",
+        }
+
+        messages = er.build_messages(task)
+        joined = " ".join(m["content"] for m in messages)
+
+        self.assertIn("【输出要求】", joined)
+        self.assertIn("请基于已提供模拟数据先形成初步判断", joined)
+        self.assertIn("2025 年收入 12,000 万元", joined)
+        for leak in ["GOLD-专业标准答案", "GOLD-必须覆盖点", "GOLD-不可接受错误", "GOLD-评分关注点"]:
+            self.assertNotIn(leak, joined)
+
+    def test_default_output_hint_requires_data_based_preliminary_judgment(self):
+        messages = er.build_messages({
+            "case_id": "X-3",
+            "question": "请判断交易风险。",
+            "context": "交易金额 52,000 万元，占资产总额 52.0%。",
+        })
+        joined = " ".join(m["content"] for m in messages)
+
+        self.assertIn("基于已提供数据形成初步判断", joined)
+        self.assertIn("不得只回答“资料不足”或“无法直接判定”", joined)
+        self.assertNotIn("信息不足时应说明需要补充核实的内容", joined)
+
 
 class PageRenderTests(unittest.TestCase):
     """Test that all 5 main page render functions can be imported and called."""

@@ -114,6 +114,17 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertNotIn('st.expander("查看回答"', source)
         self.assertNotIn('st.expander("查看全部回答"', source)
 
+    def test_configuration_panel_exposes_model_prompt_preview_without_answer_fields(self):
+        source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+
+        self.assertIn("查看本题发送给被测模型的提示词", source)
+        self.assertIn('@st.dialog("发送给被测模型的提示词"', source)
+        self.assertIn("er.build_messages", source)
+        self.assertIn("系统提示词", source)
+        self.assertIn("用户提示词", source)
+        self.assertIn("不包含专业标准答案、必须覆盖点、不可接受错误或评分标准", source)
+        self.assertNotIn("core_conclusion", source[source.index("def _render_prompt_preview_dialog"):])
+
     def test_page_wires_recoverable_run_and_score_queues(self):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
 
@@ -530,7 +541,7 @@ class SampleSelectionTests(unittest.TestCase):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
         clear_source = source[
             source.index("def _clear_dialog_state"):
-            source.index("@st.dialog(\"选择样本\"")
+            source.index("@st.dialog(\"发送给被测模型的提示词\"")
         ]
 
         self.assertIn("test_run_cases_dialog_selected", clear_source)

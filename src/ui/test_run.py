@@ -575,6 +575,13 @@ def _render_configuration_panel(
         )
     if not run_plan["can_run"]:
         st.caption("请选择样本和模型后运行。")
+    if selected_tasks:
+        if st.button(
+            "查看本题发送给被测模型的提示词",
+            key="test_run_open_prompt_preview",
+            type="tertiary",
+        ):
+            _open_prompt_preview_dialog(selected_tasks)
     if start_run:
         queue_items = build_run_queue_items(model_ids, selected_tasks)
         _execute_run_queue(
@@ -606,18 +613,82 @@ def _open_model_dialog(provider_name: str) -> None:
     st.session_state["test_run_model_dialog_selected"] = _selected_model_ids_from_state()
 
 
+def _open_prompt_preview_dialog(selected_tasks: list[dict]) -> None:
+    first = next((item for item in selected_tasks or [] if str(item.get("case_id") or "").strip()), None)
+    if first:
+        st.session_state["test_run_prompt_preview_case"] = str(first.get("case_id") or "")
+    st.session_state["test_run_dialog"] = "prompt_preview"
+
+
 def _render_pending_dialogs(sample_options: list[dict]) -> None:
     dialog = st.session_state.get("test_run_dialog")
     if dialog == "samples":
         _render_sample_selection_dialog(sample_options)
     elif dialog == "models":
         _render_model_selection_dialog()
+    elif dialog == "prompt_preview":
+        _render_prompt_preview_dialog(sample_options)
 
 
 def _clear_dialog_state() -> None:
     st.session_state.pop("test_run_dialog", None)
     st.session_state.pop("test_run_cases_dialog_selected", None)
+    st.session_state.pop("test_run_prompt_preview_case", None)
     _clear_session_state_prefix(SAMPLE_CHECKBOX_KEY_PREFIX)
+
+
+@st.dialog("发送给被测模型的提示词", width="large")
+def _render_prompt_preview_dialog(sample_options: list[dict]) -> None:
+    by_case = {str(item.get("case_id") or ""): item for item in sample_options}
+    selected_ids = [
+        str(case_id)
+        for case_id in st.session_state.get("test_run_selected_cases", [])
+        if str(case_id) in by_case
+    ]
+    preview_ids = selected_ids or list(by_case)
+    if not preview_ids:
+        st.caption("当前没有可预览的样本。")
+        if st.button("关闭", key="test_run_prompt_preview_close_empty", type="tertiary"):
+            _clear_dialog_state()
+            st.rerun()
+        return
+
+    current = str(st.session_state.get("test_run_prompt_preview_case") or "")
+    if current not in preview_ids:
+        current = preview_ids[0]
+    if len(preview_ids) > 1:
+        current = st.selectbox(
+            "预览样本",
+            options=preview_ids,
+            index=preview_ids.index(current),
+            format_func=lambda case_id: _prompt_preview_case_label(by_case.get(case_id, {})),
+            key="test_run_prompt_preview_case_select",
+        )
+    st.session_state["test_run_prompt_preview_case"] = current
+
+    task = (by_case.get(current) or {}).get("task") or {}
+    messages = er.build_messages(task)
+    st.caption("仅展示被测模型可见字段，不包含专业标准答案、必须覆盖点、不可接受错误或评分标准。")
+    for message in messages:
+        role = str(message.get("role") or "")
+        label = "系统提示词" if role == "system" else "用户提示词"
+        height = 210 if role == "system" else 340
+        st.text_area(
+            label,
+            value=str(message.get("content") or ""),
+            height=height,
+            disabled=True,
+            key=f"test_run_prompt_preview_{role}",
+        )
+    if st.button("关闭", key="test_run_prompt_preview_close", type="tertiary"):
+        _clear_dialog_state()
+        st.rerun()
+
+
+def _prompt_preview_case_label(item: dict) -> str:
+    case_id = str(item.get("case_id") or "")
+    title = str(item.get("title") or "样本任务")
+    return f"{case_id}｜{title}"
 
 
 @st.dialog("选择样本", width="large")

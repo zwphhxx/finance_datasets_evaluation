@@ -5,9 +5,9 @@
 
 Prompt 边界（重要）：
   - 绝不把 Gold Answer / 必须覆盖点 / 不可接受错误等评测答案发送给被评测模型；
-  - 被评测模型只看到任务场景、题干、必要背景与输出格式要求；
-  - 不让模型自评、不引导其输出虚假确定结论；
-  - 对金融 / 法律 / 投资判断类任务，提示模型说明依据与核查边界。
+  - 被评测模型只看到任务场景、题干、必要背景与样本输出要求；
+  - 不让模型自评、不引导其输出绝对化结论；
+  - 对财务 / 法律 / 投行判断类任务，提示模型先基于已给数据形成初步判断，再说明依据与核查边界。
 """
 
 from __future__ import annotations
@@ -21,17 +21,24 @@ from typing import Any, Callable, Mapping, Sequence
 from app.models.base import ERROR_EMPTY_RESPONSE, ModelProvider, STATUS_FAILED, STATUS_MOCK
 
 # 被评测模型可见的任务字段（白名单）。Gold Answer 相关字段一律不在其中。
-_VISIBLE_TASK_FIELDS = ("scenario", "question", "context")
+_VISIBLE_TASK_FIELDS = ("scenario", "question", "context", "output_requirement")
 
 _SYSTEM_PROMPT = (
-    "你是金融与专业尽调领域的分析助手。请仅依据题目提供的信息作答，"
-    "不要编造材料中没有的事实或给出无依据的确定性结论。"
-    "对涉及金融、法律或投资判断的问题，请说明你的判断依据，并明确指出仍需进一步核实的边界与前提。"
-    "请按以下结构作答：1) 结论；2) 主要依据；3) 风险与核查边界。"
+    "你是财务、法律与投行尽调场景下的专业分析助手。请仅依据题目提供的信息作答，"
+    "不得编造题目未提供的事实。如果题目已经提供模拟数据、财务数据、合同条款、"
+    "交易安排或其他已知背景，你必须先基于已提供数据形成初步判断，"
+    "不得以“资料不足”“无法直接判定”“仍需进一步核查”作为主要结论。"
+    "你的回答应体现：在当前已给数据范围内可以作出的判断、支撑该判断的关键数据和逻辑、"
+    "仍需进一步核查或核实的边界。请按以下结构作答：1）初步结论；2）关键数据依据；"
+    "3）风险事项；4）后续核查边界。"
     "不要对自己的回答进行打分或自评。"
 )
 
-_OUTPUT_HINT = "请用中文作答，结构清晰、专业克制；信息不足时应说明需要补充核实的内容，而非臆测。"
+_OUTPUT_HINT = (
+    "请用中文作答，结构清晰、专业克制。第一段必须基于题目已提供数据形成初步判断；"
+    "随后列示关键数据依据、风险事项和后续核查边界。除非题目完全没有提供可判断的数据，"
+    "否则不得只回答“资料不足”或“无法直接判定”。"
+)
 
 
 @dataclass(frozen=True)
@@ -139,7 +146,8 @@ def build_messages(task: Mapping[str, Any]) -> list[dict[str, str]]:
     context = _clean(task.get("context"))
     if context:
         lines.append(f"【背景信息】{context}")
-    lines.append(f"【输出要求】{_OUTPUT_HINT}")
+    output_requirement = _clean(task.get("output_requirement") or task.get("expected_capability"))
+    lines.append(f"【输出要求】{output_requirement or _OUTPUT_HINT}")
     return [
         {"role": "system", "content": _SYSTEM_PROMPT},
         {"role": "user", "content": "\n\n".join(lines)},
