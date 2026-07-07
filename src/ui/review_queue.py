@@ -1,4 +1,4 @@
-"""评分确认页的批次、队列和单选选择逻辑。"""
+"""评分确认页的批次、队列和表格选择逻辑。"""
 
 from __future__ import annotations
 
@@ -289,16 +289,29 @@ def render_review_queue(items: list[dict], selected_score_run_id: str | None) ->
     if not visible_items:
         return [], None
 
+    table_rows = [review_queue_row(item) for item in visible_items]
+    frame = pd.DataFrame(table_rows)
     version = int(st.session_state.get(REVIEW_QUEUE_VERSION_KEY, 0) or 0)
-    selected_index = st.radio(
-        "选择评分草稿",
-        options=list(range(len(visible_items))),
-        index=selected_review_radio_index(None, visible_items) or 0,
-        format_func=lambda index: review_queue_choice_label(visible_items[int(index)]),
-        key=f"review_queue_radio::{selected_score_run_id or 'latest'}::{filter_value}::{version}",
+    selected_state = st.dataframe(
+        frame,
+        hide_index=True,
+        use_container_width=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        row_height=34,
+        column_order=["样本编号", "模型", "总分", "建议处理", "状态", "生成时间"],
+        column_config={
+            "样本编号": st.column_config.TextColumn("样本编号", width="small"),
+            "模型": st.column_config.TextColumn("模型", width="medium"),
+            "总分": st.column_config.TextColumn("总分", width="small"),
+            "建议处理": st.column_config.TextColumn("建议处理", width="small"),
+            "状态": st.column_config.TextColumn("状态", width="small"),
+            "生成时间": st.column_config.TextColumn("生成时间", width="medium"),
+        },
+        key=f"review_queue_table::{selected_score_run_id or 'latest'}::{filter_value}::{version}",
     )
-    st.caption("选择一条评分草稿查看详情；未确认评分不会纳入正式结论。")
-    return visible_items, selected_review_radio_index(selected_index, visible_items)
+    st.caption("点击表格行查看评分详情；未确认评分不会纳入正式结论。")
+    return visible_items, selected_review_table_index(selected_state, visible_items)
 
 
 def build_review_queue_stats(items: list[dict]) -> dict[str, int]:
@@ -347,15 +360,24 @@ def select_next_review_index(
     return 0
 
 
-def selected_review_radio_index(selected_index, visible_items: list[dict]) -> int | None:
+def selected_review_table_index(selection_state, visible_items: list[dict]) -> int | None:
     if not visible_items:
         return None
-    try:
-        index = int(selected_index)
-    except (TypeError, ValueError):
-        index = -1
-    if 0 <= index < len(visible_items):
-        return index
+    rows = []
+    selection = getattr(selection_state, "selection", None)
+    if isinstance(selection_state, dict):
+        selection = selection_state.get("selection")
+    if isinstance(selection, dict):
+        rows = selection.get("rows") or []
+    elif selection is not None:
+        rows = getattr(selection, "rows", []) or []
+    if rows:
+        try:
+            index = int(rows[0])
+        except (TypeError, ValueError):
+            index = 0
+        if 0 <= index < len(visible_items):
+            return index
     return select_next_review_index(visible_items)
 
 
@@ -401,14 +423,6 @@ def review_queue_row(item: dict) -> dict[str, object]:
         "状态": display_review_status(row.get("review_status"), item["source"]),
         "生成时间": format_datetime(item.get("created_at")),
     }
-
-
-def review_queue_choice_label(item: dict) -> str:
-    row = review_queue_row(item)
-    return (
-        f"{row['样本编号']}｜{row['模型']}｜总分 {row['总分']}｜"
-        f"{row['建议处理']}｜{row['状态']}｜{row['生成时间']}"
-    )
 
 
 def render_review_feedback(items: list[dict]) -> None:

@@ -65,7 +65,7 @@ from src.ui.review_queue import (
     score_run_option_label,
     select_next_review_index,
     select_score_run_id as _select_score_run_id,
-    selected_review_radio_index,
+    selected_review_table_index,
     should_show_no_pending_after_action,
     unique_display_models as _unique_display_models,
     unique_texts as _unique_texts,
@@ -134,7 +134,7 @@ def render_review_page(data_bundle: dict) -> None:
     if st.session_state.get(REVIEW_AUTO_SWITCH_KEY):
         st.session_state["review_queue_filter"] = "待处理"
 
-    render_numbered_section("01", REVIEW_SECTIONS[0], "通过单选列表选择一条评分草稿，查看摘要和评分依据。")
+    render_numbered_section("01", REVIEW_SECTIONS[0], "通过表格选择一条评分草稿，查看摘要和评分依据。")
     visible_items, selected_review_index = _render_review_queue(items, selected_score_run_id)
     if not visible_items:
         st.session_state[REVIEW_AUTO_SWITCH_KEY] = False

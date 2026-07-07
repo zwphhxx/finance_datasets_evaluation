@@ -345,15 +345,15 @@ class ReviewQueueTests(unittest.TestCase):
         self.assertNotIn("选择", row)
         self.assertNotIn("可批量确认", row)
 
-    def test_radio_selection_defaults_to_first_pending_row(self):
+    def test_table_selection_defaults_to_first_pending_row(self):
         first = self._item("建议确认")
         first["score_row_id"] = 10
         second = self._item("建议复核")
         second["score_row_id"] = 11
 
-        self.assertEqual(0, review.selected_review_radio_index(None, [first, second]))
-        self.assertEqual(1, review.selected_review_radio_index(1, [first, second]))
-        self.assertEqual(0, review.selected_review_radio_index(99, [first, second]))
+        self.assertEqual(0, review.selected_review_table_index(None, [first, second]))
+        self.assertEqual(1, review.selected_review_table_index({"selection": {"rows": [1]}}, [first, second]))
+        self.assertEqual(0, review.selected_review_table_index({"selection": {"rows": [99]}}, [first, second]))
 
     def test_review_page_no_longer_exposes_dropdown_or_bulk_confirm(self):
         page_source = Path("src/ui/review.py").read_text(encoding="utf-8")
@@ -361,9 +361,9 @@ class ReviewQueueTests(unittest.TestCase):
         combined = page_source + "\n" + queue_source
 
         self.assertNotIn('st.selectbox(\n        "当前评分"', combined)
-        self.assertIn("st.radio(", queue_source)
-        self.assertIn('"选择评分草稿"', queue_source)
-        self.assertNotIn("selection_mode=\"single-row\"", queue_source)
+        self.assertIn("selection_mode=\"single-row\"", queue_source)
+        self.assertIn("on_select=\"rerun\"", queue_source)
+        self.assertNotIn('"选择评分草稿"', queue_source)
         self.assertNotIn("批量" + "确认生效", combined)
         self.assertNotIn("CheckboxColumn", combined)
 
