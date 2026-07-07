@@ -127,7 +127,7 @@ def read_json_file(filename: str, data_dir: Path | None = None) -> Any:
 
 def build_gold_answer_map(gold_answers: Any) -> dict[str, dict[str, Any]]:
     if not isinstance(gold_answers, list):
-        raise DataLoadError("Gold Answer 文件格式异常：gold_answers.json 应为列表。")
+        raise DataLoadError("专业标准答案文件格式异常：gold_answers.json 应为列表。")
 
     answer_map: dict[str, dict[str, Any]] = {}
     for answer in gold_answers:

@@ -110,6 +110,25 @@ class VisibleTextGuardrailTests(unittest.TestCase):
             for term in banned_terms:
                 self.assertNotIn(term, text, f"{path} contains retired visible term: {term}")
 
+    def test_user_facing_docs_and_ui_do_not_show_english_scoring_labels(self):
+        paths = [
+            Path("README.md"),
+            *sorted(Path("docs").glob("*.md")),
+            *sorted(Path("src/ui").glob("*.py")),
+        ]
+        banned_labels = [
+            "Gold Answer",
+            "Gold 要求",
+            "Rub" + "ric",
+            "full mark standard",
+            "deduction rules",
+        ]
+
+        for path in paths:
+            text = path.read_text(encoding="utf-8")
+            for label in banned_labels:
+                self.assertNotIn(label, text, f"{path} contains user-facing English label: {label}")
+
 
 class FormalConclusionStatusGuardrailTests(unittest.TestCase):
     def test_only_confirmed_live_scores_enter_formal_conclusions(self):

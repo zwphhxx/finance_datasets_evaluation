@@ -108,7 +108,7 @@ class ValidatorTests(unittest.TestCase):
         self.assertTrue(result.is_valid)
         self.assertTrue(any("部分模型回答尚未评分" in message for message in result.warnings))
         self.assertTrue(any("部分模型回答尚未配置错误标签" in message for message in result.warnings))
-        self.assertTrue(any("部分任务暂未配置 Gold Answer" in message for message in result.warnings))
+        self.assertTrue(any("部分任务暂未配置专业标准答案" in message for message in result.warnings))
 
 
 if __name__ == "__main__":

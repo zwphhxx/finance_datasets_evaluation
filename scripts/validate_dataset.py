@@ -7,9 +7,9 @@
 校验内容：
   - case_id 唯一；
   - active 样本的 domain 落在 manifest 允许领域范围内（inactive 样本不参与统计与评测）；
-  - 每个任务存在 Gold Answer；
-  - 每个 Gold Answer 包含核心结论、关键依据，以及答案边界或红线错误；
-  - 每个 Gold Answer 的结构化要素完整度（核心结论 / 关键依据 / 边界条件 / 不可接受错误 / 必须覆盖点）；
+  - 每个任务存在专业标准答案；
+  - 每个专业标准答案包含核心结论、关键依据，以及答案边界或红线错误；
+  - 每个专业标准答案的结构化要素完整度（核心结论 / 关键依据 / 边界条件 / 不可接受错误 / 必须覆盖点）；
   - 评分标准维度权重完整且与评分字段一致；
   - 模型回答可关联到有效 case_id 与声明的模型范围；
   - 评分记录可关联到有效 case_id、模型与全部评分标准维度；
@@ -281,13 +281,13 @@ def _check_gold_answer_coverage(tasks: pd.DataFrame, gold_answers: Any, report: 
 
     missing = sorted(task_ids - gold_ids)
     if missing:
-        report.fail(f"以下任务缺少 Gold Answer：{', '.join(missing)}。")
+        report.fail(f"以下任务缺少专业标准答案：{', '.join(missing)}。")
     else:
-        report.ok(f"全部 {len(task_ids)} 个任务均存在 Gold Answer。")
+        report.ok(f"全部 {len(task_ids)} 个任务均存在专业标准答案。")
 
     orphan = sorted(gold_ids - task_ids)
     if orphan:
-        report.fail(f"以下 Gold Answer 未匹配任务 case_id：{', '.join(orphan)}。")
+        report.fail(f"以下专业标准答案未匹配任务 case_id：{', '.join(orphan)}。")
 
 
 def _check_gold_answer_fields(manifest: dict[str, Any], gold_answers: Any, report: Report) -> None:
@@ -311,15 +311,15 @@ def _check_gold_answer_fields(manifest: dict[str, Any], gold_answers: Any, repor
             incomplete.append(f"{case_id}（缺 {', '.join(missing)}）")
 
     if incomplete:
-        report.fail("以下 Gold Answer 核心要素不完整：" + "；".join(incomplete) + "。")
+        report.fail("以下专业标准答案核心要素不完整：" + "；".join(incomplete) + "。")
     else:
         report.ok(
-            "全部 Gold Answer 均包含核心结论、关键依据，以及答案边界或红线错误。"
+            "全部专业标准答案均包含核心结论、关键依据，以及答案边界或红线错误。"
         )
 
 
 def _check_gold_answer_completeness(gold_answers: Any, report: Report) -> None:
-    """逐条评估 Gold Answer 结构化要素是否齐备，区分满足 / 部分满足评测使用条件。"""
+    """逐条评估专业标准答案结构化要素是否齐备，区分满足 / 部分满足评测使用条件。"""
     if not isinstance(gold_answers, list) or not gold_answers:
         return
 
@@ -338,13 +338,13 @@ def _check_gold_answer_completeness(gold_answers: Any, report: Report) -> None:
     element_labels = "、".join(label for _, label in QUALITY_FIELDS)
     if partial:
         report.warn(
-            "以下 Gold Answer 仅部分满足评测使用条件，建议补齐结构化要素："
+            "以下专业标准答案仅部分满足评测使用条件，建议补齐结构化要素："
             + "；".join(partial)
             + "。"
         )
     if usable:
         report.ok(
-            f"{usable} 个 Gold Answer 满足评测使用条件，结构化要素（{element_labels}）齐备。"
+            f"{usable} 个专业标准答案满足评测使用条件，结构化要素（{element_labels}）齐备。"
         )
 
 

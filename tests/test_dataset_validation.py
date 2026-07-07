@@ -68,7 +68,7 @@ class DatasetValidatorNegativeTests(unittest.TestCase):
 
             report = self._run(data_dir)
             self.assertFalse(report.is_valid)
-            self.assertTrue(any("缺少 Gold Answer" in e for e in report.errors))
+            self.assertTrue(any("缺少专业标准答案" in e for e in report.errors))
             self.assertTrue(any(dropped["case_id"] in e for e in report.errors))
 
     def test_incomplete_gold_answer_is_flagged(self):

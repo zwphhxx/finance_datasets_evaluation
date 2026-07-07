@@ -114,7 +114,7 @@ def build_review_scoring_matrix_rows(
         rows.append({
             "评分维度": name,
             "满分": full_text,
-            "理想回复要求 / Gold 要求": rubric_requirement(field, dim),
+            "标准答案要求": rubric_requirement(field, dim),
             "模型得分": score_text,
             "评分依据": rationale_for_field(row, field),
             "扣分原因": text(dim.get("deduction_rules"), "暂无规则"),
@@ -314,7 +314,7 @@ def build_redline_blocks(
     errors_df: pd.DataFrame | None,
     task_info: pd.Series | dict | None,
 ) -> list[dict[str, list[str]]]:
-    """Build restrained redline notes from Gold, severe errors, weak dimensions and risk."""
+    """Build restrained redline notes from standard-answer boundaries, severe errors, weak dimensions and risk."""
     row = output_row if isinstance(output_row, pd.Series) else pd.Series(output_row or {})
     errors = get_errors_for_output(errors_df if isinstance(errors_df, pd.DataFrame) else pd.DataFrame(), row.get("output_id"))
     blocks: list[dict[str, list[str]]] = []

@@ -192,7 +192,7 @@ class ReviewMatrixTests(unittest.TestCase):
 
         self.assertEqual(["准确性", "覆盖度"], [row["评分维度"] for row in rows])
         self.assertEqual("18 / 30", rows[0]["模型得分"])
-        self.assertEqual("结论准确且依据充分", rows[0]["理想回复要求 / Gold 要求"])
+        self.assertEqual("结论准确且依据充分", rows[0]["标准答案要求"])
         self.assertEqual("事实错误扣分", rows[0]["扣分原因"])
         self.assertEqual("未返回明确依据", rows[0]["评分依据"])
         self.assertEqual("风险遗漏", rows[1]["对应错误标签"])
@@ -206,7 +206,7 @@ class ReviewMatrixTests(unittest.TestCase):
         )
 
         self.assertEqual("待补充", rows[0]["模型得分"])
-        self.assertEqual("待补充", rows[0]["理想回复要求 / Gold 要求"])
+        self.assertEqual("待补充", rows[0]["标准答案要求"])
         self.assertEqual("暂无错误标签", rows[0]["对应错误标签"])
 
 

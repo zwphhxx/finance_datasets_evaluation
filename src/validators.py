@@ -225,7 +225,7 @@ def _validate_optional_coverage(data: EvaluationData, warnings: list[str]) -> No
             if isinstance(answer, dict) and answer.get("case_id") is not None
         }
         if task_ids - gold_ids:
-            warnings.append("部分任务暂未配置 Gold Answer，不影响任务和模型回答展示。")
+            warnings.append("部分任务暂未配置专业标准答案，不影响任务和模型回答展示。")
 
     if data.preference_pairs.empty:
         warnings.append("preference_pairs.csv 暂无偏好样本，不影响现有评分和错误标签展示。")

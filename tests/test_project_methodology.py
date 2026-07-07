@@ -1,14 +1,13 @@
-"""项目说明页注册、结构和动态统计测试。"""
+"""项目说明页注册、结构和数据边界测试。"""
 
-import types
 import unittest
+import types
 from pathlib import Path
 
 import pandas as pd
 
 from src.data_service import load_all_data
-from src.metrics import SCORE_DIMENSIONS
-from src.ui.case_study import _build_home_stats, _build_sample_scope_text, scored_case_count
+from src.ui.case_study import _build_sample_scope_text, scored_case_count
 from src.ui.navigation import PAGES, _NAV_GROUPS
 from src.ui.page_config import DEFAULT_PAGE_KEY, PAGE_CONFIG_BY_KEY, PAGE_CONTEXTS
 
@@ -60,7 +59,7 @@ class RegistrationTests(unittest.TestCase):
             self.assertIn(section, source, section)
         self.assertNotIn('render_numbered_section("04", "进入操作")', source)
         self.assertNotIn("查看样本库", source)
-        self.assertIn("当前样本内观察", source)
+        self.assertIn("当前样本范围", source)
         self.assertIn("使用边界", source)
         self.assertIn("回答质量", source)
         self.assertIn("主要问题", source)
@@ -72,22 +71,6 @@ class RegistrationTests(unittest.TestCase):
 class DynamicStatsTests(unittest.TestCase):
     def setUp(self):
         self.data = load_all_data()
-
-    def test_home_stats_match_live_data(self):
-        stats = {label: value for value, label in _build_home_stats(self.data, {})}
-        task_count = len(self.data.tasks)
-        domain_count = self.data.tasks["domain"].dropna().nunique()
-        self.assertEqual(f"{task_count} 个", stats["当前样本"])
-        self.assertEqual(f"{domain_count} 类", stats["覆盖专业场景"])
-        self.assertEqual(f"{len(SCORE_DIMENSIONS)} 个", stats["评分维度"])
-
-    def test_home_stats_track_data_changes(self):
-        stub = types.SimpleNamespace(
-            tasks=pd.DataFrame({"domain": ["a", "b", "b"]}),
-        )
-        stats = {label: value for value, label in _build_home_stats(stub, {})}
-        self.assertEqual("3 个", stats["当前样本"])
-        self.assertEqual("2 类", stats["覆盖专业场景"])
 
     def test_sample_scope_text_uses_domain_labels(self):
         text = _build_sample_scope_text(self.data)

@@ -192,34 +192,7 @@ header,
 }
 .brief-intro {
     margin: 0.35rem 0 1.45rem 0;
-    padding-bottom: 1rem;
-    border-bottom: 1px solid var(--fde-line);
-}
-.brief-title {
-    color: var(--fde-ink);
-    font-size: 2.35rem;
-    font-weight: 820;
-    line-height: 1.12;
-    letter-spacing: 0;
-    margin: 0;
-    max-width: 58rem;
-}
-.brief-subtitle {
-    color: var(--fde-muted);
-    font-size: 1.05rem;
-    line-height: 1.65;
-    margin: 0.75rem 0 0 0;
-    max-width: 50rem;
-}
-.brief-meta {
-    color: var(--fde-muted);
-    font-size: 0.88rem;
-    line-height: 1.5;
-    margin-top: 0.9rem;
-}
-.brief-meta strong {
-    color: var(--fde-ink);
-    font-weight: 720;
+    padding-bottom: 0;
 }
 .process-line {
     display: flex;
@@ -810,9 +783,6 @@ div[data-testid="stDialog"] {
         gap: 0.35rem;
         align-items: start;
     }
-    .brief-title {
-        font-size: 1.78rem;
-    }
     .process-line-separator {
         width: 1.2rem;
     }
@@ -896,31 +866,11 @@ def render_compact_hero(
     )
 
 
-def render_brief_intro(
-    title: str,
-    subtitle: str,
-    note: str | None = None,
-    stats: list[tuple[str, str]] | None = None,
-    process_text: str | None = None,
-) -> None:
-    stat_parts = []
-    for value, label in stats or []:
-        stat_parts.append(f'<strong>{escape(str(label))}</strong> {escape(str(value))}')
-    stats_html = f'<div class="brief-meta">{" · ".join(stat_parts)}</div>' if stat_parts else ""
-    process_html = (
-        f'<div class="process-line-text">{escape(str(process_text))}</div>'
-        if process_text
-        else ""
-    )
-    note_html = f'<p class="brief-note">{escape(str(note))}</p>' if note else ""
+def render_brief_intro(note: str) -> None:
     render_html(
         f"""
         <div class="brief-intro">
-            <h1 class="brief-title">{escape(str(title))}</h1>
-            <p class="brief-subtitle">{escape(str(subtitle))}</p>
-            {note_html}
-            {stats_html}
-            {process_html}
+            <p class="brief-note">{escape(str(note))}</p>
         </div>
         """
     )

@@ -13,17 +13,20 @@ class CaseStudyPresentationTests(unittest.TestCase):
     def setUp(self):
         self.data = load_all_data()
 
-    def test_home_stats_cover_core_assets_with_live_counts(self):
-        stats = {label: value for value, label in case_study._build_home_stats(self.data, {})}
-        self.assertIn("当前样本", stats)
-        self.assertIn("覆盖专业场景", stats)
-        self.assertIn(str(len(self.data.tasks)), stats["当前样本"])
-
     def test_case_study_source_keeps_three_main_sections(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         for section in ("项目定位", "评测流程", "数据边界"):
             self.assertIn(section, source)
         self.assertNotIn("04\", \"进入操作", source)
+
+    def test_case_study_intro_is_only_the_brief_note(self):
+        source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
+        self.assertIn("render_brief_intro(", source)
+        self.assertNotIn("subtitle=", source)
+        self.assertNotIn("stats=", source)
+        self.assertNotIn("_build_home_stats", source)
+        self.assertNotIn("当前样本 13 个", source)
+        self.assertNotIn("覆盖专业场景", source)
 
     def test_case_study_reads_as_professional_brief(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
@@ -63,8 +66,6 @@ class CaseStudyPresentationTests(unittest.TestCase):
     def test_brief_and_section_title_styles_are_stronger(self):
         css = Path("src/ui/components.py").read_text(encoding="utf-8")
         for snippet in [
-            "font-size: 2.35rem;",
-            "font-weight: 820;",
             "letter-spacing: 0;",
             "border-left: 2px solid var(--fde-accent);",
             ".home-section-first",
@@ -81,6 +82,32 @@ class CaseStudyPresentationTests(unittest.TestCase):
             "font-size: 1.28rem;",
         ]:
             self.assertIn(snippet, css)
+        self.assertNotIn(".brief-title", css)
+        self.assertNotIn(".brief-subtitle", css)
+        self.assertNotIn(".brief-meta", css)
+
+    def test_brief_intro_outputs_note_without_title_subtitle_or_stats(self):
+        import src.ui.components as components
+
+        captured = []
+        original = components.render_html
+        try:
+            components.render_html = lambda html, container=None: captured.append(str(html))
+            components.render_brief_intro(
+                note=(
+                    "本项目评估大模型在财务、法律、投行等专业场景中的回答质量，"
+                    "并在当前样本范围内判断模型表现、主要问题和使用边界。"
+                )
+            )
+        finally:
+            components.render_html = original
+
+        html = "".join(captured)
+        self.assertIn("brief-intro", html)
+        self.assertIn("brief-note", html)
+        self.assertNotIn("<h1", html)
+        self.assertNotIn("brief-subtitle", html)
+        self.assertNotIn("brief-meta", html)
 
     def test_home_section_html_groups_number_title_lead_and_body(self):
         import src.ui.components as components

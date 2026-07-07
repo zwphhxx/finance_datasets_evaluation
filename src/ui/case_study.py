@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from src.metrics import SCORE_DIMENSIONS
 from src.ui.components import (
-    PROJECT_DISPLAY_NAME,
     render_brief_intro,
     render_home_section,
     render_process_line,
@@ -14,12 +12,6 @@ from src.ui.components import (
 PROCESS_STEPS = ["样本库", "发起评测", "评分草稿", "人工确认", "评测结论"]
 
 
-def _distinct_count(df, column: str) -> int:
-    if column in getattr(df, "columns", []):
-        return int(df[column].dropna().nunique())
-    return 0
-
-
 def scored_case_count(scores_df) -> int:
     """当前样本中已产出评分的条数（运行真实评测后才大于 0），从 scores 动态计算。"""
     if scores_df is None or getattr(scores_df, "empty", True):
@@ -27,17 +19,6 @@ def scored_case_count(scores_df) -> int:
     if "total_score" not in getattr(scores_df, "columns", []):
         return 0
     return int(scores_df["total_score"].notna().sum())
-
-
-def _build_home_stats(base, eval_status: dict | None) -> list[tuple[str, str]]:
-    tasks = getattr(base, "tasks", None)
-    task_count = len(tasks) if tasks is not None else 0
-    domain_count = _distinct_count(tasks, "domain")
-    return [
-        (f"{task_count} 个", "当前样本"),
-        (f"{domain_count} 类", "覆盖专业场景"),
-        (f"{len(SCORE_DIMENSIONS)} 个", "评分维度"),
-    ]
 
 
 def _build_sample_scope_text(data) -> str:
@@ -63,19 +44,12 @@ def _build_sample_scope_text(data) -> str:
 def render_case_study_page(data_bundle: dict) -> None:
     data = data_bundle["data"]
     base = data_bundle.get("base") or data
-    eval_status = data_bundle.get("eval_status") or {}
 
     render_brief_intro(
-        title=PROJECT_DISPLAY_NAME,
-        subtitle=(
-            "用脱敏专业任务样本，对比模型回答在结论准确性、依据充分性、推理完整性、"
-            "风险识别和专业表达上的表现。"
-        ),
         note=(
             "本项目评估大模型在财务、法律、投行等专业场景中的回答质量，"
             "并在当前样本范围内判断模型表现、主要问题和使用边界。"
         ),
-        stats=_build_home_stats(base, eval_status),
     )
 
     render_home_section(
