@@ -65,6 +65,9 @@ SAMPLE_TABLE_HEIGHT = 330
 _EVAL_TEMPERATURE = 0.1
 _MODEL_OPTION_LIMIT = 30
 _ANSWER_PREVIEW_LIMIT = 1500
+_BATCH_RUN_WARNING_THRESHOLD = 20
+_BATCH_RUN_CONFIRM_THRESHOLD = 50
+_SLOW_MODEL_KEYWORDS = ("longcat", "r1", "reasoning", "thinking")
 _RUN_STATE_KEY = "test_run_run_state"
 _PARTIAL_OUTCOMES_KEY = "test_run_partial_outcomes"
 _LAST_RUN_STATUS_KEY = "test_run_last_run_status"
@@ -234,6 +237,37 @@ def build_run_plan_summary(model_ids: list[str], selected_tasks: list[dict]) -> 
         "planned_responses": sample_count * model_count,
         "can_run": bool(sample_count and model_count),
     }
+
+
+def batch_run_notice(run_plan: dict[str, int | bool]) -> str | None:
+    """Return the user-facing risk notice for large live-answer batches."""
+    total = _planned_response_count(run_plan)
+    if total > _BATCH_RUN_CONFIRM_THRESHOLD:
+        return (
+            "当前预计生成回答较多，运行时间可能较长，部分模型可能超时。建议分批运行。"
+            "超过 50 条属于批处理，不适合面试现场演示，运行前需二次确认。"
+        )
+    if total > _BATCH_RUN_WARNING_THRESHOLD:
+        return "当前预计生成回答较多，运行时间可能较长，部分模型可能超时。建议分批运行。"
+    return None
+
+
+def requires_large_run_confirmation(run_plan: dict[str, int | bool]) -> bool:
+    return _planned_response_count(run_plan) > _BATCH_RUN_CONFIRM_THRESHOLD
+
+
+def slow_model_notice(model_ids: list[str]) -> str | None:
+    """Soft warning for model names that commonly imply longer reasoning latency."""
+    slow_models: list[str] = []
+    for model_id in _dedupe(model_ids):
+        lowered = str(model_id or "").lower()
+        if any(keyword in lowered for keyword in _SLOW_MODEL_KEYWORDS):
+            slow_models.append(_model_short_name(model_id))
+    if not slow_models:
+        return None
+    names = "、".join(slow_models[:3])
+    suffix = f" 等 {len(slow_models)} 个" if len(slow_models) > 3 else ""
+    return f"已选择响应可能较慢的模型：{names}{suffix}。建议小批量运行。"
 
 
 def build_run_queue_items(model_ids: list[str], selected_tasks: list[dict]) -> list[dict]:
@@ -597,8 +631,21 @@ def _render_configuration_panel(
     render_inline_status(rows)
     if mode == "unconfigured":
         st.caption("当前未配置模型服务密钥，暂不能发起真实调用。模拟回退仅用于开发兜底，不作为页面可选服务。")
-    st.caption("建议首次运行选择 1 个样本和 1 个模型，确认链路后再扩大范围。")
+    st.caption("建议首次运行选择 1 个样本和 1 个模型；现场演示建议最多 2-3 个模型，确认链路后再扩大范围。")
     st.caption("当前任务在页面内执行。运行中不建议刷新、关闭页面或切换页面；若中断，已完成结果会保留，未完成项可稍后继续。")
+    notice = batch_run_notice(run_plan)
+    if notice:
+        st.warning(notice)
+    slow_notice = slow_model_notice(model_ids)
+    if slow_notice:
+        st.caption(slow_notice)
+    large_run_confirmed = True
+    if requires_large_run_confirmation(run_plan):
+        large_run_confirmed = st.checkbox(
+            "确认按批处理运行",
+            key="test_run_large_batch_confirmed",
+            help="全量或大批量运行耗时较长，现场演示建议分批运行。",
+        )
 
     col1, col2, col3 = st.columns([1, 1, 1.2])
     with col1:
@@ -612,6 +659,7 @@ def _render_configuration_panel(
         start_run = _render_run_button(
             run_plan,
             service_ready=(mode == "live"),
+            large_run_confirmed=large_run_confirmed,
         )
     if not run_plan["can_run"]:
         st.caption("请选择样本和模型后运行。")
@@ -1607,15 +1655,19 @@ def _render_run_button(
     run_plan,
     *,
     service_ready: bool = True,
+    large_run_confirmed: bool = True,
 ) -> bool:
-    disabled = not run_plan["can_run"] or not service_ready
+    needs_confirmation = requires_large_run_confirmation(run_plan) and not large_run_confirmed
+    disabled = not run_plan["can_run"] or not service_ready or needs_confirmation
     clicked = st.button("运行模型回答", type="primary", disabled=disabled, key="test_run_run")
 
     if disabled:
-        if service_ready:
-            st.caption("请先选择至少一个模型与至少一道任务，再运行评测。")
-        else:
+        if not service_ready:
             st.caption("当前未配置模型服务密钥，暂不能发起真实调用。")
+        elif needs_confirmation:
+            st.caption("预计回答超过 50 条，请确认按批处理运行后再开始。")
+        else:
+            st.caption("请先选择至少一个模型与至少一道任务，再运行评测。")
     return bool(clicked and not disabled)
 
 
@@ -1871,22 +1923,15 @@ def _render_run_outcome_card(
         return
 
     is_incomplete = str(outcome.error_code or "").strip().lower() == "incomplete_response"
-    if is_incomplete:
-        reason = outcome.incomplete_reason or outcome.error_message or "模型回答未完整结束。"
-        st.markdown(f"原因：{_short(reason, 180)}")
-        if getattr(outcome, "finish_reason", None):
-            st.markdown(f"finish_reason：`{_dash(outcome.finish_reason)}`")
-        st.caption("处理：不会进入评分草稿，可重试失败项或更换模型。")
-    else:
-        st.markdown(f"错误码：`{_dash(outcome.error_code)}`")
-        st.markdown(f"错误信息：{_short(outcome.error_message, 180)}")
-        if getattr(outcome, "incomplete_reason", None):
-            st.markdown(f"不完整原因：{_short(outcome.incomplete_reason, 180)}")
-        if getattr(outcome, "finish_reason", None):
-            st.markdown(f"finish_reason：`{_dash(outcome.finish_reason)}`")
-    guidance = "" if is_incomplete else _failure_guidance(outcome)
+    st.markdown(f"原因：{_short(_failure_reason_text(outcome), 180)}")
+    if getattr(outcome, "finish_reason", None):
+        st.markdown(f"finish_reason：`{_dash(outcome.finish_reason)}`")
+    retry_text = _retry_count_text(outcome)
+    if retry_text:
+        st.caption(retry_text)
+    guidance = "不会进入评分草稿，可重试失败项或更换模型。" if is_incomplete else _failure_guidance(outcome)
     if guidance:
-        st.caption(guidance)
+        st.caption(f"处理：{guidance}")
 
 
 @st.dialog("模型回答全文", width="large")
@@ -1996,7 +2041,7 @@ def render_model_answer_detail(
     else:
         guidance = _failure_guidance(outcome)
         if str(outcome.error_code or "").strip().lower() == "incomplete_response":
-            reason = getattr(outcome, "incomplete_reason", None) or outcome.error_message or "模型回答未完整结束。"
+            reason = _failure_reason_text(outcome)
             lines = [
                 "**回答不完整**",
                 "",
@@ -2004,6 +2049,9 @@ def render_model_answer_detail(
             ]
             if finish_reason:
                 lines.extend(["", f"finish_reason：`{finish_reason}`"])
+            retry_text = _retry_count_text(outcome)
+            if retry_text:
+                lines.extend(["", retry_text])
             lines.extend(["", "处理：不会进入评分草稿，可重试失败项或更换模型。"])
             if outcome.answer_text:
                 lines.extend(["", "**部分回答**", "", display_text])
@@ -2011,17 +2059,15 @@ def render_model_answer_detail(
             lines = [
                 f"**{_outcome_display_status(outcome)}**",
                 "",
-                f"错误码：`{_dash(outcome.error_code)}`",
-                "",
-                f"错误信息：{_short(outcome.error_message, 220)}",
+                f"原因：{_short(_failure_reason_text(outcome), 220)}",
             ]
-            incomplete_reason = getattr(outcome, "incomplete_reason", None)
-            if incomplete_reason:
-                lines.extend(["", f"不完整原因：{incomplete_reason}"])
             if finish_reason:
                 lines.extend(["", f"finish_reason：`{finish_reason}`"])
+            retry_text = _retry_count_text(outcome)
+            if retry_text:
+                lines.extend(["", retry_text])
             if guidance:
-                lines.extend(["", guidance])
+                lines.extend(["", f"处理：{guidance}"])
         markdown = "\n".join(lines)
     return render_markdown_detail_panel(
         title=title,
@@ -2392,6 +2438,13 @@ def _dedupe(items: list[str]) -> list[str]:
     return ordered
 
 
+def _planned_response_count(run_plan: dict[str, int | bool]) -> int:
+    try:
+        return int(run_plan.get("planned_responses") or 0)
+    except (AttributeError, TypeError, ValueError):
+        return 0
+
+
 def _mode_label(value) -> str:
     return _MODE_LABEL.get(str(value or "").strip().lower(), str(value or "未知"))
 
@@ -2456,10 +2509,19 @@ def _model_short_name(model_id: str) -> str:
 
 def _outcome_display_status(outcome: er.RunOutcome) -> str:
     status = str(outcome.run_status or "").strip().lower()
+    code = str(getattr(outcome, "error_code", "") or "").strip().lower()
     if outcome.success:
         return "已完成"
-    if str(getattr(outcome, "error_code", "") or "").strip().lower() == "incomplete_response":
+    if code in {"timeout", "gateway_timeout"}:
+        return "响应超时"
+    if code == "incomplete_response":
         return "回答不完整"
+    if code == "rate_limited":
+        return "触发限流"
+    if code in {"missing_api_key", "unauthorized", "forbidden"}:
+        return "权限异常"
+    if code == "empty_response":
+        return "空回答"
     if status == "running":
         return "生成中"
     if status == "waiting":
@@ -2467,6 +2529,31 @@ def _outcome_display_status(outcome: er.RunOutcome) -> str:
     if status == "interrupted":
         return "已中断"
     return "未获得有效回答"
+
+
+def _failure_reason_text(outcome) -> str:
+    code = str(getattr(outcome, "error_code", "") or "").strip().lower()
+    if code in {"timeout", "gateway_timeout"}:
+        return "模型服务响应超时。"
+    if code == "incomplete_response":
+        return getattr(outcome, "incomplete_reason", None) or getattr(outcome, "error_message", None) or "模型回答未完整结束。"
+    if code == "rate_limited":
+        return "模型服务触发限流。"
+    if code in {"missing_api_key", "unauthorized", "forbidden"}:
+        return "模型服务配置或权限异常。"
+    if code == "empty_response":
+        return "模型返回成功但回答为空。"
+    if code in {"bad_request", "not_found"}:
+        return "模型 ID 或请求参数异常。"
+    return getattr(outcome, "error_message", None) or "未获得有效回答。"
+
+
+def _retry_count_text(outcome) -> str:
+    try:
+        count = int(getattr(outcome, "retry_count", 0) or 0)
+    except (TypeError, ValueError):
+        count = 0
+    return f"已自动重试 {count} 次。" if count > 0 else ""
 
 
 def _latency_label(value) -> str:
@@ -2563,7 +2650,7 @@ def _failure_guidance(outcome) -> str:
     if code in {"missing_api_key", "unauthorized", "forbidden"}:
         return "请检查 SILICONFLOW_API_KEY、账户权限或模型访问权限。"
     if code in {"timeout", "gateway_timeout"}:
-        return "模型服务响应超时，可稍后重试或更换模型。"
+        return "模型服务响应超时，可稍后重试、分批运行或调大 SILICONFLOW_TIMEOUT_SECONDS。"
     if code == "rate_limited":
         return "请求触发限流，请稍后重试。"
     if code == "empty_response":

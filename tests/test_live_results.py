@@ -239,6 +239,56 @@ class RunnerEmptyGuardTests(unittest.TestCase):
         self.assertEqual(outcome.first_finish_reason, "length")
         self.assertEqual(outcome.final_finish_reason, "length")
 
+    def test_timeout_retries_once_with_same_token_budget_and_keeps_success(self):
+        provider = _SequenceProvider(
+            GenerationResult(
+                "sequence",
+                "m",
+                STATUS_FAILED,
+                error_code="timeout",
+                error_message="请求超时，请稍后重试或调大 SILICONFLOW_TIMEOUT_SECONDS。",
+            ),
+            GenerationResult(
+                "sequence",
+                "m",
+                STATUS_SUCCESS,
+                response_text="基于已提供数据，初步判断存在风险。",
+            ),
+        )
+
+        outcome = er.run_single(provider, "m", {"case_id": "FD-001"}, max_tokens=4096)
+
+        self.assertEqual([4096, 4096], provider.max_token_calls)
+        self.assertTrue(outcome.success)
+        self.assertEqual(outcome.retry_count, 1)
+        self.assertIsNone(outcome.error_code)
+        self.assertEqual(outcome.answer_text, "基于已提供数据，初步判断存在风险。")
+
+    def test_timeout_retry_still_timeout_keeps_failed_timeout(self):
+        provider = _SequenceProvider(
+            GenerationResult(
+                "sequence",
+                "m",
+                STATUS_FAILED,
+                error_code="timeout",
+                error_message="请求超时，请稍后重试或调大 SILICONFLOW_TIMEOUT_SECONDS。",
+            ),
+            GenerationResult(
+                "sequence",
+                "m",
+                STATUS_FAILED,
+                error_code="timeout",
+                error_message="请求超时，请稍后重试或调大 SILICONFLOW_TIMEOUT_SECONDS。",
+            ),
+        )
+
+        outcome = er.run_single(provider, "m", {"case_id": "FD-001"}, max_tokens=4096)
+
+        self.assertEqual([4096, 4096], provider.max_token_calls)
+        self.assertFalse(outcome.success)
+        self.assertEqual(outcome.error_code, "timeout")
+        self.assertEqual(outcome.retry_count, 1)
+
 
 class _CodeProvider(ModelProvider):
     """Maps model_id to a fixed failure error_code (timeout / 401 / 429)."""

@@ -79,6 +79,7 @@ class SiliconFlowConfigTests(unittest.TestCase):
     def test_base_url_and_timeout_defaults(self):
         provider = SiliconFlowProvider(api_key="sk-x", base_url=None, timeout_seconds=None)
         self.assertEqual(provider.base_url, sf.DEFAULT_BASE_URL)
+        self.assertEqual(sf.DEFAULT_TIMEOUT_SECONDS, 90)
         self.assertEqual(provider.timeout_seconds, float(sf.DEFAULT_TIMEOUT_SECONDS))
 
     def test_timeout_can_be_configured_and_invalid_values_fallback(self):

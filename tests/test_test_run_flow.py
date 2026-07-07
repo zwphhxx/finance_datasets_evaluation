@@ -12,6 +12,7 @@ from src.ui.test_run import (
     _EVAL_MAX_TOKENS,
     _EVAL_MAX_TOKENS_DEFAULT,
     _EVAL_MAX_TOKENS_LIMIT,
+    batch_run_notice,
     build_outcome_view_options,
     build_model_selection_options,
     build_remaining_queue_items,
@@ -34,8 +35,10 @@ from src.ui.test_run import (
     has_confirmable_score_drafts,
     merge_sample_checkbox_selection,
     prompt_preview_task_for_case,
+    requires_large_run_confirmation,
     resolve_eval_max_tokens,
     sample_checkbox_key,
+    slow_model_notice,
     _model_short_name,
     _siliconflow_balance_text,
 )
@@ -58,6 +61,20 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertEqual(6000, resolve_eval_max_tokens("6000"))
         self.assertEqual(_EVAL_MAX_TOKENS_LIMIT, resolve_eval_max_tokens("999999"))
         self.assertEqual(4096, resolve_eval_max_tokens("not-a-number"))
+
+    def test_batch_run_notice_thresholds_and_confirmation(self):
+        self.assertIsNone(batch_run_notice({"planned_responses": 20}))
+        self.assertIn("建议分批运行", batch_run_notice({"planned_responses": 21}) or "")
+        self.assertIn("二次确认", batch_run_notice({"planned_responses": 51}) or "")
+        self.assertFalse(requires_large_run_confirmation({"planned_responses": 50}))
+        self.assertTrue(requires_large_run_confirmation({"planned_responses": 51}))
+
+    def test_slow_model_notice_uses_soft_keywords(self):
+        notice = slow_model_notice(["vendor/LongCat-2.0", "deepseek-r1", "fast/model"])
+
+        self.assertIn("响应可能较慢", notice or "")
+        self.assertIn("LongCat-2.0", notice or "")
+        self.assertIn("deepseek-r1", notice or "")
 
     def test_selection_controls_are_dialog_driven(self):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
@@ -115,6 +132,9 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("er.run_single", source)
         self.assertIn("retry_max_tokens=_EVAL_MAX_TOKENS_LIMIT", source)
         self.assertIn("er.CompareRunResult", source)
+        self.assertIn("现场演示建议最多 2-3 个模型", source)
+        self.assertIn("当前预计生成回答较多，运行时间可能较长，部分模型可能超时。建议分批运行。", source)
+        self.assertIn("确认按批处理运行", source)
         self.assertIn("查看全文", source)
         self.assertIn('@st.dialog("模型回答全文"', source)
         self.assertIn("查看技术明细", source)
@@ -204,9 +224,14 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("失败项不会进入评分草稿", source)
         self.assertIn("默认展示第一条失败原因", source)
         self.assertIn("回答不完整", source)
+        self.assertIn("响应超时", source)
+        self.assertIn("触发限流", source)
+        self.assertIn("权限异常", source)
+        self.assertIn("空回答", source)
         self.assertIn("原因：", source)
+        self.assertIn("已自动重试", source)
         self.assertIn("处理：不会进入评分草稿，可重试失败项或更换模型。", source)
-        for column in ("finish_reason", "incomplete_reason", "输出tokens", "trace_id"):
+        for column in ("finish_reason", "incomplete_reason", "retry_count", "输出tokens", "trace_id"):
             self.assertIn(column, source[source.index("def _render_results_table"):])
         self.assertNotIn("render_aux_action_bar", results_source)
         self.assertNotIn("test_run_technical_details", results_source)
@@ -337,7 +362,7 @@ class TestRunFlowStructureTests(unittest.TestCase):
         options = build_outcome_view_options(outcomes, task_lookup)
 
         self.assertEqual(1, default_outcome_view_index(outcomes))
-        self.assertEqual("A｜这是一段用于识别资金占用风险的任务题，需要判…｜Model-Failed｜未获得有效回答", options[0]["label"])
+        self.assertEqual("A｜这是一段用于识别资金占用风险的任务题，需要判…｜Model-Failed｜响应超时", options[0]["label"])
         self.assertEqual("B｜重大资产重组判断｜Model-Success｜已完成", options[1]["label"])
 
     def test_outcome_view_defaults_to_first_failure_when_no_success(self):
@@ -693,6 +718,17 @@ class RunPlanTests(unittest.TestCase):
         failed_items = build_failed_run_queue_items(queue, outcomes)
 
         self.assertEqual([("m1", "A")], [(item["model_id"], item["case_id"]) for item in failed_items])
+
+    def test_timeout_is_retryable_failed_queue_item_without_success_pairs(self):
+        queue = build_run_queue_items(["m1", "m2"], [{"case_id": "A"}, {"case_id": "B"}])
+        outcomes = [
+            er.RunOutcome("A", "", "siliconflow", "m1", "success", True, answer_text="ok"),
+            er.RunOutcome("B", "", "siliconflow", "m2", "failed", False, error_code="timeout"),
+        ]
+
+        failed_items = build_failed_run_queue_items(queue, outcomes)
+
+        self.assertEqual([("m2", "B")], [(item["model_id"], item["case_id"]) for item in failed_items])
 
 
 class ScoreDraftTests(unittest.TestCase):

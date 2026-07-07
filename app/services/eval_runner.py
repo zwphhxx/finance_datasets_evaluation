@@ -188,8 +188,8 @@ def run_single(
     retry_count = 0
     first_finish_reason = result.finish_reason
 
-    retry_tokens = _retry_token_budget(max_tokens, retry_max_tokens)
-    if retry_tokens is not None and _is_length_truncated_result(result):
+    retry_tokens = _retry_token_budget_for_result(result, max_tokens, retry_max_tokens)
+    if retry_tokens is not None:
         retry_count = 1
         result = provider.generate_response(
             model_id, messages, temperature=temperature, max_tokens=retry_tokens, **kwargs
@@ -255,6 +255,26 @@ def _is_length_truncated_result(result: GenerationResult) -> bool:
         str(result.error_code or "").strip().lower() == ERROR_INCOMPLETE_RESPONSE
         and str(result.finish_reason or "").strip().lower() == "length"
     )
+
+
+def _is_timeout_result(result: GenerationResult) -> bool:
+    return str(result.error_code or "").strip().lower() == "timeout"
+
+
+def _retry_token_budget_for_result(
+    result: GenerationResult,
+    max_tokens: int,
+    retry_max_tokens: int | None,
+) -> int | None:
+    if _is_timeout_result(result):
+        try:
+            original = int(max_tokens)
+        except (TypeError, ValueError):
+            return None
+        return original if original > 0 else None
+    if _is_length_truncated_result(result):
+        return _retry_token_budget(max_tokens, retry_max_tokens)
+    return None
 
 
 def _retry_token_budget(max_tokens: int, retry_max_tokens: int | None) -> int | None:
