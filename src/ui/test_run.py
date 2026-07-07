@@ -162,6 +162,54 @@ def build_sample_selection_rows(sample_options: list[dict], selected_case_ids: l
     return rows
 
 
+def merge_sample_dialog_selection(
+    selected_case_ids: list[str],
+    filtered_options: list[dict],
+    edited_rows,
+    all_case_ids: set[str],
+) -> list[str]:
+    """Merge data-editor changes without letting unstable empty returns clear state."""
+    current = [
+        case_id
+        for case_id in _dedupe([str(value) for value in (selected_case_ids or [])])
+        if case_id in all_case_ids
+    ]
+    visible_ids = [str(item.get("case_id") or "") for item in (filtered_options or [])]
+    visible_set = {case_id for case_id in visible_ids if case_id}
+    if not visible_set:
+        return current
+    if not _valid_sample_editor_rows(edited_rows, visible_set):
+        return current
+
+    checked_visible = [
+        str(row.get("样本编号") or "")
+        for row in edited_rows
+        if bool(row.get("选择")) and str(row.get("样本编号") or "") in visible_set
+    ]
+    return _dedupe([
+        *[case_id for case_id in current if case_id not in visible_set],
+        *checked_visible,
+    ])
+
+
+def _valid_sample_editor_rows(edited_rows, visible_ids: set[str]) -> bool:
+    if not isinstance(edited_rows, list) or not edited_rows:
+        return False
+    if len(edited_rows) != len(visible_ids):
+        return False
+    row_ids: set[str] = set()
+    for row in edited_rows:
+        if not isinstance(row, dict):
+            return False
+        if "选择" not in row or "样本编号" not in row:
+            return False
+        case_id = str(row.get("样本编号") or "")
+        if not case_id:
+            return False
+        row_ids.add(case_id)
+    return row_ids == visible_ids
+
+
 def build_run_plan_summary(model_ids: list[str], selected_tasks: list[dict]) -> dict[str, int | bool]:
     """Summarize the planned model-answer run before execution."""
     model_count = len(_dedupe(model_ids))
@@ -557,6 +605,7 @@ def _open_sample_dialog(sample_options: list[dict]) -> None:
     st.session_state.pop("test_run_sample_search", None)
     st.session_state.pop("test_run_sample_scenario", None)
     st.session_state.pop("test_run_sample_difficulty", None)
+    st.session_state.pop("test_run_cases_editor", None)
 
 
 def _open_model_dialog(provider_name: str) -> None:
@@ -574,6 +623,7 @@ def _render_pending_dialogs(sample_options: list[dict]) -> None:
 
 def _clear_dialog_state() -> None:
     st.session_state.pop("test_run_dialog", None)
+    st.session_state.pop("test_run_cases_editor", None)
 
 
 @st.dialog("选择样本", width="large")
@@ -620,10 +670,9 @@ def _render_sample_selection_dialog(sample_options: list[dict]) -> None:
     filtered_options = filter_sample_selection_options(sample_options, keyword, scenario, difficulty)
     if not filtered_options:
         st.caption("当前没有符合条件的可测样本。")
-        edited_rows: list[dict] = []
+        edited_rows = None
     else:
         rows = build_sample_selection_rows(filtered_options, selected_cases)
-        editor_key = "test_run_cases_editor_" + "_".join(str(item["case_id"]) for item in filtered_options)[:120]
         edited_df = st.data_editor(
             pd.DataFrame(rows),
             hide_index=True,
@@ -639,20 +688,16 @@ def _render_sample_selection_dialog(sample_options: list[dict]) -> None:
                 "测试状态": st.column_config.TextColumn("测试状态", width="small"),
             },
             disabled=["样本编号", "任务标题", "场景", "难度", "测试状态"],
-            key=editor_key,
+            key="test_run_cases_editor",
         )
         edited_rows = edited_df.to_dict("records") if hasattr(edited_df, "to_dict") else list(edited_df)
 
-    visible_ids = {str(item.get("case_id") or "") for item in filtered_options}
-    checked_visible = [
-        str(row.get("样本编号") or "")
-        for row in edited_rows
-        if bool(row.get("选择")) and str(row.get("样本编号") or "") in by_case
-    ]
-    selected_cases = _dedupe([
-        *[case_id for case_id in selected_cases if case_id not in visible_ids],
-        *checked_visible,
-    ])
+    selected_cases = merge_sample_dialog_selection(
+        selected_cases,
+        filtered_options,
+        edited_rows,
+        all_case_ids,
+    )
     st.session_state["test_run_cases_dialog_selected"] = selected_cases
     st.caption(
         f"已选样本：{len(selected_cases)} 个。仅展示已入库且通过完整度校验的样本；"

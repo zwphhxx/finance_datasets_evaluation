@@ -28,6 +28,7 @@ from src.ui.test_run import (
     get_advanced_setting_items,
     get_test_run_steps,
     has_confirmable_score_drafts,
+    merge_sample_dialog_selection,
     _model_short_name,
     _siliconflow_balance_text,
 )
@@ -492,6 +493,40 @@ class SampleSelectionTests(unittest.TestCase):
         self.assertTrue(rows[1]["选择"])
         self.assertEqual("可测试", rows[0]["测试状态"])
         self.assertNotIn("不应展示完整题干", str(rows))
+
+    def test_sample_dialog_selection_ignores_unstable_empty_editor_rows(self):
+        filtered_options = [{"case_id": "A"}, {"case_id": "B"}]
+
+        selected = merge_sample_dialog_selection(
+            ["A", "B"],
+            filtered_options,
+            [],
+            {"A", "B", "C"},
+        )
+
+        self.assertEqual(["A", "B"], selected)
+
+    def test_sample_dialog_selection_merges_visible_changes_and_keeps_hidden(self):
+        filtered_options = [{"case_id": "A"}, {"case_id": "B"}]
+        edited_rows = [
+            {"选择": False, "样本编号": "A"},
+            {"选择": True, "样本编号": "B"},
+        ]
+
+        selected = merge_sample_dialog_selection(
+            ["A", "C"],
+            filtered_options,
+            edited_rows,
+            {"A", "B", "C"},
+        )
+
+        self.assertEqual(["C", "B"], selected)
+
+    def test_sample_dialog_uses_stable_data_editor_key(self):
+        source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+
+        self.assertIn('key="test_run_cases_editor"', source)
+        self.assertNotIn('editor_key = "test_run_cases_editor_"', source)
 
 
 class RunPlanTests(unittest.TestCase):
