@@ -29,6 +29,7 @@ from src.ui.test_run import (
     get_test_run_steps,
     has_confirmable_score_drafts,
     merge_sample_checkbox_selection,
+    prompt_preview_task_for_case,
     sample_checkbox_key,
     _model_short_name,
     _siliconflow_balance_text,
@@ -123,7 +124,37 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("系统提示词", source)
         self.assertIn("用户提示词", source)
         self.assertIn("不包含专业标准答案、必须覆盖点、不可接受错误或评分标准", source)
+        self.assertIn("请以本弹窗内容为准判断被测模型实际收到的信息", source)
         self.assertNotIn("core_conclusion", source[source.index("def _render_prompt_preview_dialog"):])
+
+    def test_prompt_preview_uses_same_task_as_run_queue(self):
+        task = {
+            "case_id": "FD-001",
+            "scenario": "财务场景",
+            "question": "请判断收入质量。",
+            "context": "2025 年收入 12,000 万元，应收账款 5,400 万元。",
+            "expected_capability": "请基于已提供模拟数据先形成初步判断。",
+            "standard_conclusion": "不应进入被测模型 prompt",
+            "must_have_points": ["不应进入被测模型 prompt"],
+            "unacceptable_errors": ["不应进入被测模型 prompt"],
+            "scoring_focus": "不应进入被测模型 prompt",
+        }
+        sample_options = [{
+            "case_id": "FD-001",
+            "title": "收入质量",
+            "task": task,
+        }]
+        selected_tasks = [sample_options[0]]
+
+        preview_task = prompt_preview_task_for_case(sample_options, ["FD-001"], "FD-001")
+        queue_task = build_run_queue_items(["vendor/model"], selected_tasks)[0]["task"]
+
+        self.assertIs(preview_task, queue_task)
+        prompt = "\n".join(message["content"] for message in er.build_messages(preview_task))
+        self.assertIn("2025 年收入 12,000 万元", prompt)
+        self.assertIn("请基于已提供模拟数据先形成初步判断", prompt)
+        for leak in ["standard_conclusion", "must_have_points", "unacceptable_errors", "scoring_focus", "不应进入被测模型 prompt"]:
+            self.assertNotIn(leak, prompt)
 
     def test_page_wires_recoverable_run_and_score_queues(self):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")

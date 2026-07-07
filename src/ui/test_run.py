@@ -219,10 +219,11 @@ def build_run_queue_items(model_ids: list[str], selected_tasks: list[dict]) -> l
     """Build the ordered model x sample queue used during execution."""
     items: list[dict] = []
     for model_id in _dedupe(model_ids):
-        for task in selected_tasks or []:
+        for selected in selected_tasks or []:
+            task = selected.get("task") if isinstance(selected.get("task"), dict) else selected
             items.append({
                 "model_id": model_id,
-                "case_id": str(task.get("case_id") or ""),
+                "case_id": str(selected.get("case_id") or task.get("case_id") or ""),
                 "task": task,
             })
     return items
@@ -439,6 +440,24 @@ def default_score_view_index(score_outcomes: list[sc.ScoreOutcome]) -> int:
         if outcome.ok:
             return index
     return 0
+
+
+def prompt_preview_task_for_case(
+    sample_options: list[dict],
+    selected_case_ids: list[str],
+    preview_case_id: str | None = None,
+) -> dict:
+    """Return the exact task object used for both prompt preview and run queue."""
+    by_case = {str(item.get("case_id") or ""): item for item in sample_options or []}
+    preview_ids = [
+        str(case_id)
+        for case_id in selected_case_ids or []
+        if str(case_id) in by_case
+    ] or list(by_case)
+    current = str(preview_case_id or "")
+    if current not in preview_ids:
+        current = preview_ids[0] if preview_ids else ""
+    return (by_case.get(current) or {}).get("task") or {}
 
 
 def render_test_run_page(data_bundle: dict) -> None:
@@ -666,9 +685,10 @@ def _render_prompt_preview_dialog(sample_options: list[dict]) -> None:
         )
     st.session_state["test_run_prompt_preview_case"] = current
 
-    task = (by_case.get(current) or {}).get("task") or {}
+    task = prompt_preview_task_for_case(sample_options, selected_ids, current)
     messages = er.build_messages(task)
     st.caption("仅展示被测模型可见字段，不包含专业标准答案、必须覆盖点、不可接受错误或评分标准。")
+    st.caption("请以本弹窗内容为准判断被测模型实际收到的信息。")
     for message in messages:
         role = str(message.get("role") or "")
         label = "系统提示词" if role == "system" else "用户提示词"

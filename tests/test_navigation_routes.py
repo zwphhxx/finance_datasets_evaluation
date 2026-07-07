@@ -246,6 +246,7 @@ class PromptBoundaryTests(unittest.TestCase):
 
         self.assertIn("基于已提供数据形成初步判断", joined)
         self.assertIn("不得只回答“资料不足”或“无法直接判定”", joined)
+        self.assertIn("不得以“缺乏数据”作为主要结论", joined)
         self.assertNotIn("信息不足时应说明需要补充核实的内容", joined)
 
 

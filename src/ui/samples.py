@@ -869,12 +869,31 @@ def _select_sample(sample_id: str) -> None:
 
 
 def _format_source_status_caption(status: dict) -> str:
+    if not _should_render_sample_source_status(status):
+        return ""
     return f"当前数据源：{status.get('source', '未知')}。{status.get('message', '')}"
+
+
+def _should_render_sample_source_status(status: dict) -> bool:
+    if not status.get("sqlite_ready"):
+        return True
+    try:
+        if int(status.get("unsynced_count") or 0) > 0:
+            return True
+    except (TypeError, ValueError):
+        return True
+    if status.get("error") or str(status.get("level") or "").lower() in {"error", "warning"}:
+        return True
+    return False
 
 
 def _render_sample_source_status() -> None:
     status = sr.sample_data_source_status()
-    st.caption(_format_source_status_caption(status))
+    if not _should_render_sample_source_status(status):
+        return
+    caption = _format_source_status_caption(status)
+    if caption:
+        st.caption(caption)
     if not status.get("sqlite_ready"):
         st.caption("seed 文件只用于初始化；samples.json 是样本库管理视图，不是发起评测的唯一正式源。")
 

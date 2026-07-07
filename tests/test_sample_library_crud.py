@@ -11,6 +11,7 @@ from pathlib import Path
 
 from app.services import dataset_service as ds
 from app.services import sample_repository as sr
+from src.ui import samples as samples_ui
 
 
 class SampleRepositoryTests(unittest.TestCase):
@@ -291,6 +292,36 @@ class SampleRepositoryTests(unittest.TestCase):
         self.assertFalse(status["sqlite_ready"])
         self.assertEqual("seed / samples.json", status["source"])
         self.assertIn("SQLite", status["message"])
+
+    def test_sample_source_status_is_hidden_when_formal_assets_are_synced(self):
+        status = {
+            "sqlite_ready": True,
+            "source": "SQLite 正式资产",
+            "message": "样本库视图已同步正式评测资产。",
+            "unsynced_count": 0,
+        }
+
+        self.assertFalse(samples_ui._should_render_sample_source_status(status))
+        self.assertEqual("", samples_ui._format_source_status_caption(status))
+
+    def test_sample_source_status_keeps_abnormal_sync_warnings(self):
+        sqlite_missing = {
+            "sqlite_ready": False,
+            "source": "seed / samples.json",
+            "message": "SQLite 未初始化或不可用。",
+            "unsynced_count": None,
+        }
+        unsynced = {
+            "sqlite_ready": True,
+            "source": "SQLite 正式资产",
+            "message": "FD-001 已入库样本未完成正式资产同步。",
+            "unsynced_count": 1,
+        }
+
+        self.assertTrue(samples_ui._should_render_sample_source_status(sqlite_missing))
+        self.assertTrue(samples_ui._should_render_sample_source_status(unsynced))
+        self.assertIn("SQLite 未初始化或不可用", samples_ui._format_source_status_caption(sqlite_missing))
+        self.assertIn("未完成正式资产同步", samples_ui._format_source_status_caption(unsynced))
 
     def test_export_and_import_samples(self):
         sr.create_sample(self._sample_values("SM-EXP"))
