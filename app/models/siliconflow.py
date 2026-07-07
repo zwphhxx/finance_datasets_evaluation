@@ -41,7 +41,7 @@ from app.models.base import (
 
 PROVIDER_NAME = "siliconflow"
 DEFAULT_BASE_URL = "https://api.siliconflow.cn/v1"
-DEFAULT_TIMEOUT_SECONDS = 90
+DEFAULT_TIMEOUT_SECONDS = 180
 
 # 配置项名称，按 st.secrets → 环境变量 → .env 顺序解析。
 _API_KEY_KEY = "SILICONFLOW_API_KEY"

@@ -39,6 +39,8 @@ from src.ui.test_run import (
     resolve_eval_max_tokens,
     sample_checkbox_key,
     slow_model_notice,
+    _failure_guidance,
+    _failure_reason_text,
     _model_short_name,
     _siliconflow_balance_text,
 )
@@ -76,6 +78,22 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("已完成结果", notice or "")
         self.assertIn("重试失败项", notice or "")
         self.assertNotIn("建议小批量运行", notice or "")
+
+    def test_timeout_copy_is_recoverable_without_system_error_tone(self):
+        outcome = er.RunOutcome(
+            "CM-003",
+            "",
+            "siliconflow",
+            "vendor/LongCat-2.0",
+            "failed",
+            False,
+            error_code="timeout",
+            error_message="请求超时，请稍后重试或调大 SILICONFLOW_TIMEOUT_SECONDS。",
+            retry_count=1,
+        )
+
+        self.assertEqual("模型服务未在当前等待时间内返回。", _failure_reason_text(outcome))
+        self.assertEqual("可稍后重试失败项或调大 SILICONFLOW_TIMEOUT_SECONDS。", _failure_guidance(outcome))
 
     def test_selection_controls_are_dialog_driven(self):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
@@ -776,6 +794,31 @@ class ScoreDraftTests(unittest.TestCase):
                     error_code="incomplete_response",
                     finish_reason="length",
                     incomplete_reason="模型回答因长度限制中断。",
+                ),
+            ),
+        )
+
+        self.assertEqual([], build_score_queue_items(compare))
+        self.assertEqual(0, build_score_plan_summary(compare)["scoreable"])
+
+    def test_timeout_response_does_not_enter_score_queue(self):
+        compare = er.CompareRunResult(
+            run_id="R1",
+            provider="siliconflow",
+            model_ids=("m1",),
+            mode="live",
+            created_at="2026-07-05T12:00:00",
+            outcomes=(
+                er.RunOutcome(
+                    "CM-003",
+                    "analysis",
+                    "siliconflow",
+                    "m1",
+                    "failed",
+                    False,
+                    error_code="timeout",
+                    error_message="请求超时，请稍后重试或调大 SILICONFLOW_TIMEOUT_SECONDS。",
+                    retry_count=1,
                 ),
             ),
         )

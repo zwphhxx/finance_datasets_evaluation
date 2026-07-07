@@ -257,7 +257,7 @@ SQLite 数据层仅使用标准库 `sqlite3`。相关文件：
 模型回答和评分依赖第三方模型服务，实时调用不能保证 100% 成功。网络波动、模型服务响应慢、限流、被测模型回答较长或裁判 prompt 较长，都可能导致 timeout；单条失败不代表样本失败，也不代表整批运行失败。
 评分失败通常是裁判模型超时，不代表样本失败，也不代表被测模型回答失败。
 
-`SILICONFLOW_TIMEOUT_SECONDS` 控制单次请求等待时间。普通模型建议 60-90 秒；LongCat、R1、reasoning / thinking 类慢模型或全量运行建议 120-180 秒。timeout 过长会导致页面等待时间变长，并不能保证外部服务一定成功。
+`SILICONFLOW_TIMEOUT_SECONDS` 控制单次请求等待时间。普通模型建议 90-120 秒；LongCat、R1、reasoning / thinking 类慢模型建议 180-240 秒。timeout 过长会导致页面等待时间变长，并不能保证外部服务一定成功。
 
 可在本地环境或部署 Secrets 中按演示需要调整，例如：
 

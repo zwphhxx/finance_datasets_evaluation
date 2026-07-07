@@ -2499,7 +2499,7 @@ def _outcome_display_status(outcome: er.RunOutcome) -> str:
 def _failure_reason_text(outcome) -> str:
     code = str(getattr(outcome, "error_code", "") or "").strip().lower()
     if code in {"timeout", "gateway_timeout"}:
-        return "模型服务响应超时。"
+        return "模型服务未在当前等待时间内返回。"
     if code == "incomplete_response":
         return getattr(outcome, "incomplete_reason", None) or getattr(outcome, "error_message", None) or "模型回答未完整结束。"
     if code == "rate_limited":
@@ -2615,7 +2615,7 @@ def _failure_guidance(outcome) -> str:
     if code in {"missing_api_key", "unauthorized", "forbidden"}:
         return "请检查 SILICONFLOW_API_KEY、账户权限或模型访问权限。"
     if code in {"timeout", "gateway_timeout"}:
-        return "模型服务响应超时，可稍后重试或调大 SILICONFLOW_TIMEOUT_SECONDS。"
+        return "可稍后重试失败项或调大 SILICONFLOW_TIMEOUT_SECONDS。"
     if code == "rate_limited":
         return "请求触发限流，请稍后重试。"
     if code == "empty_response":
