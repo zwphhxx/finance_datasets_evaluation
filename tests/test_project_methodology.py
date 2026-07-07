@@ -75,13 +75,13 @@ class DynamicStatsTests(unittest.TestCase):
     def test_sample_scope_text_uses_domain_labels(self):
         text = _build_sample_scope_text(self.data)
         self.assertIn("样本来自", text)
-        self.assertIn("已脱敏抽象为可评测任务", text)
-        self.assertIn("不包含真实公司、交易或敏感数据", text)
+        self.assertIn("财务场景、法律场景和投行场景", text)
+        self.assertIn("不包含真实公司、真实交易或敏感数据", text)
 
     def test_sample_scope_text_handles_empty_data(self):
         stub = types.SimpleNamespace(tasks=pd.DataFrame())
         self.assertEqual(
-            "样本来自财务场景、法律场景和投行场景，已脱敏抽象为可评测任务；不包含真实公司、交易或敏感数据。",
+            "样本来自财务场景、法律场景和投行场景，不包含真实公司、真实交易或敏感数据。",
             _build_sample_scope_text(stub),
         )
 

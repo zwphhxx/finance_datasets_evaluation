@@ -10,7 +10,7 @@ from src.ui.components import (
 )
 
 
-PROCESS_STEPS = ["样本库", "发起评测", "评分草稿", "人工确认", "评测结论"]
+PROCESS_STEPS = ["人工录入样本库", "发起模型评测", "生成评分草稿", "人工确认评分", "进入评测结论"]
 
 
 def scored_case_count(scores_df) -> int:
@@ -27,7 +27,7 @@ def _build_sample_scope_text(data) -> str:
     from src.ui.labels import DOMAIN_LABELS, display_label
     tasks = getattr(data, "tasks", None)
     if tasks is None or tasks.empty or "domain" not in tasks.columns:
-        return "样本来自财务场景、法律场景和投行场景，已脱敏抽象为可评测任务；不包含真实公司、交易或敏感数据。"
+        return "样本来自财务场景、法律场景和投行场景，不包含真实公司、真实交易或敏感数据。"
     domains = [
         display_label(domain, DOMAIN_LABELS)
         for domain in tasks["domain"].dropna().astype(str).unique()
@@ -35,11 +35,15 @@ def _build_sample_scope_text(data) -> str:
     domains = [domain for domain in domains if domain and domain != "未标注"]
     if domains:
         shown = domains[:4]
-        suffix = "等" if len(domains) > len(shown) else ""
-        domain_text = "、".join(shown) + suffix
+        if len(domains) > len(shown):
+            domain_text = "、".join(shown) + "等"
+        elif len(shown) > 1:
+            domain_text = "、".join(shown[:-1]) + "和" + shown[-1]
+        else:
+            domain_text = shown[0]
     else:
         domain_text = "财务场景、法律场景和投行场景"
-    return f"样本来自{domain_text}，已脱敏抽象为可评测任务；不包含真实公司、交易或敏感数据。"
+    return f"样本来自{domain_text}，不包含真实公司、真实交易或敏感数据。"
 
 
 def render_case_study_page(data_bundle: dict) -> None:
@@ -49,8 +53,8 @@ def render_case_study_page(data_bundle: dict) -> None:
     render_brief_intro(
         title=PROJECT_DISPLAY_NAME,
         note=(
-            "本项目评估大模型在财务、法律、投行等专业场景中的回答质量，"
-            "并在当前样本范围内判断模型表现、主要问题和使用边界。"
+            "本项目评估大模型在财务、法律、投行等专业任务中的回答质量，"
+            "并在当前样本范围内识别模型的主要问题和使用边界。"
         ),
     )
 
@@ -59,8 +63,8 @@ def render_case_study_page(data_bundle: dict) -> None:
         title="项目定位",
         lead="评估模型在财务、法律、投行场景中的回答质量。",
         body=[
-            "本项目面向财务尽调、法律审阅、投行判断等专业任务，评估大模型回答是否具备业务参考价值。评测重点不是通用问答能力，而是模型在具体专业场景中的结论准确性、依据充分性、推理完整性、风险识别和专业表达。",
-            "评测结果用于观察不同模型在当前样本范围内的质量差异，并进一步判断其可作为初稿参考、需要人工复核，还是不宜作为专业判断依据。",
+            "本项目围绕财务核查、法律合规、投行尽调等专业任务，评估大模型回答是否具备业务参考价值。评测重点不是通用问答能力，而是模型在具体专业场景中的结论准确性、依据充分性、推理完整性、风险识别和专业表达。",
+            "当前样本库包含 13 条人工整理的专业任务样本及专业标准答案，覆盖财务场景、法律场景和投行场景。评测时，将不同模型的回答与专业标准答案、必须覆盖点、不可接受错误和评分标准进行对照，用于观察模型在当前样本范围内的质量差异。",
         ],
         first=True,
     )
@@ -68,10 +72,11 @@ def render_case_study_page(data_bundle: dict) -> None:
     render_home_section(
         number="02",
         title="评测流程",
-        lead="从专业样本到人工确认，形成可追溯的评分闭环。",
+        lead="从专业样本到人工确认后的正式结论。",
         body=[
-            "样本库维护任务题、业务背景、专业标准答案、必须覆盖点、不可接受错误和评分标准。发起评测时，被测模型只基于任务题和必要背景生成回答，裁判模型再基于专业标准答案和评分标准形成评分草稿。",
-            "评分草稿不会直接进入正式结论。所有评分需要经过人工确认、修订后确认或暂不采用。评测结论仅汇总已确认评分，用于展示当前样本下不同模型的质量表现、主要问题和使用边界。",
+            "评测流程从人工整理的专业样本开始，到模型回答、裁判评分草稿和人工确认后形成正式结论。",
+            "样本库包括任务题、业务背景、专业标准答案、必须覆盖点、不可接受错误和评分标准。发起评测时，被测模型只看到任务题、业务背景和输出要求，不会看到专业标准答案或评分标准。模型生成回答后，裁判模型根据专业标准答案和评分标准形成评分草稿。",
+            "评分草稿不会直接进入正式结论，需要经过人工确认、修订后确认或暂不采用。评测结论只汇总已确认的评分，用于展示当前样本下不同模型的质量表现、主要问题和使用边界。",
         ],
     )
     render_process_line(PROCESS_STEPS)
@@ -81,8 +86,7 @@ def render_case_study_page(data_bundle: dict) -> None:
         title="数据边界",
         lead="结论只代表当前已确认样本，不做脱离样本的泛化排名。",
         body=[
-            _build_sample_scope_text(base),
-            "当前结论是当前样本内观察，只反映已确认评分覆盖的样本范围，不代表模型在全部财务、法律或投行业务中的稳定表现。",
+            _build_sample_scope_text(base) + "当前结论只反映已确认评分覆盖的样本范围，不代表模型在全部财务、法律或投行业务中的稳定表现。",
             "被测模型不会看到专业标准答案、必须覆盖点、不可接受错误或评分标准。上述材料仅用于裁判评分和人工复核。",
             "正式结论由真实运行结果、裁判评分草稿和人工确认共同形成。待确认、暂不采用、评分失败或示例评价均不进入正式结论。",
         ],

@@ -23,6 +23,8 @@ class CaseStudyPresentationTests(unittest.TestCase):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         self.assertIn("render_brief_intro(", source)
         self.assertIn("PROJECT_DISPLAY_NAME", source)
+        self.assertIn("专业任务中的回答质量", source)
+        self.assertIn("识别模型的主要问题和使用边界", source)
         self.assertNotIn("subtitle=", source)
         self.assertNotIn("stats=", source)
         self.assertNotIn("_build_home_stats", source)
@@ -32,9 +34,12 @@ class CaseStudyPresentationTests(unittest.TestCase):
     def test_case_study_reads_as_professional_brief(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         self.assertNotIn("本项目不判断哪个模型最好", source)
-        self.assertIn("本项目评估大模型在财务、法律、投行等专业场景中的回答质量", source)
+        self.assertIn("本项目评估大模型在财务、法律、投行等专业任务中的回答质量", source)
+        self.assertIn("财务核查、法律合规、投行尽调", source)
+        self.assertIn("当前样本库包含 13 条人工整理的专业任务样本及专业标准答案", source)
         self.assertIn("主要问题", source)
         self.assertIn("使用边界", source)
+        self.assertIn("被测模型只看到任务题、业务背景和输出要求", source)
         self.assertIn("被测模型不会看到专业标准答案、必须覆盖点、不可接受错误或评分标准", source)
         self.assertIn("待确认、暂不采用、评分失败或示例评价均不进入正式结论", source)
         self.assertNotIn("维护样本", source)
@@ -47,7 +52,7 @@ class CaseStudyPresentationTests(unittest.TestCase):
         self.assertIn("render_home_section", source)
         for number, title, lead in [
             ("01", "项目定位", "评估模型在财务、法律、投行场景中的回答质量。"),
-            ("02", "评测流程", "从专业样本到人工确认，形成可追溯的评分闭环。"),
+            ("02", "评测流程", "从专业样本到人工确认后的正式结论。"),
             ("03", "数据边界", "结论只代表当前已确认样本，不做脱离样本的泛化排名。"),
         ]:
             self.assertIn(f'number="{number}"', source)
@@ -61,6 +66,10 @@ class CaseStudyPresentationTests(unittest.TestCase):
         self.assertNotIn("PROCESS_TEXT", source)
         self.assertNotIn("process_text=", source)
         self.assertEqual(1, source.count("render_process_line(PROCESS_STEPS)"))
+        self.assertIn(
+            'PROCESS_STEPS = ["人工录入样本库", "发起模型评测", "生成评分草稿", "人工确认评分", "进入评测结论"]',
+            source,
+        )
         self.assertIn('title="评测流程"', source)
         self.assertLess(source.index('title="评测流程"'), source.index("render_process_line(PROCESS_STEPS)"))
 
@@ -98,8 +107,8 @@ class CaseStudyPresentationTests(unittest.TestCase):
             components.render_brief_intro(
                 title=components.PROJECT_DISPLAY_NAME,
                 note=(
-                    "本项目评估大模型在财务、法律、投行等专业场景中的回答质量，"
-                    "并在当前样本范围内判断模型表现、主要问题和使用边界。"
+                    "本项目评估大模型在财务、法律、投行等专业任务中的回答质量，"
+                    "并在当前样本范围内识别模型的主要问题和使用边界。"
                 )
             )
         finally:

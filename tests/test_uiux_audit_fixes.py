@@ -176,7 +176,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
         for label in ["待复核样本", "已入库样本", "需优化样本", "已复核评分"]:
             self.assertNotIn(label, source)
         self.assertIn("_build_sample_scope_text", source)
-        self.assertIn("已脱敏抽象为可评测任务", source)
+        self.assertIn("不包含真实公司、真实交易或敏感数据", source)
 
     def test_sample_index_table_is_compact(self):
         samples_source = Path("src/ui/samples.py").read_text(encoding="utf-8")
