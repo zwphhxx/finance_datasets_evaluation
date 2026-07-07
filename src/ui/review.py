@@ -65,7 +65,7 @@ from src.ui.review_queue import (
     score_run_option_label,
     select_next_review_index,
     select_score_run_id as _select_score_run_id,
-    selected_review_table_index,
+    selected_review_radio_index,
     should_show_no_pending_after_action,
     unique_display_models as _unique_display_models,
     unique_texts as _unique_texts,
@@ -134,8 +134,8 @@ def render_review_page(data_bundle: dict) -> None:
     if st.session_state.get(REVIEW_AUTO_SWITCH_KEY):
         st.session_state["review_queue_filter"] = "待处理"
 
-    render_numbered_section("01", REVIEW_SECTIONS[0], "通过表格选择一条评分草稿，查看摘要和评分依据。")
-    visible_items, selected_table_index = _render_review_queue(items, selected_score_run_id)
+    render_numbered_section("01", REVIEW_SECTIONS[0], "通过单选列表选择一条评分草稿，查看摘要和评分依据。")
+    visible_items, selected_review_index = _render_review_queue(items, selected_score_run_id)
     if not visible_items:
         st.session_state[REVIEW_AUTO_SWITCH_KEY] = False
         render_empty_state(review_empty_message(items))
@@ -147,15 +147,15 @@ def render_review_page(data_bundle: dict) -> None:
     st.session_state[REVIEW_AUTO_SWITCH_KEY] = False
     action_result = _current_review_action_result()
     if action_result and _as_int(action_result.get("row_id")) is not None:
-        selected_table_index = select_next_review_index(
+        selected_review_index = select_next_review_index(
             visible_items,
             handled_row_id=_as_int(action_result.get("row_id")),
         )
-    if selected_table_index is None:
+    if selected_review_index is None:
         render_empty_state(review_empty_message(items))
         return
 
-    item = visible_items[int(selected_table_index)]
+    item = visible_items[int(selected_review_index)]
     output_row = item["output_row"]
     task_info = item["task_info"]
     gold = item["gold"]

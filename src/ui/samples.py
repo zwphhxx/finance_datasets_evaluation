@@ -1006,33 +1006,33 @@ def _render_samples_table(
     readiness_map: dict[str, ds.SampleReadiness],
     task_records: list[dict],
 ) -> None:
-    _ensure_selected_sample(samples)
+    selected = _ensure_selected_sample(samples)
     rows = build_sample_table_rows(samples, readiness_map, task_records)
     frame = pd.DataFrame(rows, columns=_SAMPLE_TABLE_COLUMNS)
-    try:
-        event = st.dataframe(
-            frame,
-            hide_index=True,
-            width="stretch",
-            height=_sample_table_height(len(rows)),
-            row_height=34,
-            column_config=_sample_table_column_config(),
-            key="samples_index_table",
-            on_select="rerun",
-            selection_mode="single-row",
-        )
-        selected_index = _selected_dataframe_row_index(event)
-        if selected_index is not None and 0 <= selected_index < len(samples):
-            _select_sample(samples[selected_index].sample_id)
-    except TypeError:
-        st.dataframe(
-            frame,
-            hide_index=True,
-            width="stretch",
-            height=_sample_table_height(len(rows)),
-            column_config=_sample_table_column_config(),
-        )
-        st.caption("当前环境不支持表格行选择，默认展示查询结果中的第一条样本。")
+    st.dataframe(
+        frame,
+        hide_index=True,
+        width="stretch",
+        height=_sample_table_height(len(rows)),
+        row_height=34,
+        column_config=_sample_table_column_config(),
+        key="samples_index_table",
+    )
+
+    sample_ids = [sample.sample_id for sample in samples]
+    selected_id = selected.sample_id if selected is not None else sample_ids[0]
+    radio_key = "samples_current_sample_radio"
+    if st.session_state.get(radio_key) not in sample_ids:
+        st.session_state[radio_key] = selected_id
+    selected_index = sample_ids.index(st.session_state[radio_key])
+    chosen_id = st.radio(
+        "查看样本",
+        sample_ids,
+        index=selected_index,
+        format_func=lambda sample_id: _sample_option_label(str(sample_id), samples),
+        key=radio_key,
+    )
+    _select_sample(str(chosen_id))
 
 
 def _sample_table_height(row_count: int) -> int:
@@ -1049,23 +1049,6 @@ def _sample_table_column_config() -> dict:
         "更新时间": st.column_config.TextColumn("更新时间", width="small"),
         "操作": st.column_config.TextColumn("操作", width="small"),
     }
-
-
-def _selected_dataframe_row_index(event) -> int | None:
-    selection = getattr(event, "selection", None)
-    if selection is None and isinstance(event, dict):
-        selection = event.get("selection")
-    if selection is None:
-        return None
-    rows = getattr(selection, "rows", None)
-    if rows is None and isinstance(selection, dict):
-        rows = selection.get("rows")
-    if not rows:
-        return None
-    try:
-        return int(rows[0])
-    except (TypeError, ValueError, IndexError):
-        return None
 
 
 def _ensure_selected_sample(samples: list[sr.Sample]) -> sr.Sample | None:
