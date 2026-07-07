@@ -112,6 +112,11 @@ def _read_env_file(key: str) -> str | None:
 
 
 def _read_config_value(key: str) -> str | None:
+    value, _source = _read_config_value_with_source(key)
+    return value
+
+
+def _read_config_value_with_source(key: str) -> tuple[str | None, str | None]:
     """按 st.secrets → 环境变量 → .env 顺序解析配置值。读 secrets 不得因缺失而崩溃。"""
     try:
         import streamlit as st
@@ -120,7 +125,7 @@ def _read_config_value(key: str) -> str | None:
         if key in st.secrets:
             value = str(st.secrets[key]).strip()
             if value:
-                return value
+                return value, "st.secrets"
     except Exception:
         pass
 
@@ -128,9 +133,12 @@ def _read_config_value(key: str) -> str | None:
 
     env_value = os.getenv(key, "").strip()
     if env_value:
-        return env_value
+        return env_value, "environment"
 
-    return _read_env_file(key)
+    file_value = _read_env_file(key)
+    if file_value:
+        return file_value, ".env"
+    return None, None
 
 
 def is_configured() -> bool:
@@ -151,17 +159,21 @@ class SiliconFlowProvider(ModelProvider):
     ):
         self.api_key = api_key if api_key is not None else _read_config_value(_API_KEY_KEY)
         self.base_url = (base_url or _read_config_value(_BASE_URL_KEY) or DEFAULT_BASE_URL).rstrip("/")
-        self.timeout_seconds = timeout_seconds if timeout_seconds is not None else self._resolve_timeout()
+        if timeout_seconds is not None:
+            self.timeout_seconds = float(timeout_seconds)
+            self.timeout_source = "argument"
+        else:
+            self.timeout_seconds, self.timeout_source = self._resolve_timeout()
 
     @staticmethod
-    def _resolve_timeout() -> float:
-        raw = _read_config_value(_TIMEOUT_KEY)
+    def _resolve_timeout() -> tuple[float, str]:
+        raw, source = _read_config_value_with_source(_TIMEOUT_KEY)
         if raw:
             try:
-                return float(raw)
+                return float(raw), str(source or "default")
             except ValueError:
                 pass
-        return float(DEFAULT_TIMEOUT_SECONDS)
+        return float(DEFAULT_TIMEOUT_SECONDS), "default"
 
     # -- 公共接口 -------------------------------------------------------------
     def list_models(self, model_type: str = "text", sub_type: str = "chat") -> ModelListResult:
@@ -225,6 +237,12 @@ class SiliconFlowProvider(ModelProvider):
             return GenerationResult(
                 self.name, model_id, STATUS_FAILED, error_code="bad_request", error_message=str(exc)
             )
+        request_timeout = _as_positive_float(kwargs.pop("request_timeout_seconds", None))
+        effective_timeout = request_timeout if request_timeout is not None else self.timeout_seconds
+        timeout_meta = {
+            "timeout_seconds": effective_timeout,
+            "timeout_source": self.timeout_source,
+        }
 
         payload: dict[str, Any] = {
             "model": model_id,
@@ -239,14 +257,14 @@ class SiliconFlowProvider(ModelProvider):
                 payload[key] = kwargs[key]
 
         started = time.perf_counter()
-        response = self._send("POST", "/chat/completions", payload)
+        response = self._send("POST", "/chat/completions", payload, timeout_seconds=effective_timeout)
         latency_ms = int((time.perf_counter() - started) * 1000)
 
         if response.error is not None:
             code, message = self._describe_transport_error(response.error)
             return GenerationResult(
                 self.name, model_id, STATUS_FAILED, latency_ms=latency_ms,
-                error_code=code, error_message=message,
+                error_code=code, error_message=message, **timeout_meta,
             )
 
         trace_id = response.headers.get(_TRACE_HEADER) or response.headers.get(_TRACE_HEADER.title())
@@ -256,6 +274,7 @@ class SiliconFlowProvider(ModelProvider):
                 self.name, model_id, STATUS_FAILED, latency_ms=latency_ms,
                 http_status=response.status, trace_id=trace_id,
                 error_code=code, error_message=message,
+                **timeout_meta,
             )
 
         try:
@@ -265,6 +284,7 @@ class SiliconFlowProvider(ModelProvider):
                 self.name, model_id, STATUS_FAILED, latency_ms=latency_ms,
                 http_status=response.status, trace_id=trace_id,
                 error_code="invalid_response", error_message="对话响应解析失败。",
+                **timeout_meta,
             )
 
         usage = body.get("usage") or {}
@@ -278,6 +298,7 @@ class SiliconFlowProvider(ModelProvider):
             http_status=response.status,
             trace_id=trace_id,
             finish_reason=finish_reason,
+            **timeout_meta,
         )
         finish_incomplete_reason = _incomplete_reason_for_finish(finish_reason)
         if finish_incomplete_reason:
@@ -368,7 +389,14 @@ class SiliconFlowProvider(ModelProvider):
         return ("connection_error", "无法连接模型服务，请检查网络或服务地址。")
 
     # -- 底层 HTTP（测试通过 monkeypatch 替换本方法，避免真实外呼） -----------
-    def _send(self, method: str, path: str, payload: Mapping[str, Any] | None = None) -> _HttpResponse:
+    def _send(
+        self,
+        method: str,
+        path: str,
+        payload: Mapping[str, Any] | None = None,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> _HttpResponse:
         url = f"{self.base_url}{path}"
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
         headers = {
@@ -377,8 +405,9 @@ class SiliconFlowProvider(ModelProvider):
             "Accept": "application/json",
         }
         request = urllib.request.Request(url, data=data, headers=headers, method=method)
+        effective_timeout = timeout_seconds if timeout_seconds is not None else self.timeout_seconds
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as resp:
+            with urllib.request.urlopen(request, timeout=effective_timeout) as resp:
                 body = resp.read().decode("utf-8", errors="replace")
                 return _HttpResponse(resp.status, _header_map(resp.headers), body)
         except urllib.error.HTTPError as exc:  # 4xx / 5xx：仍带状态码与响应体。
@@ -413,6 +442,16 @@ def _as_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _as_positive_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
 
 
 def _incomplete_reason_for_finish(finish_reason: str | None) -> str | None:

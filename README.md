@@ -243,6 +243,7 @@ SQLite 数据层仅使用标准库 `sqlite3`。相关文件：
 | `SILICONFLOW_API_KEY` | 硅基流动模型服务 API Key；缺失时发起评测页不能发起真实调用。 |
 | `SILICONFLOW_BASE_URL` | API Base URL。 |
 | `SILICONFLOW_TIMEOUT_SECONDS` | 请求超时秒数。 |
+| `FINDUEVAL_EVAL_MAX_TOKENS` | 被测模型回答输出 token 上限；默认有防御性上限。 |
 | `FINDUEVAL_AUTO_INIT_DB` | 是否在启动时自动初始化 SQLite；默认启用，设为 `0` 可关闭。 |
 
 安全边界：
@@ -258,6 +259,7 @@ SQLite 数据层仅使用标准库 `sqlite3`。相关文件：
 评分失败通常是裁判模型超时，不代表样本失败，也不代表被测模型回答失败。
 
 `SILICONFLOW_TIMEOUT_SECONDS` 控制单次请求等待时间。普通模型建议 90-120 秒；LongCat、R1、reasoning / thinking 类慢模型建议 180-240 秒。timeout 过长会导致页面等待时间变长，并不能保证外部服务一定成功。
+响应超时和回答截断是两类问题：响应超时应调整 `SILICONFLOW_TIMEOUT_SECONDS`；`finish_reason=length` 或回答被截断时，才考虑调整 `FINDUEVAL_EVAL_MAX_TOKENS`。
 
 可在本地环境或部署 Secrets 中按演示需要调整，例如：
 

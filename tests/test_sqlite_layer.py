@@ -113,6 +113,8 @@ class SchemaFieldTests(unittest.TestCase):
         self.assertIn("retry_count", columns)
         self.assertIn("first_finish_reason", columns)
         self.assertIn("final_finish_reason", columns)
+        self.assertIn("timeout_seconds", columns)
+        self.assertIn("timeout_source", columns)
 
     def test_schema_file_is_used(self):
         self.assertTrue(SCHEMA_PATH.exists())

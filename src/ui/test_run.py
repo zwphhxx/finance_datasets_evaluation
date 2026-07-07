@@ -261,9 +261,10 @@ def slow_model_notice(model_ids: list[str]) -> str | None:
 def build_run_queue_items(model_ids: list[str], selected_tasks: list[dict]) -> list[dict]:
     """Build the ordered model x sample queue used during execution."""
     items: list[dict] = []
-    for model_id in _dedupe(model_ids):
-        for selected in selected_tasks or []:
-            task = selected.get("task") if isinstance(selected.get("task"), dict) else selected
+    unique_models = _dedupe(model_ids)
+    for selected in selected_tasks or []:
+        task = selected.get("task") if isinstance(selected.get("task"), dict) else selected
+        for model_id in unique_models:
             items.append({
                 "model_id": model_id,
                 "case_id": str(selected.get("case_id") or task.get("case_id") or ""),
@@ -1927,6 +1928,8 @@ def _render_results_table(result) -> None:
             "finish_reason": _dash(getattr(outcome, "finish_reason", None)),
             "incomplete_reason": _dash(getattr(outcome, "incomplete_reason", None)),
             "retry_count": _n(getattr(outcome, "retry_count", 0)),
+            "timeout_seconds": _n(getattr(outcome, "timeout_seconds", None)),
+            "timeout_source": _dash(getattr(outcome, "timeout_source", None)),
             "first_finish_reason": _dash(getattr(outcome, "first_finish_reason", None)),
             "final_finish_reason": _dash(getattr(outcome, "final_finish_reason", None)),
             "错误码": _dash(outcome.error_code),

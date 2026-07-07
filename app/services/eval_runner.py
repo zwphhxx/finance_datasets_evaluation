@@ -77,6 +77,8 @@ class RunOutcome:
     retry_count: int = 0
     first_finish_reason: str | None = None
     final_finish_reason: str | None = None
+    timeout_seconds: float | None = None
+    timeout_source: str | None = None
 
 
 @dataclass(frozen=True)
@@ -189,10 +191,18 @@ def run_single(
     first_finish_reason = result.finish_reason
 
     retry_tokens = _retry_token_budget_for_result(result, max_tokens, retry_max_tokens)
-    if retry_tokens is not None:
+    retry_timeout = _retry_timeout_seconds_for_result(result, provider)
+    if retry_tokens is not None or retry_timeout is not None:
         retry_count = 1
+        retry_kwargs = dict(kwargs)
+        if retry_timeout is not None:
+            retry_kwargs["request_timeout_seconds"] = retry_timeout
         result = provider.generate_response(
-            model_id, messages, temperature=temperature, max_tokens=retry_tokens, **kwargs
+            model_id,
+            messages,
+            temperature=temperature,
+            max_tokens=retry_tokens if retry_tokens is not None else max_tokens,
+            **retry_kwargs,
         )
     return _run_outcome_from_generation_result(
         result,
@@ -247,6 +257,8 @@ def _run_outcome_from_generation_result(
         retry_count=retry_count,
         first_finish_reason=first_finish_reason,
         final_finish_reason=result.finish_reason,
+        timeout_seconds=result.timeout_seconds,
+        timeout_source=result.timeout_source,
     )
 
 
@@ -266,15 +278,20 @@ def _retry_token_budget_for_result(
     max_tokens: int,
     retry_max_tokens: int | None,
 ) -> int | None:
-    if _is_timeout_result(result):
-        try:
-            original = int(max_tokens)
-        except (TypeError, ValueError):
-            return None
-        return original if original > 0 else None
     if _is_length_truncated_result(result):
         return _retry_token_budget(max_tokens, retry_max_tokens)
     return None
+
+
+def _retry_timeout_seconds_for_result(result: GenerationResult, provider: ModelProvider) -> float | None:
+    if not _is_timeout_result(result):
+        return None
+    current = _positive_float(result.timeout_seconds)
+    if current is None:
+        current = _positive_float(getattr(provider, "timeout_seconds", None))
+    if current is None:
+        return None
+    return min(current * 2, 300.0)
 
 
 def _retry_token_budget(max_tokens: int, retry_max_tokens: int | None) -> int | None:
@@ -419,6 +436,14 @@ def _safe_progress(callback, done: int, total: int, model_id: str, case_id: str)
         pass
 
 
+def _positive_float(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
 def persist_run_result(result, db_path: Path | None = None) -> bool:
     """尽力将运行结果写入 SQLite live_run_responses；数据库不可用时静默跳过。
 
@@ -457,6 +482,8 @@ def persist_run_result(result, db_path: Path | None = None) -> bool:
                 "retry_count": o.retry_count,
                 "first_finish_reason": o.first_finish_reason,
                 "final_finish_reason": o.final_finish_reason,
+                "timeout_seconds": o.timeout_seconds,
+                "timeout_source": o.timeout_source,
                 "error_code": o.error_code,
                 "error_message": o.error_message,
             }
@@ -726,6 +753,8 @@ def _run_outcome_row(run_id: str, mode: str, outcome: RunOutcome) -> dict[str, A
         "retry_count": outcome.retry_count,
         "first_finish_reason": outcome.first_finish_reason,
         "final_finish_reason": outcome.final_finish_reason,
+        "timeout_seconds": outcome.timeout_seconds,
+        "timeout_source": outcome.timeout_source,
         "error_code": outcome.error_code,
         "error_message": outcome.error_message,
     }
@@ -818,6 +847,8 @@ def _run_outcome_from_row(row: Mapping[str, Any]) -> RunOutcome:
         retry_count=_as_int(row.get("retry_count")) or 0,
         first_finish_reason=row.get("first_finish_reason"),
         final_finish_reason=row.get("final_finish_reason"),
+        timeout_seconds=_positive_float(row.get("timeout_seconds")),
+        timeout_source=row.get("timeout_source"),
     )
 
 
@@ -830,12 +861,20 @@ def _ensure_live_run_response_columns(db_path: Path) -> None:
             row[1]
             for row in connection.execute("PRAGMA table_info(live_run_responses)").fetchall()
         }
-        text_columns = ("finish_reason", "incomplete_reason", "first_finish_reason", "final_finish_reason")
+        text_columns = (
+            "finish_reason",
+            "incomplete_reason",
+            "first_finish_reason",
+            "final_finish_reason",
+            "timeout_source",
+        )
         for column in text_columns:
             if column not in existing:
                 connection.execute(f"ALTER TABLE live_run_responses ADD COLUMN {column} TEXT")
         if "retry_count" not in existing:
             connection.execute("ALTER TABLE live_run_responses ADD COLUMN retry_count INTEGER")
+        if "timeout_seconds" not in existing:
+            connection.execute("ALTER TABLE live_run_responses ADD COLUMN timeout_seconds REAL")
         connection.commit()
 
 

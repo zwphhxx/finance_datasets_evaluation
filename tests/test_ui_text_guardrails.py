@@ -64,6 +64,8 @@ class ReadmeCurrentFlowTests(unittest.TestCase):
             'SILICONFLOW_TIMEOUT_SECONDS = "120"',
             "普通模型建议 90-120 秒",
             "LongCat、R1、reasoning / thinking 类慢模型建议 180-240 秒",
+            "FINDUEVAL_EVAL_MAX_TOKENS",
+            "响应超时和回答截断是两类问题",
             "timeout 过长会导致页面等待时间变长",
             "评分失败通常是裁判模型超时，不代表样本失败",
             "重试失败评分",

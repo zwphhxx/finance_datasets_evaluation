@@ -81,15 +81,18 @@ class SiliconFlowConfigTests(unittest.TestCase):
         self.assertEqual(provider.base_url, sf.DEFAULT_BASE_URL)
         self.assertEqual(sf.DEFAULT_TIMEOUT_SECONDS, 180)
         self.assertEqual(provider.timeout_seconds, float(sf.DEFAULT_TIMEOUT_SECONDS))
+        self.assertEqual(provider.timeout_source, "default")
 
     def test_timeout_can_be_configured_and_invalid_values_fallback(self):
-        with mock.patch.dict(os.environ, {"SILICONFLOW_TIMEOUT_SECONDS": "120"}, clear=False):
+        with mock.patch.dict(os.environ, {"SILICONFLOW_TIMEOUT_SECONDS": "90"}, clear=False):
             provider = SiliconFlowProvider(api_key="sk-x", timeout_seconds=None)
-            self.assertEqual(provider.timeout_seconds, 120.0)
+            self.assertEqual(provider.timeout_seconds, 90.0)
+            self.assertEqual(provider.timeout_source, "environment")
 
         with mock.patch.dict(os.environ, {"SILICONFLOW_TIMEOUT_SECONDS": "bad-value"}, clear=False):
             provider = SiliconFlowProvider(api_key="sk-x", timeout_seconds=None)
             self.assertEqual(provider.timeout_seconds, float(sf.DEFAULT_TIMEOUT_SECONDS))
+            self.assertEqual(provider.timeout_source, "default")
 
     def test_balance_is_optional(self):
         provider = SiliconFlowProvider(api_key="sk-x")
@@ -130,8 +133,11 @@ class SiliconFlowListModelsTests(unittest.TestCase):
 
 class SiliconFlowGenerateTests(unittest.TestCase):
     def test_success_parses_text_usage_and_trace(self):
+        captured = {}
+
         def fake_urlopen(request, timeout=None):
             # 真实请求必须带 model 与 messages。
+            captured["timeout"] = timeout
             payload = json.loads(request.data.decode("utf-8"))
             self.assertEqual(payload["model"], "Qwen/Qwen2.5-7B-Instruct")
             self.assertIn("messages", payload)
@@ -143,13 +149,16 @@ class SiliconFlowGenerateTests(unittest.TestCase):
             headers = {"x-siliconcloud-trace-id": "trace-abc-123"}
             return _FakeResp(200, headers, json.dumps(body))
 
-        provider = SiliconFlowProvider(api_key="sk-secret")
+        provider = SiliconFlowProvider(api_key="sk-secret", timeout_seconds=90)
         with mock.patch.object(sf.urllib.request, "urlopen", fake_urlopen):
             result = provider.generate_response(
                 "Qwen/Qwen2.5-7B-Instruct", _MESSAGES, temperature=0.3, max_tokens=512,
                 top_p=0.9, enable_thinking=False,
             )
 
+        self.assertEqual(captured["timeout"], 90)
+        self.assertEqual(result.timeout_seconds, 90)
+        self.assertEqual(result.timeout_source, "argument")
         self.assertEqual(result.status, STATUS_SUCCESS)
         self.assertEqual(result.response_text, "尽调要点如下……")
         self.assertEqual(result.input_tokens, 12)
@@ -160,6 +169,22 @@ class SiliconFlowGenerateTests(unittest.TestCase):
         # raw_response 不得包含认证信息。
         self.assertNotIn("sk-secret", json.dumps(result.raw_response))
         self.assertNotIn("Authorization", json.dumps(result.raw_response))
+
+    def test_generate_response_can_override_request_timeout(self):
+        captured = {}
+
+        def fake_urlopen(request, timeout=None):
+            captured["timeout"] = timeout
+            body = {"choices": [{"message": {"role": "assistant", "content": "完整回答。"}}]}
+            return _FakeResp(200, {}, json.dumps(body))
+
+        provider = SiliconFlowProvider(api_key="sk-secret", timeout_seconds=90)
+        with mock.patch.object(sf.urllib.request, "urlopen", fake_urlopen):
+            result = provider.generate_response("m", _MESSAGES, request_timeout_seconds=180)
+
+        self.assertEqual(captured["timeout"], 180)
+        self.assertEqual(result.timeout_seconds, 180)
+        self.assertEqual(result.timeout_source, "argument")
 
     def test_length_finish_reason_marks_incomplete_response_failed(self):
         def fake_urlopen(request, timeout=None):

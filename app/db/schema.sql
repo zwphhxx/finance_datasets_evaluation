@@ -208,6 +208,8 @@ CREATE TABLE live_run_responses (
     retry_count   INTEGER,
     first_finish_reason TEXT,
     final_finish_reason TEXT,
+    timeout_seconds REAL,
+    timeout_source TEXT,
     error_code    TEXT,
     error_message TEXT,
     status        TEXT NOT NULL DEFAULT 'active',

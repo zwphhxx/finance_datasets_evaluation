@@ -252,7 +252,15 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("原因：", source)
         self.assertIn("已自动重试", source)
         self.assertIn("处理：不会进入评分草稿，可重试失败项或更换模型。", source)
-        for column in ("finish_reason", "incomplete_reason", "retry_count", "输出tokens", "trace_id"):
+        for column in (
+            "finish_reason",
+            "incomplete_reason",
+            "retry_count",
+            "timeout_seconds",
+            "timeout_source",
+            "输出tokens",
+            "trace_id",
+        ):
             self.assertIn(column, source[source.index("def _render_results_table"):])
         self.assertNotIn("render_aux_action_bar", results_source)
         self.assertNotIn("test_run_technical_details", results_source)
@@ -694,15 +702,19 @@ class RunPlanTests(unittest.TestCase):
         self.assertEqual(4, summary["planned_responses"])
         self.assertTrue(summary["can_run"])
 
-    def test_run_queue_items_dedupe_models_and_preserve_order(self):
+    def test_run_queue_items_dedupe_models_and_rotate_by_sample(self):
         queue = build_run_queue_items(
             ["m1", "m1", "m2"],
             [{"case_id": "A"}, {"case_id": "B"}],
         )
 
         self.assertEqual(
-            [("m1", "A"), ("m1", "B"), ("m2", "A"), ("m2", "B")],
+            [("m1", "A"), ("m2", "A"), ("m1", "B"), ("m2", "B")],
             [(item["model_id"], item["case_id"]) for item in queue],
+        )
+        self.assertEqual(
+            {("m1", "A"), ("m2", "A"), ("m1", "B"), ("m2", "B")},
+            {(item["model_id"], item["case_id"]) for item in queue},
         )
 
     def test_remaining_queue_items_use_completed_model_case_pairs(self):
@@ -715,7 +727,7 @@ class RunPlanTests(unittest.TestCase):
         remaining = build_remaining_queue_items(queue, outcomes)
 
         self.assertEqual(
-            [("m1", "B"), ("m2", "A")],
+            [("m2", "A"), ("m1", "B")],
             [(item["model_id"], item["case_id"]) for item in remaining],
         )
 

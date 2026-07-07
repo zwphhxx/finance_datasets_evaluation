@@ -111,15 +111,18 @@ class _SequenceProvider(ModelProvider):
 
     name = "sequence"
 
-    def __init__(self, *results: GenerationResult):
+    def __init__(self, *results: GenerationResult, timeout_seconds: float | None = None):
         self._results = list(results)
         self.max_token_calls: list[int] = []
+        self.timeout_seconds = timeout_seconds
+        self.request_timeout_calls: list[float | None] = []
 
     def list_models(self, model_type="text", sub_type="chat"):
         raise NotImplementedError
 
     def generate_response(self, model_id, messages, *, temperature=0.2, max_tokens=2048, **kwargs):
         self.max_token_calls.append(max_tokens)
+        self.request_timeout_calls.append(kwargs.get("request_timeout_seconds"))
         return self._results.pop(0)
 
 
@@ -239,7 +242,7 @@ class RunnerEmptyGuardTests(unittest.TestCase):
         self.assertEqual(outcome.first_finish_reason, "length")
         self.assertEqual(outcome.final_finish_reason, "length")
 
-    def test_timeout_retries_once_with_same_token_budget_and_keeps_success(self):
+    def test_timeout_retries_once_with_same_token_budget_and_higher_timeout(self):
         provider = _SequenceProvider(
             GenerationResult(
                 "sequence",
@@ -254,17 +257,19 @@ class RunnerEmptyGuardTests(unittest.TestCase):
                 STATUS_SUCCESS,
                 response_text="基于已提供数据，初步判断存在风险。",
             ),
+            timeout_seconds=90,
         )
 
         outcome = er.run_single(provider, "m", {"case_id": "FD-001"}, max_tokens=4096)
 
         self.assertEqual([4096, 4096], provider.max_token_calls)
+        self.assertEqual([None, 180.0], provider.request_timeout_calls)
         self.assertTrue(outcome.success)
         self.assertEqual(outcome.retry_count, 1)
         self.assertIsNone(outcome.error_code)
         self.assertEqual(outcome.answer_text, "基于已提供数据，初步判断存在风险。")
 
-    def test_timeout_retry_still_timeout_keeps_failed_timeout(self):
+    def test_timeout_retry_still_timeout_keeps_failed_timeout_and_caps_wait(self):
         provider = _SequenceProvider(
             GenerationResult(
                 "sequence",
@@ -280,11 +285,13 @@ class RunnerEmptyGuardTests(unittest.TestCase):
                 error_code="timeout",
                 error_message="请求超时，请稍后重试或调大 SILICONFLOW_TIMEOUT_SECONDS。",
             ),
+            timeout_seconds=180,
         )
 
         outcome = er.run_single(provider, "m", {"case_id": "FD-001"}, max_tokens=4096)
 
         self.assertEqual([4096, 4096], provider.max_token_calls)
+        self.assertEqual([None, 300.0], provider.request_timeout_calls)
         self.assertFalse(outcome.success)
         self.assertEqual(outcome.error_code, "timeout")
         self.assertEqual(outcome.retry_count, 1)
