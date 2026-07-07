@@ -232,7 +232,7 @@ class FormalConclusionStatusGuardrailTests(unittest.TestCase):
         text = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
         for phrase in [
             "当前暂无已确认评分",
-            "当前部署环境的运行期 SQLite 已重建",
+            "当前部署环境的运行期评分数据已重建",
             "仅存在示例评价或待确认草稿",
             "发起评测",
             "评分确认",

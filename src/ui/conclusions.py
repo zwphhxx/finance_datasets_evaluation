@@ -73,7 +73,7 @@ def _render_data_source_notice(live_scores: pd.DataFrame) -> None:
         if st.button("数据维护", type="secondary", key="conclusion_data_maintenance", use_container_width=True):
             _render_score_data_maintenance_dialog()
     if not ds.database_ready():
-        st.caption("当前 SQLite 尚不可用。请先运行发起评测并生成评分草稿，或通过数据维护导入评分文件。")
+        st.caption("当前正式评分数据层不可用。请先运行发起评测并生成评分草稿，或通过数据维护导入评分文件。")
 
     message = st.session_state.get("conclusion_score_io_message")
     if isinstance(message, dict) and message.get("text"):
@@ -181,7 +181,7 @@ def _render_current_conclusion(confirmed_live, draft_rows: list[dict]) -> None:
         st.markdown(
             "可能原因：\n"
             "- 尚未在评分确认页确认生效；\n"
-            "- 当前部署环境的运行期 SQLite 已重建；\n"
+            "- 当前部署环境的运行期评分数据已重建；\n"
             "- 仅存在示例评价或待确认草稿，未进入正式结论。\n\n"
             "请先在“发起评测”页生成评分草稿，并在“评分确认”页确认生效；"
             "也可以通过“数据维护”导入已确认评分文件恢复演示结论。"

@@ -203,6 +203,9 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("已完成回答已保留", source)
         self.assertIn("继续未完成项", source)
         self.assertIn("放弃本次运行", source)
+        self.assertIn("计划回答", source)
+        self.assertIn("未完成", source)
+        self.assertIn("已覆盖样本", source)
         self.assertIn("回答随机性", panel_source)
         self.assertIn("er.run_single", source)
         self.assertIn("retry_max_tokens=_EVAL_MAX_TOKENS_LIMIT", source)
@@ -227,6 +230,26 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertNotIn("progress_callback=_on_progress", source)
         self.assertNotIn('st.expander("查看回答"', source)
         self.assertNotIn('st.expander("查看全部回答"', source)
+
+    def test_run_answer_detail_keeps_finish_reason_in_technical_details_only(self):
+        source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+        card_source = source[
+            source.index("def _render_run_outcome_card"):
+            source.index("@st.dialog(\"模型回答全文\"")
+        ]
+        answer_detail_source = source[
+            source.index("def render_model_answer_detail"):
+            source.index("def _render_score_results")
+        ]
+        tech_source = source[
+            source.index("def build_technical_detail_rows"):
+            source.index("def _render_results_table")
+        ]
+
+        self.assertNotIn("finish_reason：", card_source)
+        self.assertNotIn("finish_reason：", answer_detail_source)
+        self.assertIn('"finish_reason"', tech_source)
+        self.assertIn('"trace_id"', tech_source)
 
     def test_configuration_panel_exposes_model_prompt_preview_without_answer_fields(self):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")

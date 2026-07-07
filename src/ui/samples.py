@@ -895,7 +895,7 @@ def _render_sample_source_status() -> None:
     if caption:
         st.caption(caption)
     if not status.get("sqlite_ready"):
-        st.caption("seed 文件只用于初始化；samples.json 是样本库管理视图，不是发起评测的唯一正式源。")
+        st.caption("当前正式评测数据层不可用；本地样本文件可浏览，但新增或导入的样本暂不能进入正式评测。")
 
 
 def _store_sample_operation_message(message: str, level: str = "success") -> None:
@@ -937,7 +937,7 @@ def _formal_sync_feedback_suffix() -> tuple[str, str]:
     status = sr.sample_data_source_status()
     if status.get("sqlite_ready"):
         return "已同步正式评测资产。", "success"
-    return "已写入样本库视图，但当前 SQLite 不可用，尚未写入正式评测资产。", "warning"
+    return "已写入样本库视图，但当前正式评测数据层不可用，尚未写入正式评测资产。", "warning"
 
 
 # --------------------------------------------------------------------------- #
@@ -1575,7 +1575,7 @@ def _render_pending_dialogs(rubric_dimensions: list[dict] | None) -> None:
 
 @st.dialog("导入 CSV", width="large")
 def _render_import_csv_dialog(rubric_dimensions: list[dict] | None) -> None:
-    st.caption("CSV 用于批量新增或更新样本库视图；SQLite 可用时会同步正式评测资产。")
+    st.caption("CSV 用于批量新增或更新样本库视图；正式评测数据层可用时会同步评测资产。")
     st.download_button(
         "下载 CSV 模板",
         data=_csv_template_bytes(),

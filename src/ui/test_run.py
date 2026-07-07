@@ -1702,12 +1702,16 @@ def _render_live_run_queue(
 ) -> None:
     total = len(queue_items)
     done = len(outcomes)
+    failed = sum(1 for outcome in outcomes if not outcome.success)
+    covered = len({outcome.case_id for outcome in outcomes})
+    unfinished = max(0, total - done)
     with slot.container():
         st.markdown("**运行队列**")
         st.caption(
-            f"样本 {len({item['case_id'] for item in queue_items})} 个 · "
+            f"计划样本 {len({item['case_id'] for item in queue_items})} 个 · "
             f"模型 {len({item['model_id'] for item in queue_items})} 个 · "
-            f"预计回答 {total} 条 · 运行模式：{_mode_label(mode)}"
+            f"计划回答 {total} 条 · 已完成 {done} 条 · 未完成 {unfinished} 条 · "
+            f"失败 {failed} 条 · 已覆盖样本 {covered} 个 · 运行模式：{_mode_label(mode)}"
         )
         st.progress((done / total) if total else 0.0)
         if current:
@@ -1785,9 +1789,14 @@ def _render_results(provider_name: str, temperature, max_tokens, task_records: l
     summary = er.summarize_outcomes(result.outcomes)
     failed = summary.total - summary.success
     run_status = _run_status_for_result(result)
+    state_queue = list((state or {}).get("queue_items") or [])
+    planned = len(state_queue) if state_queue else summary.total
+    unfinished = len(build_remaining_queue_items(state_queue, list(result.outcomes))) if state_queue else 0
+    covered_cases = len({o.case_id for o in result.outcomes})
     st.markdown(
-        f"本次运行：样本 {len({o.case_id for o in result.outcomes})} 个 · "
-        f"模型 {len(result.model_ids)} 个 · 成功 {summary.success} 条 · 失败 {failed} 条 · "
+        f"本次运行：计划回答 {planned} 条 · 已完成 {summary.total} 条 · 未完成 {unfinished} 条 · "
+        f"成功 {summary.success} 条 · 失败 {failed} 条 · 已覆盖样本 {covered_cases} 个 · "
+        f"模型 {len(result.model_ids)} 个 · "
         f"运行模式：{_mode_label(result.mode)}"
     )
     if run_status in {"running", "interrupted", "failed"}:
@@ -1945,8 +1954,6 @@ def _render_run_outcome_card(
 
     is_incomplete = str(outcome.error_code or "").strip().lower() == "incomplete_response"
     st.markdown(f"原因：{_short(_failure_reason_text(outcome), 180)}")
-    if getattr(outcome, "finish_reason", None):
-        st.markdown(f"finish_reason：`{_dash(outcome.finish_reason)}`")
     retry_text = _retry_count_text(outcome)
     if retry_text:
         st.caption(retry_text)
@@ -2065,8 +2072,6 @@ def render_model_answer_detail(
     if outcome.success or outcome.answer_length:
         meta_parts.append(f"回答长度：{_answer_length_label(outcome)}")
     finish_reason = getattr(outcome, "finish_reason", None)
-    if finish_reason:
-        meta_parts.append(f"finish_reason：{finish_reason}")
     meta = "｜".join(meta_parts) + f"\n模型 ID：{outcome.model_id}"
     answer = outcome.answer_text or "—"
     display_text = _answer_preview(answer) if preview else answer
@@ -2081,8 +2086,6 @@ def render_model_answer_detail(
                 "",
                 f"原因：{_short(reason, 220)}",
             ]
-            if finish_reason:
-                lines.extend(["", f"finish_reason：`{finish_reason}`"])
             retry_text = _retry_count_text(outcome)
             if retry_text:
                 lines.extend(["", retry_text])
@@ -2095,8 +2098,6 @@ def render_model_answer_detail(
                 "",
                 f"原因：{_short(_failure_reason_text(outcome), 220)}",
             ]
-            if finish_reason:
-                lines.extend(["", f"finish_reason：`{finish_reason}`"])
             retry_text = _retry_count_text(outcome)
             if retry_text:
                 lines.extend(["", retry_text])
@@ -2203,7 +2204,7 @@ def _render_score_results(base, provider_name: str, task_records: list[dict]) ->
             st.session_state.current_page = "review"
             st.rerun()
     elif has_confirmable:
-        st.caption("SQLite 数据层未初始化，评分草稿仅在当前会话展示，暂不能进入评分确认页。")
+        st.caption("正式评分数据层未初始化，评分草稿仅在当前会话展示，暂不能进入评分确认页。")
 
 
 def _render_retry_failed_scores_action(
