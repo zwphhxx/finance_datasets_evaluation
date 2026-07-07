@@ -19,9 +19,12 @@ from app.services import dataset_service as ds
 from app.services import sample_repository as sr
 from src.gold_quality import field_list, field_text, field_value
 from src.ui.components import (
+    document_section_html,
     render_detail_panel,
     render_empty_state,
+    render_field_section,
     render_html,
+    render_long_text_section,
     render_numbered_section,
     render_page_heading,
 )
@@ -1187,12 +1190,7 @@ def render_sample_detail_panel(
 
 
 def _detail_section_html(title: str, content_html: str) -> str:
-    return (
-        '<section class="sample-detail-section">'
-        f'<div class="sample-detail-section-title">{escape(str(title))}</div>'
-        f"{content_html}"
-        "</section>"
-    )
+    return document_section_html(title, content_html)
 
 
 def _basic_info_html(
@@ -1235,7 +1233,7 @@ def _gold_detail_html(gold_display: dict) -> str:
         _field_block_html("标准结论", fields.get("标准结论", "待补充")),
         _field_block_html("关键依据", fields.get("关键依据", "待补充")),
         _list_block_html("必须覆盖点", lists.get("必须覆盖点", [])),
-        _list_block_html("不可接受错误", lists.get("不可接受错误", [])),
+        _list_block_html("不可接受错误", lists.get("不可接受错误", []), tone="risk"),
         _field_block_html("边界与需核查事项", fields.get("边界与需核查事项", "待补充")),
         _field_block_html("人工复核提示", fields.get("人工复核提示", "待补充")),
     ]
@@ -1335,21 +1333,11 @@ def _kv_grid_html(rows: list[tuple[str, object]]) -> str:
 
 
 def _field_block_html(label: str, value, fallback: str = "待补充") -> str:
-    return (
-        f'<div class="sample-detail-label">{escape(str(label))}</div>'
-        f'<p class="sample-detail-text">{_html_multiline(value, fallback=fallback)}</p>'
-    )
+    return render_long_text_section(label, value, fallback=fallback)
 
 
-def _list_block_html(label: str, items, fallback: str = "待补充") -> str:
-    values = [str(item).strip() for item in (items or []) if str(item).strip()]
-    if not values:
-        values = [fallback]
-    item_html = "".join(f"<li>{_html_multiline(item)}</li>" for item in values)
-    return (
-        f'<div class="sample-detail-label">{escape(str(label))}</div>'
-        f'<ul class="sample-detail-list">{item_html}</ul>'
-    )
+def _list_block_html(label: str, items, fallback: str = "待补充", *, tone: str | None = None) -> str:
+    return render_field_section(label, items, fallback=fallback, tone=tone)
 
 
 def _html_text(value, fallback: str = "待补充") -> str:

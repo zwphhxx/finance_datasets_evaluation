@@ -13,7 +13,9 @@ from app.services import scorer as sc
 from src.gold_quality import field_list, field_text
 from src.metrics import get_errors_for_output, normalize_optimization_plan
 from src.ui.components import (
-    render_clean_list,
+    document_section_html,
+    render_document_block,
+    render_field_section,
     render_detail_panel_with_action,
     render_inline_status,
     render_markdown_detail_panel,
@@ -129,32 +131,35 @@ def render_score_materials_dialog(
     gold = item["gold"]
     st.caption(f"样本：{item['case_id']} · 模型：{item['display_model']}")
 
-    st.markdown("**任务背景**")
     render_inline_status([
         ("专业场景", display_label(task_info.get("domain"), DOMAIN_LABELS)),
         ("类型", display_label(task_info.get("task_type"), TASK_TYPE_LABELS)),
         ("难度", DIFFICULTY_LABELS.get(text(task_info.get("difficulty")), text(task_info.get("difficulty")))),
         ("风险", RISK_LABELS.get(text(task_info.get("risk_level")), text(task_info.get("risk_level")))),
     ])
-    st.markdown(text(task_info.get("context"), "暂无背景材料"))
-    st.markdown("**任务题**")
-    st.markdown(text(task_info.get("question"), text(task_info.get("scenario"), "暂无任务题")))
+    render_document_block(
+        document_section_html(
+            "任务内容",
+            "".join([
+                render_field_section("任务背景", text(task_info.get("context"), "暂无背景材料")),
+                render_field_section("任务题", text(task_info.get("question"), text(task_info.get("scenario"), "暂无任务题"))),
+            ]),
+        )
+    )
 
-    st.markdown("**专业标准答案**")
     if isinstance(gold, dict):
-        render_inline_status([
-            ("标准结论", field_text(gold, "core_conclusion", "待补充")),
-            ("关键依据", field_text(gold, "key_evidence", "待补充")),
-            ("边界与需核查事项", field_text(gold, "boundary_conditions", "待补充")),
-        ])
-        must_points = field_list(gold, "must_have_points")
-        red_lines = field_list(gold, "unacceptable_errors")
-        if must_points:
-            st.markdown("**必须覆盖点**")
-            render_clean_list(must_points)
-        if red_lines:
-            st.markdown("**不可接受错误**")
-            render_clean_list(red_lines)
+        render_document_block(
+            document_section_html(
+                "专业标准答案",
+                "".join([
+                    render_field_section("标准结论", field_text(gold, "core_conclusion", "待补充")),
+                    render_field_section("关键依据", field_text(gold, "key_evidence", "待补充")),
+                    render_field_section("必须覆盖点", field_list(gold, "must_have_points")),
+                    render_field_section("不可接受错误", field_list(gold, "unacceptable_errors"), tone="risk"),
+                    render_field_section("边界与需核查事项", field_text(gold, "boundary_conditions", "待补充")),
+                ]),
+            )
+        )
     else:
         st.caption("该任务暂无专业标准答案。")
 

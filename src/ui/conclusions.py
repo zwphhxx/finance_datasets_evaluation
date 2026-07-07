@@ -20,6 +20,7 @@ from src.ui.page_config import get_page_config
 from src.ui.components import (
     render_empty_state,
     render_inline_status,
+    render_markdown_detail_panel,
     render_numbered_section,
     render_page_heading,
 )
@@ -266,19 +267,18 @@ def _render_model_issue_details(model_summaries: list[dict]) -> None:
 def _render_issue_markdown(item: dict) -> None:
     display = str(item.get("display_name") or item.get("model_name") or "未标注模型")
     model_id = str(item.get("model_name") or "")
-    st.markdown(f"**{display}**")
-    if model_id and model_id != display:
-        st.caption(f"模型 ID：{model_id}")
-
-    st.markdown("**当前判断**")
-    st.markdown(_current_judgment(item))
-
-    st.markdown("**主要依据**")
     basis_items = item.get("detail_basis") or item.get("main_issues") or []
-    st.markdown("\n".join(f"- {text}" for text in basis_items[:4]) or "- 当前样本内暂无补充说明")
-
-    st.markdown("**后续建议**")
-    st.markdown(item.get("usage_advice") or "请结合评分依据人工复核。")
+    basis_markdown = "\n".join(f"- {text}" for text in basis_items[:4]) or "- 当前样本内暂无补充说明"
+    markdown = "\n\n".join([
+        "**当前判断**",
+        _current_judgment(item),
+        "**主要依据**",
+        basis_markdown,
+        "**后续建议**",
+        str(item.get("usage_advice") or "请结合评分依据人工复核。"),
+    ])
+    meta = f"模型 ID：{model_id}" if model_id and model_id != display else None
+    render_markdown_detail_panel(display, markdown, meta=meta)
 
 
 def _current_judgment(item: dict) -> str:

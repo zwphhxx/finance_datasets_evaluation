@@ -440,6 +440,67 @@ header,
     font-weight: 760;
     margin-bottom: 0.48rem;
 }
+.document-block,
+.document-section,
+.markdown-detail-body,
+.review-summary-panel-body {
+    max-width: min(100%, 960px);
+}
+.document-section {
+    margin-top: 1.1rem;
+}
+.document-section:first-child {
+    margin-top: 0;
+}
+.document-section-title {
+    color: var(--fde-ink);
+    font-size: 0.96rem;
+    font-weight: 760;
+    line-height: 1.45;
+    margin: 0 0 0.62rem 0;
+}
+.document-field {
+    margin: 0;
+}
+.document-field + .document-field {
+    border-top: 1px solid var(--fde-line);
+    margin-top: 0.72rem;
+    padding-top: 0.68rem;
+}
+.document-field-title {
+    color: var(--fde-accent);
+    font-size: 0.82rem;
+    font-weight: 760;
+    line-height: 1.45;
+    margin: 0 0 0.28rem 0;
+}
+.document-text {
+    color: var(--fde-text);
+    font-size: 0.95rem;
+    font-weight: 400;
+    line-height: 1.72;
+}
+.document-text p {
+    margin: 0 0 0.58rem 0;
+}
+.document-text p:last-child {
+    margin-bottom: 0;
+}
+.document-list {
+    color: var(--fde-text);
+    font-size: 0.95rem;
+    font-weight: 400;
+    line-height: 1.68;
+    margin: 0.15rem 0 0.05rem 1.08rem;
+    padding: 0;
+}
+.document-list li {
+    margin: 0.26rem 0;
+    padding-left: 0.08rem;
+}
+.document-list-risk li::marker {
+    color: var(--fde-danger-text);
+}
 .sample-detail-kv-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
@@ -633,31 +694,31 @@ header,
 }
 .markdown-detail-body {
     color: var(--fde-ink);
-    font-size: 0.94rem;
+    font-size: 0.95rem;
     font-weight: 400;
-    line-height: 1.62;
+    line-height: 1.72;
 }
 .markdown-detail-body p {
-    margin: 0 0 0.68rem 0;
+    margin: 0 0 0.72rem 0;
     font-weight: 400;
 }
 .markdown-detail-heading {
-    color: var(--fde-muted);
-    font-size: 0.86rem;
+    color: var(--fde-accent);
+    font-size: 0.88rem;
     font-weight: 760;
     line-height: 1.45;
-    margin: 0.95rem 0 0.42rem 0;
+    margin: 1.05rem 0 0.46rem 0;
 }
 .markdown-detail-heading:first-child {
     margin-top: 0;
 }
 .markdown-detail-list {
-    margin: 0.26rem 0 0.74rem 1.1rem;
+    margin: 0.28rem 0 0.78rem 1.12rem;
     padding: 0;
 }
 .markdown-detail-list li {
-    margin: 0.18rem 0;
-    line-height: 1.6;
+    margin: 0.26rem 0;
+    line-height: 1.68;
 }
 .markdown-detail-code {
     background: var(--fde-surface-subtle);
@@ -1010,6 +1071,72 @@ def render_aux_action_bar(title: str, actions: list[dict[str, object]]) -> str |
     return clicked
 
 
+def render_document_block(body_html: str, title: str | None = None, meta: str | None = None) -> None:
+    """Render long-form professional materials inside the shared detail panel."""
+    content = f'<div class="document-block">{body_html}</div>'
+    if title or meta:
+        render_detail_panel(content, title=title, meta=meta)
+        return
+    render_html(content)
+
+
+def render_field_section(label: str, value, fallback: str = "待补充", *, tone: str | None = None) -> str:
+    """Return a shared field block for long text or list-like professional materials."""
+    if isinstance(value, (list, tuple, set)):
+        return _document_list_section_html(label, list(value), fallback=fallback, tone=tone)
+    return render_long_text_section(label, value, fallback=fallback)
+
+
+def render_long_text_section(label: str, value, fallback: str = "待补充") -> str:
+    return (
+        '<div class="document-field">'
+        f'<div class="document-field-title">{escape(str(label))}</div>'
+        f'<div class="document-text">{_document_paragraphs_html(value, fallback=fallback)}</div>'
+        "</div>"
+    )
+
+
+def render_markdown_block(markdown_text: str) -> str:
+    return f'<div class="markdown-detail-body document-markdown">{markdown_detail_html(markdown_text)}</div>'
+
+
+def document_section_html(title: str, content_html: str) -> str:
+    return (
+        '<section class="document-section sample-detail-section">'
+        f'<div class="document-section-title sample-detail-section-title">{escape(str(title))}</div>'
+        f"{content_html}"
+        "</section>"
+    )
+
+
+def _document_list_section_html(label: str, items: list, fallback: str = "待补充", tone: str | None = None) -> str:
+    values = [str(item).strip() for item in (items or []) if str(item).strip()]
+    if not values:
+        values = [fallback]
+    tone_class = " document-list-risk" if str(tone or "").strip().lower() in {"risk", "danger"} else ""
+    item_html = "".join(f"<li>{_document_inline_html(item)}</li>" for item in values)
+    return (
+        '<div class="document-field">'
+        f'<div class="document-field-title">{escape(str(label))}</div>'
+        f'<ul class="document-list{tone_class}">{item_html}</ul>'
+        "</div>"
+    )
+
+
+def _document_paragraphs_html(value, fallback: str = "待补充") -> str:
+    text = str(value or "").strip()
+    if not text:
+        text = str(fallback)
+    paragraphs = [part.strip() for part in re.split(r"\n\s*\n", text) if part.strip()]
+    if not paragraphs:
+        paragraphs = [str(fallback)]
+    return "".join(f"<p>{_document_inline_html(paragraph)}</p>" for paragraph in paragraphs)
+
+
+def _document_inline_html(value) -> str:
+    return escape(str(value or "").strip()).replace("\n", "<br>")
+
+
 def render_kv_grid(items: list[tuple[str, object]]) -> None:
     parts = "".join(
         f'<div class="sample-detail-kv"><span>{escape(str(label))}</span><strong>{escape(str(value))}</strong></div>'
@@ -1217,7 +1344,7 @@ def render_markdown_detail_panel(
     action_type: str = "secondary",
     action_disabled: bool = False,
 ) -> bool:
-    body_html = f'<div class="markdown-detail-body">{markdown_detail_html(markdown_text)}</div>'
+    body_html = render_markdown_block(markdown_text)
     if action_label:
         return render_detail_panel_with_action(
             body_html,

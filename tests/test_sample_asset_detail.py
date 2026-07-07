@@ -10,6 +10,8 @@ from src.ui.samples import (
     build_sample_table_rows,
     build_rubric_rows_for_display,
     parse_gold_answer_for_display,
+    _gold_detail_html,
+    _task_detail_html,
 )
 
 
@@ -108,6 +110,32 @@ class GoldAnswerDisplayTests(unittest.TestCase):
         self.assertFalse(display["parsed"])
         self.assertEqual("无法解析的自由文本", display["fallback_text"])
         self.assertEqual("待补充", display["fields"]["标准结论"])
+
+    def test_gold_answer_detail_uses_document_reading_fields(self):
+        display = parse_gold_answer_for_display({
+            "core_conclusion": "核心结论第一段\n\n核心结论第二段",
+            "key_evidence": "关键依据",
+            "must_have_points": ["覆盖点一", "覆盖点二"],
+            "unacceptable_errors": ["错误一"],
+            "boundary_conditions": "边界说明",
+        })
+
+        html = _gold_detail_html(display)
+
+        self.assertIn('class="document-field"', html)
+        self.assertIn('class="document-field-title"', html)
+        self.assertIn('class="document-list"', html)
+        self.assertIn('class="document-list document-list-risk"', html)
+        self.assertIn("<p>核心结论第一段</p>", html)
+        self.assertIn("<p>核心结论第二段</p>", html)
+
+    def test_task_detail_uses_document_reading_fields(self):
+        html = _task_detail_html("任务题第一段\n\n任务题第二段", "业务背景", "输出要求")
+
+        self.assertIn('class="document-field"', html)
+        self.assertIn('class="document-field-title"', html)
+        self.assertIn("<p>任务题第一段</p>", html)
+        self.assertIn("<p>任务题第二段</p>", html)
 
 
 class ScoringStandardDisplayTests(unittest.TestCase):
