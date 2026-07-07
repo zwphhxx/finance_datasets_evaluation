@@ -95,6 +95,25 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertEqual("模型服务未在当前等待时间内返回。", _failure_reason_text(outcome))
         self.assertEqual("可稍后重试失败项或调大 SILICONFLOW_TIMEOUT_SECONDS。", _failure_guidance(outcome))
 
+    def test_length_copy_is_distinct_from_timeout(self):
+        outcome = er.RunOutcome(
+            "CM-001",
+            "",
+            "siliconflow",
+            "vendor/Qwen3.6-35B-A3B",
+            "failed",
+            False,
+            error_code="incomplete_response",
+            error_message="模型回答因长度限制中断。",
+            finish_reason="length",
+            incomplete_reason="模型回答因长度限制中断。",
+            retry_count=1,
+        )
+
+        self.assertEqual("回答超过输出长度限制。", _failure_reason_text(outcome))
+        self.assertEqual("系统可使用压缩提示词重试；不完整回答不会进入评分草稿。", _failure_guidance(outcome))
+        self.assertNotIn("超时", _failure_reason_text(outcome))
+
     def test_selection_controls_are_dialog_driven(self):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
 

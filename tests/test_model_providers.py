@@ -205,8 +205,8 @@ class SiliconFlowGenerateTests(unittest.TestCase):
         self.assertEqual(result.status, STATUS_FAILED)
         self.assertEqual(result.error_code, "incomplete_response")
         self.assertEqual(result.finish_reason, "length")
-        self.assertIn("长度限制", result.error_message)
-        self.assertEqual(result.incomplete_reason, "模型回答因长度限制中断。")
+        self.assertIn("输出长度限制", result.error_message)
+        self.assertEqual(result.incomplete_reason, "回答超过输出长度限制。")
         self.assertEqual(result.output_tokens, 128)
         self.assertEqual(result.trace_id, "trace-length")
 

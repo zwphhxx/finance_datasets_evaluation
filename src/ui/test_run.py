@@ -2504,6 +2504,8 @@ def _failure_reason_text(outcome) -> str:
     if code in {"timeout", "gateway_timeout"}:
         return "模型服务未在当前等待时间内返回。"
     if code == "incomplete_response":
+        if str(getattr(outcome, "finish_reason", "") or "").strip().lower() == "length":
+            return "回答超过输出长度限制。"
         return getattr(outcome, "incomplete_reason", None) or getattr(outcome, "error_message", None) or "模型回答未完整结束。"
     if code == "rate_limited":
         return "模型服务触发限流。"
@@ -2624,6 +2626,8 @@ def _failure_guidance(outcome) -> str:
     if code == "empty_response":
         return "模型返回成功但回答为空，建议重试或更换模型。"
     if code == "incomplete_response":
+        if str(getattr(outcome, "finish_reason", "") or "").strip().lower() == "length":
+            return "系统可使用压缩提示词重试；不完整回答不会进入评分草稿。"
         return "模型回答未完整结束，不会进入评分草稿；可重试失败项或更换模型。"
     if code in {"bad_request", "not_found"}:
         return "请检查模型 ID 或请求参数。"

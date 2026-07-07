@@ -277,7 +277,7 @@ SILICONFLOW_TIMEOUT_SECONDS = "120"
 
 失败后的处理方式：
 
-- 模型回答 timeout 会在服务层自动重试 1 次；`finish_reason=length` 会用更高输出 token 预算自动重试 1 次。
+- 模型回答 timeout 会在服务层自动重试 1 次；`finish_reason=length` 会使用压缩提示词自动重试 1 次。
 - 可重试的裁判评分错误会在服务层自动重试，最多重试 2 次。
 - 单条模型回答失败不会中断整批运行，已成功回答会逐条写入 SQLite。
 - 单条评分失败不会中断整批评分，已成功评分会逐条写入 SQLite。

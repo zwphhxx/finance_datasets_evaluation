@@ -77,6 +77,8 @@ class PromptBoundaryTests(unittest.TestCase):
         system = messages[0]["content"]
         self.assertIn("依据", system)
         self.assertIn("核实", system)
+        self.assertIn("全文控制在 900 字以内", system)
+        self.assertIn("写完第四节后停止", system)
         self.assertIn("不要对自己的回答进行打分", system)
 
 

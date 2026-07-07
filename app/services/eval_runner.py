@@ -35,20 +35,26 @@ _SYSTEM_PROMPT = (
     "不得编造题目未提供的事实。如果题目已经提供模拟数据、财务数据、合同条款、"
     "交易安排或其他已知背景，你必须先基于已提供数据形成初步判断，"
     "不得以“资料不足”“缺乏数据”“无法直接判定”“仍需进一步核查”作为主要结论。"
-    "你的回答应体现：在当前已给数据范围内可以作出的判断、支撑该判断的关键数据和逻辑、"
-    "仍需进一步核查或核实的边界。请按以下结构作答：1）初步结论；2）关键数据依据；"
-    "3）风险事项；4）后续核查边界。"
-    "回答应完整但克制，优先使用 4 个小节，每节 2-4 句话；需要引用关键数据，"
-    "不要展开无关法规背景，整体控制在 800-1500 字左右。"
+    "请直接给结论和关键依据，不要复述题目背景，不要展开法规背景，不写长篇解释。"
+    "请按固定四个小节作答：1）初步结论；2）关键数据依据；3）主要风险；4）后续核查边界。"
+    "后续核查边界只说明仍需核实的材料，不得替代当前判断。"
+    "每个小节最多 3 条，全文控制在 900 字以内；回答总长度不得超过 900 个中文字符，"
+    "超过长度会被视为无效回答。不要输出“综上所述”后的重复总结，写完第四节后停止。"
     "不要对自己的回答进行打分或自评。"
 )
 
 _OUTPUT_HINT = (
     "请用中文作答，结构清晰、专业克制。第一段必须基于题目已提供数据形成初步判断；"
-    "随后列示关键数据依据、风险事项和后续核查边界。除非题目完全没有提供可判断的数据，"
+    "随后按“初步结论、关键数据依据、主要风险、后续核查边界”四部分列示。除非题目完全没有提供可判断的数据，"
     "否则不得只回答“资料不足”或“无法直接判定”，也不得以“缺乏数据”作为主要结论。"
-    "回答应完整但克制，优先用 4 个小节，每节 2-4 句话；需要引用关键数据，"
-    "不要展开无关法规背景，整体控制在 800-1500 字左右。"
+    "回答应完整但克制，每部分不超过3条，全文不超过900字。"
+    "请直接给结论和关键依据，不要展开法规背景或重复题目。"
+)
+
+_COMPACT_RETRY_HINT = (
+    "本次为压缩重试。请仅输出四个小节：初步结论、关键数据依据、主要风险、后续核查边界。"
+    "每节最多2条，全文不超过700字，写完即停止。不要复述题目，不要展开法规背景，"
+    "不要输出重复总结。"
 )
 
 
@@ -152,7 +158,7 @@ def generate_run_id() -> str:
     return f"RUN-{datetime.now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
 
 
-def build_messages(task: Mapping[str, Any]) -> list[dict[str, str]]:
+def build_messages(task: Mapping[str, Any], *, compact: bool = False) -> list[dict[str, str]]:
     """构造发送给被评测模型的对话消息，只暴露任务白名单字段，绝不含 Gold Answer。"""
     lines: list[str] = []
     scenario = _clean(task.get("scenario"))
@@ -166,6 +172,8 @@ def build_messages(task: Mapping[str, Any]) -> list[dict[str, str]]:
         lines.append(f"【背景信息】{context}")
     output_requirement = _clean(task.get("output_requirement") or task.get("expected_capability"))
     lines.append(f"【输出要求】{output_requirement or _OUTPUT_HINT}")
+    if compact:
+        lines.append(f"【压缩重试要求】{_COMPACT_RETRY_HINT}")
     return [
         {"role": "system", "content": _SYSTEM_PROMPT},
         {"role": "user", "content": "\n\n".join(lines)},
@@ -183,6 +191,9 @@ def run_single(
     **kwargs: Any,
 ) -> RunOutcome:
     """对单题运行一次模型调用，转为统一 RunOutcome（不抛异常给调用方）。"""
+    # retry_max_tokens 保留为兼容旧调用；length 截断改为压缩提示词重试，
+    # 避免单纯扩大输出预算导致模型继续输出长文。
+    _ = retry_max_tokens
     messages = build_messages(task)
     result = provider.generate_response(
         model_id, messages, temperature=temperature, max_tokens=max_tokens, **kwargs
@@ -190,18 +201,19 @@ def run_single(
     retry_count = 0
     first_finish_reason = result.finish_reason
 
-    retry_tokens = _retry_token_budget_for_result(result, max_tokens, retry_max_tokens)
     retry_timeout = _retry_timeout_seconds_for_result(result, provider)
-    if retry_tokens is not None or retry_timeout is not None:
+    retry_compact = _is_length_limited_result(result)
+    if retry_timeout is not None or retry_compact:
         retry_count = 1
         retry_kwargs = dict(kwargs)
         if retry_timeout is not None:
             retry_kwargs["request_timeout_seconds"] = retry_timeout
+        retry_messages = build_messages(task, compact=True) if retry_compact else messages
         result = provider.generate_response(
             model_id,
-            messages,
+            retry_messages,
             temperature=temperature,
-            max_tokens=retry_tokens if retry_tokens is not None else max_tokens,
+            max_tokens=max_tokens,
             **retry_kwargs,
         )
     return _run_outcome_from_generation_result(
@@ -262,25 +274,17 @@ def _run_outcome_from_generation_result(
     )
 
 
-def _is_length_truncated_result(result: GenerationResult) -> bool:
-    return (
-        str(result.error_code or "").strip().lower() == ERROR_INCOMPLETE_RESPONSE
-        and str(result.finish_reason or "").strip().lower() == "length"
-    )
+def _is_length_limited_result(result: GenerationResult) -> bool:
+    if str(result.finish_reason or "").strip().lower() == "length":
+        return True
+    if str(result.error_code or "").strip().lower() != ERROR_INCOMPLETE_RESPONSE:
+        return False
+    text = f"{result.incomplete_reason or ''} {result.error_message or ''}"
+    return "长度限制" in text or "输出长度" in text
 
 
 def _is_timeout_result(result: GenerationResult) -> bool:
     return str(result.error_code or "").strip().lower() == "timeout"
-
-
-def _retry_token_budget_for_result(
-    result: GenerationResult,
-    max_tokens: int,
-    retry_max_tokens: int | None,
-) -> int | None:
-    if _is_length_truncated_result(result):
-        return _retry_token_budget(max_tokens, retry_max_tokens)
-    return None
 
 
 def _retry_timeout_seconds_for_result(result: GenerationResult, provider: ModelProvider) -> float | None:
@@ -292,20 +296,6 @@ def _retry_timeout_seconds_for_result(result: GenerationResult, provider: ModelP
     if current is None:
         return None
     return min(current * 2, 300.0)
-
-
-def _retry_token_budget(max_tokens: int, retry_max_tokens: int | None) -> int | None:
-    if retry_max_tokens is None:
-        return None
-    try:
-        original = int(max_tokens)
-        upper = int(retry_max_tokens)
-    except (TypeError, ValueError):
-        return None
-    if original <= 0 or upper <= original:
-        return None
-    retry_tokens = min(original * 2, upper)
-    return retry_tokens if retry_tokens > original else None
 
 
 def run_evaluation(

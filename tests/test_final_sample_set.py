@@ -5,6 +5,8 @@ runtime model answers and scores are produced in SQLite instead of committed
 as seed rows.
 """
 
+import csv
+import json
 import shutil
 import unittest
 import re
@@ -18,6 +20,7 @@ from src.data_service import active_case_ids, load_all_data
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = PROJECT_ROOT / "data"
+SOURCE_CSV = DATA_DIR / "final_replacement_samples_13.csv"
 
 ALLOWED_DOMAINS = {"Capital Markets", "Financial", "Legal"}
 EXPECTED_CASE_IDS = [
@@ -92,13 +95,25 @@ class ActiveSampleQualityTests(unittest.TestCase):
             case_id = str(task.get("case_id") or "")
             requirement = str(task.get("expected_capability") or "").strip()
             self.assertIn("初步判断", requirement, case_id)
-            self.assertIn("不得以“资料不足、无法直接判定、需进一步核查”作为主要结论", requirement, case_id)
-            if case_id.startswith("FD-"):
-                self.assertIn("关键财务数据", requirement, case_id)
-            elif case_id.startswith("LD-"):
-                self.assertIn("法律规则", requirement, case_id)
-            elif case_id.startswith("CM-"):
-                self.assertIn("监管指标", requirement, case_id)
+            self.assertIn("初步结论、关键数据依据、主要风险、后续核查边界", requirement, case_id)
+            self.assertIn("每部分不超过3条", requirement, case_id)
+            self.assertIn("全文不超过900字", requirement, case_id)
+            self.assertIn("不得以资料不足作为主要结论", requirement, case_id)
+
+    def test_all_seed_output_requirements_are_compact_and_consistent(self):
+        expected = (
+            "请基于已提供模拟数据形成初步判断，按‘初步结论、关键数据依据、主要风险、后续核查边界’四部分作答。"
+            "每部分不超过3条，全文不超过900字。不得以资料不足作为主要结论。"
+        )
+        tasks = set(self.data.tasks["expected_capability"].astype(str))
+        self.assertEqual({expected}, tasks)
+
+        with SOURCE_CSV.open(encoding="utf-8-sig", newline="") as handle:
+            csv_rows = list(csv.DictReader(handle))
+        self.assertEqual({expected}, {str(row.get("output_requirement") or "") for row in csv_rows})
+
+        samples = json.loads((PROJECT_ROOT / "data" / "samples.json").read_text(encoding="utf-8"))
+        self.assertEqual({expected}, {str(item.get("expected_capability") or "") for item in samples})
 
     def test_model_prompt_uses_context_but_not_standard_answer_fields(self):
         task = self.data.tasks[self.data.tasks["case_id"] == "FD-001"].iloc[0].to_dict()

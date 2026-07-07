@@ -462,7 +462,7 @@ def _incomplete_reason_for_finish(finish_reason: str | None) -> str | None:
     if normalized == "stop":
         return None
     if normalized == "length":
-        return "模型回答因长度限制中断。"
+        return "回答超过输出长度限制。"
     if normalized == "content_filter":
         return "模型回答被内容过滤中断。"
     if normalized in {"tool_calls", "function_call"}:

@@ -66,6 +66,7 @@ class ReadmeCurrentFlowTests(unittest.TestCase):
             "LongCat、R1、reasoning / thinking 类慢模型建议 180-240 秒",
             "FINDUEVAL_EVAL_MAX_TOKENS",
             "响应超时和回答截断是两类问题",
+            "finish_reason=length` 会使用压缩提示词自动重试 1 次",
             "timeout 过长会导致页面等待时间变长",
             "评分失败通常是裁判模型超时，不代表样本失败",
             "重试失败评分",

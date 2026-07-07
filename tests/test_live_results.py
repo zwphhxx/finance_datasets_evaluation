@@ -114,6 +114,7 @@ class _SequenceProvider(ModelProvider):
     def __init__(self, *results: GenerationResult, timeout_seconds: float | None = None):
         self._results = list(results)
         self.max_token_calls: list[int] = []
+        self.message_calls: list[str] = []
         self.timeout_seconds = timeout_seconds
         self.request_timeout_calls: list[float | None] = []
 
@@ -122,6 +123,7 @@ class _SequenceProvider(ModelProvider):
 
     def generate_response(self, model_id, messages, *, temperature=0.2, max_tokens=2048, **kwargs):
         self.max_token_calls.append(max_tokens)
+        self.message_calls.append("\n".join(str(message.get("content") or "") for message in messages))
         self.request_timeout_calls.append(kwargs.get("request_timeout_seconds"))
         return self._results.pop(0)
 
@@ -165,7 +167,7 @@ class RunnerEmptyGuardTests(unittest.TestCase):
         self.assertEqual(outcome.output_tokens, 128)
         self.assertEqual(outcome.trace_id, "trace-incomplete")
 
-    def test_length_incomplete_retries_once_with_higher_token_budget_and_keeps_success(self):
+    def test_length_incomplete_retries_once_with_compact_prompt_and_keeps_success(self):
         provider = _SequenceProvider(
             GenerationResult(
                 "sequence",
@@ -194,7 +196,10 @@ class RunnerEmptyGuardTests(unittest.TestCase):
             retry_max_tokens=4096,
         )
 
-        self.assertEqual([2048, 4096], provider.max_token_calls)
+        self.assertEqual([2048, 2048], provider.max_token_calls)
+        self.assertNotIn("压缩重试", provider.message_calls[0])
+        self.assertIn("压缩重试", provider.message_calls[1])
+        self.assertIn("全文不超过700字", provider.message_calls[1])
         self.assertTrue(outcome.success)
         self.assertEqual(outcome.run_status, STATUS_SUCCESS)
         self.assertEqual(outcome.retry_count, 1)
@@ -235,7 +240,9 @@ class RunnerEmptyGuardTests(unittest.TestCase):
             retry_max_tokens=4096,
         )
 
-        self.assertEqual([2048, 4096], provider.max_token_calls)
+        self.assertEqual([2048, 2048], provider.max_token_calls)
+        self.assertIn("压缩重试", provider.message_calls[1])
+        self.assertIn("全文不超过700字", provider.message_calls[1])
         self.assertFalse(outcome.success)
         self.assertEqual(outcome.error_code, "incomplete_response")
         self.assertEqual(outcome.retry_count, 1)
