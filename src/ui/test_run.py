@@ -64,6 +64,8 @@ SAMPLE_TABLE_HEADERS = ["选择", "样本编号", "任务标题", "场景", "难
 SAMPLE_TABLE_HEIGHT = 330
 _EVAL_TEMPERATURE_DEFAULT = 0.1
 _EVAL_TEMPERATURE_ENV = "FINDUEVAL_EVAL_TEMPERATURE"
+_EVAL_TEMPERATURE_KEY = "test_run_temperature"
+_MODEL_DIALOG_TEMPERATURE_KEY = "test_run_model_dialog_temperature"
 _MODEL_OPTION_LIMIT = 30
 _ANSWER_PREVIEW_LIMIT = 1500
 _SLOW_MODEL_KEYWORDS = ("longcat", "r1", "reasoning", "thinking")
@@ -113,6 +115,16 @@ def resolve_eval_temperature(raw_value: str | None = None) -> float:
 
 _EVAL_MAX_TOKENS = resolve_eval_max_tokens()
 _EVAL_TEMPERATURE = resolve_eval_temperature()
+
+
+def _normalize_eval_temperature(value) -> float:
+    return resolve_eval_temperature(str(value if value is not None else ""))
+
+
+def _current_eval_temperature() -> float:
+    if _EVAL_TEMPERATURE_KEY not in st.session_state:
+        return _EVAL_TEMPERATURE
+    return _normalize_eval_temperature(st.session_state.get(_EVAL_TEMPERATURE_KEY))
 
 
 def get_test_run_steps() -> list[str]:
@@ -546,7 +558,7 @@ def render_test_run_page(data_bundle: dict) -> None:
     _render_configuration_panel(sample_options, selected_tasks, model_ids, provider_name, run_plan)
 
     render_numbered_section("02", TEST_RUN_STEPS[1])
-    _render_results(provider_name, _EVAL_TEMPERATURE, _EVAL_MAX_TOKENS, task_records)
+    _render_results(provider_name, _current_eval_temperature(), _EVAL_MAX_TOKENS, task_records)
 
     render_numbered_section("03", TEST_RUN_STEPS[2])
     _render_scoring(base, provider_name, task_records)
@@ -626,12 +638,13 @@ def _render_configuration_panel(
     run_plan: dict[str, int | bool],
 ) -> None:
     mode = _current_run_mode(provider_name)
+    eval_temperature = _current_eval_temperature()
     rows = [
         ("已选样本", _selected_sample_summary(selected_tasks)),
         ("已选模型", _selected_model_summary(model_ids)),
         ("当前模型服务", _SILICONFLOW_LABEL),
         ("预计模型回答", f"{run_plan['planned_responses']} 条"),
-        ("回答随机性", f"{_EVAL_TEMPERATURE:.1f}"),
+        ("回答随机性", f"{eval_temperature:.1f}"),
         ("当前运行模式", _mode_label(mode)),
     ]
     st.markdown("**当前评测配置**")
@@ -671,7 +684,7 @@ def _render_configuration_panel(
             provider_name,
             queue_items,
             model_ids,
-            _EVAL_TEMPERATURE,
+            eval_temperature,
             _EVAL_MAX_TOKENS,
         )
 
@@ -694,6 +707,7 @@ def _open_sample_dialog(sample_options: list[dict]) -> None:
 def _open_model_dialog(provider_name: str) -> None:
     st.session_state["test_run_dialog"] = "models"
     st.session_state["test_run_model_dialog_selected"] = _selected_model_ids_from_state()
+    st.session_state[_MODEL_DIALOG_TEMPERATURE_KEY] = _current_eval_temperature()
 
 
 def _open_prompt_preview_dialog(selected_tasks: list[dict]) -> None:
@@ -716,6 +730,7 @@ def _render_pending_dialogs(sample_options: list[dict]) -> None:
 def _clear_dialog_state() -> None:
     st.session_state.pop("test_run_dialog", None)
     st.session_state.pop("test_run_cases_dialog_selected", None)
+    st.session_state.pop(_MODEL_DIALOG_TEMPERATURE_KEY, None)
     st.session_state.pop("test_run_prompt_preview_case", None)
     _clear_session_state_prefix(SAMPLE_CHECKBOX_KEY_PREFIX)
 
@@ -916,6 +931,18 @@ def _render_model_selection_dialog() -> None:
         st.caption(f"账户余额：{balance_text}")
     if not sf.is_configured():
         st.warning("当前未配置模型服务密钥，暂不能发起真实调用。")
+    if _MODEL_DIALOG_TEMPERATURE_KEY not in st.session_state:
+        st.session_state[_MODEL_DIALOG_TEMPERATURE_KEY] = _current_eval_temperature()
+    st.markdown("**回答设置**")
+    st.slider(
+        "回答随机性",
+        min_value=0.0,
+        max_value=1.0,
+        step=0.1,
+        key=_MODEL_DIALOG_TEMPERATURE_KEY,
+        help="同一批评测内所有被测模型使用相同设置；裁判评分固定为 0.0。",
+    )
+    st.caption("同一批评测内所有被测模型使用相同回答随机性，便于横向比较。")
 
     result = provider.list_models()
     available_models = list(result.models) if result.ok else []
@@ -987,6 +1014,9 @@ def _render_model_selection_dialog() -> None:
         ):
             st.session_state["test_run_provider"] = sf.PROVIDER_NAME
             st.session_state["test_run_selected_models"] = chosen_models
+            st.session_state[_EVAL_TEMPERATURE_KEY] = _normalize_eval_temperature(
+                st.session_state.get(_MODEL_DIALOG_TEMPERATURE_KEY)
+            )
             _clear_dialog_state()
             st.rerun()
     with col2:
