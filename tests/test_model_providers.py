@@ -324,6 +324,53 @@ class SiliconFlowErrorMappingTests(unittest.TestCase):
         result = self._result_for_status(401)
         self.assertNotIn("sk-secret", result.error_message or "")
 
+    def test_bad_request_includes_provider_error_message(self):
+        provider = SiliconFlowProvider(api_key="sk-secret")
+        fake = _HttpResponse(
+            400,
+            {},
+            json.dumps({
+                "error": {
+                    "code": "invalid_request_error",
+                    "message": "max_tokens exceeds model output length limit",
+                }
+            }),
+        )
+        with mock.patch.object(SiliconFlowProvider, "_send", return_value=fake):
+            result = provider.generate_response("m", _MESSAGES)
+
+        self.assertEqual(result.status, STATUS_FAILED)
+        self.assertEqual(result.error_code, "bad_request")
+        self.assertEqual(result.provider_error_code, "invalid_request_error")
+        self.assertEqual(result.provider_error_message, "max_tokens exceeds model output length limit")
+        self.assertIn("请求参数有误：max_tokens exceeds model output length limit", result.error_message)
+        self.assertIn("max_tokens", result.provider_error_body_excerpt)
+
+    def test_bad_request_non_json_falls_back_to_generic_message(self):
+        provider = SiliconFlowProvider(api_key="sk-secret")
+        fake = _HttpResponse(400, {}, "bad request from gateway")
+        with mock.patch.object(SiliconFlowProvider, "_send", return_value=fake):
+            result = provider.generate_response("m", _MESSAGES)
+
+        self.assertEqual(result.error_code, "bad_request")
+        self.assertEqual(result.error_message, "请求参数有误，请检查模型 ID 与请求内容。")
+        self.assertIsNone(result.provider_error_message)
+        self.assertEqual(result.provider_error_body_excerpt, "bad request from gateway")
+
+    def test_provider_error_message_redacts_api_key_like_values(self):
+        provider = SiliconFlowProvider(api_key="sk-secret")
+        fake = _HttpResponse(
+            400,
+            {},
+            json.dumps({"error": {"message": "Authorization Bearer sk-secret cannot use this model"}}),
+        )
+        with mock.patch.object(SiliconFlowProvider, "_send", return_value=fake):
+            result = provider.generate_response("m", _MESSAGES)
+
+        self.assertNotIn("sk-secret", result.error_message or "")
+        self.assertNotIn("sk-secret", result.provider_error_message or "")
+        self.assertNotIn("sk-secret", result.provider_error_body_excerpt or "")
+
 
 class RegistryTests(unittest.TestCase):
     def setUp(self):

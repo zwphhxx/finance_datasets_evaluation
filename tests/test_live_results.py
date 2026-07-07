@@ -19,6 +19,8 @@ from unittest import mock
 from app.models.base import (
     ERROR_EMPTY_RESPONSE,
     GenerationResult,
+    ModelInfo,
+    ModelListResult,
     ModelProvider,
     STATUS_FAILED,
     STATUS_SUCCESS,
@@ -126,6 +128,24 @@ class _SequenceProvider(ModelProvider):
         self.message_calls.append("\n".join(str(message.get("content") or "") for message in messages))
         self.request_timeout_calls.append(kwargs.get("request_timeout_seconds"))
         return self._results.pop(0)
+
+
+class _ListedSequenceProvider(_SequenceProvider):
+    def __init__(self, model_ids: list[str], *results: GenerationResult, timeout_seconds: float | None = None):
+        super().__init__(*results, timeout_seconds=timeout_seconds)
+        self._model_ids = list(model_ids)
+        self.list_calls = 0
+
+    def list_models(self, model_type="text", sub_type="chat"):
+        self.list_calls += 1
+        return ModelListResult(
+            self.name,
+            STATUS_SUCCESS,
+            models=tuple(
+                ModelInfo(id=model_id, provider=self.name, object="model", owned_by="")
+                for model_id in self._model_ids
+            ),
+        )
 
 
 class RunnerEmptyGuardTests(unittest.TestCase):
@@ -302,6 +322,83 @@ class RunnerEmptyGuardTests(unittest.TestCase):
         self.assertFalse(outcome.success)
         self.assertEqual(outcome.error_code, "timeout")
         self.assertEqual(outcome.retry_count, 1)
+
+    def test_model_not_available_does_not_call_generate_response(self):
+        provider = _ListedSequenceProvider(
+            ["vendor/available"],
+            GenerationResult("sequence", "vendor/missing", STATUS_SUCCESS, response_text="should not run"),
+        )
+
+        outcome = er.run_single(provider, "vendor/missing", {"case_id": "CM-001"}, max_tokens=4096)
+
+        self.assertFalse(outcome.success)
+        self.assertEqual(outcome.error_code, "model_not_available")
+        self.assertEqual(outcome.error_message, "当前模型不在可用模型列表中，请重新选择模型。")
+        self.assertEqual(provider.max_token_calls, [])
+        self.assertEqual(provider.list_calls, 1)
+
+    def test_token_limit_bad_request_retries_with_compact_prompt_and_lower_max_tokens(self):
+        provider = _ListedSequenceProvider(
+            ["vendor/qwen"],
+            GenerationResult(
+                "sequence",
+                "vendor/qwen",
+                STATUS_FAILED,
+                error_code="bad_request",
+                error_message="请求参数有误：maximum context length exceeded",
+                provider_error_code="context_length_exceeded",
+                provider_error_message="maximum context length exceeded; reduce max_tokens",
+            ),
+            GenerationResult(
+                "sequence",
+                "vendor/qwen",
+                STATUS_SUCCESS,
+                response_text="初步结论：基于已提供数据，存在较高风险。",
+                finish_reason="stop",
+            ),
+        )
+
+        outcome = er.run_single(provider, "vendor/qwen", {"case_id": "CM-001"}, max_tokens=4096)
+
+        self.assertTrue(outcome.success)
+        self.assertEqual(provider.max_token_calls, [4096, 2048])
+        self.assertNotIn("压缩重试", provider.message_calls[0])
+        self.assertIn("压缩重试", provider.message_calls[1])
+        self.assertIn("全文不超过700字", provider.message_calls[1])
+        self.assertEqual(outcome.retry_count, 1)
+
+    def test_token_limit_bad_request_still_failed_after_retry_keeps_provider_error(self):
+        provider = _ListedSequenceProvider(
+            ["vendor/qwen"],
+            GenerationResult(
+                "sequence",
+                "vendor/qwen",
+                STATUS_FAILED,
+                error_code="bad_request",
+                error_message="请求参数有误：max_tokens is too large",
+                provider_error_code="bad_request",
+                provider_error_message="max_tokens is too large",
+            ),
+            GenerationResult(
+                "sequence",
+                "vendor/qwen",
+                STATUS_FAILED,
+                error_code="bad_request",
+                error_message="请求参数有误：max_tokens is too large",
+                provider_error_code="bad_request",
+                provider_error_message="max_tokens is too large",
+                provider_error_body_excerpt='{"error":{"message":"max_tokens is too large"}}',
+            ),
+        )
+
+        outcome = er.run_single(provider, "vendor/qwen", {"case_id": "CM-001"}, max_tokens=4096)
+
+        self.assertFalse(outcome.success)
+        self.assertEqual(outcome.error_code, "bad_request")
+        self.assertEqual(provider.max_token_calls, [4096, 2048])
+        self.assertEqual(outcome.retry_count, 1)
+        self.assertEqual(outcome.provider_error_message, "max_tokens is too large")
+        self.assertIn("max_tokens", outcome.provider_error_body_excerpt)
 
 
 class _CodeProvider(ModelProvider):

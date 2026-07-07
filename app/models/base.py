@@ -76,6 +76,9 @@ class GenerationResult:
     trace_id: str | None = None
     error_code: str | None = None
     error_message: str | None = None
+    provider_error_code: str | None = None
+    provider_error_message: str | None = None
+    provider_error_body_excerpt: str | None = None
     finish_reason: str | None = None
     incomplete_reason: str | None = None
     timeout_seconds: float | None = None

@@ -23,6 +23,7 @@ from src.ui.test_run import (
     build_score_queue_items,
     build_score_draft_detail_panel,
     build_score_result_index_rows,
+    build_technical_detail_rows,
     build_sample_options,
     build_sample_selection_rows,
     build_score_view_options,
@@ -113,6 +114,25 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertEqual("回答超过输出长度限制。", _failure_reason_text(outcome))
         self.assertEqual("系统可使用压缩提示词重试；不完整回答不会进入评分草稿。", _failure_guidance(outcome))
         self.assertNotIn("超时", _failure_reason_text(outcome))
+
+    def test_bad_request_guidance_points_to_provider_details(self):
+        outcome = er.RunOutcome(
+            "CM-001",
+            "",
+            "siliconflow",
+            "Pro/deepseek-ai/DeepSeek-V4-Flash",
+            "failed",
+            False,
+            error_code="bad_request",
+            error_message="请求参数有误：model not available",
+            provider_error_message="model not available",
+        )
+
+        self.assertEqual("模型 ID 或请求参数异常。", _failure_reason_text(outcome))
+        self.assertEqual(
+            "请查看技术明细中的供应商错误信息，判断是模型不可用、权限不足、上下文过长或参数超限。",
+            _failure_guidance(outcome),
+        )
 
     def test_selection_controls_are_dialog_driven(self):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
@@ -277,16 +297,63 @@ class TestRunFlowStructureTests(unittest.TestCase):
             "retry_count",
             "timeout_seconds",
             "timeout_source",
+            "provider_error_code",
+            "provider_error_message",
+            "provider_error_body_excerpt",
+            "max_tokens",
+            "temperature",
             "输出tokens",
             "trace_id",
         ):
-            self.assertIn(column, source[source.index("def _render_results_table"):])
+            self.assertIn(column, source[source.index("def build_technical_detail_rows"):])
         self.assertNotIn("render_aux_action_bar", results_source)
         self.assertNotIn("test_run_technical_details", results_source)
         self.assertNotIn("for index, outcome in enumerate(result.outcomes", results_source)
         self.assertNotIn("_render_run_outcome_card(outcome, index)", results_source)
         self.assertNotIn("st.markdown(normalize_answer_markdown(_answer_preview(answer)))", source)
         self.assertNotIn("st.markdown(normalize_answer_markdown(outcome.answer_text or \"—\"))", source)
+
+    def test_technical_detail_rows_include_provider_error_and_request_parameters(self):
+        result = er.CompareRunResult(
+            run_id="RUN-1",
+            provider="siliconflow",
+            model_ids=("m",),
+            mode="live",
+            created_at="2026-07-07T00:00:00",
+            outcomes=(
+                er.RunOutcome(
+                    "CM-001",
+                    "",
+                    "siliconflow",
+                    "m",
+                    "failed",
+                    False,
+                    http_status=400,
+                    trace_id="trace-1",
+                    error_code="bad_request",
+                    error_message="请求参数有误：max_tokens is too large",
+                    provider_error_code="invalid_request",
+                    provider_error_message="max_tokens is too large",
+                    provider_error_body_excerpt='{"error":{"message":"max_tokens is too large"}}',
+                    max_tokens=4096,
+                    temperature=0.1,
+                    timeout_seconds=180,
+                ),
+            ),
+        )
+
+        rows = build_technical_detail_rows(result)
+
+        self.assertEqual(rows[0]["HTTP状态"], "400")
+        self.assertEqual(rows[0]["错误码"], "bad_request")
+        self.assertEqual(rows[0]["provider_error_code"], "invalid_request")
+        self.assertEqual(rows[0]["provider_error_message"], "max_tokens is too large")
+        self.assertIn("max_tokens", rows[0]["provider_error_body_excerpt"])
+        self.assertEqual(rows[0]["模型"], "m")
+        self.assertEqual(rows[0]["max_tokens"], "4096")
+        self.assertEqual(rows[0]["temperature"], "0.1")
+        self.assertEqual(rows[0]["timeout_seconds"], "180")
+        self.assertEqual(rows[0]["trace_id"], "trace-1")
 
     def test_score_draft_streams_and_shows_rationale_by_default(self):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
@@ -850,6 +917,30 @@ class ScoreDraftTests(unittest.TestCase):
                     error_code="timeout",
                     error_message="请求超时，请稍后重试或调大 SILICONFLOW_TIMEOUT_SECONDS。",
                     retry_count=1,
+                ),
+            ),
+        )
+
+        self.assertEqual([], build_score_queue_items(compare))
+        self.assertEqual(0, build_score_plan_summary(compare)["scoreable"])
+
+    def test_bad_request_response_does_not_enter_score_queue(self):
+        compare = er.CompareRunResult(
+            run_id="R1",
+            provider="siliconflow",
+            model_ids=("m1",),
+            mode="live",
+            created_at="2026-07-05T12:00:00",
+            outcomes=(
+                er.RunOutcome(
+                    "CM-001",
+                    "analysis",
+                    "siliconflow",
+                    "m1",
+                    "failed",
+                    False,
+                    error_code="bad_request",
+                    error_message="请求参数有误：max_tokens is too large",
                 ),
             ),
         )

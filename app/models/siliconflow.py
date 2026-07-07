@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -87,6 +88,15 @@ class _HttpResponse:
     headers: Mapping[str, str]
     text: str
     error: str | None = None
+
+
+@dataclass(frozen=True)
+class _HttpErrorDetails:
+    error_code: str
+    error_message: str
+    provider_error_code: str | None = None
+    provider_error_message: str | None = None
+    provider_error_body_excerpt: str | None = None
 
 
 def _project_root() -> Path:
@@ -269,11 +279,14 @@ class SiliconFlowProvider(ModelProvider):
 
         trace_id = response.headers.get(_TRACE_HEADER) or response.headers.get(_TRACE_HEADER.title())
         if response.status != 200:
-            code, message = self._describe_http_error(response.status, response.text)
+            details = self._describe_http_error_details(response.status, response.text)
             return GenerationResult(
                 self.name, model_id, STATUS_FAILED, latency_ms=latency_ms,
                 http_status=response.status, trace_id=trace_id,
-                error_code=code, error_message=message,
+                error_code=details.error_code, error_message=details.error_message,
+                provider_error_code=details.provider_error_code,
+                provider_error_message=details.provider_error_message,
+                provider_error_body_excerpt=details.provider_error_body_excerpt,
                 **timeout_meta,
             )
 
@@ -377,10 +390,27 @@ class SiliconFlowProvider(ModelProvider):
         )
 
     @staticmethod
-    def _describe_http_error(status: int | None, _body: str) -> tuple[str, str]:
+    def _describe_http_error(status: int | None, body: str) -> tuple[str, str]:
+        details = SiliconFlowProvider._describe_http_error_details(status, body)
+        return details.error_code, details.error_message
+
+    @staticmethod
+    def _describe_http_error_details(status: int | None, body: str) -> _HttpErrorDetails:
         if status in _HTTP_ERROR_MESSAGES:
-            return _HTTP_ERROR_MESSAGES[status]
-        return ("http_error", f"请求失败（HTTP {status}）。")
+            code, message = _HTTP_ERROR_MESSAGES[status]
+        else:
+            code, message = ("http_error", f"请求失败（HTTP {status}）。")
+        provider_code, provider_message = _extract_provider_error(body)
+        body_excerpt = _body_excerpt(body)
+        if status == 400 and provider_message:
+            message = f"请求参数有误：{provider_message}"
+        return _HttpErrorDetails(
+            error_code=code,
+            error_message=message,
+            provider_error_code=provider_code,
+            provider_error_message=provider_message,
+            provider_error_body_excerpt=body_excerpt,
+        )
 
     @staticmethod
     def _describe_transport_error(error: str) -> tuple[str, str]:
@@ -452,6 +482,72 @@ def _as_positive_float(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return number if number > 0 else None
+
+
+def _extract_provider_error(body: str) -> tuple[str | None, str | None]:
+    """Extract provider error code/message from a JSON error body without leaking secrets."""
+    if not str(body or "").strip():
+        return None, None
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError:
+        return None, None
+    if not isinstance(parsed, Mapping):
+        return None, None
+
+    error_obj = parsed.get("error")
+    code: Any = None
+    message: Any = None
+    if isinstance(error_obj, Mapping):
+        code = error_obj.get("code")
+        message = error_obj.get("message")
+    elif isinstance(error_obj, str):
+        message = error_obj
+
+    if message is None:
+        message = parsed.get("message")
+    if code is None:
+        code = parsed.get("code")
+    if message is None:
+        message = parsed.get("detail")
+
+    clean_code = _safe_provider_text(code, limit=120) if code is not None else None
+    clean_message = _safe_provider_text(message, limit=300) if message is not None else None
+    return clean_code, clean_message
+
+
+def _body_excerpt(body: str, limit: int = 500) -> str | None:
+    text = str(body or "").strip()
+    if not text:
+        return None
+    return _safe_provider_text(text, limit=limit)
+
+
+def _safe_provider_text(value: Any, *, limit: int) -> str:
+    if isinstance(value, (dict, list, tuple)):
+        text = json.dumps(value, ensure_ascii=False)
+    else:
+        text = str(value)
+    text = _redact_sensitive_text(text).strip()
+    if len(text) > limit:
+        return text[:limit].rstrip() + "…"
+    return text
+
+
+def _redact_sensitive_text(text: str) -> str:
+    redacted = re.sub(r"Bearer\s+[A-Za-z0-9._~+/=-]+", "Bearer [REDACTED]", str(text or ""), flags=re.I)
+    redacted = re.sub(r"sk-[A-Za-z0-9._~+/=-]+", "[REDACTED]", redacted)
+    redacted = re.sub(
+        r"(?i)(authorization\s*[:=]\s*)([^,;\\n\\r]+)",
+        r"\1[REDACTED]",
+        redacted,
+    )
+    redacted = re.sub(
+        r"(?i)(api[_-]?key\s*[:=]\s*)([^,;\\n\\r]+)",
+        r"\1[REDACTED]",
+        redacted,
+    )
+    return redacted
 
 
 def _incomplete_reason_for_finish(finish_reason: str | None) -> str | None:

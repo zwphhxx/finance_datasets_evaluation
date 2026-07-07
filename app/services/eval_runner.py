@@ -78,6 +78,9 @@ class RunOutcome:
     trace_id: str | None = None
     error_code: str | None = None
     error_message: str | None = None
+    provider_error_code: str | None = None
+    provider_error_message: str | None = None
+    provider_error_body_excerpt: str | None = None
     finish_reason: str | None = None
     incomplete_reason: str | None = None
     retry_count: int = 0
@@ -85,6 +88,8 @@ class RunOutcome:
     final_finish_reason: str | None = None
     timeout_seconds: float | None = None
     timeout_source: str | None = None
+    max_tokens: int | None = None
+    temperature: float | None = None
 
 
 @dataclass(frozen=True)
@@ -194,26 +199,32 @@ def run_single(
     # retry_max_tokens 保留为兼容旧调用；length 截断改为压缩提示词重试，
     # 避免单纯扩大输出预算导致模型继续输出长文。
     _ = retry_max_tokens
+    unavailable = _model_not_available_outcome(provider, model_id, task, temperature, max_tokens)
+    if unavailable is not None:
+        return unavailable
     messages = build_messages(task)
     result = provider.generate_response(
         model_id, messages, temperature=temperature, max_tokens=max_tokens, **kwargs
     )
     retry_count = 0
     first_finish_reason = result.finish_reason
+    final_max_tokens = _as_int(max_tokens) or max_tokens
 
     retry_timeout = _retry_timeout_seconds_for_result(result, provider)
     retry_compact = _is_length_limited_result(result)
-    if retry_timeout is not None or retry_compact:
+    retry_bad_request = _is_token_limit_bad_request(result)
+    if retry_timeout is not None or retry_compact or retry_bad_request:
         retry_count = 1
         retry_kwargs = dict(kwargs)
         if retry_timeout is not None:
             retry_kwargs["request_timeout_seconds"] = retry_timeout
-        retry_messages = build_messages(task, compact=True) if retry_compact else messages
+        retry_messages = build_messages(task, compact=True) if (retry_compact or retry_bad_request) else messages
+        final_max_tokens = _lower_retry_max_tokens(max_tokens) if retry_bad_request else max_tokens
         result = provider.generate_response(
             model_id,
             retry_messages,
             temperature=temperature,
-            max_tokens=max_tokens,
+            max_tokens=final_max_tokens,
             **retry_kwargs,
         )
     return _run_outcome_from_generation_result(
@@ -222,6 +233,8 @@ def run_single(
         task=task,
         retry_count=retry_count,
         first_finish_reason=first_finish_reason,
+        temperature=temperature,
+        max_tokens=final_max_tokens,
     )
 
 
@@ -232,6 +245,8 @@ def _run_outcome_from_generation_result(
     task: Mapping[str, Any],
     retry_count: int = 0,
     first_finish_reason: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
 ) -> RunOutcome:
     answer = result.response_text or ""
 
@@ -264,6 +279,9 @@ def _run_outcome_from_generation_result(
         trace_id=result.trace_id,
         error_code=error_code,
         error_message=error_message,
+        provider_error_code=result.provider_error_code,
+        provider_error_message=result.provider_error_message,
+        provider_error_body_excerpt=result.provider_error_body_excerpt,
         finish_reason=result.finish_reason,
         incomplete_reason=result.incomplete_reason,
         retry_count=retry_count,
@@ -271,6 +289,8 @@ def _run_outcome_from_generation_result(
         final_finish_reason=result.finish_reason,
         timeout_seconds=result.timeout_seconds,
         timeout_source=result.timeout_source,
+        max_tokens=_as_int(max_tokens),
+        temperature=temperature,
     )
 
 
@@ -287,6 +307,37 @@ def _is_timeout_result(result: GenerationResult) -> bool:
     return str(result.error_code or "").strip().lower() == "timeout"
 
 
+def _is_token_limit_bad_request(result: GenerationResult) -> bool:
+    if str(result.error_code or "").strip().lower() != "bad_request":
+        return False
+    text = " ".join(
+        str(value or "")
+        for value in (
+            result.provider_error_message,
+            result.provider_error_code,
+            result.provider_error_body_excerpt,
+            result.error_message,
+        )
+    ).lower()
+    markers = (
+        "max_tokens",
+        "context length",
+        "maximum context",
+        "context_length",
+        "token limit",
+        "input too long",
+        "output length",
+    )
+    return any(marker in text for marker in markers)
+
+
+def _lower_retry_max_tokens(max_tokens: int | None) -> int:
+    current = _as_int(max_tokens)
+    if current is None or current <= 0:
+        return 2048
+    return min(current, 2048)
+
+
 def _retry_timeout_seconds_for_result(result: GenerationResult, provider: ModelProvider) -> float | None:
     if not _is_timeout_result(result):
         return None
@@ -296,6 +347,54 @@ def _retry_timeout_seconds_for_result(result: GenerationResult, provider: ModelP
     if current is None:
         return None
     return min(current * 2, 300.0)
+
+
+def _model_not_available_outcome(
+    provider: ModelProvider,
+    model_id: str,
+    task: Mapping[str, Any],
+    temperature: float | None,
+    max_tokens: int | None,
+) -> RunOutcome | None:
+    available = _available_model_ids(provider)
+    if available is None or str(model_id) in available:
+        return None
+    return RunOutcome(
+        case_id=str(task.get("case_id", "")),
+        task_type=str(task.get("task_type", "")),
+        provider=str(getattr(provider, "name", "")),
+        model_id=str(model_id),
+        run_status=STATUS_FAILED,
+        success=False,
+        error_code="model_not_available",
+        error_message="当前模型不在可用模型列表中，请重新选择模型。",
+        max_tokens=_as_int(max_tokens),
+        temperature=temperature,
+    )
+
+
+def _available_model_ids(provider: ModelProvider) -> set[str] | None:
+    cached = getattr(provider, "_findueval_available_model_ids_cache", None)
+    if isinstance(cached, set):
+        return cached
+    try:
+        result = provider.list_models()
+    except Exception:
+        return None
+    if not getattr(result, "ok", False):
+        return None
+    ids = {
+        str(getattr(model, "id", "") or "").strip()
+        for model in getattr(result, "models", ()) or ()
+        if str(getattr(model, "id", "") or "").strip()
+    }
+    if not ids:
+        return None
+    try:
+        setattr(provider, "_findueval_available_model_ids_cache", ids)
+    except Exception:
+        pass
+    return ids
 
 
 def run_evaluation(

@@ -1918,13 +1918,20 @@ def _render_technical_details_dialog(result) -> None:
     _render_results_table(result)
 
 
-def _render_results_table(result) -> None:
-    rows = [
+def build_technical_detail_rows(result) -> list[dict[str, str]]:
+    return [
         {
             "模型": outcome.model_id,
             "任务编号": outcome.case_id,
             "状态": _outcome_display_status(outcome),
+            "max_tokens": _n(getattr(outcome, "max_tokens", None)),
+            "temperature": _n(getattr(outcome, "temperature", None)),
             "HTTP状态": _n(outcome.http_status),
+            "错误码": _dash(outcome.error_code),
+            "错误信息": _short(outcome.error_message),
+            "provider_error_code": _dash(getattr(outcome, "provider_error_code", None)),
+            "provider_error_message": _short(getattr(outcome, "provider_error_message", None), 160),
+            "provider_error_body_excerpt": _short(getattr(outcome, "provider_error_body_excerpt", None), 220),
             "finish_reason": _dash(getattr(outcome, "finish_reason", None)),
             "incomplete_reason": _dash(getattr(outcome, "incomplete_reason", None)),
             "retry_count": _n(getattr(outcome, "retry_count", 0)),
@@ -1932,15 +1939,19 @@ def _render_results_table(result) -> None:
             "timeout_source": _dash(getattr(outcome, "timeout_source", None)),
             "first_finish_reason": _dash(getattr(outcome, "first_finish_reason", None)),
             "final_finish_reason": _dash(getattr(outcome, "final_finish_reason", None)),
-            "错误码": _dash(outcome.error_code),
-            "错误信息": _short(outcome.error_message),
             "trace_id": _dash(outcome.trace_id),
             "耗时(ms)": _n(outcome.latency_ms),
+            "输入tokens": _n(outcome.input_tokens),
             "输出tokens": _n(outcome.output_tokens),
+            "总tokens": _n(outcome.total_tokens),
             "回答长度": str(outcome.answer_length),
         }
         for outcome in result.outcomes
     ]
+
+
+def _render_results_table(result) -> None:
+    rows = build_technical_detail_rows(result)
     st.dataframe(
         pd.DataFrame(rows),
         hide_index=True,
@@ -2488,6 +2499,8 @@ def _outcome_display_status(outcome: er.RunOutcome) -> str:
         return "触发限流"
     if code in {"missing_api_key", "unauthorized", "forbidden"}:
         return "权限异常"
+    if code == "model_not_available":
+        return "模型不可用"
     if code == "empty_response":
         return "空回答"
     if status == "running":
@@ -2515,6 +2528,8 @@ def _failure_reason_text(outcome) -> str:
         return "模型返回成功但回答为空。"
     if code in {"bad_request", "not_found"}:
         return "模型 ID 或请求参数异常。"
+    if code == "model_not_available":
+        return getattr(outcome, "error_message", None) or "当前模型不在可用模型列表中。"
     return getattr(outcome, "error_message", None) or "未获得有效回答。"
 
 
@@ -2629,8 +2644,12 @@ def _failure_guidance(outcome) -> str:
         if str(getattr(outcome, "finish_reason", "") or "").strip().lower() == "length":
             return "系统可使用压缩提示词重试；不完整回答不会进入评分草稿。"
         return "模型回答未完整结束，不会进入评分草稿；可重试失败项或更换模型。"
-    if code in {"bad_request", "not_found"}:
+    if code == "bad_request":
+        return "请查看技术明细中的供应商错误信息，判断是模型不可用、权限不足、上下文过长或参数超限。"
+    if code == "not_found":
         return "请检查模型 ID 或请求参数。"
+    if code == "model_not_available":
+        return "请重新选择模型后再运行。"
     if code == "runtime_error":
         return "已停止后续任务，已完成回答仍保留。"
     return ""
