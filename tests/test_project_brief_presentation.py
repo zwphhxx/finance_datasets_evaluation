@@ -19,9 +19,10 @@ class CaseStudyPresentationTests(unittest.TestCase):
             self.assertIn(section, source)
         self.assertNotIn("04\", \"进入操作", source)
 
-    def test_case_study_intro_is_only_the_brief_note(self):
+    def test_case_study_intro_restores_title_without_subtitle_or_stats(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         self.assertIn("render_brief_intro(", source)
+        self.assertIn("PROJECT_DISPLAY_NAME", source)
         self.assertNotIn("subtitle=", source)
         self.assertNotIn("stats=", source)
         self.assertNotIn("_build_home_stats", source)
@@ -67,6 +68,8 @@ class CaseStudyPresentationTests(unittest.TestCase):
         css = Path("src/ui/components.py").read_text(encoding="utf-8")
         for snippet in [
             "letter-spacing: 0;",
+            ".brief-title",
+            "font-size: 2.35rem;",
             "border-left: 2px solid var(--fde-accent);",
             ".home-section-first",
             "border-top: 0;",
@@ -82,11 +85,10 @@ class CaseStudyPresentationTests(unittest.TestCase):
             "font-size: 1.28rem;",
         ]:
             self.assertIn(snippet, css)
-        self.assertNotIn(".brief-title", css)
         self.assertNotIn(".brief-subtitle", css)
         self.assertNotIn(".brief-meta", css)
 
-    def test_brief_intro_outputs_note_without_title_subtitle_or_stats(self):
+    def test_brief_intro_outputs_title_and_note_without_subtitle_or_stats(self):
         import src.ui.components as components
 
         captured = []
@@ -94,6 +96,7 @@ class CaseStudyPresentationTests(unittest.TestCase):
         try:
             components.render_html = lambda html, container=None: captured.append(str(html))
             components.render_brief_intro(
+                title=components.PROJECT_DISPLAY_NAME,
                 note=(
                     "本项目评估大模型在财务、法律、投行等专业场景中的回答质量，"
                     "并在当前样本范围内判断模型表现、主要问题和使用边界。"
@@ -104,8 +107,9 @@ class CaseStudyPresentationTests(unittest.TestCase):
 
         html = "".join(captured)
         self.assertIn("brief-intro", html)
+        self.assertIn("<h1", html)
+        self.assertIn(components.PROJECT_DISPLAY_NAME, html)
         self.assertIn("brief-note", html)
-        self.assertNotIn("<h1", html)
         self.assertNotIn("brief-subtitle", html)
         self.assertNotIn("brief-meta", html)
 

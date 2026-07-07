@@ -194,6 +194,15 @@ header,
     margin: 0.35rem 0 1.45rem 0;
     padding-bottom: 0;
 }
+.brief-title {
+    color: var(--fde-ink);
+    font-size: 2.35rem;
+    font-weight: 820;
+    line-height: 1.12;
+    letter-spacing: 0;
+    margin: 0;
+    max-width: 58rem;
+}
 .process-line {
     display: flex;
     align-items: center;
@@ -783,6 +792,9 @@ div[data-testid="stDialog"] {
         gap: 0.35rem;
         align-items: start;
     }
+    .brief-title {
+        font-size: 1.78rem;
+    }
     .process-line-separator {
         width: 1.2rem;
     }
@@ -866,10 +878,11 @@ def render_compact_hero(
     )
 
 
-def render_brief_intro(note: str) -> None:
+def render_brief_intro(title: str, note: str) -> None:
     render_html(
         f"""
         <div class="brief-intro">
+            <h1 class="brief-title">{escape(str(title))}</h1>
             <p class="brief-note">{escape(str(note))}</p>
         </div>
         """

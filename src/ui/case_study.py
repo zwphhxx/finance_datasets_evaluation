@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from src.ui.components import (
+    PROJECT_DISPLAY_NAME,
     render_brief_intro,
     render_home_section,
     render_process_line,
@@ -46,6 +47,7 @@ def render_case_study_page(data_bundle: dict) -> None:
     base = data_bundle.get("base") or data
 
     render_brief_intro(
+        title=PROJECT_DISPLAY_NAME,
         note=(
             "本项目评估大模型在财务、法律、投行等专业场景中的回答质量，"
             "并在当前样本范围内判断模型表现、主要问题和使用边界。"
