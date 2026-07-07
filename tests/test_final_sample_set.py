@@ -7,9 +7,11 @@ as seed rows.
 
 import shutil
 import unittest
+import re
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from app.services import eval_runner as er
 from scripts.validate_dataset import validate_dataset
 from src import gold_quality as gq
 from src.data_service import active_case_ids, load_all_data
@@ -18,6 +20,21 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = PROJECT_ROOT / "data"
 
 ALLOWED_DOMAINS = {"Capital Markets", "Financial", "Legal"}
+EXPECTED_CASE_IDS = [
+    "FD-001",
+    "FD-002",
+    "FD-003",
+    "FD-004",
+    "FD-005",
+    "LD-001",
+    "LD-002",
+    "LD-003",
+    "LD-004",
+    "CM-001",
+    "CM-002",
+    "CM-003",
+    "CM-004",
+]
 
 
 class ActiveScopeTests(unittest.TestCase):
@@ -30,6 +47,9 @@ class ActiveScopeTests(unittest.TestCase):
     def test_only_allowed_domains_remain_active(self):
         domains = set(self.data.tasks["domain"].astype(str))
         self.assertEqual(ALLOWED_DOMAINS, domains)
+
+    def test_case_id_set_remains_final_13_records(self):
+        self.assertEqual(EXPECTED_CASE_IDS, self.data.tasks["case_id"].astype(str).tolist())
 
     def test_inactive_cases_excluded_from_all_frames(self):
         active = set(self.data.tasks["case_id"].astype(str))
@@ -55,6 +75,35 @@ class ActiveSampleQualityTests(unittest.TestCase):
             gold = self.data.gold_answer_map.get(case_id)
             self.assertIsNotNone(gold, case_id)
             self.assertTrue(gq.evaluate_gold_quality(gold)["is_usable"], case_id)
+
+    def test_every_context_contains_numeric_simulated_data(self):
+        for _, task in self.data.tasks.iterrows():
+            context = str(task.get("context") or "")
+            self.assertRegex(context, r"\d", task.get("case_id"))
+
+    def test_standard_conclusions_are_data_based_not_insufficient_materials(self):
+        for case_id, gold in self.data.gold_answer_map.items():
+            conclusion = str(gold.get("core_conclusion") or "").strip()
+            self.assertTrue(conclusion.startswith("基于已提供模拟数据"), case_id)
+            self.assertNotRegex(conclusion[:80], r"资料不足|无法判断", case_id)
+
+    def test_model_prompt_uses_context_but_not_standard_answer_fields(self):
+        task = self.data.tasks[self.data.tasks["case_id"] == "FD-001"].iloc[0].to_dict()
+        gold = self.data.gold_answer_map["FD-001"]
+        combined = {**task, **gold}
+
+        messages = er.build_messages(combined)
+        prompt = "\n".join(item["content"] for item in messages)
+
+        self.assertIn("2025", prompt)
+        self.assertIn("应收账款", prompt)
+        for leak in [
+            str(gold["core_conclusion"])[:40],
+            str(gold["key_evidence"])[:40],
+            "必须计算并指出收入增长 50.0%",
+            "忽略已给出的应收账款增速",
+        ]:
+            self.assertNotIn(leak, prompt)
 
     def test_final_seed_has_no_legacy_scores_or_error_rows(self):
         self.assertEqual(0, len(self.data.scores))

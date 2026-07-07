@@ -10,7 +10,7 @@ assets:
   gold_answers:
     file: gold_answers.json
     primary_key: case_id
-    description: 任务参考答案，定义核心结论、关键依据与答案边界。
+    description: 任务专业标准答案，定义核心结论、关键依据与答案边界。
   model_outputs:
     file: model_outputs.csv
     primary_key: output_id
@@ -63,7 +63,7 @@ rubric:
   - field: accuracy_score
     name: 专业准确性
     weight: 30
-    full_mark_standard: 结论与 Gold Answer 的核心判断一致，关键财务、法律或监管要点无事实性错误， 对题目给出的数据和事实使用准确，并能识别影响结论的必要前提。
+    full_mark_standard: 结论与专业标准答案的核心判断一致，关键财务、法律或监管要点无事实性错误， 对题目给出的数据和事实使用准确，并能识别影响结论的必要前提。
     deduction_rules: 结论方向错误、引用事实错误或忽略关键前提时扣重分；关键计算、法规适用或主体关系 存在局部错误时按影响程度扣分；只给结论但缺少必要事实支撑时扣分。
   - field: reasoning_score
     name: 推理与场景适配
@@ -73,7 +73,7 @@ rubric:
   - field: coverage_score
     name: 风险覆盖
     weight: 20
-    full_mark_standard: 覆盖 Gold Answer 中的必须关注点，能识别主要风险、核查事项和不可接受错误边界， 对高风险事项给出清楚提示。
+    full_mark_standard: 覆盖专业标准答案中的必须关注点，能识别主要风险、核查事项和不可接受错误边界， 对高风险事项给出清楚提示。
     deduction_rules: 漏掉必须覆盖点、未识别重大风险或未提示红线错误时扣重分；风险事项覆盖不全、 核查建议过泛或遗漏次要风险时按影响程度扣分。
   - field: evidence_score
     name: 依据可靠性
