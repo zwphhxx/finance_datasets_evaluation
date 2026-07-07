@@ -559,6 +559,20 @@ class SampleSelectionTests(unittest.TestCase):
         self.assertIn('st.session_state["test_run_selected_cases"] = selected_cases', dialog_source)
         self.assertNotIn('st.session_state["test_run_selected_cases"]', cancel_source)
 
+    def test_sample_checkbox_table_keeps_fixed_scrollable_table_shape(self):
+        source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+        table_source = source[
+            source.index("def _render_sample_checkbox_table"):
+            source.index("@st.dialog(\"选择模型\"")
+        ]
+
+        self.assertIn("SAMPLE_TABLE_COLUMN_WIDTHS", table_source)
+        self.assertIn("SAMPLE_TABLE_HEADERS", table_source)
+        self.assertIn("st.container(height=SAMPLE_TABLE_HEIGHT, border=True)", table_source)
+        self.assertIn('st.markdown(f"**{header}**")', table_source)
+        self.assertIn("st.checkbox(", table_source)
+        self.assertNotIn("st.data_editor", table_source)
+
 
 class RunPlanTests(unittest.TestCase):
     def test_run_plan_summary_disables_without_samples_or_models(self):

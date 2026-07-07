@@ -58,6 +58,9 @@ _MODE_LABEL = {"mock": "模拟回退", "live": "真实调用", "unconfigured": "
 _REVIEW_STATUS_LABEL = {"pending": "待确认", "confirmed": "已确认", "skipped": "暂不采用"}
 _SILICONFLOW_LABEL = "硅基流动"
 SAMPLE_CHECKBOX_KEY_PREFIX = "test_run_case_checkbox_"
+SAMPLE_TABLE_COLUMN_WIDTHS = [0.58, 1.0, 2.6, 1.15, 0.8, 0.95]
+SAMPLE_TABLE_HEADERS = ["选择", "样本编号", "任务标题", "场景", "难度", "测试状态"]
+SAMPLE_TABLE_HEIGHT = 330
 _EVAL_TEMPERATURE = 0.1
 _EVAL_MAX_TOKENS = 2048
 _MODEL_OPTION_LIMIT = 30
@@ -698,39 +701,55 @@ def _render_sample_checkbox_table(sample_options: list[dict], selected_cases: li
     rows = build_sample_selection_rows(sample_options, selected_cases)
     selected_set = set(selected_cases or [])
     checkbox_values: dict[str, bool] = {}
-    column_widths = [0.58, 1.0, 2.6, 1.15, 0.8, 0.95]
 
-    header_cols = st.columns(column_widths)
-    headers = ["选择", "样本编号", "任务标题", "场景", "难度", "测试状态"]
-    for col, header in zip(header_cols, headers, strict=True):
-        with col:
-            st.markdown(f"**{header}**")
+    with st.container(height=SAMPLE_TABLE_HEIGHT, border=True):
+        header_cols = st.columns(SAMPLE_TABLE_COLUMN_WIDTHS, gap="small")
+        for col, header in zip(header_cols, SAMPLE_TABLE_HEADERS, strict=True):
+            with col:
+                st.markdown(f"**{header}**")
+        st.markdown(
+            "<div style='border-top: 1px solid #E5E7EB; margin: 0.12rem 0 0.2rem 0;'></div>",
+            unsafe_allow_html=True,
+        )
 
-    for row in rows:
-        case_id = str(row["样本编号"])
-        key = sample_checkbox_key(case_id)
-        if key not in st.session_state:
-            st.session_state[key] = case_id in selected_set
+        for index, row in enumerate(rows):
+            case_id = str(row["样本编号"])
+            key = sample_checkbox_key(case_id)
+            if key not in st.session_state:
+                st.session_state[key] = case_id in selected_set
 
-        cols = st.columns(column_widths)
-        with cols[0]:
-            checkbox_values[case_id] = bool(st.checkbox(
-                "选择",
-                key=key,
-                label_visibility="collapsed",
-            ))
-        with cols[1]:
-            st.markdown(escape(case_id))
-        with cols[2]:
-            st.markdown(escape(str(row["任务标题"])))
-        with cols[3]:
-            st.markdown(escape(str(row["场景"])))
-        with cols[4]:
-            st.markdown(escape(str(row["难度"])))
-        with cols[5]:
-            st.markdown(escape(str(row["测试状态"])))
+            cols = st.columns(SAMPLE_TABLE_COLUMN_WIDTHS, gap="small")
+            with cols[0]:
+                checkbox_values[case_id] = bool(st.checkbox(
+                    "选择",
+                    key=key,
+                    label_visibility="collapsed",
+                ))
+            with cols[1]:
+                _render_sample_table_cell(case_id)
+            with cols[2]:
+                _render_sample_table_cell(str(row["任务标题"]))
+            with cols[3]:
+                _render_sample_table_cell(str(row["场景"]))
+            with cols[4]:
+                _render_sample_table_cell(str(row["难度"]))
+            with cols[5]:
+                _render_sample_table_cell(str(row["测试状态"]))
+            if index < len(rows) - 1:
+                st.markdown(
+                    "<div style='border-top: 1px solid #F0F2F5; margin: 0.06rem 0 0.1rem 0;'></div>",
+                    unsafe_allow_html=True,
+                )
 
     return checkbox_values
+
+
+def _render_sample_table_cell(value: str) -> None:
+    st.markdown(
+        "<div style='font-size: 0.9rem; line-height: 1.35; padding: 0.24rem 0; "
+        f"color: #2F3947; overflow-wrap: anywhere;'>{escape(value)}</div>",
+        unsafe_allow_html=True,
+    )
 
 
 @st.dialog("选择模型", width="large")
