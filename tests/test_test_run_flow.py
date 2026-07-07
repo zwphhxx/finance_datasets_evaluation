@@ -28,7 +28,8 @@ from src.ui.test_run import (
     get_advanced_setting_items,
     get_test_run_steps,
     has_confirmable_score_drafts,
-    merge_sample_dialog_selection,
+    merge_sample_checkbox_selection,
+    sample_checkbox_key,
     _model_short_name,
     _siliconflow_balance_text,
 )
@@ -49,8 +50,8 @@ class TestRunFlowStructureTests(unittest.TestCase):
 
         self.assertIn('@st.dialog("选择样本"', source)
         self.assertIn('@st.dialog("选择模型"', source)
-        self.assertIn("st.data_editor", source)
-        self.assertIn('CheckboxColumn("选择"', source)
+        self.assertIn("st.checkbox", source)
+        self.assertIn("test_run_case_checkbox_", source)
         self.assertIn("关键词搜索", source)
         self.assertIn("当前没有符合条件的可测样本", source)
         self.assertIn("模型服务：", source)
@@ -68,7 +69,9 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertNotIn("st.multiselect(", source)
         self.assertNotIn('st.multiselect(\n        "选择样本"', source)
         self.assertNotIn('st.multiselect("选择对比模型"', source)
-        self.assertNotIn("st.checkbox", source)
+        self.assertNotIn("st.data_editor", source)
+        self.assertNotIn("CheckboxColumn", source)
+        self.assertNotIn("test_run_cases_editor", source)
         self.assertNotIn("test_run_model_check_", source)
         self.assertNotIn("模型服务 provider", source)
         self.assertNotIn('st.expander("高级设置"', source)
@@ -494,39 +497,67 @@ class SampleSelectionTests(unittest.TestCase):
         self.assertEqual("可测试", rows[0]["测试状态"])
         self.assertNotIn("不应展示完整题干", str(rows))
 
-    def test_sample_dialog_selection_ignores_unstable_empty_editor_rows(self):
+    def test_sample_checkbox_key_is_stable_per_case(self):
+        self.assertEqual("test_run_case_checkbox_FD-001", sample_checkbox_key("FD-001"))
+
+    def test_sample_checkbox_selection_keeps_hidden_selected_and_updates_visible(self):
         filtered_options = [{"case_id": "A"}, {"case_id": "B"}]
+        checkbox_values = {"A": False, "B": True}
 
-        selected = merge_sample_dialog_selection(
-            ["A", "B"],
-            filtered_options,
-            [],
-            {"A", "B", "C"},
-        )
-
-        self.assertEqual(["A", "B"], selected)
-
-    def test_sample_dialog_selection_merges_visible_changes_and_keeps_hidden(self):
-        filtered_options = [{"case_id": "A"}, {"case_id": "B"}]
-        edited_rows = [
-            {"选择": False, "样本编号": "A"},
-            {"选择": True, "样本编号": "B"},
-        ]
-
-        selected = merge_sample_dialog_selection(
+        selected = merge_sample_checkbox_selection(
             ["A", "C"],
             filtered_options,
-            edited_rows,
+            checkbox_values,
             {"A", "B", "C"},
         )
 
         self.assertEqual(["C", "B"], selected)
 
-    def test_sample_dialog_uses_stable_data_editor_key(self):
-        source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+    def test_sample_checkbox_selection_preserves_hidden_when_filter_changes(self):
+        filtered_options = [{"case_id": "A"}, {"case_id": "B"}]
+        checkbox_values = {"A": True, "B": False}
 
-        self.assertIn('key="test_run_cases_editor"', source)
-        self.assertNotIn('editor_key = "test_run_cases_editor_"', source)
+        selected = merge_sample_checkbox_selection(
+            ["C"],
+            filtered_options,
+            checkbox_values,
+            {"A", "B", "C"},
+        )
+
+        self.assertEqual(["C", "A"], selected)
+
+    def test_sample_dialog_cleans_checkbox_state_without_touching_confirmed_selection(self):
+        source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+        clear_source = source[
+            source.index("def _clear_dialog_state"):
+            source.index("@st.dialog(\"选择样本\"")
+        ]
+
+        self.assertIn("test_run_cases_dialog_selected", clear_source)
+        self.assertIn("SAMPLE_CHECKBOX_KEY_PREFIX", clear_source)
+        self.assertNotIn("test_run_selected_cases", clear_source)
+
+    def test_sample_dialog_opens_from_confirmed_selection_and_clears_checkbox_keys(self):
+        source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+        open_source = source[
+            source.index("def _open_sample_dialog"):
+            source.index("def _open_model_dialog")
+        ]
+
+        self.assertIn('st.session_state.get("test_run_selected_cases"', open_source)
+        self.assertIn('st.session_state["test_run_cases_dialog_selected"] = current', open_source)
+        self.assertIn("_clear_session_state_prefix(SAMPLE_CHECKBOX_KEY_PREFIX)", open_source)
+
+    def test_sample_dialog_confirm_is_only_path_that_writes_confirmed_selection(self):
+        source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+        dialog_source = source[
+            source.index("def _render_sample_selection_dialog"):
+            source.index("def _render_sample_checkbox_table")
+        ]
+        cancel_source = dialog_source[dialog_source.index('key="test_run_sample_dialog_cancel"'):]
+
+        self.assertIn('st.session_state["test_run_selected_cases"] = selected_cases', dialog_source)
+        self.assertNotIn('st.session_state["test_run_selected_cases"]', cancel_source)
 
 
 class RunPlanTests(unittest.TestCase):

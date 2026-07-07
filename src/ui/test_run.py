@@ -57,6 +57,7 @@ _STATUS_BADGE = {
 _MODE_LABEL = {"mock": "模拟回退", "live": "真实调用", "unconfigured": "未配置"}
 _REVIEW_STATUS_LABEL = {"pending": "待确认", "confirmed": "已确认", "skipped": "暂不采用"}
 _SILICONFLOW_LABEL = "硅基流动"
+SAMPLE_CHECKBOX_KEY_PREFIX = "test_run_case_checkbox_"
 _EVAL_TEMPERATURE = 0.1
 _EVAL_MAX_TOKENS = 2048
 _MODEL_OPTION_LIMIT = 30
@@ -146,7 +147,7 @@ def filter_sample_selection_options(
 
 
 def build_sample_selection_rows(sample_options: list[dict], selected_case_ids: list[str]) -> list[dict]:
-    """Build compact rows for selecting testable samples in a data editor."""
+    """Build compact rows for selecting testable samples in the dialog table."""
     selected = set(selected_case_ids or [])
     rows: list[dict] = []
     for item in sample_options:
@@ -162,13 +163,17 @@ def build_sample_selection_rows(sample_options: list[dict], selected_case_ids: l
     return rows
 
 
-def merge_sample_dialog_selection(
+def sample_checkbox_key(case_id: str) -> str:
+    return f"{SAMPLE_CHECKBOX_KEY_PREFIX}{case_id}"
+
+
+def merge_sample_checkbox_selection(
     selected_case_ids: list[str],
     filtered_options: list[dict],
-    edited_rows,
+    checkbox_values: dict[str, bool],
     all_case_ids: set[str],
 ) -> list[str]:
-    """Merge data-editor changes without letting unstable empty returns clear state."""
+    """Merge visible checkbox state while preserving selected hidden samples."""
     current = [
         case_id
         for case_id in _dedupe([str(value) for value in (selected_case_ids or [])])
@@ -178,13 +183,11 @@ def merge_sample_dialog_selection(
     visible_set = {case_id for case_id in visible_ids if case_id}
     if not visible_set:
         return current
-    if not _valid_sample_editor_rows(edited_rows, visible_set):
-        return current
 
     checked_visible = [
-        str(row.get("样本编号") or "")
-        for row in edited_rows
-        if bool(row.get("选择")) and str(row.get("样本编号") or "") in visible_set
+        case_id
+        for case_id in visible_ids
+        if case_id in visible_set and bool(checkbox_values.get(case_id))
     ]
     return _dedupe([
         *[case_id for case_id in current if case_id not in visible_set],
@@ -192,22 +195,9 @@ def merge_sample_dialog_selection(
     ])
 
 
-def _valid_sample_editor_rows(edited_rows, visible_ids: set[str]) -> bool:
-    if not isinstance(edited_rows, list) or not edited_rows:
-        return False
-    if len(edited_rows) != len(visible_ids):
-        return False
-    row_ids: set[str] = set()
-    for row in edited_rows:
-        if not isinstance(row, dict):
-            return False
-        if "选择" not in row or "样本编号" not in row:
-            return False
-        case_id = str(row.get("样本编号") or "")
-        if not case_id:
-            return False
-        row_ids.add(case_id)
-    return row_ids == visible_ids
+def _clear_session_state_prefix(prefix: str) -> None:
+    for key in [key for key in st.session_state if str(key).startswith(prefix)]:
+        st.session_state.pop(key, None)
 
 
 def build_run_plan_summary(model_ids: list[str], selected_tasks: list[dict]) -> dict[str, int | bool]:
@@ -601,11 +591,11 @@ def _open_sample_dialog(sample_options: list[dict]) -> None:
         if case_id in option_ids
     ]
     st.session_state["test_run_dialog"] = "samples"
-    st.session_state["test_run_cases_dialog_selected"] = current or option_ids[:1]
+    st.session_state["test_run_cases_dialog_selected"] = current
     st.session_state.pop("test_run_sample_search", None)
     st.session_state.pop("test_run_sample_scenario", None)
     st.session_state.pop("test_run_sample_difficulty", None)
-    st.session_state.pop("test_run_cases_editor", None)
+    _clear_session_state_prefix(SAMPLE_CHECKBOX_KEY_PREFIX)
 
 
 def _open_model_dialog(provider_name: str) -> None:
@@ -623,7 +613,8 @@ def _render_pending_dialogs(sample_options: list[dict]) -> None:
 
 def _clear_dialog_state() -> None:
     st.session_state.pop("test_run_dialog", None)
-    st.session_state.pop("test_run_cases_editor", None)
+    st.session_state.pop("test_run_cases_dialog_selected", None)
+    _clear_session_state_prefix(SAMPLE_CHECKBOX_KEY_PREFIX)
 
 
 @st.dialog("选择样本", width="large")
@@ -668,34 +659,16 @@ def _render_sample_selection_dialog(sample_options: list[dict]) -> None:
         difficulty = st.selectbox("难度", difficulties, key="test_run_sample_difficulty")
 
     filtered_options = filter_sample_selection_options(sample_options, keyword, scenario, difficulty)
+    checkbox_values: dict[str, bool] = {}
     if not filtered_options:
         st.caption("当前没有符合条件的可测样本。")
-        edited_rows = None
     else:
-        rows = build_sample_selection_rows(filtered_options, selected_cases)
-        edited_df = st.data_editor(
-            pd.DataFrame(rows),
-            hide_index=True,
-            width="stretch",
-            height=min(330, max(140, 44 + len(rows) * 36)),
-            column_order=["选择", "样本编号", "任务标题", "场景", "难度", "测试状态"],
-            column_config={
-                "选择": st.column_config.CheckboxColumn("选择", width="small"),
-                "样本编号": st.column_config.TextColumn("样本编号", width="small"),
-                "任务标题": st.column_config.TextColumn("任务标题", width="large"),
-                "场景": st.column_config.TextColumn("场景", width="medium"),
-                "难度": st.column_config.TextColumn("难度", width="small"),
-                "测试状态": st.column_config.TextColumn("测试状态", width="small"),
-            },
-            disabled=["样本编号", "任务标题", "场景", "难度", "测试状态"],
-            key="test_run_cases_editor",
-        )
-        edited_rows = edited_df.to_dict("records") if hasattr(edited_df, "to_dict") else list(edited_df)
+        checkbox_values = _render_sample_checkbox_table(filtered_options, selected_cases)
 
-    selected_cases = merge_sample_dialog_selection(
+    selected_cases = merge_sample_checkbox_selection(
         selected_cases,
         filtered_options,
-        edited_rows,
+        checkbox_values,
         all_case_ids,
     )
     st.session_state["test_run_cases_dialog_selected"] = selected_cases
@@ -719,6 +692,45 @@ def _render_sample_selection_dialog(sample_options: list[dict]) -> None:
         if st.button("取消", key="test_run_sample_dialog_cancel", type="tertiary", use_container_width=True):
             _clear_dialog_state()
             st.rerun()
+
+
+def _render_sample_checkbox_table(sample_options: list[dict], selected_cases: list[str]) -> dict[str, bool]:
+    rows = build_sample_selection_rows(sample_options, selected_cases)
+    selected_set = set(selected_cases or [])
+    checkbox_values: dict[str, bool] = {}
+    column_widths = [0.58, 1.0, 2.6, 1.15, 0.8, 0.95]
+
+    header_cols = st.columns(column_widths)
+    headers = ["选择", "样本编号", "任务标题", "场景", "难度", "测试状态"]
+    for col, header in zip(header_cols, headers, strict=True):
+        with col:
+            st.markdown(f"**{header}**")
+
+    for row in rows:
+        case_id = str(row["样本编号"])
+        key = sample_checkbox_key(case_id)
+        if key not in st.session_state:
+            st.session_state[key] = case_id in selected_set
+
+        cols = st.columns(column_widths)
+        with cols[0]:
+            checkbox_values[case_id] = bool(st.checkbox(
+                "选择",
+                key=key,
+                label_visibility="collapsed",
+            ))
+        with cols[1]:
+            st.markdown(escape(case_id))
+        with cols[2]:
+            st.markdown(escape(str(row["任务标题"])))
+        with cols[3]:
+            st.markdown(escape(str(row["场景"])))
+        with cols[4]:
+            st.markdown(escape(str(row["难度"])))
+        with cols[5]:
+            st.markdown(escape(str(row["测试状态"])))
+
+    return checkbox_values
 
 
 @st.dialog("选择模型", width="large")
