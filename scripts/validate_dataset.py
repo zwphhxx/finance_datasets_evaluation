@@ -10,11 +10,11 @@
   - 每个任务存在 Gold Answer；
   - 每个 Gold Answer 包含核心结论、关键依据，以及答案边界或红线错误；
   - 每个 Gold Answer 的结构化要素完整度（核心结论 / 关键依据 / 边界条件 / 不可接受错误 / 必须覆盖点）；
-  - Rubric 维度权重完整且与评分字段一致；
+  - 评分标准维度权重完整且与评分字段一致；
   - 模型回答可关联到有效 case_id 与声明的模型范围；
-  - 评分记录可关联到有效 case_id、模型与全部 Rubric 维度；
+  - 评分记录可关联到有效 case_id、模型与全部评分标准维度；
   - 错误标签均来自 label_taxonomy；
-  - 错误标签声明的影响维度落在 Rubric 维度范围内；
+  - 错误标签声明的影响维度落在评分标准维度范围内；
   - 数据补强建议可关联到已出现的错误标签；
   - 领域、任务类型、难度、模型取值落在 manifest 声明范围内（超出则告警）。
 
@@ -82,7 +82,7 @@ class Report:
 
     def render(self) -> str:
         lines: list[str] = []
-        lines.append("FinDueEval 数据集校验结果")
+        lines.append("财务/法律/投行场景大模型对比评测数据集校验结果")
         lines.append("=" * 32)
         lines.append(
             f"通过 {len(self.passed)} 项 · 警告 {len(self.warnings)} 项 · 错误 {len(self.errors)} 项"
@@ -352,25 +352,25 @@ def _check_rubric_weights(manifest: dict[str, Any], scores: pd.DataFrame, report
     rubric = manifest.get("rubric", {})
     dimensions = rubric.get("dimensions", [])
     if not dimensions:
-        report.fail("dataset_manifest.yml 未声明 Rubric 维度。")
+        report.fail("dataset_manifest.yml 未声明评分标准维度。")
         return
 
     total = rubric.get("total")
     weight_sum = sum(int(dim.get("weight", 0)) for dim in dimensions)
     if total is None:
-        report.warn("dataset_manifest.yml 未声明 Rubric 满分 total，已跳过权重合计校验。")
+        report.warn("dataset_manifest.yml 未声明评分标准满分 total，已跳过权重合计校验。")
     elif weight_sum != int(total):
-        report.fail(f"Rubric 维度权重合计为 {weight_sum}，与声明满分 {total} 不一致。")
+        report.fail(f"评分标准维度权重合计为 {weight_sum}，与声明满分 {total} 不一致。")
     else:
-        report.ok(f"Rubric 权重完整：{len(dimensions)} 个维度合计 {weight_sum} 分。")
+        report.ok(f"评分标准权重完整：{len(dimensions)} 个维度合计 {weight_sum} 分。")
 
     missing_columns = [
         dim.get("field") for dim in dimensions if dim.get("field") not in scores.columns
     ]
     if missing_columns:
-        report.fail(f"scores.csv 缺少 Rubric 维度字段：{', '.join(missing_columns)}。")
+        report.fail(f"scores.csv 缺少评分标准维度字段：{', '.join(missing_columns)}。")
     else:
-        report.ok("scores.csv 包含全部 Rubric 维度字段。")
+        report.ok("scores.csv 包含全部评分标准维度字段。")
 
 
 def _check_model_output_links(
@@ -442,9 +442,9 @@ def _check_score_links(
 
     missing_dimensions = [field_name for field_name in dimension_fields if field_name not in scores.columns]
     if missing_dimensions:
-        report.fail(f"scores.csv 缺少 Rubric 维度评分字段：{', '.join(missing_dimensions)}。")
+        report.fail(f"scores.csv 缺少评分标准维度评分字段：{', '.join(missing_dimensions)}。")
     else:
-        report.ok("scores.csv 覆盖全部 Rubric 维度评分字段。")
+        report.ok("scores.csv 覆盖全部评分标准维度评分字段。")
 
 
 def _taxonomy_label_names(taxonomy: dict[str, Any]) -> set[str]:
@@ -484,14 +484,14 @@ def _check_taxonomy_impacted_dimensions(
     taxonomy: dict[str, Any],
     report: Report,
 ) -> None:
-    """每个错误标签声明的影响维度须为 manifest 中已声明的 Rubric 维度。"""
+    """每个错误标签声明的影响维度须为 manifest 中已声明的 评分标准维度。"""
     dimension_names = {
         str(dim.get("name")).strip()
         for dim in manifest.get("rubric", {}).get("dimensions", [])
         if dim.get("name") is not None
     }
     if not dimension_names:
-        report.warn("dataset_manifest.yml 未声明 Rubric 维度名称，跳过影响维度校验。")
+        report.warn("dataset_manifest.yml 未声明评分标准维度名称，跳过影响维度校验。")
         return
 
     labels = taxonomy.get("labels", [])
@@ -509,7 +509,7 @@ def _check_taxonomy_impacted_dimensions(
 
     if invalid:
         report.fail(
-            "label_taxonomy.yml 中影响维度不在 Rubric 维度范围内：" + "、".join(invalid) + "。"
+            "label_taxonomy.yml 中影响维度不在评分标准维度范围内：" + "、".join(invalid) + "。"
         )
     if missing:
         report.warn(
@@ -548,7 +548,7 @@ def _check_error_configuration(
 ) -> None:
     """复用 src.error_config 校验标签体系与补强动作的配置一致性。
 
-    与「数据集管理」页面共用同一套规则：无效标签、缺补强动作的高频错误、
+    与数据服务层共用同一套规则：无效标签、缺补强动作的高频错误、
     related_error_label 不存在的补强动作。seed 取自 taxonomy 与 optimization_plan，
     均视为 active。
     """
@@ -627,7 +627,7 @@ def _check_scope(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="校验 FinDueEval 数据集结构与一致性。")
+    parser = argparse.ArgumentParser(description="校验财务/法律/投行场景大模型对比评测数据集结构与一致性。")
     parser.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR), help="数据目录，默认 ./data。")
     parser.add_argument("--manifest", default=None, help="数据集清单路径，默认 <data-dir>/dataset_manifest.yml。")
     parser.add_argument("--taxonomy", default=None, help="错误标签体系路径，默认 <data-dir>/label_taxonomy.yml。")

@@ -1,9 +1,9 @@
 """错误标签体系与数据补强动作的配置一致性校验（error configuration checks）。
 
-集中提供一个框架无关的纯函数 evaluate_error_config，供「数据集管理」页面与
+集中提供一个框架无关的纯函数 evaluate_error_config，供数据服务层与
 scripts/validate_dataset.py 共用，识别三类配置问题：
 
-  1. 无效错误标签：缺少定义，或影响维度不在 Rubric 维度范围内，或错误标注引用了
+  1. 无效错误标签：缺少定义，或影响维度不在评分标准维度范围内，或错误标注引用了
      未登记的标签；
   2. 没有关联补强动作的高频错误：出现频次达到高频阈值，却没有任一启用的补强动作关联；
   3. related_error_label 不存在的补强动作：补强动作关联到未登记（或为空）的错误标签。
@@ -78,7 +78,7 @@ def evaluate_error_config(
       - labels：错误标签记录，含 error_label / definition / related_dimension / status；
       - error_counts：错误类型 → 出现次数（来自错误标注，仅统计有效样本）；
       - actions：补强动作记录，含 related_error_label / status；
-      - rubric_dimensions：合法的 Rubric 维度名称集合；
+      - rubric_dimensions：合法的 评分标准维度名称集合；
       - high_freq_threshold：高频阈值，缺省时由 error_counts 动态推导。
     """
     active_labels = _active(labels)
@@ -100,7 +100,7 @@ def evaluate_error_config(
             issues.append(
                 ConfigIssue(
                     INVALID_LABEL, SEVERITY_ERROR, name,
-                    f"错误标签「{name}」的关联维度「{dimension}」不在 Rubric 维度范围内。",
+                    f"错误标签「{name}」的关联维度「{dimension}」不在评分标准维度范围内。",
                 )
             )
 

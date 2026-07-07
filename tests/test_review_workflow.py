@@ -1,4 +1,4 @@
-"""PR-05 tests: review page emphasizes matrix, attribution, redlines and restrained tags."""
+"""review page emphasizes matrix, attribution, redlines and restrained tags."""
 
 import unittest
 from pathlib import Path
@@ -210,7 +210,7 @@ class ReviewMatrixTests(unittest.TestCase):
         self.assertEqual("暂无错误标签", rows[0]["对应错误标签"])
 
 
-class RubricMaterialDisplayTests(unittest.TestCase):
+class ScoringStandardMaterialDisplayTests(unittest.TestCase):
     def test_incomplete_rubric_material_shows_dimension_config(self):
         state = review_scoring.build_rubric_material_display([
             {"field": "accuracy_score", "name": "准确性", "full_mark": 30}

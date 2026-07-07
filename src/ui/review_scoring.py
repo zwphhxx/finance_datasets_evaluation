@@ -389,7 +389,7 @@ def build_case_verdict(output_row, errors_df, gold, task_info) -> dict:
         reasons.append("高风险任务，结论须人工与合规终审")
     elif not has_value(total):
         tier = "review"
-        reasons.append("尚未产生评分，需人工评测复核")
+        reasons.append("尚未产生评分，需在评分确认页处理")
     elif float(total) >= VERDICT_DIRECT_FLOOR and not has_weak:
         tier = "direct"
         reasons.append(f"总分 {score} 且无显著维度短板")

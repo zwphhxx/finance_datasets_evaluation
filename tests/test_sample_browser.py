@@ -1,4 +1,4 @@
-"""PR-21 tests: the task browser builds one compact row per task with Gold
+"""the task browser builds one compact row per task with Gold
 Answer / model-answer / error-label status derived from the data files, and the
 top filters narrow that row set. Nothing is hardcoded.
 """

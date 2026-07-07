@@ -1,4 +1,4 @@
-"""样本库 CRUD 测试。
+"""样本库写入与正式资产同步测试。
 
 覆盖 sample_repository 的新增、更新、移出测试、校验、搜索、筛选以及页面冒烟测试。
 所有测试使用临时 JSON 文件，避免污染 data/samples.json。
@@ -169,12 +169,12 @@ class SampleRepositoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "findueval.db"
             ds.ensure_seed_database(db_path, force=True)
-            values = self._sample_values("PR01-NEW", title="PR01 新增样本")
+            values = self._sample_values("SAMPLE-NEW", title="新增样本")
             values["status"] = "已入库"
 
             sr.create_sample(values, db_path=db_path)
 
-            task = ds.get_task_case("PR01-NEW", db_path)
+            task = ds.get_task_case("SAMPLE-NEW", db_path)
             self.assertIsNotNone(task)
             self.assertEqual(values["scenario"], task["scenario"])
             self.assertEqual(values["task_prompt"], task["question"])
@@ -182,7 +182,7 @@ class SampleRepositoryTests(unittest.TestCase):
             self.assertEqual(values["difficulty"], task["difficulty"])
             self.assertEqual(ds.ACTIVE_STATUS, task["status"])
 
-            gold = ds.get_gold_answer_record("PR01-NEW", db_path)
+            gold = ds.get_gold_answer_record("SAMPLE-NEW", db_path)
             self.assertEqual("构成重大资产重组", gold["core_conclusion"])
             self.assertEqual(["测算交易指标比例"], gold["must_have_points"])
             self.assertEqual(["未测算比例即下结论"], gold["unacceptable_errors"])
@@ -193,7 +193,7 @@ class SampleRepositoryTests(unittest.TestCase):
             self.assertEqual("结论需基于明确测算。", row["full_mark_standard"])
             self.assertEqual("缺少关键测算应扣分。", row["deduction_rules"])
 
-            sync_result = sr.verify_sample_asset_sync("PR01-NEW", db_path=db_path)
+            sync_result = sr.verify_sample_asset_sync("SAMPLE-NEW", db_path=db_path)
             self.assertTrue(sync_result["ok"])
             self.assertTrue(sync_result["task_exists"])
             self.assertTrue(sync_result["gold_exists"])
@@ -204,12 +204,12 @@ class SampleRepositoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "findueval.db"
             ds.ensure_seed_database(db_path, force=True)
-            values = self._sample_values("PR01-EDIT", title="PR01 编辑样本")
+            values = self._sample_values("SAMPLE-EDIT", title="编辑样本")
             values["status"] = "已入库"
             sr.create_sample(values, db_path=db_path)
 
             updated_gold = json.dumps({
-                "case_id": "PR01-EDIT",
+                "case_id": "SAMPLE-EDIT",
                 "core_conclusion": "需补充材料后判断",
                 "must_have_points": ["说明待核材料"],
                 "unacceptable_errors": ["把待核事项写成确定结论"],
@@ -221,7 +221,7 @@ class SampleRepositoryTests(unittest.TestCase):
             }], ensure_ascii=False)
 
             sr.update_sample(
-                "PR01-EDIT",
+                "SAMPLE-EDIT",
                 {
                     "scenario": "更新后的场景",
                     "task_prompt": "更新后的任务题。",
@@ -234,14 +234,14 @@ class SampleRepositoryTests(unittest.TestCase):
                 db_path=db_path,
             )
 
-            task = ds.get_task_case("PR01-EDIT", db_path)
+            task = ds.get_task_case("SAMPLE-EDIT", db_path)
             self.assertEqual("更新后的场景", task["scenario"])
             self.assertEqual("更新后的任务题。", task["question"])
             self.assertEqual("更新后的业务背景", task["context"])
             self.assertEqual("Medium", task["difficulty"])
             self.assertEqual(ds.DRAFT_STATUS, task["status"])
 
-            gold = ds.get_gold_answer_record("PR01-EDIT", db_path)
+            gold = ds.get_gold_answer_record("SAMPLE-EDIT", db_path)
             self.assertEqual("需补充材料后判断", gold["core_conclusion"])
             self.assertEqual(["说明待核材料"], gold["must_have_points"])
             self.assertEqual(["把待核事项写成确定结论"], gold["unacceptable_errors"])
@@ -252,7 +252,7 @@ class SampleRepositoryTests(unittest.TestCase):
             self.assertEqual("更新后的扣分规则。", row["deduction_rules"])
             self.assertFalse(ds.can_enter_formal_testing(task, gold, ds.get_rubric_dimensions(db_path)))
 
-            sync_result = sr.verify_sample_asset_sync("PR01-EDIT", db_path=db_path)
+            sync_result = sr.verify_sample_asset_sync("SAMPLE-EDIT", db_path=db_path)
             self.assertTrue(sync_result["ok"])
             self.assertFalse(sync_result["is_testable"])
 
@@ -271,19 +271,19 @@ class SampleRepositoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "findueval.db"
             ds.ensure_seed_database(db_path, force=True)
-            values = self._sample_values("PR04-SYNC", title="PR04 同步样本")
+            values = self._sample_values("SAMPLE-SYNC", title="同步样本")
             values["status"] = "已入库"
             sr.create_sample(values)
 
-            self.assertIsNone(ds.get_task_case("PR04-SYNC", db_path))
+            self.assertIsNone(ds.get_task_case("SAMPLE-SYNC", db_path))
 
             result = sr.sync_all_samples_to_formal_assets(db_path=db_path)
 
             self.assertTrue(result["sqlite_ready"])
             self.assertEqual(1, result["success_count"])
             self.assertEqual(0, result["failed_count"])
-            self.assertIsNotNone(ds.get_task_case("PR04-SYNC", db_path))
-            self.assertTrue(sr.verify_sample_asset_sync("PR04-SYNC", db_path=db_path)["ok"])
+            self.assertIsNotNone(ds.get_task_case("SAMPLE-SYNC", db_path))
+            self.assertTrue(sr.verify_sample_asset_sync("SAMPLE-SYNC", db_path=db_path)["ok"])
 
     def test_sample_data_source_status_reports_sqlite_unavailable(self):
         status = sr.sample_data_source_status(db_path=Path(self.tmp.name).with_suffix(".db"))

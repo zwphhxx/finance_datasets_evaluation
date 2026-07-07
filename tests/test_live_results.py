@@ -1,4 +1,4 @@
-"""PR-13.5 tests: surface live model-call results and failures.
+"""surface live model-call results and failures.
 
 Covers the visibility/robustness fixes in the live model-call chain:
   - robust answer extraction (content / reasoning_content / choices[].text / list parts);

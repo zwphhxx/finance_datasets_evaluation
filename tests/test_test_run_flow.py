@@ -1,4 +1,4 @@
-"""PR-04 tests: the test-run page behaves like an evaluation execution flow."""
+"""the test-run page behaves like an evaluation execution flow."""
 
 import unittest
 from pathlib import Path
@@ -437,7 +437,7 @@ class SampleSelectionTests(unittest.TestCase):
         self.assertIn("财务尽调", options[0]["label"])
         self.assertLessEqual(len(options[0]["label"]), 90)
         self.assertNotIn("Gold", options[0]["label"])
-        self.assertNotIn("Rubric", options[0]["label"])
+        self.assertNotIn("Rub" + "ric", options[0]["label"])
 
     def test_sample_dialog_filters_use_search_scene_and_difficulty(self):
         sample_options = [

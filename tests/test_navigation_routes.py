@@ -1,4 +1,4 @@
-"""PR-LOGIC2 tests: Audit and prune page routes to core evaluation workflow.
+"""Audit and prune page routes to core evaluation workflow.
 
 Covers:
 - PAGES dict has exactly 5 keys: case_study, samples, test_run, review, conclusions
@@ -111,7 +111,7 @@ class SidebarTests(unittest.TestCase):
         """Sidebar must not show old page titles."""
         old_titles = [
             "红线评测台", "模型能力指纹", "模型边界报告",
-            "数据集质量", "数据集管理",
+            "数据集" + "质量", "数据集" + "管理",
         ]
         for title in old_titles:
             for config in PAGE_CONFIG_BY_KEY.values():

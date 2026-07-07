@@ -1,4 +1,4 @@
-"""PR-16 tests: the standalone dataset validator runs against the data assets,
+"""the standalone dataset validator runs against the data assets,
 driven by dataset_manifest.yml and label_taxonomy.yml, and reports passes,
 warnings and errors. Negative cases prove the checks actually catch defects.
 """

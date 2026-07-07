@@ -1,4 +1,4 @@
-"""PR-35 tests: multi-model live eval comparison + LLM-as-judge scoring.
+"""multi-model live eval comparison + LLM-as-judge scoring.
 
 Covers multi-model orchestration (run_models / CompareRunResult), the judge prompt
 boundary (judge SEES Gold, evaluated model never does), robust JSON parsing with
@@ -24,7 +24,7 @@ from src.ui.navigation import PAGES
 
 
 _TMP = tempfile.TemporaryDirectory()
-_DB_PATH = Path(_TMP.name) / "findueval_pr35.db"
+_DB_PATH = Path(_TMP.name) / "scoring_workflow_test.db"
 
 _DIMENSIONS = [
     {"field": "accuracy_score", "name": "专业准确性", "full_mark": 30},

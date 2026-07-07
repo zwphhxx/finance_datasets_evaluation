@@ -1,4 +1,4 @@
-dataset: FinDueEval-MVP
+dataset: 财务/法律/投行场景大模型对比评测
 version: 1.0.0
 updated: '2026-07-07'
 description: 最终 13 条脱敏专业任务样本，覆盖财务场景、法律场景和投行场景；seed 文件只用于初始化，运行结果由 SQLite 在运行期产生。

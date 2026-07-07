@@ -1,4 +1,4 @@
-"""PR-06 tests: model usage boundaries are service-level, risk-aware conclusions."""
+"""model usage boundaries are service-level, risk-aware conclusions."""
 
 import unittest
 
@@ -10,7 +10,7 @@ from app.services import conclusions as cc
 def _score(case_id: str, model: str, total: int, output_id: str | None = None, **dims):
     row = {
         "id": abs(hash((case_id, model, total))) % 100000,
-        "run_id": "RUN-PR06",
+        "run_id": "RUN-BOUNDARY",
         "output_id": output_id or f"{case_id}-{model}",
         "case_id": case_id,
         "eval_model": model,
@@ -33,7 +33,7 @@ def _score(case_id: str, model: str, total: int, output_id: str | None = None, *
 def _live(case_id: str, model: str, status: str, total: int, **dims):
     row = {
         "id": abs(hash((case_id, model, status))) % 100000,
-        "run_id": "RUN-PR06",
+        "run_id": "RUN-BOUNDARY",
         "case_id": case_id,
         "eval_model": model,
         "judge_status": "success",

@@ -1,8 +1,8 @@
-"""PR-30 tests: the SQLite data layer initializes from the existing seed files,
-preserves every table's base fields (status / created_at / updated_at, plus
-version on core objects), exposes basic CRUD through the repository, and feeds
-the service layer an EvaluationData that is identical to the CSV/JSON loader —
-so pages render the same results whether they read the database or the seed.
+"""The SQLite data layer initializes from seed files.
+
+It preserves every table's base fields, exposes basic write helpers through the
+repository, and feeds the service layer an EvaluationData that matches the
+CSV/JSON loader so pages render the same results from database or seed files.
 """
 
 import sqlite3
@@ -27,7 +27,7 @@ from src.data_service import (
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 _TMP = tempfile.TemporaryDirectory()
-_DB_PATH = Path(_TMP.name) / "findueval_pr30.db"
+_DB_PATH = Path(_TMP.name) / "sqlite_layer_test.db"
 _COUNTS: dict[str, int] = {}
 
 
@@ -116,18 +116,18 @@ class RepositoryCrudTests(unittest.TestCase):
 
     def test_insert_get_update_delete_roundtrip(self):
         before = self.repo.count("evaluation_runs")
-        self.repo.insert("evaluation_runs", {"run_id": "RUN-PR30", "run_name": "临时批次", "model_name": "m"})
+        self.repo.insert("evaluation_runs", {"run_id": "RUN-SQLITE", "run_name": "临时批次", "model_name": "m"})
         self.assertEqual(self.repo.count("evaluation_runs"), before + 1)
 
-        row = self.repo.get("evaluation_runs", "RUN-PR30")
+        row = self.repo.get("evaluation_runs", "RUN-SQLITE")
         self.assertEqual(row["run_name"], "临时批次")
         self.assertEqual(row["status"], "active")  # 默认值
         self.assertTrue(row["created_at"])
 
-        self.repo.update("evaluation_runs", "RUN-PR30", {"run_name": "已更新"})
-        self.assertEqual(self.repo.get("evaluation_runs", "RUN-PR30")["run_name"], "已更新")
+        self.repo.update("evaluation_runs", "RUN-SQLITE", {"run_name": "已更新"})
+        self.assertEqual(self.repo.get("evaluation_runs", "RUN-SQLITE")["run_name"], "已更新")
 
-        self.repo.delete("evaluation_runs", "RUN-PR30")
+        self.repo.delete("evaluation_runs", "RUN-SQLITE")
         self.assertEqual(self.repo.count("evaluation_runs"), before)
 
     def test_list_df_preserves_numeric_dtype(self):

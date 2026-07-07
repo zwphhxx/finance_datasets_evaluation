@@ -2,7 +2,7 @@
 #
 # 用途：集中维护模型回答错误标签的名称、定义、典型表现、影响维度与数据补强方向。
 # error_labels.csv 中的 error_type 取值须来自本文件，新增错误类型时先在此登记。
-# impacted_dimension 指该错误主要影响的 Rubric 评分维度，取值须为
+# impacted_dimension 指该错误主要影响的评分标准维度，取值须为
 # dataset_manifest.yml 中声明的维度名称之一。
 # 校验脚本以此为准，确认错误标签均为已定义类型、影响维度合法，并可与数据补强建议对应。
 

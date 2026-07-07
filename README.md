@@ -85,7 +85,7 @@ PYTHONPATH=. python scripts/replace_samples.py \
 
 ## 样本库与正式评测资产
 
-SQLite 可用时，样本库 CRUD 和 CSV 导入会同步维护正式评测数据层：
+SQLite 可用时，样本库新增、编辑、移出测试和 CSV 导入会同步维护正式评测数据层：
 
 - `task_cases`：写入或更新样本编号、专业场景、难度、任务题、业务背景和底层状态。
 - `gold_answers`：写入或更新专业标准答案，并保持 `raw_json` 与结构化字段一致。

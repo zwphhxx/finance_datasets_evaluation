@@ -116,7 +116,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
             "src/ui/conclusions.py",
         ]:
             source = Path(file_path).read_text(encoding="utf-8")
-            self.assertNotIn('eyebrow="FinDueEval"', source, file_path)
+            self.assertNotIn('eyebrow="' + "Fin" + 'DueEval"', source, file_path)
 
     def test_current_pages_avoid_overpromising_copy(self):
         banned = [

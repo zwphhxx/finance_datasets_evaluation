@@ -1,4 +1,4 @@
-"""PR-03 tests: sample detail presents an evaluation asset structure."""
+"""sample detail presents an evaluation asset structure."""
 
 import json
 import unittest
@@ -110,7 +110,7 @@ class GoldAnswerDisplayTests(unittest.TestCase):
         self.assertEqual("待补充", display["fields"]["标准结论"])
 
 
-class RubricDisplayTests(unittest.TestCase):
+class ScoringStandardDisplayTests(unittest.TestCase):
     def test_rubric_rows_use_dynamic_dimensions_and_rules(self):
         dimensions = [
             {

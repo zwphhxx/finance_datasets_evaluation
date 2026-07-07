@@ -1,7 +1,7 @@
-"""PR-D tests: 「发起评测」重构为可复现实验 + 模型调用可见性。
+"""「发起评测」重构为可复现实验 + 模型调用可见性。
 
-本文件聚焦 PR-D 的页面框架与默认选择变更；底层调用链（空回答 / 超时 / 401 / 429 /
-回答抽取 / 进度回调 / persist flag）已由 tests/test_pr13_5_live_results.py 覆盖，这里只补齐：
+本文件聚焦发起评测页面框架与默认选择变更；底层调用链（空回答 / 超时 / 401 / 429 /
+回答抽取 / 进度回调 / persist flag）已由 tests/test_live_results.py 覆盖，这里只补齐：
 
   - 默认只选 1 道「活跃」任务（active 优先，缺 status 时回退首条）；
   - 页面副标题强调现场结果受 API/网络/模型版本影响、离线评测才是默认展示依据；
@@ -102,7 +102,7 @@ class FormalSampleEligibilityTests(unittest.TestCase):
                 "must_have_points": ["要点"],
                 "unacceptable_errors": ["错误"],
             },
-            "D": {"core_conclusion": "缺少 Rubric 支撑要素"},
+            "D": {"core_conclusion": "缺少评分标准支撑要素"},
         }
         dimensions = [{
             "field": "accuracy_score",

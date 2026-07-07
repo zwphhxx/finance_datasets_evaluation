@@ -1,9 +1,8 @@
-"""PR-31 tests: minimal CRUD for task cases, Gold Answers and Rubric dimensions.
+"""SQLite write-path tests for task cases, Gold Answers and scoring standards.
 
-CRUD writes only to SQLite (seed files untouched); the active-sample loader and
-the task / case-detail pages must see the changes; deletion is a soft status
-flip; Gold Answer edits keep raw_json lossless; and the new 数据集管理 page renders
-in both DB-ready and seed-fallback modes.
+Writes stay in SQLite (seed files untouched); the active-sample loader and
+sample-facing services must see the changes; deletion is a soft status flip;
+Gold Answer edits keep raw_json lossless.
 """
 
 import os
@@ -18,7 +17,7 @@ from app.services import dataset_service as ds
 from src.data_service import get_data_dir, read_json_file
 
 _TMP = tempfile.TemporaryDirectory()
-_DB_PATH = Path(_TMP.name) / "findueval_pr31.db"
+_DB_PATH = Path(_TMP.name) / "sample_crud_test.db"
 
 
 def setUpModule():
@@ -38,7 +37,7 @@ def _active_case_ids() -> set[str]:
     return set(ds.load_evaluation_data(_DB_PATH).tasks["case_id"].astype(str))
 
 
-class TaskCrudTests(unittest.TestCase):
+class TaskWriteTests(unittest.TestCase):
     def setUp(self):
         _reseed()
 
@@ -46,7 +45,7 @@ class TaskCrudTests(unittest.TestCase):
         before = _active_case_ids()
         ds.create_task_case(
             {
-                "case_id": "PR31-NEW",
+                "case_id": "TASK-NEW",
                 "domain": "Financial",
                 "task_type": "Revenue Verification",
                 "difficulty": "Medium",
@@ -58,13 +57,13 @@ class TaskCrudTests(unittest.TestCase):
             db_path=_DB_PATH,
         )
         after = _active_case_ids()
-        self.assertNotIn("PR31-NEW", before)
-        self.assertIn("PR31-NEW", after)
+        self.assertNotIn("TASK-NEW", before)
+        self.assertIn("TASK-NEW", after)
 
     def test_create_rejects_duplicate_and_blank_id(self):
-        ds.create_task_case({"case_id": "PR31-DUP", "domain": "Financial"}, db_path=_DB_PATH)
+        ds.create_task_case({"case_id": "TASK-DUP", "domain": "Financial"}, db_path=_DB_PATH)
         with self.assertRaises(Exception):
-            ds.create_task_case({"case_id": "PR31-DUP", "domain": "Financial"}, db_path=_DB_PATH)
+            ds.create_task_case({"case_id": "TASK-DUP", "domain": "Financial"}, db_path=_DB_PATH)
         with self.assertRaises(Exception):
             ds.create_task_case({"case_id": "  "}, db_path=_DB_PATH)
 
@@ -94,11 +93,11 @@ class GoldAnswerCrudTests(unittest.TestCase):
     def test_edit_updates_visible_gold_answer(self):
         ds.update_gold_answer(
             self.case_id,
-            {"core_conclusion": "PR31 修改后的核心结论", "must_have_points": ["要点一", "要点二"]},
+            {"core_conclusion": "更新后的核心结论", "must_have_points": ["要点一", "要点二"]},
             db_path=_DB_PATH,
         )
         gold = ds.load_evaluation_data(_DB_PATH).gold_answer_map[self.case_id]
-        self.assertEqual(gold["core_conclusion"], "PR31 修改后的核心结论")
+        self.assertEqual(gold["core_conclusion"], "更新后的核心结论")
         self.assertEqual(gold["must_have_points"], ["要点一", "要点二"])
 
     def test_raw_json_is_lossless(self):
@@ -117,12 +116,12 @@ class GoldAnswerCrudTests(unittest.TestCase):
         self.assertEqual(seed_before, seed_after)
 
 
-class RubricCrudTests(unittest.TestCase):
+class ScoringStandardCrudTests(unittest.TestCase):
     def setUp(self):
         _reseed()
 
     def test_seed_quality_columns_are_complete(self):
-        # seed manifest 维护正式 Rubric 标准，初始化后应可直接用于完整度校验。
+        # seed manifest 维护正式评分标准，初始化后应可直接用于完整度校验。
         rubrics = ds.list_rubrics(_DB_PATH)
         self.assertTrue(rubrics["full_mark_standard"].fillna("").str.strip().astype(bool).all())
         self.assertTrue(rubrics["deduction_rules"].fillna("").str.strip().astype(bool).all())

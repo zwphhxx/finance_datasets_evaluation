@@ -1,4 +1,4 @@
-"""PR-27 tests: Gold Answer quality governance.
+"""Gold Answer quality governance.
 
 Each Gold Answer carries the structured fields; the central evaluator derives a
 usable / partially-usable status from data; the validator reads those fields

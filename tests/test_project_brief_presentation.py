@@ -1,4 +1,4 @@
-"""PR-13 tests: project-intro numbers stay dynamic and task fields are
+"""project-intro numbers stay dynamic and task fields are
 presented in business Chinese without leaking raw English field values.
 """
 

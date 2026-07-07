@@ -1,8 +1,8 @@
-"""PR-32 tests: error-taxonomy and improvement-action CRUD.
+"""Error-taxonomy and improvement-action write-path tests.
 
 Error labels and data-improvement actions become maintainable in SQLite: labels
-are seeded from label_taxonomy.yml, actions from optimization_plan.csv. CRUD
-writes only to SQLite (seed files untouched), every action must link to a
+are seeded from label_taxonomy.yml, actions from optimization_plan.csv. Writes
+stay in SQLite (seed files untouched), every action must link to a
 registered error label, deactivation is a soft status flip, and the shared
 configuration check (src.error_config) detects invalid labels, high-frequency
 errors without actions and orphan actions — while staying clean on the seed.
@@ -21,7 +21,7 @@ from src.error_config import (
 )
 
 _TMP = tempfile.TemporaryDirectory()
-_DB_PATH = Path(_TMP.name) / "findueval_pr32.db"
+_DB_PATH = Path(_TMP.name) / "error_taxonomy_test.db"
 
 
 def setUpModule():
@@ -54,15 +54,15 @@ class ErrorLabelCrudTests(unittest.TestCase):
     def test_create_and_activate_label(self):
         ds.create_error_label(
             {
-                "error_label": "PR32-标签",
+                "error_label": "测试标签",
                 "definition": "测试用定义",
                 "related_dimension": "",
                 "severity_level": "中",
             },
             db_path=_DB_PATH,
         )
-        self.assertIn("PR32-标签", ds.active_error_labels(_DB_PATH))
-        row = ds.get_error_label("PR32-标签", _DB_PATH)
+        self.assertIn("测试标签", ds.active_error_labels(_DB_PATH))
+        row = ds.get_error_label("测试标签", _DB_PATH)
         self.assertEqual(row["definition"], "测试用定义")
         self.assertEqual(row["severity_level"], "中")
 

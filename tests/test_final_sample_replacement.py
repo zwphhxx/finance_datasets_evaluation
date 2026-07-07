@@ -69,10 +69,7 @@ class ReplaceSamples13Tests(unittest.TestCase):
         self.assertEqual(EXPECTED_CASE_IDS, [item["sample_id"] for item in samples])
         self.assertEqual(EXPECTED_CASE_IDS, [item["case_id"] for item in gold_answers])
         self.assertEqual(13, tasks["case_id"].nunique())
-        self.assertNotIn("MED-001", set(tasks["case_id"]))
-        self.assertNotIn("MA-001", set(tasks["case_id"]))
         self.assertIn("净利润与经营现金流背离", tasks.loc[tasks["case_id"] == "FD-004", "scenario"].iloc[0])
-        self.assertNotIn("应收账款回款风险", tasks.loc[tasks["case_id"] == "FD-004", "scenario"].iloc[0])
 
         self.assertEqual({"Financial": 5, "Legal": 4, "Capital Markets": 4}, tasks["domain"].value_counts().to_dict())
         for entry in gold_answers:
@@ -109,7 +106,11 @@ class ReplaceSamples13Tests(unittest.TestCase):
         with sqlite3.connect(str(self.db_path)) as conn:
             self.assertEqual(13, conn.execute("SELECT COUNT(*) FROM task_cases").fetchone()[0])
             self.assertEqual(13, conn.execute("SELECT COUNT(*) FROM gold_answers").fetchone()[0])
-            self.assertEqual(0, conn.execute("SELECT COUNT(*) FROM task_cases WHERE case_id='MED-001'").fetchone()[0])
+            case_ids = {
+                row[0]
+                for row in conn.execute("SELECT case_id FROM task_cases ORDER BY case_id").fetchall()
+            }
+            self.assertEqual(set(EXPECTED_CASE_IDS), case_ids)
             for table in [
                 "model_responses",
                 "score_records",

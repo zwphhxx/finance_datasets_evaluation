@@ -1,4 +1,4 @@
-"""PR-36 tests: live-eval-driven analysis pages + eval run page.
+"""live-eval-driven analysis pages + eval run page.
 
 The standalone「真实模型评测」page is gone; model selection / run / scoring now
 lives in the dedicated「发起评测」page, and the existing analysis pages render the
@@ -26,7 +26,7 @@ from src.ui.page_config import PAGE_CONFIG_BY_KEY
 
 
 _TMP = tempfile.TemporaryDirectory()
-_DB_PATH = Path(_TMP.name) / "findueval_pr36.db"
+_DB_PATH = Path(_TMP.name) / "recoverable_queue_test.db"
 _MODEL = "mock/chat-base"
 
 

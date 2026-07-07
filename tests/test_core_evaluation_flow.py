@@ -1,4 +1,4 @@
-"""PR-LOGIC1 tests: Core evaluation workflow simplification.
+"""Core evaluation workflow simplification.
 
 Covers:
 - Sample without judgment criteria cannot enter formal testing

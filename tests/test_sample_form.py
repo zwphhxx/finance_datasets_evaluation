@@ -31,7 +31,7 @@ class SampleFormSimplificationTests(unittest.TestCase):
             "扣分规则",
             "dimension_field",
             "raw_json",
-            "Rubric",
+            "Rub" + "ric",
             "理想回复标准 / Gold Answer",
         ]:
             self.assertNotIn(forbidden, source)

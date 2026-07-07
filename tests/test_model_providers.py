@@ -1,4 +1,4 @@
-"""PR-33 tests: SiliconFlow / Mock model provider layer.
+"""SiliconFlow / Mock model provider layer.
 
 All HTTP is mocked — no test performs a real outbound request. Coverage:
 missing API key → mock fallback, list_models / chat parsing, trace-id and usage

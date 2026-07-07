@@ -1,4 +1,4 @@
-"""PR-34 tests: live model evaluation runner.
+"""live model evaluation runner.
 
 Covers the prompt boundary (Gold Answer never reaches the model, no self-eval),
 run orchestration over the Mock provider, graceful failure handling, best-effort
@@ -20,7 +20,7 @@ from src.ui.page_config import PAGE_CONFIG_BY_KEY
 
 
 _TMP = tempfile.TemporaryDirectory()
-_DB_PATH = Path(_TMP.name) / "findueval_pr34.db"
+_DB_PATH = Path(_TMP.name) / "live_evaluation_test.db"
 
 
 def setUpModule():

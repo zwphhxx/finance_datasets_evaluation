@@ -1,4 +1,4 @@
-"""PR-26 tests: the dataset schema additions — taxonomy impacted dimensions and
+"""the dataset schema additions — taxonomy impacted dimensions and
 the schema doc — are present, and the validator's new impacted-dimension check
 catches invalid references. All assertions read live files; nothing hardcoded.
 """
@@ -64,7 +64,7 @@ class ValidatorImpactedDimensionCheckTests(unittest.TestCase):
                 taxonomy_path=taxonomy_path,
             )
             self.assertFalse(report.is_valid)
-            self.assertTrue(any("影响维度不在 Rubric 维度范围内" in e for e in report.errors))
+            self.assertTrue(any("影响维度不在评分标准维度范围内" in e for e in report.errors))
 
 
 class SchemaDocTests(unittest.TestCase):

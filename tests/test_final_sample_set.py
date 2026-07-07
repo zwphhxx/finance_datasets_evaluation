@@ -1,4 +1,4 @@
-"""PR-28 tests: the active dataset is the final 13 finance/legal/IB sample set.
+"""the active dataset is the final 13 finance/legal/IB sample set.
 
 Historical inactive and example samples have been removed from the seed files;
 runtime model answers and scores are produced in SQLite instead of committed

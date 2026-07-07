@@ -1,4 +1,4 @@
-"""PR-02 tests: sample completeness and testability gate."""
+"""sample completeness and testability gate."""
 
 import json
 import tempfile
@@ -166,7 +166,7 @@ class SampleRepositoryReadinessGateTests(unittest.TestCase):
             db_path = Path(tmpdir) / "findueval.db"
             ds.ensure_seed_database(db_path, force=True)
             values = {
-                "sample_id": "PR02-INCOMPLETE",
+                "sample_id": "READINESS-INCOMPLETE",
                 "title": "不完整样本",
                 "scenario": "场景",
                 "task_prompt": "题干",
@@ -178,10 +178,10 @@ class SampleRepositoryReadinessGateTests(unittest.TestCase):
             sr.create_sample(values, db_path=db_path)
 
             with self.assertRaisesRegex(ValueError, "缺少必须覆盖点"):
-                sr.set_sample_status("PR02-INCOMPLETE", "已入库", db_path=db_path)
+                sr.set_sample_status("READINESS-INCOMPLETE", "已入库", db_path=db_path)
 
-            self.assertEqual("待复核", sr.get_sample("PR02-INCOMPLETE").status)
-            self.assertEqual(ds.DRAFT_STATUS, ds.get_task_case("PR02-INCOMPLETE", db_path)["status"])
+            self.assertEqual("待复核", sr.get_sample("READINESS-INCOMPLETE").status)
+            self.assertEqual(ds.DRAFT_STATUS, ds.get_task_case("READINESS-INCOMPLETE", db_path)["status"])
 
 
 if __name__ == "__main__":
