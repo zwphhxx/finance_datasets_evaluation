@@ -67,10 +67,13 @@ class ReadmeCurrentFlowTests(unittest.TestCase):
             "timeout 过长会导致页面等待时间变长",
             "评分失败通常是裁判模型超时，不代表样本失败",
             "重试失败评分",
-            "推荐演示时选择 1 个样本 + 1 个模型",
+            "发起评测页默认支持批处理运行",
+            "可继续未完成项或重试失败项",
             "提前生成并确认评分结果",
         ]:
             self.assertIn(phrase, text)
+        for phrase in ["建议分批运行", "超过 50 条回答需要确认后再运行"]:
+            self.assertNotIn(phrase, text)
 
 
 class NavigationAndPageConfigGuardrailTests(unittest.TestCase):

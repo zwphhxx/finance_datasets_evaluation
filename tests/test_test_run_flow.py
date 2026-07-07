@@ -62,19 +62,20 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertEqual(_EVAL_MAX_TOKENS_LIMIT, resolve_eval_max_tokens("999999"))
         self.assertEqual(4096, resolve_eval_max_tokens("not-a-number"))
 
-    def test_batch_run_notice_thresholds_and_confirmation(self):
+    def test_batch_run_notice_and_confirmation_are_disabled_by_default(self):
         self.assertIsNone(batch_run_notice({"planned_responses": 20}))
-        self.assertIn("建议分批运行", batch_run_notice({"planned_responses": 21}) or "")
-        self.assertIn("二次确认", batch_run_notice({"planned_responses": 51}) or "")
+        self.assertIsNone(batch_run_notice({"planned_responses": 21}))
+        self.assertIsNone(batch_run_notice({"planned_responses": 91}))
         self.assertFalse(requires_large_run_confirmation({"planned_responses": 50}))
-        self.assertTrue(requires_large_run_confirmation({"planned_responses": 51}))
+        self.assertFalse(requires_large_run_confirmation({"planned_responses": 91}))
 
     def test_slow_model_notice_uses_soft_keywords(self):
         notice = slow_model_notice(["vendor/LongCat-2.0", "deepseek-r1", "fast/model"])
 
-        self.assertIn("响应可能较慢", notice or "")
-        self.assertIn("LongCat-2.0", notice or "")
-        self.assertIn("deepseek-r1", notice or "")
+        self.assertIn("响应时间可能较长", notice or "")
+        self.assertIn("已完成结果", notice or "")
+        self.assertIn("重试失败项", notice or "")
+        self.assertNotIn("建议小批量运行", notice or "")
 
     def test_selection_controls_are_dialog_driven(self):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
@@ -132,9 +133,11 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("er.run_single", source)
         self.assertIn("retry_max_tokens=_EVAL_MAX_TOKENS_LIMIT", source)
         self.assertIn("er.CompareRunResult", source)
-        self.assertIn("现场演示建议最多 2-3 个模型", source)
-        self.assertIn("当前预计生成回答较多，运行时间可能较长，部分模型可能超时。建议分批运行。", source)
-        self.assertIn("确认按批处理运行", source)
+        self.assertNotIn("当前预计生成回答较多，运行时间可能较长，部分模型可能超时。建议分批运行。", source)
+        self.assertNotIn("确认按批处理运行", source)
+        self.assertNotIn("不适合面试现场演示", source)
+        self.assertNotIn("建议小批量运行", source)
+        self.assertNotIn("large_run_confirmed", source)
         self.assertIn("查看全文", source)
         self.assertIn('@st.dialog("模型回答全文"', source)
         self.assertIn("查看技术明细", source)

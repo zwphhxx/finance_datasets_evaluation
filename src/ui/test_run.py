@@ -65,8 +65,6 @@ SAMPLE_TABLE_HEIGHT = 330
 _EVAL_TEMPERATURE = 0.1
 _MODEL_OPTION_LIMIT = 30
 _ANSWER_PREVIEW_LIMIT = 1500
-_BATCH_RUN_WARNING_THRESHOLD = 20
-_BATCH_RUN_CONFIRM_THRESHOLD = 50
 _SLOW_MODEL_KEYWORDS = ("longcat", "r1", "reasoning", "thinking")
 _RUN_STATE_KEY = "test_run_run_state"
 _PARTIAL_OUTCOMES_KEY = "test_run_partial_outcomes"
@@ -240,20 +238,12 @@ def build_run_plan_summary(model_ids: list[str], selected_tasks: list[dict]) -> 
 
 
 def batch_run_notice(run_plan: dict[str, int | bool]) -> str | None:
-    """Return the user-facing risk notice for large live-answer batches."""
-    total = _planned_response_count(run_plan)
-    if total > _BATCH_RUN_CONFIRM_THRESHOLD:
-        return (
-            "当前预计生成回答较多，运行时间可能较长，部分模型可能超时。建议分批运行。"
-            "超过 50 条属于批处理，不适合面试现场演示，运行前需二次确认。"
-        )
-    if total > _BATCH_RUN_WARNING_THRESHOLD:
-        return "当前预计生成回答较多，运行时间可能较长，部分模型可能超时。建议分批运行。"
+    """Batch execution is the default; no warning banner is shown for larger runs."""
     return None
 
 
 def requires_large_run_confirmation(run_plan: dict[str, int | bool]) -> bool:
-    return _planned_response_count(run_plan) > _BATCH_RUN_CONFIRM_THRESHOLD
+    return False
 
 
 def slow_model_notice(model_ids: list[str]) -> str | None:
@@ -265,9 +255,7 @@ def slow_model_notice(model_ids: list[str]) -> str | None:
             slow_models.append(_model_short_name(model_id))
     if not slow_models:
         return None
-    names = "、".join(slow_models[:3])
-    suffix = f" 等 {len(slow_models)} 个" if len(slow_models) > 3 else ""
-    return f"已选择响应可能较慢的模型：{names}{suffix}。建议小批量运行。"
+    return "部分模型响应时间可能较长，系统会保留已完成结果，可继续未完成项或重试失败项。"
 
 
 def build_run_queue_items(model_ids: list[str], selected_tasks: list[dict]) -> list[dict]:
@@ -631,21 +619,10 @@ def _render_configuration_panel(
     render_inline_status(rows)
     if mode == "unconfigured":
         st.caption("当前未配置模型服务密钥，暂不能发起真实调用。模拟回退仅用于开发兜底，不作为页面可选服务。")
-    st.caption("建议首次运行选择 1 个样本和 1 个模型；现场演示建议最多 2-3 个模型，确认链路后再扩大范围。")
-    st.caption("当前任务在页面内执行。运行中不建议刷新、关闭页面或切换页面；若中断，已完成结果会保留，未完成项可稍后继续。")
-    notice = batch_run_notice(run_plan)
-    if notice:
-        st.warning(notice)
+    st.caption("当前任务在页面内执行。运行中不建议刷新或关闭页面；已完成结果会保留，未完成项可继续运行。")
     slow_notice = slow_model_notice(model_ids)
     if slow_notice:
         st.caption(slow_notice)
-    large_run_confirmed = True
-    if requires_large_run_confirmation(run_plan):
-        large_run_confirmed = st.checkbox(
-            "确认按批处理运行",
-            key="test_run_large_batch_confirmed",
-            help="全量或大批量运行耗时较长，现场演示建议分批运行。",
-        )
 
     col1, col2, col3 = st.columns([1, 1, 1.2])
     with col1:
@@ -659,7 +636,6 @@ def _render_configuration_panel(
         start_run = _render_run_button(
             run_plan,
             service_ready=(mode == "live"),
-            large_run_confirmed=large_run_confirmed,
         )
     if not run_plan["can_run"]:
         st.caption("请选择样本和模型后运行。")
@@ -1655,17 +1631,13 @@ def _render_run_button(
     run_plan,
     *,
     service_ready: bool = True,
-    large_run_confirmed: bool = True,
 ) -> bool:
-    needs_confirmation = requires_large_run_confirmation(run_plan) and not large_run_confirmed
-    disabled = not run_plan["can_run"] or not service_ready or needs_confirmation
+    disabled = not run_plan["can_run"] or not service_ready
     clicked = st.button("运行模型回答", type="primary", disabled=disabled, key="test_run_run")
 
     if disabled:
         if not service_ready:
             st.caption("当前未配置模型服务密钥，暂不能发起真实调用。")
-        elif needs_confirmation:
-            st.caption("预计回答超过 50 条，请确认按批处理运行后再开始。")
         else:
             st.caption("请先选择至少一个模型与至少一道任务，再运行评测。")
     return bool(clicked and not disabled)
@@ -2438,13 +2410,6 @@ def _dedupe(items: list[str]) -> list[str]:
     return ordered
 
 
-def _planned_response_count(run_plan: dict[str, int | bool]) -> int:
-    try:
-        return int(run_plan.get("planned_responses") or 0)
-    except (AttributeError, TypeError, ValueError):
-        return 0
-
-
 def _mode_label(value) -> str:
     return _MODE_LABEL.get(str(value or "").strip().lower(), str(value or "未知"))
 
@@ -2650,7 +2615,7 @@ def _failure_guidance(outcome) -> str:
     if code in {"missing_api_key", "unauthorized", "forbidden"}:
         return "请检查 SILICONFLOW_API_KEY、账户权限或模型访问权限。"
     if code in {"timeout", "gateway_timeout"}:
-        return "模型服务响应超时，可稍后重试、分批运行或调大 SILICONFLOW_TIMEOUT_SECONDS。"
+        return "模型服务响应超时，可稍后重试或调大 SILICONFLOW_TIMEOUT_SECONDS。"
     if code == "rate_limited":
         return "请求触发限流，请稍后重试。"
     if code == "empty_response":
