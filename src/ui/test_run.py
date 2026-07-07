@@ -62,7 +62,8 @@ SAMPLE_CHECKBOX_KEY_PREFIX = "test_run_case_checkbox_"
 SAMPLE_TABLE_COLUMN_WIDTHS = [0.58, 1.0, 2.6, 1.15, 0.8, 0.95]
 SAMPLE_TABLE_HEADERS = ["选择", "样本编号", "任务标题", "场景", "难度", "测试状态"]
 SAMPLE_TABLE_HEIGHT = 330
-_EVAL_TEMPERATURE = 0.1
+_EVAL_TEMPERATURE_DEFAULT = 0.1
+_EVAL_TEMPERATURE_ENV = "FINDUEVAL_EVAL_TEMPERATURE"
 _MODEL_OPTION_LIMIT = 30
 _ANSWER_PREVIEW_LIMIT = 1500
 _SLOW_MODEL_KEYWORDS = ("longcat", "r1", "reasoning", "thinking")
@@ -95,7 +96,23 @@ def resolve_eval_max_tokens(raw_value: str | None = None) -> int:
     return min(parsed, _EVAL_MAX_TOKENS_LIMIT)
 
 
+def resolve_eval_temperature(raw_value: str | None = None) -> float:
+    """Resolve the answer-generation temperature while keeping runs comparable."""
+    raw = os.getenv(_EVAL_TEMPERATURE_ENV, "") if raw_value is None else raw_value
+    value = str(raw or "").strip()
+    if not value:
+        return _EVAL_TEMPERATURE_DEFAULT
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return _EVAL_TEMPERATURE_DEFAULT
+    if parsed < 0.0 or parsed > 1.0:
+        return _EVAL_TEMPERATURE_DEFAULT
+    return parsed
+
+
 _EVAL_MAX_TOKENS = resolve_eval_max_tokens()
+_EVAL_TEMPERATURE = resolve_eval_temperature()
 
 
 def get_test_run_steps() -> list[str]:
@@ -614,6 +631,7 @@ def _render_configuration_panel(
         ("已选模型", _selected_model_summary(model_ids)),
         ("当前模型服务", _SILICONFLOW_LABEL),
         ("预计模型回答", f"{run_plan['planned_responses']} 条"),
+        ("回答随机性", f"{_EVAL_TEMPERATURE:.1f}"),
         ("当前运行模式", _mode_label(mode)),
     ]
     st.markdown("**当前评测配置**")

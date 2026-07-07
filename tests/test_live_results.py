@@ -116,6 +116,7 @@ class _SequenceProvider(ModelProvider):
     def __init__(self, *results: GenerationResult, timeout_seconds: float | None = None):
         self._results = list(results)
         self.max_token_calls: list[int] = []
+        self.temperature_calls: list[float] = []
         self.message_calls: list[str] = []
         self.timeout_seconds = timeout_seconds
         self.request_timeout_calls: list[float | None] = []
@@ -125,6 +126,7 @@ class _SequenceProvider(ModelProvider):
 
     def generate_response(self, model_id, messages, *, temperature=0.2, max_tokens=2048, **kwargs):
         self.max_token_calls.append(max_tokens)
+        self.temperature_calls.append(temperature)
         self.message_calls.append("\n".join(str(message.get("content") or "") for message in messages))
         self.request_timeout_calls.append(kwargs.get("request_timeout_seconds"))
         return self._results.pop(0)
@@ -162,6 +164,17 @@ class RunnerEmptyGuardTests(unittest.TestCase):
         outcome = er.run_single(provider, "m", {"case_id": "C1"})
         self.assertTrue(outcome.success)
         self.assertEqual(outcome.answer_length, 2)
+
+    def test_run_single_passes_configured_temperature_to_provider(self):
+        provider = _SequenceProvider(
+            GenerationResult("sequence", "m", STATUS_SUCCESS, response_text="ok"),
+        )
+
+        outcome = er.run_single(provider, "m", {"case_id": "C1"}, temperature=0.3)
+
+        self.assertTrue(outcome.success)
+        self.assertEqual(provider.temperature_calls, [0.3])
+        self.assertEqual(outcome.temperature, 0.3)
 
     def test_incomplete_generation_result_surfaces_finish_reason_on_outcome(self):
         provider = _StaticProvider(GenerationResult(

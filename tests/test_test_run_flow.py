@@ -12,6 +12,7 @@ from src.ui.test_run import (
     _EVAL_MAX_TOKENS,
     _EVAL_MAX_TOKENS_DEFAULT,
     _EVAL_MAX_TOKENS_LIMIT,
+    _EVAL_TEMPERATURE_DEFAULT,
     batch_run_notice,
     build_outcome_view_options,
     build_model_selection_options,
@@ -37,6 +38,7 @@ from src.ui.test_run import (
     merge_sample_checkbox_selection,
     prompt_preview_task_for_case,
     requires_large_run_confirmation,
+    resolve_eval_temperature,
     resolve_eval_max_tokens,
     sample_checkbox_key,
     slow_model_notice,
@@ -64,6 +66,16 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertEqual(6000, resolve_eval_max_tokens("6000"))
         self.assertEqual(_EVAL_MAX_TOKENS_LIMIT, resolve_eval_max_tokens("999999"))
         self.assertEqual(4096, resolve_eval_max_tokens("not-a-number"))
+
+    def test_eval_temperature_default_and_env_override_are_bounded(self):
+        self.assertEqual(0.1, _EVAL_TEMPERATURE_DEFAULT)
+        self.assertEqual(0.1, resolve_eval_temperature(""))
+        self.assertEqual(0.0, resolve_eval_temperature("0"))
+        self.assertEqual(0.3, resolve_eval_temperature("0.3"))
+        self.assertEqual(1.0, resolve_eval_temperature("1.0"))
+        self.assertEqual(0.1, resolve_eval_temperature("not-a-number"))
+        self.assertEqual(0.1, resolve_eval_temperature("-0.1"))
+        self.assertEqual(0.1, resolve_eval_temperature("1.1"))
 
     def test_batch_run_notice_and_confirmation_are_disabled_by_default(self):
         self.assertIsNone(batch_run_notice({"planned_responses": 20}))
@@ -187,6 +199,7 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("已完成回答已保留", source)
         self.assertIn("继续未完成项", source)
         self.assertIn("放弃本次运行", source)
+        self.assertIn("回答随机性", panel_source)
         self.assertIn("er.run_single", source)
         self.assertIn("retry_max_tokens=_EVAL_MAX_TOKENS_LIMIT", source)
         self.assertIn("er.CompareRunResult", source)
@@ -205,6 +218,7 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertLess(panel_source.index("with col3:"), panel_source.index("if start_run:"))
         self.assertLess(panel_source.index("if start_run:"), panel_source.index("_execute_run_queue("))
         self.assertNotIn("_execute_run_queue(", run_button_source)
+        self.assertIn("_EVAL_TEMPERATURE", panel_source)
         self.assertNotIn("progress_callback=_on_progress", source)
         self.assertNotIn('st.expander("查看回答"', source)
         self.assertNotIn('st.expander("查看全部回答"', source)
@@ -220,6 +234,17 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("不包含专业标准答案、必须覆盖点、不可接受错误或评分标准", source)
         self.assertIn("请以本弹窗内容为准判断被测模型实际收到的信息", source)
         self.assertNotIn("core_conclusion", source[source.index("def _render_prompt_preview_dialog"):])
+
+    def test_judge_temperature_stays_fixed_and_not_exposed(self):
+        source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+        scoring_source = source[
+            source.index("def _execute_score_queue"):
+            source.index("def _render_score_results")
+        ]
+
+        self.assertIn("_JUDGE_TEMPERATURE = 0.0", source)
+        self.assertIn("temperature=_JUDGE_TEMPERATURE", scoring_source)
+        self.assertNotIn("test_run_judge_temperature", source)
 
     def test_prompt_preview_uses_same_task_as_run_queue(self):
         task = {
