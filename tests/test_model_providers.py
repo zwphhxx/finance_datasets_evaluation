@@ -160,6 +160,87 @@ class SiliconFlowGenerateTests(unittest.TestCase):
         self.assertNotIn("sk-secret", json.dumps(result.raw_response))
         self.assertNotIn("Authorization", json.dumps(result.raw_response))
 
+    def test_length_finish_reason_marks_incomplete_response_failed(self):
+        def fake_urlopen(request, timeout=None):
+            body = {
+                "choices": [{
+                    "finish_reason": "length",
+                    "message": {"role": "assistant", "content": "初步结论：可能构成重大资产重组。具体测算"},
+                }],
+                "usage": {"prompt_tokens": 12, "completion_tokens": 128, "total_tokens": 140},
+            }
+            headers = {"x-siliconcloud-trace-id": "trace-length"}
+            return _FakeResp(200, headers, json.dumps(body))
+
+        provider = SiliconFlowProvider(api_key="sk-secret")
+        with mock.patch.object(sf.urllib.request, "urlopen", fake_urlopen):
+            result = provider.generate_response("m", _MESSAGES)
+
+        self.assertEqual(result.status, STATUS_FAILED)
+        self.assertEqual(result.error_code, "incomplete_response")
+        self.assertEqual(result.finish_reason, "length")
+        self.assertIn("长度限制", result.error_message)
+        self.assertEqual(result.incomplete_reason, "模型回答因长度限制中断。")
+        self.assertEqual(result.output_tokens, 128)
+        self.assertEqual(result.trace_id, "trace-length")
+
+    def test_dangling_short_answer_marks_incomplete_when_finish_reason_missing(self):
+        def fake_urlopen(request, timeout=None):
+            body = {
+                "choices": [{
+                    "message": {"role": "assistant", "content": "基于已提供数据，初步判断存在风险。具体测算"},
+                }],
+                "usage": {"completion_tokens": 32},
+            }
+            return _FakeResp(200, {}, json.dumps(body))
+
+        provider = SiliconFlowProvider(api_key="sk-secret")
+        with mock.patch.object(sf.urllib.request, "urlopen", fake_urlopen):
+            result = provider.generate_response("m", _MESSAGES)
+
+        self.assertEqual(result.status, STATUS_FAILED)
+        self.assertEqual(result.error_code, "incomplete_response")
+        self.assertEqual(result.incomplete_reason, "回答停在明显未完成的语句。")
+
+    def test_content_filter_finish_reason_marks_incomplete_even_without_text(self):
+        def fake_urlopen(request, timeout=None):
+            body = {
+                "choices": [{
+                    "finish_reason": "content_filter",
+                    "message": {"role": "assistant", "content": ""},
+                }],
+                "usage": {"completion_tokens": 0},
+            }
+            return _FakeResp(200, {}, json.dumps(body))
+
+        provider = SiliconFlowProvider(api_key="sk-secret")
+        with mock.patch.object(sf.urllib.request, "urlopen", fake_urlopen):
+            result = provider.generate_response("m", _MESSAGES)
+
+        self.assertEqual(result.status, STATUS_FAILED)
+        self.assertEqual(result.error_code, "incomplete_response")
+        self.assertEqual(result.finish_reason, "content_filter")
+        self.assertIn("内容过滤", result.incomplete_reason)
+
+    def test_short_complete_answer_with_stop_finish_reason_stays_success(self):
+        def fake_urlopen(request, timeout=None):
+            body = {
+                "choices": [{
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": "基于已提供数据，初步判断存在较高风险。"},
+                }],
+                "usage": {"completion_tokens": 20},
+            }
+            return _FakeResp(200, {}, json.dumps(body))
+
+        provider = SiliconFlowProvider(api_key="sk-secret")
+        with mock.patch.object(sf.urllib.request, "urlopen", fake_urlopen):
+            result = provider.generate_response("m", _MESSAGES)
+
+        self.assertEqual(result.status, STATUS_SUCCESS)
+        self.assertEqual(result.finish_reason, "stop")
+        self.assertIsNone(result.incomplete_reason)
+
     def test_optional_params_only_sent_when_present(self):
         captured = {}
 

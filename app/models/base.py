@@ -21,6 +21,7 @@ STATUS_MOCK = "mock"
 # HTTP 成功但供应商返回的回答为空时使用的错误码（区别于鉴权/超时等失败，
 # 便于运行汇总单独统计「空回答」条数）。
 ERROR_EMPTY_RESPONSE = "empty_response"
+ERROR_INCOMPLETE_RESPONSE = "incomplete_response"
 
 
 @dataclass(frozen=True)
@@ -75,6 +76,8 @@ class GenerationResult:
     trace_id: str | None = None
     error_code: str | None = None
     error_message: str | None = None
+    finish_reason: str | None = None
+    incomplete_reason: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -204,3 +207,91 @@ def extract_answer_text(body: Mapping[str, Any]) -> str:
         return legacy
 
     return ""
+
+
+def extract_finish_reason(body: Mapping[str, Any]) -> str | None:
+    """Extract choices[0].finish_reason from an OpenAI-compatible response."""
+    first = _first_choice(body)
+    if not first:
+        return None
+    value = first.get("finish_reason")
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def detect_incomplete_answer(answer_text: str, messages: Sequence[Mapping[str, Any]] | None = None) -> str | None:
+    """Conservative heuristic for answers that visibly stop mid-thought.
+
+    This is intentionally narrower than a quality check: it catches provider
+    truncation symptoms such as ending at "具体测算" or "如下：" while leaving
+    short but complete answers alone.
+    """
+    text = str(answer_text or "").strip()
+    if not text:
+        return None
+
+    compact = text.rstrip()
+    if len(compact) < 300 and _ends_with_dangling_phrase(compact):
+        return "回答停在明显未完成的语句。"
+
+    if "具体测算" in compact:
+        tail = compact.rsplit("具体测算", 1)[-1]
+        if not any(char.isdigit() for char in tail) and _looks_unfinished_tail(tail):
+            return "回答提到具体测算但未列出测算结果。"
+
+    if messages and _requires_four_part_structure(messages):
+        present = sum(
+            1
+            for marker in ("1）", "2）", "3）", "4）")
+            if marker in compact
+        )
+        if 0 < present <= 2 and len(compact) < 500 and not _ends_with_terminal_punctuation(compact):
+            return "回答未完成要求的结构化部分。"
+
+    return None
+
+
+def _first_choice(body: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    if not isinstance(body, Mapping):
+        return None
+    choices = body.get("choices") or []
+    if not isinstance(choices, Sequence) or isinstance(choices, (str, bytes)) or not choices:
+        return None
+    first = choices[0]
+    return first if isinstance(first, Mapping) else None
+
+
+def _ends_with_dangling_phrase(text: str) -> bool:
+    dangling = (
+        "具体测算",
+        "如下",
+        "如下：",
+        "包括",
+        "分别为",
+        "主要为",
+        "例如",
+        "其中",
+        "：",
+        ":",
+        "，",
+        ",",
+        "、",
+    )
+    stripped = text.rstrip()
+    return any(stripped.endswith(token) for token in dangling)
+
+
+def _looks_unfinished_tail(tail: str) -> bool:
+    stripped = str(tail or "").strip()
+    return not stripped or _ends_with_dangling_phrase(stripped) or not _ends_with_terminal_punctuation(stripped)
+
+
+def _ends_with_terminal_punctuation(text: str) -> bool:
+    return str(text or "").rstrip().endswith(("。", "；", "？", "！", ".", ";", "?", "!", "）", ")", "】", "]", "”", "’", "」", "』"))
+
+
+def _requires_four_part_structure(messages: Sequence[Mapping[str, Any]]) -> bool:
+    blob = "\n".join(str(message.get("content", "")) for message in messages or [])
+    return all(marker in blob for marker in ("1）", "2）", "3）", "4）"))

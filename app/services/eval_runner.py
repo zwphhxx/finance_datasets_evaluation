@@ -61,6 +61,8 @@ class RunOutcome:
     trace_id: str | None = None
     error_code: str | None = None
     error_message: str | None = None
+    finish_reason: str | None = None
+    incomplete_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -199,6 +201,8 @@ def run_single(
         trace_id=result.trace_id,
         error_code=error_code,
         error_message=error_message,
+        finish_reason=result.finish_reason,
+        incomplete_reason=result.incomplete_reason,
     )
 
 
@@ -345,6 +349,7 @@ def persist_run_result(result, db_path: Path | None = None) -> bool:
         path = db_path or get_db_path()
         if not database_ready(path):
             return False
+        _ensure_live_run_response_columns(path)
         rows = [
             {
                 "run_id": result.run_id,
@@ -362,6 +367,8 @@ def persist_run_result(result, db_path: Path | None = None) -> bool:
                 "total_tokens": o.total_tokens,
                 "http_status": o.http_status,
                 "trace_id": o.trace_id,
+                "finish_reason": o.finish_reason,
+                "incomplete_reason": o.incomplete_reason,
                 "error_code": o.error_code,
                 "error_message": o.error_message,
             }
@@ -458,6 +465,7 @@ def persist_run_outcome(
         path = db_path or get_db_path()
         if not database_ready(path):
             return False
+        _ensure_live_run_response_columns(path)
         repo = Repository(path)
         existing = _find_run_response_row(repo, run_id, outcome.case_id, outcome.model_id)
         row = _run_outcome_row(run_id, mode, outcome)
@@ -554,6 +562,7 @@ def restore_compare_result_from_db(run_id: str, *, db_path: Path | None = None) 
         path = db_path or get_db_path()
         if not database_ready(path):
             return None
+        _ensure_live_run_response_columns(path)
         repo = Repository(path)
         responses = repo.list_df("live_run_responses", order_by="id")
         if responses.empty or "run_id" not in responses.columns:
@@ -624,6 +633,8 @@ def _run_outcome_row(run_id: str, mode: str, outcome: RunOutcome) -> dict[str, A
         "total_tokens": outcome.total_tokens,
         "http_status": outcome.http_status,
         "trace_id": outcome.trace_id,
+        "finish_reason": outcome.finish_reason,
+        "incomplete_reason": outcome.incomplete_reason,
         "error_code": outcome.error_code,
         "error_message": outcome.error_message,
     }
@@ -711,7 +722,24 @@ def _run_outcome_from_row(row: Mapping[str, Any]) -> RunOutcome:
         trace_id=row.get("trace_id"),
         error_code=row.get("error_code"),
         error_message=row.get("error_message"),
+        finish_reason=row.get("finish_reason"),
+        incomplete_reason=row.get("incomplete_reason"),
     )
+
+
+def _ensure_live_run_response_columns(db_path: Path) -> None:
+    """Add diagnostic columns to existing runtime DBs without rebuilding data."""
+    import sqlite3
+
+    with sqlite3.connect(str(db_path)) as connection:
+        existing = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(live_run_responses)").fetchall()
+        }
+        for column in ("finish_reason", "incomplete_reason"):
+            if column not in existing:
+                connection.execute(f"ALTER TABLE live_run_responses ADD COLUMN {column} TEXT")
+        connection.commit()
 
 
 def _as_int(value: Any) -> int | None:

@@ -203,6 +203,8 @@ CREATE TABLE live_run_responses (
     total_tokens  INTEGER,
     http_status   INTEGER,
     trace_id      TEXT,
+    finish_reason TEXT,
+    incomplete_reason TEXT,
     error_code    TEXT,
     error_message TEXT,
     status        TEXT NOT NULL DEFAULT 'active',

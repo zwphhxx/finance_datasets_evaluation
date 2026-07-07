@@ -9,6 +9,7 @@ from __future__ import annotations
 from app.models.base import (
     ConnectivityResult,
     ERROR_EMPTY_RESPONSE,
+    ERROR_INCOMPLETE_RESPONSE,
     GenerationResult,
     ModelClient,
     ModelInfo,
@@ -18,6 +19,7 @@ from app.models.base import (
     STATUS_MOCK,
     STATUS_SUCCESS,
     extract_answer_text,
+    extract_finish_reason,
 )
 from app.models.registry import (
     available_providers,
@@ -29,6 +31,7 @@ from app.models.registry import (
 __all__ = [
     "ConnectivityResult",
     "ERROR_EMPTY_RESPONSE",
+    "ERROR_INCOMPLETE_RESPONSE",
     "GenerationResult",
     "ModelClient",
     "ModelInfo",
@@ -38,6 +41,7 @@ __all__ = [
     "STATUS_MOCK",
     "STATUS_SUCCESS",
     "extract_answer_text",
+    "extract_finish_reason",
     "available_providers",
     "get_provider",
     "get_text_provider",

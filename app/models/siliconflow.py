@@ -26,13 +26,16 @@ from typing import Any, Mapping, Sequence
 from app.models.base import (
     ConnectivityResult,
     ERROR_EMPTY_RESPONSE,
+    ERROR_INCOMPLETE_RESPONSE,
     GenerationResult,
     ModelInfo,
     ModelListResult,
     ModelProvider,
     STATUS_FAILED,
     STATUS_SUCCESS,
+    detect_incomplete_answer,
     extract_answer_text,
+    extract_finish_reason,
     normalize_messages,
 )
 
@@ -266,6 +269,7 @@ class SiliconFlowProvider(ModelProvider):
 
         usage = body.get("usage") or {}
         answer_text = extract_answer_text(body)
+        finish_reason = extract_finish_reason(body)
         common = dict(
             latency_ms=latency_ms,
             input_tokens=_as_int(usage.get("prompt_tokens")),
@@ -273,7 +277,21 @@ class SiliconFlowProvider(ModelProvider):
             total_tokens=_as_int(usage.get("total_tokens")),
             http_status=response.status,
             trace_id=trace_id,
+            finish_reason=finish_reason,
         )
+        finish_incomplete_reason = _incomplete_reason_for_finish(finish_reason)
+        if finish_incomplete_reason:
+            return GenerationResult(
+                provider=self.name,
+                model_id=model_id,
+                status=STATUS_FAILED,
+                response_text=answer_text,
+                raw_response=body,
+                error_code=ERROR_INCOMPLETE_RESPONSE,
+                error_message=finish_incomplete_reason,
+                incomplete_reason=finish_incomplete_reason,
+                **common,
+            )
         # HTTP 成功但未提取到任何回答文本：判为「空回答」失败，绝不当成成功。
         if not answer_text.strip():
             return GenerationResult(
@@ -283,6 +301,19 @@ class SiliconFlowProvider(ModelProvider):
                 raw_response=body,
                 error_code=ERROR_EMPTY_RESPONSE,
                 error_message="模型返回成功但回答为空（content / reasoning_content / text 均为空）。",
+                **common,
+            )
+        incomplete_reason = detect_incomplete_answer(answer_text, normalized)
+        if incomplete_reason:
+            return GenerationResult(
+                provider=self.name,
+                model_id=model_id,
+                status=STATUS_FAILED,
+                response_text=answer_text,
+                raw_response=body,
+                error_code=ERROR_INCOMPLETE_RESPONSE,
+                error_message=incomplete_reason,
+                incomplete_reason=incomplete_reason,
                 **common,
             )
         return GenerationResult(
@@ -382,3 +413,19 @@ def _as_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _incomplete_reason_for_finish(finish_reason: str | None) -> str | None:
+    reason = str(finish_reason or "").strip()
+    if not reason:
+        return None
+    normalized = reason.lower()
+    if normalized == "stop":
+        return None
+    if normalized == "length":
+        return "模型回答因长度限制中断。"
+    if normalized == "content_filter":
+        return "模型回答被内容过滤中断。"
+    if normalized in {"tool_calls", "function_call"}:
+        return "模型回答转入工具调用，未返回完整文本回答。"
+    return f"模型回答未正常结束（finish_reason={reason}）。"

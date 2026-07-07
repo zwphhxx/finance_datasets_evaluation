@@ -1832,7 +1832,7 @@ def _render_run_outcome_card(
     *,
     compact: bool = False,
 ) -> None:
-    status = "已完成" if outcome.success else "未获得有效回答"
+    status = _outcome_display_status(outcome)
     elapsed = "—" if outcome.latency_ms is None else f"{outcome.latency_ms} ms"
     st.markdown(f"**{index}. {_model_short_name(outcome.model_id)}**")
     st.caption(f"任务编号：{outcome.case_id} · 状态：{status} · 耗时：{elapsed}")
@@ -1850,6 +1850,10 @@ def _render_run_outcome_card(
 
     st.markdown(f"错误码：`{_dash(outcome.error_code)}`")
     st.markdown(f"错误信息：{_short(outcome.error_message, 180)}")
+    if getattr(outcome, "incomplete_reason", None):
+        st.markdown(f"不完整原因：{_short(outcome.incomplete_reason, 180)}")
+    if getattr(outcome, "finish_reason", None):
+        st.markdown(f"finish_reason：`{_dash(outcome.finish_reason)}`")
     guidance = _failure_guidance(outcome)
     if guidance:
         st.caption(guidance)
@@ -1871,12 +1875,15 @@ def _render_results_table(result) -> None:
         {
             "模型": outcome.model_id,
             "任务编号": outcome.case_id,
-            "状态": _status_label(outcome.run_status),
+            "状态": _outcome_display_status(outcome),
             "HTTP状态": _n(outcome.http_status),
+            "finish_reason": _dash(getattr(outcome, "finish_reason", None)),
+            "incomplete_reason": _dash(getattr(outcome, "incomplete_reason", None)),
             "错误码": _dash(outcome.error_code),
             "错误信息": _short(outcome.error_message),
             "trace_id": _dash(outcome.trace_id),
             "耗时(ms)": _n(outcome.latency_ms),
+            "输出tokens": _n(outcome.output_tokens),
             "回答长度": str(outcome.answer_length),
         }
         for outcome in result.outcomes
@@ -1943,8 +1950,11 @@ def render_model_answer_detail(
         f"{_outcome_display_status(outcome)}"
     )
     meta_parts = [f"耗时：{_latency_label(outcome.latency_ms)}"]
-    if outcome.success:
+    if outcome.success or outcome.answer_length:
         meta_parts.append(f"回答长度：{_answer_length_label(outcome)}")
+    finish_reason = getattr(outcome, "finish_reason", None)
+    if finish_reason:
+        meta_parts.append(f"finish_reason：{finish_reason}")
     meta = "｜".join(meta_parts) + f"\n模型 ID：{outcome.model_id}"
     answer = outcome.answer_text or "—"
     display_text = _answer_preview(answer) if preview else answer
@@ -1953,12 +1963,19 @@ def render_model_answer_detail(
     else:
         guidance = _failure_guidance(outcome)
         lines = [
-            "**未获得有效回答**",
+            f"**{_outcome_display_status(outcome)}**",
             "",
             f"错误码：`{_dash(outcome.error_code)}`",
             "",
             f"错误信息：{_short(outcome.error_message, 220)}",
         ]
+        incomplete_reason = getattr(outcome, "incomplete_reason", None)
+        if incomplete_reason:
+            lines.extend(["", f"不完整原因：{incomplete_reason}"])
+        if finish_reason:
+            lines.extend(["", f"finish_reason：`{finish_reason}`"])
+        if outcome.answer_text and str(outcome.error_code or "").strip().lower() == "incomplete_response":
+            lines.extend(["", "**部分回答**", "", display_text])
         if guidance:
             lines.extend(["", guidance])
         markdown = "\n".join(lines)
@@ -2397,6 +2414,8 @@ def _outcome_display_status(outcome: er.RunOutcome) -> str:
     status = str(outcome.run_status or "").strip().lower()
     if outcome.success:
         return "已完成"
+    if str(getattr(outcome, "error_code", "") or "").strip().lower() == "incomplete_response":
+        return "回答不完整"
     if status == "running":
         return "生成中"
     if status == "waiting":
@@ -2505,6 +2524,8 @@ def _failure_guidance(outcome) -> str:
         return "请求触发限流，请稍后重试。"
     if code == "empty_response":
         return "模型返回成功但回答为空，建议重试或更换模型。"
+    if code == "incomplete_response":
+        return "模型回答未完整结束，不会进入评分草稿；可重试失败项或更换模型。"
     if code in {"bad_request", "not_found"}:
         return "请检查模型 ID 或请求参数。"
     if code == "runtime_error":

@@ -121,6 +121,30 @@ class RunnerEmptyGuardTests(unittest.TestCase):
         self.assertTrue(outcome.success)
         self.assertEqual(outcome.answer_length, 2)
 
+    def test_incomplete_generation_result_surfaces_finish_reason_on_outcome(self):
+        provider = _StaticProvider(GenerationResult(
+            "static",
+            "m",
+            STATUS_FAILED,
+            response_text="初步结论：存在风险。具体测算",
+            output_tokens=128,
+            trace_id="trace-incomplete",
+            error_code="incomplete_response",
+            error_message="模型回答因长度限制中断。",
+            finish_reason="length",
+            incomplete_reason="模型回答因长度限制中断。",
+        ))
+
+        outcome = er.run_single(provider, "m", {"case_id": "C1"})
+
+        self.assertFalse(outcome.success)
+        self.assertEqual(outcome.run_status, STATUS_FAILED)
+        self.assertEqual(outcome.error_code, "incomplete_response")
+        self.assertEqual(outcome.finish_reason, "length")
+        self.assertEqual(outcome.incomplete_reason, "模型回答因长度限制中断。")
+        self.assertEqual(outcome.output_tokens, 128)
+        self.assertEqual(outcome.trace_id, "trace-incomplete")
+
 
 class _CodeProvider(ModelProvider):
     """Maps model_id to a fixed failure error_code (timeout / 401 / 429)."""

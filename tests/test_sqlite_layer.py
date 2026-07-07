@@ -106,6 +106,11 @@ class SchemaFieldTests(unittest.TestCase):
             self.assertTrue(str(standard or "").strip(), field)
             self.assertTrue(str(rules or "").strip(), field)
 
+    def test_live_run_responses_store_completion_diagnostics(self):
+        columns = self._columns("live_run_responses")
+        self.assertIn("finish_reason", columns)
+        self.assertIn("incomplete_reason", columns)
+
     def test_schema_file_is_used(self):
         self.assertTrue(SCHEMA_PATH.exists())
 

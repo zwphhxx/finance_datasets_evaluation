@@ -12,6 +12,7 @@ from src.ui.test_run import (
     build_outcome_view_options,
     build_model_selection_options,
     build_remaining_queue_items,
+    build_failed_run_queue_items,
     build_run_plan_summary,
     build_run_queue_items,
     build_score_plan_summary,
@@ -189,6 +190,8 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("_render_selected_outcome_detail", source)
         self.assertIn("失败项不会进入评分草稿", source)
         self.assertIn("默认展示第一条失败原因", source)
+        for column in ("finish_reason", "incomplete_reason", "输出tokens", "trace_id"):
+            self.assertIn(column, source[source.index("def _render_results_table"):])
         self.assertNotIn("render_aux_action_bar", results_source)
         self.assertNotIn("test_run_technical_details", results_source)
         self.assertNotIn("for index, outcome in enumerate(result.outcomes", results_source)
@@ -654,6 +657,27 @@ class RunPlanTests(unittest.TestCase):
             [(item["model_id"], item["case_id"]) for item in remaining],
         )
 
+    def test_incomplete_response_is_retryable_failed_queue_item(self):
+        queue = build_run_queue_items(["m1"], [{"case_id": "A"}])
+        outcomes = [
+            er.RunOutcome(
+                "A",
+                "",
+                "siliconflow",
+                "m1",
+                "failed",
+                False,
+                answer_text="初步结论：存在风险。具体测算",
+                error_code="incomplete_response",
+                finish_reason="length",
+                incomplete_reason="模型回答因长度限制中断。",
+            )
+        ]
+
+        failed_items = build_failed_run_queue_items(queue, outcomes)
+
+        self.assertEqual([("m1", "A")], [(item["model_id"], item["case_id"]) for item in failed_items])
+
 
 class ScoreDraftTests(unittest.TestCase):
     def test_score_queue_and_plan_skip_failed_model_answers(self):
@@ -677,6 +701,32 @@ class ScoreDraftTests(unittest.TestCase):
         self.assertEqual(1, plan["scoreable"])
         self.assertEqual(1, plan["skipped"])
         self.assertTrue(plan["can_score"])
+
+    def test_incomplete_response_does_not_enter_score_queue(self):
+        compare = er.CompareRunResult(
+            run_id="R1",
+            provider="siliconflow",
+            model_ids=("m1",),
+            mode="live",
+            created_at="2026-07-05T12:00:00",
+            outcomes=(
+                er.RunOutcome(
+                    "CM-001",
+                    "analysis",
+                    "siliconflow",
+                    "m1",
+                    "failed",
+                    False,
+                    answer_text="初步结论：可能构成重大资产重组。具体测算",
+                    error_code="incomplete_response",
+                    finish_reason="length",
+                    incomplete_reason="模型回答因长度限制中断。",
+                ),
+            ),
+        )
+
+        self.assertEqual([], build_score_queue_items(compare))
+        self.assertEqual(0, build_score_plan_summary(compare)["scoreable"])
 
     def test_score_view_options_prefer_first_success(self):
         outcomes = [
