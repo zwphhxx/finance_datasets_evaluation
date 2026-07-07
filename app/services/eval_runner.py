@@ -18,7 +18,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
-from app.models.base import ERROR_EMPTY_RESPONSE, ModelProvider, STATUS_FAILED, STATUS_MOCK
+from app.models.base import (
+    ERROR_EMPTY_RESPONSE,
+    ERROR_INCOMPLETE_RESPONSE,
+    GenerationResult,
+    ModelProvider,
+    STATUS_FAILED,
+    STATUS_MOCK,
+)
 
 # 被评测模型可见的任务字段（白名单）。Gold Answer 相关字段一律不在其中。
 _VISIBLE_TASK_FIELDS = ("scenario", "question", "context", "output_requirement")
@@ -31,6 +38,8 @@ _SYSTEM_PROMPT = (
     "你的回答应体现：在当前已给数据范围内可以作出的判断、支撑该判断的关键数据和逻辑、"
     "仍需进一步核查或核实的边界。请按以下结构作答：1）初步结论；2）关键数据依据；"
     "3）风险事项；4）后续核查边界。"
+    "回答应完整但克制，优先使用 4 个小节，每节 2-4 句话；需要引用关键数据，"
+    "不要展开无关法规背景，整体控制在 800-1500 字左右。"
     "不要对自己的回答进行打分或自评。"
 )
 
@@ -38,6 +47,8 @@ _OUTPUT_HINT = (
     "请用中文作答，结构清晰、专业克制。第一段必须基于题目已提供数据形成初步判断；"
     "随后列示关键数据依据、风险事项和后续核查边界。除非题目完全没有提供可判断的数据，"
     "否则不得只回答“资料不足”或“无法直接判定”，也不得以“缺乏数据”作为主要结论。"
+    "回答应完整但克制，优先用 4 个小节，每节 2-4 句话；需要引用关键数据，"
+    "不要展开无关法规背景，整体控制在 800-1500 字左右。"
 )
 
 
@@ -63,6 +74,9 @@ class RunOutcome:
     error_message: str | None = None
     finish_reason: str | None = None
     incomplete_reason: str | None = None
+    retry_count: int = 0
+    first_finish_reason: str | None = None
+    final_finish_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -163,6 +177,7 @@ def run_single(
     *,
     temperature: float = 0.2,
     max_tokens: int = 1024,
+    retry_max_tokens: int | None = None,
     **kwargs: Any,
 ) -> RunOutcome:
     """对单题运行一次模型调用，转为统一 RunOutcome（不抛异常给调用方）。"""
@@ -170,6 +185,32 @@ def run_single(
     result = provider.generate_response(
         model_id, messages, temperature=temperature, max_tokens=max_tokens, **kwargs
     )
+    retry_count = 0
+    first_finish_reason = result.finish_reason
+
+    retry_tokens = _retry_token_budget(max_tokens, retry_max_tokens)
+    if retry_tokens is not None and _is_length_truncated_result(result):
+        retry_count = 1
+        result = provider.generate_response(
+            model_id, messages, temperature=temperature, max_tokens=retry_tokens, **kwargs
+        )
+    return _run_outcome_from_generation_result(
+        result,
+        model_id=model_id,
+        task=task,
+        retry_count=retry_count,
+        first_finish_reason=first_finish_reason,
+    )
+
+
+def _run_outcome_from_generation_result(
+    result: GenerationResult,
+    *,
+    model_id: str,
+    task: Mapping[str, Any],
+    retry_count: int = 0,
+    first_finish_reason: str | None = None,
+) -> RunOutcome:
     answer = result.response_text or ""
 
     # 兜底：即便某个 provider 把「HTTP 成功但空回答」标成功，运行侧也不当成功。
@@ -203,7 +244,31 @@ def run_single(
         error_message=error_message,
         finish_reason=result.finish_reason,
         incomplete_reason=result.incomplete_reason,
+        retry_count=retry_count,
+        first_finish_reason=first_finish_reason,
+        final_finish_reason=result.finish_reason,
     )
+
+
+def _is_length_truncated_result(result: GenerationResult) -> bool:
+    return (
+        str(result.error_code or "").strip().lower() == ERROR_INCOMPLETE_RESPONSE
+        and str(result.finish_reason or "").strip().lower() == "length"
+    )
+
+
+def _retry_token_budget(max_tokens: int, retry_max_tokens: int | None) -> int | None:
+    if retry_max_tokens is None:
+        return None
+    try:
+        original = int(max_tokens)
+        upper = int(retry_max_tokens)
+    except (TypeError, ValueError):
+        return None
+    if original <= 0 or upper <= original:
+        return None
+    retry_tokens = min(original * 2, upper)
+    return retry_tokens if retry_tokens > original else None
 
 
 def run_evaluation(
@@ -369,6 +434,9 @@ def persist_run_result(result, db_path: Path | None = None) -> bool:
                 "trace_id": o.trace_id,
                 "finish_reason": o.finish_reason,
                 "incomplete_reason": o.incomplete_reason,
+                "retry_count": o.retry_count,
+                "first_finish_reason": o.first_finish_reason,
+                "final_finish_reason": o.final_finish_reason,
                 "error_code": o.error_code,
                 "error_message": o.error_message,
             }
@@ -635,6 +703,9 @@ def _run_outcome_row(run_id: str, mode: str, outcome: RunOutcome) -> dict[str, A
         "trace_id": outcome.trace_id,
         "finish_reason": outcome.finish_reason,
         "incomplete_reason": outcome.incomplete_reason,
+        "retry_count": outcome.retry_count,
+        "first_finish_reason": outcome.first_finish_reason,
+        "final_finish_reason": outcome.final_finish_reason,
         "error_code": outcome.error_code,
         "error_message": outcome.error_message,
     }
@@ -724,6 +795,9 @@ def _run_outcome_from_row(row: Mapping[str, Any]) -> RunOutcome:
         error_message=row.get("error_message"),
         finish_reason=row.get("finish_reason"),
         incomplete_reason=row.get("incomplete_reason"),
+        retry_count=_as_int(row.get("retry_count")) or 0,
+        first_finish_reason=row.get("first_finish_reason"),
+        final_finish_reason=row.get("final_finish_reason"),
     )
 
 
@@ -736,9 +810,12 @@ def _ensure_live_run_response_columns(db_path: Path) -> None:
             row[1]
             for row in connection.execute("PRAGMA table_info(live_run_responses)").fetchall()
         }
-        for column in ("finish_reason", "incomplete_reason"):
+        text_columns = ("finish_reason", "incomplete_reason", "first_finish_reason", "final_finish_reason")
+        for column in text_columns:
             if column not in existing:
                 connection.execute(f"ALTER TABLE live_run_responses ADD COLUMN {column} TEXT")
+        if "retry_count" not in existing:
+            connection.execute("ALTER TABLE live_run_responses ADD COLUMN retry_count INTEGER")
         connection.commit()
 
 

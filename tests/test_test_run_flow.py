@@ -9,6 +9,9 @@ from app.services import eval_runner as er
 from app.services import scorer as sc
 from src.ui import components as ui_components
 from src.ui.test_run import (
+    _EVAL_MAX_TOKENS,
+    _EVAL_MAX_TOKENS_DEFAULT,
+    _EVAL_MAX_TOKENS_LIMIT,
     build_outcome_view_options,
     build_model_selection_options,
     build_remaining_queue_items,
@@ -31,6 +34,7 @@ from src.ui.test_run import (
     has_confirmable_score_drafts,
     merge_sample_checkbox_selection,
     prompt_preview_task_for_case,
+    resolve_eval_max_tokens,
     sample_checkbox_key,
     _model_short_name,
     _siliconflow_balance_text,
@@ -46,6 +50,14 @@ class TestRunFlowStructureTests(unittest.TestCase):
 
     def test_advanced_settings_keep_technical_controls_collapsed(self):
         self.assertEqual([], get_advanced_setting_items())
+
+    def test_eval_max_tokens_default_and_env_override_are_bounded(self):
+        self.assertEqual(4096, _EVAL_MAX_TOKENS_DEFAULT)
+        self.assertLessEqual(_EVAL_MAX_TOKENS, _EVAL_MAX_TOKENS_LIMIT)
+        self.assertEqual(4096, resolve_eval_max_tokens(""))
+        self.assertEqual(6000, resolve_eval_max_tokens("6000"))
+        self.assertEqual(_EVAL_MAX_TOKENS_LIMIT, resolve_eval_max_tokens("999999"))
+        self.assertEqual(4096, resolve_eval_max_tokens("not-a-number"))
 
     def test_selection_controls_are_dialog_driven(self):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
@@ -101,6 +113,7 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("继续未完成项", source)
         self.assertIn("放弃本次运行", source)
         self.assertIn("er.run_single", source)
+        self.assertIn("retry_max_tokens=_EVAL_MAX_TOKENS_LIMIT", source)
         self.assertIn("er.CompareRunResult", source)
         self.assertIn("查看全文", source)
         self.assertIn('@st.dialog("模型回答全文"', source)
@@ -190,6 +203,9 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("_render_selected_outcome_detail", source)
         self.assertIn("失败项不会进入评分草稿", source)
         self.assertIn("默认展示第一条失败原因", source)
+        self.assertIn("回答不完整", source)
+        self.assertIn("原因：", source)
+        self.assertIn("处理：不会进入评分草稿，可重试失败项或更换模型。", source)
         for column in ("finish_reason", "incomplete_reason", "输出tokens", "trace_id"):
             self.assertIn(column, source[source.index("def _render_results_table"):])
         self.assertNotIn("render_aux_action_bar", results_source)

@@ -106,6 +106,23 @@ class _StaticProvider(ModelProvider):
         return self._result
 
 
+class _SequenceProvider(ModelProvider):
+    """Returns GenerationResult objects in order and records max_tokens per call."""
+
+    name = "sequence"
+
+    def __init__(self, *results: GenerationResult):
+        self._results = list(results)
+        self.max_token_calls: list[int] = []
+
+    def list_models(self, model_type="text", sub_type="chat"):
+        raise NotImplementedError
+
+    def generate_response(self, model_id, messages, *, temperature=0.2, max_tokens=2048, **kwargs):
+        self.max_token_calls.append(max_tokens)
+        return self._results.pop(0)
+
+
 class RunnerEmptyGuardTests(unittest.TestCase):
     def test_success_but_empty_answer_downgraded_to_failed(self):
         provider = _StaticProvider(GenerationResult("static", "m", STATUS_SUCCESS, response_text=""))
@@ -144,6 +161,83 @@ class RunnerEmptyGuardTests(unittest.TestCase):
         self.assertEqual(outcome.incomplete_reason, "模型回答因长度限制中断。")
         self.assertEqual(outcome.output_tokens, 128)
         self.assertEqual(outcome.trace_id, "trace-incomplete")
+
+    def test_length_incomplete_retries_once_with_higher_token_budget_and_keeps_success(self):
+        provider = _SequenceProvider(
+            GenerationResult(
+                "sequence",
+                "m",
+                STATUS_FAILED,
+                response_text="初步结论：存在风险。具体测算",
+                error_code="incomplete_response",
+                error_message="模型回答因长度限制中断。",
+                finish_reason="length",
+                incomplete_reason="模型回答因长度限制中断。",
+            ),
+            GenerationResult(
+                "sequence",
+                "m",
+                STATUS_SUCCESS,
+                response_text="初步结论：基于已提供数据，存在较高风险。",
+                finish_reason="stop",
+            ),
+        )
+
+        outcome = er.run_single(
+            provider,
+            "m",
+            {"case_id": "CM-001"},
+            max_tokens=2048,
+            retry_max_tokens=4096,
+        )
+
+        self.assertEqual([2048, 4096], provider.max_token_calls)
+        self.assertTrue(outcome.success)
+        self.assertEqual(outcome.run_status, STATUS_SUCCESS)
+        self.assertEqual(outcome.retry_count, 1)
+        self.assertEqual(outcome.first_finish_reason, "length")
+        self.assertEqual(outcome.final_finish_reason, "stop")
+        self.assertEqual(outcome.finish_reason, "stop")
+        self.assertIsNone(outcome.error_code)
+
+    def test_length_incomplete_retry_still_length_keeps_incomplete_response(self):
+        provider = _SequenceProvider(
+            GenerationResult(
+                "sequence",
+                "m",
+                STATUS_FAILED,
+                response_text="初步结论：存在风险。具体测算",
+                error_code="incomplete_response",
+                error_message="模型回答因长度限制中断。",
+                finish_reason="length",
+                incomplete_reason="模型回答因长度限制中断。",
+            ),
+            GenerationResult(
+                "sequence",
+                "m",
+                STATUS_FAILED,
+                response_text="初步结论：仍存在风险。具体测算",
+                error_code="incomplete_response",
+                error_message="模型回答因长度限制中断。",
+                finish_reason="length",
+                incomplete_reason="模型回答因长度限制中断。",
+            ),
+        )
+
+        outcome = er.run_single(
+            provider,
+            "m",
+            {"case_id": "CM-001"},
+            max_tokens=2048,
+            retry_max_tokens=4096,
+        )
+
+        self.assertEqual([2048, 4096], provider.max_token_calls)
+        self.assertFalse(outcome.success)
+        self.assertEqual(outcome.error_code, "incomplete_response")
+        self.assertEqual(outcome.retry_count, 1)
+        self.assertEqual(outcome.first_finish_reason, "length")
+        self.assertEqual(outcome.final_finish_reason, "length")
 
 
 class _CodeProvider(ModelProvider):

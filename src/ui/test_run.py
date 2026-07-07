@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from html import escape
+import os
 import re
 
 import pandas as pd
@@ -62,7 +63,6 @@ SAMPLE_TABLE_COLUMN_WIDTHS = [0.58, 1.0, 2.6, 1.15, 0.8, 0.95]
 SAMPLE_TABLE_HEADERS = ["选择", "样本编号", "任务标题", "场景", "难度", "测试状态"]
 SAMPLE_TABLE_HEIGHT = 330
 _EVAL_TEMPERATURE = 0.1
-_EVAL_MAX_TOKENS = 2048
 _MODEL_OPTION_LIMIT = 30
 _ANSWER_PREVIEW_LIMIT = 1500
 _RUN_STATE_KEY = "test_run_run_state"
@@ -74,6 +74,27 @@ _LAST_SCORE_STATUS_KEY = "test_run_last_score_status"
 _SCORE_RETRY_RUNNING_KEY = "test_run_score_retry_running"
 _JUDGE_TEMPERATURE = 0.0
 _JUDGE_MAX_TOKENS = 2048
+_EVAL_MAX_TOKENS_DEFAULT = 4096
+_EVAL_MAX_TOKENS_LIMIT = 8192
+_EVAL_MAX_TOKENS_ENV = "FINDUEVAL_EVAL_MAX_TOKENS"
+
+
+def resolve_eval_max_tokens(raw_value: str | None = None) -> int:
+    """Resolve the hidden answer-generation token budget with a defensive cap."""
+    raw = os.getenv(_EVAL_MAX_TOKENS_ENV, "") if raw_value is None else raw_value
+    value = str(raw or "").strip()
+    if not value:
+        return _EVAL_MAX_TOKENS_DEFAULT
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return _EVAL_MAX_TOKENS_DEFAULT
+    if parsed <= 0:
+        return _EVAL_MAX_TOKENS_DEFAULT
+    return min(parsed, _EVAL_MAX_TOKENS_LIMIT)
+
+
+_EVAL_MAX_TOKENS = resolve_eval_max_tokens()
 
 
 def get_test_run_steps() -> list[str]:
@@ -1267,6 +1288,7 @@ def _execute_run_queue(
                 item["task"],
                 temperature=temperature,
                 max_tokens=max_tokens,
+                retry_max_tokens=_EVAL_MAX_TOKENS_LIMIT,
             )
         except Exception:
             outcome = _unexpected_failure_outcome(provider, item)
@@ -1848,13 +1870,21 @@ def _render_run_outcome_card(
                 _render_full_answer_dialog(outcome)
         return
 
-    st.markdown(f"错误码：`{_dash(outcome.error_code)}`")
-    st.markdown(f"错误信息：{_short(outcome.error_message, 180)}")
-    if getattr(outcome, "incomplete_reason", None):
-        st.markdown(f"不完整原因：{_short(outcome.incomplete_reason, 180)}")
-    if getattr(outcome, "finish_reason", None):
-        st.markdown(f"finish_reason：`{_dash(outcome.finish_reason)}`")
-    guidance = _failure_guidance(outcome)
+    is_incomplete = str(outcome.error_code or "").strip().lower() == "incomplete_response"
+    if is_incomplete:
+        reason = outcome.incomplete_reason or outcome.error_message or "模型回答未完整结束。"
+        st.markdown(f"原因：{_short(reason, 180)}")
+        if getattr(outcome, "finish_reason", None):
+            st.markdown(f"finish_reason：`{_dash(outcome.finish_reason)}`")
+        st.caption("处理：不会进入评分草稿，可重试失败项或更换模型。")
+    else:
+        st.markdown(f"错误码：`{_dash(outcome.error_code)}`")
+        st.markdown(f"错误信息：{_short(outcome.error_message, 180)}")
+        if getattr(outcome, "incomplete_reason", None):
+            st.markdown(f"不完整原因：{_short(outcome.incomplete_reason, 180)}")
+        if getattr(outcome, "finish_reason", None):
+            st.markdown(f"finish_reason：`{_dash(outcome.finish_reason)}`")
+    guidance = "" if is_incomplete else _failure_guidance(outcome)
     if guidance:
         st.caption(guidance)
 
@@ -1879,6 +1909,9 @@ def _render_results_table(result) -> None:
             "HTTP状态": _n(outcome.http_status),
             "finish_reason": _dash(getattr(outcome, "finish_reason", None)),
             "incomplete_reason": _dash(getattr(outcome, "incomplete_reason", None)),
+            "retry_count": _n(getattr(outcome, "retry_count", 0)),
+            "first_finish_reason": _dash(getattr(outcome, "first_finish_reason", None)),
+            "final_finish_reason": _dash(getattr(outcome, "final_finish_reason", None)),
             "错误码": _dash(outcome.error_code),
             "错误信息": _short(outcome.error_message),
             "trace_id": _dash(outcome.trace_id),
@@ -1962,22 +1995,33 @@ def render_model_answer_detail(
         markdown = f"**模型回答**\n\n{display_text}"
     else:
         guidance = _failure_guidance(outcome)
-        lines = [
-            f"**{_outcome_display_status(outcome)}**",
-            "",
-            f"错误码：`{_dash(outcome.error_code)}`",
-            "",
-            f"错误信息：{_short(outcome.error_message, 220)}",
-        ]
-        incomplete_reason = getattr(outcome, "incomplete_reason", None)
-        if incomplete_reason:
-            lines.extend(["", f"不完整原因：{incomplete_reason}"])
-        if finish_reason:
-            lines.extend(["", f"finish_reason：`{finish_reason}`"])
-        if outcome.answer_text and str(outcome.error_code or "").strip().lower() == "incomplete_response":
-            lines.extend(["", "**部分回答**", "", display_text])
-        if guidance:
-            lines.extend(["", guidance])
+        if str(outcome.error_code or "").strip().lower() == "incomplete_response":
+            reason = getattr(outcome, "incomplete_reason", None) or outcome.error_message or "模型回答未完整结束。"
+            lines = [
+                "**回答不完整**",
+                "",
+                f"原因：{_short(reason, 220)}",
+            ]
+            if finish_reason:
+                lines.extend(["", f"finish_reason：`{finish_reason}`"])
+            lines.extend(["", "处理：不会进入评分草稿，可重试失败项或更换模型。"])
+            if outcome.answer_text:
+                lines.extend(["", "**部分回答**", "", display_text])
+        else:
+            lines = [
+                f"**{_outcome_display_status(outcome)}**",
+                "",
+                f"错误码：`{_dash(outcome.error_code)}`",
+                "",
+                f"错误信息：{_short(outcome.error_message, 220)}",
+            ]
+            incomplete_reason = getattr(outcome, "incomplete_reason", None)
+            if incomplete_reason:
+                lines.extend(["", f"不完整原因：{incomplete_reason}"])
+            if finish_reason:
+                lines.extend(["", f"finish_reason：`{finish_reason}`"])
+            if guidance:
+                lines.extend(["", guidance])
         markdown = "\n".join(lines)
     return render_markdown_detail_panel(
         title=title,

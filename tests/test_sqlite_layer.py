@@ -110,6 +110,9 @@ class SchemaFieldTests(unittest.TestCase):
         columns = self._columns("live_run_responses")
         self.assertIn("finish_reason", columns)
         self.assertIn("incomplete_reason", columns)
+        self.assertIn("retry_count", columns)
+        self.assertIn("first_finish_reason", columns)
+        self.assertIn("final_finish_reason", columns)
 
     def test_schema_file_is_used(self):
         self.assertTrue(SCHEMA_PATH.exists())
