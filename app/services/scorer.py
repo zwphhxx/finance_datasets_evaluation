@@ -1,4 +1,4 @@
-"""真实模型评测的 LLM-as-judge 评分编排（PR-35）。
+"""真实模型评测的 LLM-as-judge 评分编排。
 
 在 eval_runner 生成被评测模型回答之后，由「裁判模型」对照该题专业标准答案与评分标准
 各维度打分，产出 AI 评分。AI 评分成功后写入 live_run_scores，并可直接作为评测结论输入。
@@ -28,7 +28,7 @@ from typing import Any, Callable, Mapping, Sequence
 from app.models.base import ModelProvider, STATUS_FAILED, STATUS_MOCK, STATUS_SUCCESS
 from app.services import model_display as md
 
-# Fixed judge model for scoring (PR-LOGIC1)
+# Fixed judge model for scoring.
 DEFAULT_JUDGE_MODEL = "deepseek-ai/DeepSeek-V4-Pro"
 PROJECT_DISPLAY_NAME = "财务/法律/投行场景大模型对比评测"
 SCORE_EXPORT_TYPE = "ai_score_export"
@@ -122,7 +122,7 @@ _GENERAL_DEDUCTION_RULES = (
 # 要求裁判严格输出的 JSON 结构说明（仅结构，不含任何示例分数，避免诱导造数）。
 _JUDGE_OUTPUT_INSTRUCTION = (
     "请只输出一个 JSON 对象，不要包含 Markdown 代码块或额外说明，结构如下："
-    '{{"scores": {{{score_keys}}}, "rationale": {{{rationale_keys}}}, "review_note": "整体复核提示"}}。'
+    '{{"scores": {{{score_keys}}}, "rationale": {{{rationale_keys}}}, "review_note": "整体评审提示"}}。'
     "scores 的每个值为该维度的整数得分（0 到满分之间），rationale 为对应维度的简短打分依据。"
 )
 
@@ -141,7 +141,7 @@ class ScoreOutcome:
     total_score: int | None = None
     rationale: Mapping[str, str] = field(default_factory=dict)
     review_note: str = ""
-    review_status: str = "ai_final"  # ai_final / confirmed / pending / skipped
+    review_status: str = "ai_final"  # ai_final; legacy imports may carry older status values.
     latency_ms: int | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
@@ -719,153 +719,6 @@ def _score_outcome_row(
     return row
 
 
-def confirm_score_review(
-    row_id: int,
-    edited_scores: Mapping[str, Any],
-    review_note: str = "",
-    *,
-    db_path: Path | None = None,
-) -> bool:
-    """历史兼容：写入修订后的各维度分与总分，并将 review_status 置为 confirmed。"""
-    try:
-        from app.services.dataset_service import database_ready, get_db_path
-        from app.db.repository import Repository
-
-        path = db_path or get_db_path()
-        if not database_ready(path):
-            return False
-        repo = Repository(path)
-        existing = repo.get("live_run_scores", row_id)
-        if not existing:
-            return False
-        judge_status = str(existing.get("judge_status") or "").strip().lower()
-        review_status = str(existing.get("review_status") or "pending").strip().lower()
-        if judge_status != STATUS_SUCCESS or review_status != "pending":
-            return False
-        changes: dict[str, Any] = {"review_status": "confirmed"}
-        total = 0
-        for field_name, value in edited_scores.items():
-            number = _as_number(value)
-            score = 0 if number is None else int(round(number))
-            changes[field_name] = score
-            total += score
-        changes["total_score"] = total
-        if review_note:
-            changes["review_note"] = review_note
-        updated = repo.update("live_run_scores", row_id, changes)
-        return updated > 0
-    except Exception:
-        return False
-
-
-def confirm_score_reviews_bulk(
-    row_ids: Sequence[int],
-    review_note: str = "",
-    *,
-    db_path: Path | None = None,
-) -> dict[str, Any]:
-    """历史兼容：批量处理 live_run_scores 中仍为 pending 的记录。"""
-    def _result(confirmed_ids: list[int], failed_ids: list[int], reason: str = "") -> dict[str, Any]:
-        confirmed_count = len(confirmed_ids)
-        failed_count = len(failed_ids)
-        summary = f"已处理 {confirmed_count} 条评分。"
-        if failed_count:
-            summary += f" {failed_count} 条未处理。"
-        if reason:
-            summary += f" {reason}"
-        return {
-            "confirmed": confirmed_count,
-            "confirmed_count": confirmed_count,
-            "confirmed_ids": confirmed_ids,
-            "failed": failed_ids,
-            "failed_count": failed_count,
-            "failed_ids": failed_ids,
-            "reason": reason,
-            "summary": summary,
-        }
-
-    unique_ids: list[int] = []
-    for row_id in row_ids:
-        try:
-            numeric_id = int(row_id)
-        except (TypeError, ValueError):
-            continue
-        if numeric_id not in unique_ids:
-            unique_ids.append(numeric_id)
-    if not unique_ids:
-        return _result([], [], "没有可处理的评分。")
-
-    try:
-        from app.services.dataset_service import database_ready, get_db_path
-        from app.db.repository import Repository
-
-        path = db_path or get_db_path()
-        if not database_ready(path):
-            return _result([], unique_ids, "SQLite 数据层不可用。")
-        repo = Repository(path)
-        rows = repo.list_df("live_run_scores")
-        if rows.empty or "id" not in rows.columns:
-            return _result([], unique_ids, "未找到评分记录。")
-
-        id_set = set(unique_ids)
-        valid_ids: list[int] = []
-        for _, row in rows.iterrows():
-            try:
-                row_id = int(row.get("id"))
-            except (TypeError, ValueError):
-                continue
-            if row_id not in id_set:
-                continue
-            judge_status = str(row.get("judge_status") or "").strip().lower()
-            review_status = str(row.get("review_status") or "pending").strip().lower()
-            if judge_status == STATUS_SUCCESS and review_status == "pending":
-                valid_ids.append(row_id)
-
-        changes: dict[str, Any] = {"review_status": "confirmed"}
-        if review_note:
-            changes["review_note"] = review_note
-        confirmed_ids: list[int] = []
-        for row_id in valid_ids:
-            if repo.update("live_run_scores", row_id, changes) > 0:
-                confirmed_ids.append(row_id)
-        failed = [row_id for row_id in unique_ids if row_id not in set(confirmed_ids)]
-        reason = "" if not failed else "仅裁判成功且处于历史 pending 状态的评分支持批量处理。"
-        return _result(confirmed_ids, failed, reason)
-    except Exception:
-        return _result([], unique_ids, "批量处理失败。")
-
-
-def skip_score_review(
-    row_id: int,
-    review_note: str = "",
-    *,
-    db_path: Path | None = None,
-) -> bool:
-    """历史兼容：标记评分为 skipped；记录保留，但不会进入评测结论。"""
-    try:
-        from app.services.dataset_service import database_ready, get_db_path
-        from app.db.repository import Repository
-
-        path = db_path or get_db_path()
-        if not database_ready(path):
-            return False
-        repo = Repository(path)
-        existing = repo.get("live_run_scores", row_id)
-        if not existing:
-            return False
-        judge_status = str(existing.get("judge_status") or "").strip().lower()
-        review_status = str(existing.get("review_status") or "pending").strip().lower()
-        if judge_status != STATUS_SUCCESS or review_status != "pending":
-            return False
-        changes: dict[str, Any] = {"review_status": "skipped"}
-        if review_note:
-            changes["review_note"] = review_note
-        updated = repo.update("live_run_scores", row_id, changes)
-        return updated > 0
-    except Exception:
-        return False
-
-
 def is_mock_score(result: ScoreResult) -> bool:
     return result.mode == "mock" or any(o.judge_status == STATUS_MOCK for o in result.outcomes)
 
@@ -1122,7 +975,7 @@ def load_demo_score_export_payload(path: Path | None = None) -> dict[str, Any]:
     return dict(payload)
 
 
-def import_demo_confirmed_scores(
+def import_demo_ai_scores(
     *,
     path: Path | None = None,
     duplicate_action: str = "skip",

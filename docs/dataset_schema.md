@@ -55,7 +55,7 @@ PYTHONPATH=. python scripts/replace_samples.py \
 | `risk_level` | 任务风险等级。 |
 | `status` | 底层状态：`draft` / `active` / `inactive`。 |
 
-样本库页面展示中文业务状态：待复核、已入库、需优化、已移出测试。它们分别映射到底层状态 `draft`、`active`、`draft`、`inactive`。
+样本库页面展示中文业务状态：待完善、已入库、需优化、已移出测试。它们分别映射到底层状态 `draft`、`active`、`draft`、`inactive`。
 
 ### gold_answers
 
@@ -116,7 +116,7 @@ PYTHONPATH=. python scripts/replace_samples.py \
 
 ### error labels 与 improvement actions
 
-错误标签记录模型回答的错误类型、严重程度和修正方向。数据优化建议记录针对错误标签的补强动作。复核页和结论页只基于已有数据归因，不编造模型缺陷。
+错误标签记录模型回答的错误类型、严重程度和修正方向。数据优化建议记录针对错误标签的补强动作。评分分析与结论页只基于已有数据归因，不编造模型缺陷。
 
 ## 关联关系
 

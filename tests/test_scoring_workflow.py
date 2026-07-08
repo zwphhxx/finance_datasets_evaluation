@@ -397,37 +397,6 @@ class ScorePersistenceTests(unittest.TestCase):
         self.assertEqual(row["judge_status"], "success")
         self.assertEqual(int(row["total_score"]), 85)
 
-    def test_confirm_review_returns_false_when_row_missing(self):
-        edited = {"accuracy_score": 25, "reasoning_score": 15, "coverage_score": 15,
-                  "evidence_score": 10, "expression_score": 10}
-
-        self.assertFalse(sc.confirm_score_review(99999999, edited, "不存在的评分", db_path=_DB_PATH))
-
-    def test_skip_review_returns_false_when_row_missing(self):
-        self.assertFalse(sc.skip_score_review(99999999, "不存在的评分", db_path=_DB_PATH))
-
-    def test_confirm_review_returns_false_when_row_already_processed(self):
-        provider = get_provider("mock")
-        compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(1))
-        result = sc.score_compare(_FakeJudge(), compare, {}, {}, _DIMENSIONS, judge_model_id="judge/x")
-        self.assertTrue(sc.persist_score_result(result, db_path=_DB_PATH))
-        row = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)[0]
-        edited = {"accuracy_score": 25, "reasoning_score": 15, "coverage_score": 15,
-                  "evidence_score": 10, "expression_score": 10}
-
-        self.assertFalse(sc.confirm_score_review(int(row["id"]), edited, "重复确认", db_path=_DB_PATH))
-
-    def test_confirm_review_returns_false_for_failed_judge_score(self):
-        provider = get_provider("mock")
-        compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(1))
-        result = sc.score_compare(_GarbageJudge(), compare, {}, {}, _DIMENSIONS, judge_model_id="judge/x")
-        self.assertTrue(sc.persist_score_result(result, db_path=_DB_PATH))
-        row = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)[0]
-        edited = {"accuracy_score": 25, "reasoning_score": 15, "coverage_score": 15,
-                  "evidence_score": 10, "expression_score": 10}
-
-        self.assertFalse(sc.confirm_score_review(int(row["id"]), edited, "失败评分不能确认", db_path=_DB_PATH))
-
     def test_incremental_score_persist_dedupes_final_persist(self):
         provider = get_provider("mock")
         compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(1))
@@ -594,42 +563,6 @@ class ScorePersistenceTests(unittest.TestCase):
         self.assertEqual("success", rows[0]["judge_status"])
         self.assertEqual(88, int(rows[0]["total_score"]))
         self.assertEqual("ai_final", rows[0]["review_status"])
-
-    def test_skip_score_review_returns_false_for_ai_final_score(self):
-        provider = get_provider("mock")
-        compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(1))
-        tasks_by_case = {str(r["case_id"]): r for r in _sample_tasks(1)}
-        result = sc.score_compare(_FakeJudge(), compare, {}, tasks_by_case, _DIMENSIONS, judge_model_id="judge/x")
-
-        self.assertTrue(sc.persist_score_result(result, db_path=_DB_PATH))
-        row = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)[0]
-
-        self.assertFalse(sc.skip_score_review(int(row["id"]), "不进入结论：需补充材料", db_path=_DB_PATH))
-
-        after = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)[0]
-        self.assertEqual("ai_final", after["review_status"])
-
-    def test_bulk_confirm_does_not_process_ai_final_scores(self):
-        provider = get_provider("mock")
-        compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(2))
-        tasks_by_case = {str(r["case_id"]): r for r in _sample_tasks(2)}
-        result = sc.score_compare(_FakeJudge(), compare, {}, tasks_by_case, _DIMENSIONS, judge_model_id="judge/x")
-
-        self.assertTrue(sc.persist_score_result(result, db_path=_DB_PATH))
-        rows = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)
-        row_ids = [int(row["id"]) for row in rows]
-        note = "AI final scores should not need legacy processing."
-
-        outcome = sc.confirm_score_reviews_bulk(row_ids, note, db_path=_DB_PATH)
-
-        self.assertEqual(0, outcome["confirmed"])
-        self.assertEqual(0, outcome["confirmed_count"])
-        self.assertEqual([], outcome["confirmed_ids"])
-        self.assertEqual(sorted(row_ids), sorted(outcome["failed_ids"]))
-        self.assertEqual(len(row_ids), outcome["failed_count"])
-        self.assertEqual(sorted(row_ids), sorted(outcome["failed"]))
-        after = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)
-        self.assertTrue(all(row["review_status"] == "ai_final" for row in after))
 
     def test_persist_returns_false_without_database(self):
         provider = get_provider("mock")

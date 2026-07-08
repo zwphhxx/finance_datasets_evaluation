@@ -97,7 +97,7 @@ class SampleFormSimplificationTests(unittest.TestCase):
                 "boundary_and_check_items": "需核查补充协议。",
                 "difficulty": "中等",
                 "risk_level": "高",
-                "manual_review_notes": "复核责任边界。",
+                "manual_review_notes": "评审责任边界。",
                 "reviewer_note": "维护备注",
                 "scoring_focus": "重点看条款依据。",
             }
@@ -134,7 +134,7 @@ class SampleFormSimplificationTests(unittest.TestCase):
                 "gold_must_have_points": "旧覆盖点",
                 "gold_unacceptable_errors": "旧错误",
                 "gold_boundary_conditions": "旧边界",
-                "gold_manual_review_notes": "旧复核提示",
+                "gold_manual_review_notes": "旧评审提示",
                 "rubric_dimension_field": "accuracy_score",
                 "rubric_dimension_name": "专业准确性",
                 "rubric_full_mark": "30",

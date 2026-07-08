@@ -1,6 +1,6 @@
 """轻量级样本库数据管理层。
 
-样本库是业务操作视图：待复核、已入库、需优化、已移出测试。
+样本库是业务操作视图：待完善、已入库、需优化、已移出测试。
 历史 inactive 状态在读取时会规范为已移出测试。
 数据源层级固定为：
 
@@ -25,13 +25,15 @@ import pandas as pd
 
 REMOVED_FROM_TEST_STATUS = "已移出测试"
 _LEGACY_REMOVED_STATUS = "已" + "归" + "档"
-SAMPLE_STATUSES = ["待复核", "已入库", "需优化", REMOVED_FROM_TEST_STATUS]
+_LEGACY_PENDING_STATUS = "待" + "复" + "核"
+SAMPLE_STATUSES = ["待完善", "已入库", "需优化", REMOVED_FROM_TEST_STATUS]
 FORMAL_STATUS_BY_SAMPLE_STATUS = {
-    "待复核": "draft",
+    "待完善": "draft",
     "已入库": "active",
     "需优化": "draft",
     REMOVED_FROM_TEST_STATUS: "inactive",
     _LEGACY_REMOVED_STATUS: "inactive",
+    _LEGACY_PENDING_STATUS: "draft",
 }
 REQUIRED_FIELDS = ["title", "scenario", "task_prompt", "gold_answer", "rubric", "status"]
 
@@ -60,7 +62,7 @@ class Sample:
     model_answers: list[str] = field(default_factory=list)
     error_tags: list[str] = field(default_factory=list)
     improvement_suggestions: list[str] = field(default_factory=list)
-    status: str = "待复核"
+    status: str = "待完善"
     difficulty: str = ""
     reviewer_note: str = ""
     created_at: str = ""
@@ -86,7 +88,7 @@ class Sample:
             model_answers=_as_str_list(data.get("model_answers")),
             error_tags=_as_str_list(data.get("error_tags")),
             improvement_suggestions=_as_str_list(data.get("improvement_suggestions")),
-            status=normalize_sample_status(data.get("status", "待复核")),
+            status=normalize_sample_status(data.get("status", "待完善")),
             difficulty=str(data.get("difficulty", "")),
             reviewer_note=str(data.get("reviewer_note", "")),
             created_at=str(data.get("created_at", "")),
@@ -120,7 +122,9 @@ def normalize_sample_status(value: Any) -> str:
     text = str(value or "").strip()
     if text == _LEGACY_REMOVED_STATUS:
         return REMOVED_FROM_TEST_STATUS
-    return text if text else "待复核"
+    if text == _LEGACY_PENDING_STATUS:
+        return "待完善"
+    return text if text else "待完善"
 
 
 def _now() -> str:
@@ -246,7 +250,7 @@ def seed_samples_from_tasks() -> list[Sample]:
             continue
         gold = gold_map.get(case_id)
         gold_text = json.dumps(gold, ensure_ascii=False, indent=2) if gold else ""
-        status = "已入库" if gold else "待复核"
+        status = "已入库" if gold else "待完善"
         title = str(row.get("scenario", "")).strip() or case_id
         samples.append(
             Sample(
@@ -436,7 +440,7 @@ def verify_sample_asset_sync(
     """校验样本库视图是否已同步到正式评测资产。
 
     对“已入库”样本，除 `task_cases` / `gold_answers` / `rubrics` 均存在外，还必须
-    通过正式准入检查，保证发起评测页能够读取。对待复核、需优化和已移出测试样本，
+    通过正式准入检查，保证发起评测页能够读取。对待完善、需优化和已移出测试样本，
     只校验资产写入完整性与底层状态同步，不要求进入测试。
     """
     from app.services import dataset_service as ds
@@ -616,7 +620,7 @@ def validate_sample(values: dict[str, Any], existing_ids: set[str] | None = None
 
 
 def search_samples(keyword: str) -> list[Sample]:
-    """按关键词搜索标题、场景、任务描述、业务背景、复核备注。"""
+    """按关键词搜索标题、场景、任务描述、业务背景、维护备注。"""
     if not keyword:
         return load_samples()
     kw = str(keyword).lower()

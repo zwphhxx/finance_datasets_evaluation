@@ -171,7 +171,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
 
         self.assertNotIn("render_tag_cloud", source)
         self.assertNotIn("render_status_summary", source)
-        for label in ["待复核样本", "已入库样本", "需优化样本", "已复核评分"]:
+        for label in ["待完善样本", "已入库样本", "需优化样本", "已评分"]:
             self.assertNotIn(label, source)
         self.assertIn("_build_sample_scope_text", source)
         self.assertIn("不包含真实公司、真实交易或敏感数据", source)

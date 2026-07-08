@@ -37,7 +37,7 @@ def _live_row(case_id, model, status, total=80, **scores):
         "review_status": status,
         "status": "active",
         "total_score": total,
-        "review_note": f"{model} 复核说明",
+        "review_note": f"{model} 评分说明",
     }
     defaults = {"accuracy_score": 24, "reasoning_score": 16, "coverage_score": 16,
                 "evidence_score": 12, "expression_score": 12}
@@ -92,7 +92,7 @@ class FormalConclusionTests(unittest.TestCase):
         summary = cc.summarize_formal(pd.DataFrame(), ai_scores)
         self.assertEqual(summary["ai_score_rows"], 1)
 
-    def test_confirmed_live_enters_formal(self):
+    def test_ai_scores_enters_formal(self):
         live = pd.DataFrame([_live_row("C1", "live-model", "confirmed", total=88)])
         ai_scores, _ = cc.split_live_scores(live)
         self.assertEqual(len(ai_scores), 1)

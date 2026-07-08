@@ -157,8 +157,21 @@ SCENE_TO_TASK_TYPE = {
 }
 DIFFICULTY_TO_INTERNAL = {"基础": "Easy", "中等": "Medium", "复杂": "Hard"}
 RISK_TO_INTERNAL = {"低": "低", "中": "中", "高": "高"}
-STATUS_TO_SAMPLE = {"已入库": "已入库", "待复核": "待复核", "需优化": "需优化", "已移出测试": "已移出测试"}
-STATUS_TO_FORMAL = {"已入库": "active", "待复核": "draft", "需优化": "draft", "已移出测试": "inactive"}
+LEGACY_PENDING_STATUS = "待" + "复" + "核"
+STATUS_TO_SAMPLE = {
+    "已入库": "已入库",
+    "待完善": "待完善",
+    LEGACY_PENDING_STATUS: "待完善",
+    "需优化": "需优化",
+    "已移出测试": "已移出测试",
+}
+STATUS_TO_FORMAL = {
+    "已入库": "active",
+    "待完善": "draft",
+    LEGACY_PENDING_STATUS: "draft",
+    "需优化": "draft",
+    "已移出测试": "inactive",
+}
 
 
 class ReplaceSamplesError(RuntimeError):

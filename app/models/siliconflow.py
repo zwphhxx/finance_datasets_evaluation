@@ -1,4 +1,4 @@
-"""SiliconFlow（硅基流动）模型供应商接入（PR-33）。
+"""SiliconFlow（硅基流动）模型供应商接入。
 
 仅依赖标准库 urllib 发起 HTTP 请求，不引入第三方 SDK 或重依赖。负责：
   - 从 st.secrets / 环境变量 / .env 读取 API Key 与可选配置；
@@ -259,7 +259,7 @@ class SiliconFlowProvider(ModelProvider):
             "messages": normalized,
             "temperature": temperature,
             "max_tokens": max_tokens,
-            # PR-33 不实现流式输出，固定 False（保留 stream 参数仅作接口兼容）。
+            # 当前不实现流式输出，固定 False（保留 stream 参数仅作接口兼容）。
             "stream": False,
         }
         for key in _OPTIONAL_PAYLOAD_KEYS:

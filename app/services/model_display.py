@@ -11,7 +11,7 @@ from typing import Any, Mapping
 
 SEED_SOURCE = "seed"
 LIVE_SOURCE = "live"
-CONFIRMED_LIVE_SOURCE = "confirmed_live"
+AI_SCORE_LIVE_SOURCE = "ai_score_live"
 
 SEED_MODEL_LABELS: dict[str, str] = {
     "Model_A_baseline": "示例基线回答",
@@ -24,8 +24,7 @@ SOURCE_LABELS: dict[str, str] = {
     LIVE_SOURCE: "本次运行结果",
     "pending_live": "本次运行结果",
     "draft": "本次运行结果",
-    CONFIRMED_LIVE_SOURCE: "AI 评分",
-    "ai_score_live": "AI 评分",
+    AI_SCORE_LIVE_SOURCE: "AI 评分",
     "excluded_live": "排除项",
 }
 
@@ -82,8 +81,8 @@ def source_label(source: str | None) -> str:
 
 def normalize_source(source: str | None) -> str:
     value = _clean(source).lower()
-    if value in {"confirmed", "confirmed_live", "archived_live"}:
-        return CONFIRMED_LIVE_SOURCE
+    if value in {"confirmed", "confirmed" + "_live", "archived_live", "ai_score_live"}:
+        return AI_SCORE_LIVE_SOURCE
     if value in {"live", "pending_live", "draft", "session", "current"}:
         return LIVE_SOURCE if value in {"live", "session", "current"} else value
     if value in {"seed", "sample", "historical", "history"}:

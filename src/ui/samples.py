@@ -216,7 +216,7 @@ def _test_status_label(sample: sr.Sample, readiness: ds.SampleReadiness) -> str:
 
 
 def _sample_status_label(sample: sr.Sample) -> str:
-    return sample.status or "待复核"
+    return sample.status or "待完善"
 
 
 def _domain_label(task_record: dict, sample: sr.Sample | None = None) -> str:
@@ -816,7 +816,7 @@ def _readiness_for_dialog_values(
         "question": str(values.get("task_prompt") or "").strip(),
         "context": str(values.get("business_context") or "").strip(),
         "scenario": str(values.get("scenario") or "").strip(),
-        "status": sr.formal_status_for_sample_status(str(values.get("status") or "待复核")),
+        "status": sr.formal_status_for_sample_status(str(values.get("status") or "待完善")),
     }
     return ds.assess_sample_readiness(
         task,
@@ -1423,7 +1423,7 @@ def _parse_simplified_samples_csv(frame: pd.DataFrame) -> tuple[list[dict], list
             continue
         seen_ids.add(sample_id)
 
-        status = sr.normalize_sample_status(row.get("status", "待复核"))
+        status = sr.normalize_sample_status(row.get("status", "待完善"))
         scene = str(row.get("professional_scene", "")).strip()
         domain = _domain_from_professional_scene(scene)
         if not domain:
@@ -1484,7 +1484,7 @@ def _parse_legacy_samples_csv(frame: pd.DataFrame) -> tuple[list[dict], list[str
             continue
         seen_ids.add(sample_id)
 
-        status = sr.normalize_sample_status(row.get("status", "待复核"))
+        status = sr.normalize_sample_status(row.get("status", "待完善"))
         dimension_name = str(row.get("rubric_dimension_name", "")).strip()
         dimension_field = _csv_dimension_field(dimension_name, str(row.get("rubric_dimension_field", "")).strip())
         full_mark = _to_int(row.get("rubric_full_mark"), fallback=10)
@@ -1584,7 +1584,7 @@ def _render_import_csv_dialog(rubric_dimensions: list[dict] | None) -> None:
         key="samples_csv_template_download",
     )
     st.caption(
-        "默认模板只包含专业场景、任务内容、专业标准答案和可选复核信息；"
+        "默认模板只包含专业场景、任务内容、专业标准答案和可选评审信息；"
         "评分标准由正式数据层统一维护。"
     )
     uploaded = st.file_uploader("上传 CSV 文件", type=["csv"], key="samples_csv_upload")
@@ -1712,7 +1712,7 @@ def _render_sample_editor_dialog_body(
         status = col2.selectbox(
             "样本状态",
             sr.SAMPLE_STATUSES,
-            index=_index_of(sr.SAMPLE_STATUSES, sample.status if sample else "待复核"),
+            index=_index_of(sr.SAMPLE_STATUSES, sample.status if sample else "待完善"),
             key=f"{prefix}_status",
         )
 
@@ -1809,7 +1809,7 @@ def _render_sample_editor_dialog_body(
             height=60,
             key=f"{prefix}_scoring_focus",
         )
-        st.caption("评分标准由正式数据层统一维护；这里只填写本题特有的复核关注点。")
+        st.caption("评分标准由正式数据层统一维护；这里只填写本题特有的评分关注点。")
 
         submitted = st.form_submit_button("保存样本", type="primary", use_container_width=True)
 

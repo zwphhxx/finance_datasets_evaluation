@@ -27,7 +27,7 @@ gold_answer:
     - ""
 
 # Rubric：维度、名称与权重须与 dataset_manifest.yml 一致，权重合计为 100。
-# deduction_criteria 用于约束「什么情况扣多少」，需可执行、可复核。
+# deduction_criteria 用于约束「什么情况扣多少」，需可执行、可追溯。
 rubric:
   total: 100
   dimensions:

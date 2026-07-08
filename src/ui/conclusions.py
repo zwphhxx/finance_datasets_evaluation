@@ -134,7 +134,7 @@ def _render_score_data_maintenance_dialog() -> None:
     st.markdown("**演示恢复**")
     st.caption("从仓库中的脱敏演示结果文件恢复 AI 评分，不会删除现有评分。")
     if st.button("从演示结果文件恢复", type="secondary", key="conclusion_restore_demo_scores"):
-        result = sc.import_demo_confirmed_scores(duplicate_action=action_map[duplicate_label])
+        result = sc.import_demo_ai_scores(duplicate_action=action_map[duplicate_label])
         _record_score_io_message(result)
         st.rerun()
 

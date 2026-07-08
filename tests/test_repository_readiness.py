@@ -1,4 +1,4 @@
-"""Repository readiness guardrails for the interview demo."""
+"""Repository readiness guardrails for project submission."""
 
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ def test_tests_do_not_pin_removed_sample_identifiers() -> None:
     offenders = []
     for path in sorted((ROOT / "tests").glob("test_*.py")):
         source = path.read_text(encoding="utf-8")
-        if path.name == "test_interview_repo_readiness.py":
+        if path.name == "test_repository_readiness.py":
             continue
         if any(case_id in source for case_id in removed_ids):
             offenders.append(path.relative_to(ROOT).as_posix())
@@ -88,7 +88,9 @@ def test_readme_uses_concise_project_submission_structure() -> None:
     first_screen = "\n".join(readme.splitlines()[:40])
 
     assert "# 财务/法律/投行场景大模型对比评测" in first_screen
-    assert "## 面试官快速阅读" not in readme
+    assert "## " + "面" + "试官快速阅读" not in readme
+    assert "docs/demo_script.md" in readme
+    assert "docs/" + "inter" + "view_script.md" not in readme
     assert "## 数据对象与数据流" not in readme
     assert len(readme.splitlines()) < 120
     for heading in [
@@ -117,7 +119,7 @@ def test_readme_uses_concise_project_submission_structure() -> None:
         assert phrase in readme
 
 
-def test_env_example_uses_interview_safe_runtime_defaults() -> None:
+def test_env_example_uses_project_runtime_defaults() -> None:
     text = (ROOT / ".env.example").read_text(encoding="utf-8")
 
     assert "SILICONFLOW_API_KEY=" in text
@@ -127,22 +129,72 @@ def test_env_example_uses_interview_safe_runtime_defaults() -> None:
     assert "FINDUEVAL_EVAL_TEMPERATURE=0.1" in text
 
 
-def test_docs_match_current_interview_demo_path() -> None:
+def test_docs_match_current_project_demo_path() -> None:
     project_note = (ROOT / "docs" / "project_note.md").read_text(encoding="utf-8")
-    interview_script = (ROOT / "docs" / "interview_script.md").read_text(encoding="utf-8")
-    combined = project_note + "\n" + interview_script
+    demo_script = (ROOT / "docs" / "demo_script.md").read_text(encoding="utf-8")
+    combined = project_note + "\n" + demo_script
 
     assert "评分矩阵" not in combined
     assert "旧页面" not in combined
     assert "MED" + "-001" not in combined
     assert "MA" + "-001" not in combined
+    assert "面" + "试" not in combined
+    assert "面" + "试" + "官" not in combined
+    assert "inter" + "view" + " demo" not in combined.lower()
     for phrase in ["项目说明", "样本库", "发起评测", "评测结论"]:
         assert phrase in combined
     assert "评分" + "确认" not in project_note
     assert "人工" + "确认" not in project_note
-    assert "不是通用 Chatbot" in interview_script
-    assert "不是模型排名页" in interview_script
-    assert "实时模型调用不能保证 100% 成功" in interview_script
+    assert "不是通用 Chatbot" in demo_script
+    assert "不是模型排名页" in demo_script
+    assert "实时模型调用不能保证 100% 成功" in demo_script
+
+
+def test_repository_sources_do_not_contain_packaging_or_process_markers() -> None:
+    paths = [
+        *sorted((ROOT / "app").rglob("*.py")),
+        *sorted((ROOT / "src").rglob("*.py")),
+        *sorted((ROOT / "docs").glob("*.md")),
+        ROOT / "README.md",
+    ]
+    banned = [
+        "面" + "试",
+        "面" + "试" + "官",
+        "inter" + "view" + " demo",
+        "P" + "R-33",
+        "P" + "R-34",
+        "P" + "R-35",
+        "P" + "R-LOGIC1",
+    ]
+    offenders: dict[str, list[str]] = {}
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        hits = [term for term in banned if term in text]
+        if hits:
+            offenders[path.relative_to(ROOT).as_posix()] = hits
+    assert offenders == {}
+
+
+def test_legacy_review_apis_are_removed_from_scorer() -> None:
+    from app.services import scorer as sc
+
+    assert not hasattr(sc, "confirm_score" + "_review")
+    assert not hasattr(sc, "confirm_score" + "_reviews_bulk")
+    assert not hasattr(sc, "skip_score" + "_review")
+
+
+def test_demo_ai_score_export_contains_usable_demo_records() -> None:
+    payload = json.loads((ROOT / "data" / "demo_exports" / "demo_ai_scores.json").read_text(encoding="utf-8"))
+    records = payload.get("records") or []
+
+    assert payload["export_type"] == "ai_score_export"
+    assert payload["scope"] == "ai_scores"
+    assert payload["row_count"] == len(records)
+    assert len(records) >= 6
+    assert len({row["case_id"] for row in records}) >= 3
+    assert len({row["eval_model"] for row in records}) >= 2
+    assert all(row["judge_status"] == "success" for row in records)
+    assert all(row["review_status"] == "ai_final" for row in records)
 
 
 def test_committed_runtime_result_seed_files_are_header_only() -> None:

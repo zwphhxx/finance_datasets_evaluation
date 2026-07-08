@@ -101,3 +101,4 @@ PYTHONPATH=. python scripts/replace_samples.py \
 - `docs/dataset_quality_standard.md`：样本完整度和入库质量门槛。
 - `docs/extension_roadmap.md`：后续扩展方向。
 - `docs/project_note.md`：展示路径、讲解要点和常见追问。
+- `docs/demo_script.md`：项目展示脚本和现场演示建议。

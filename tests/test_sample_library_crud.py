@@ -44,7 +44,7 @@ class SampleRepositoryTests(unittest.TestCase):
                 "full_mark_standard": "结论需基于明确测算。",
                 "deduction_rules": "缺少关键测算应扣分。",
             }], ensure_ascii=False),
-            "status": "待复核",
+            "status": "待完善",
             "difficulty": "Hard",
             "reviewer_note": "",
         }
@@ -54,7 +54,7 @@ class SampleRepositoryTests(unittest.TestCase):
         samples = sr.load_samples()
         self.assertEqual(1, len(samples))
         self.assertEqual("SM-001", samples[0].sample_id)
-        self.assertEqual("待复核", samples[0].status)
+        self.assertEqual("待完善", samples[0].status)
 
     def test_create_rejects_duplicate_id(self):
         sr.create_sample(self._sample_values("SM-DUP"))
@@ -335,7 +335,7 @@ class SampleRepositoryTests(unittest.TestCase):
             "task_prompt": "请评估。",
             "gold_answer": "{}",
             "rubric": "[]",
-            "status": "待复核",
+            "status": "待完善",
         }])
         self.assertEqual(1, len(imported))
         updated = sr.get_sample("SM-EXP")

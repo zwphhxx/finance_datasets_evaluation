@@ -56,7 +56,7 @@ _BOUNDARY_RANK = {
 }
 _RANK_BOUNDARY = {rank: boundary for boundary, rank in _BOUNDARY_RANK.items()}
 _NOT_EVIDENCE_NOTE_KEYWORDS = ("不可采信", "不可作为依据", "不能采信", "不应采信", "重大遗漏", "重大错误")
-_CAUTION_NOTE_KEYWORDS = ("谨慎", "需复核", "需进一步", "证据不足", "不足", "风险")
+_CAUTION_NOTE_KEYWORDS = ("谨慎", "需谨慎", "需进一步", "证据不足", "不足", "风险")
 
 
 def display_model_name(
@@ -185,13 +185,13 @@ def _normalize_live_scores(live_df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def combine_formal_scores(seed_scores: pd.DataFrame, confirmed_live: pd.DataFrame) -> pd.DataFrame:
+def combine_formal_scores(seed_scores: pd.DataFrame, ai_scores: pd.DataFrame) -> pd.DataFrame:
     """把成功 AI 评分投影为统一打分表（带 source 列）。
 
     seed_scores 参数保留用于兼容旧调用，但不再纳入当前结论。
     """
     frames: list[pd.DataFrame] = []
-    normalized = _normalize_live_scores(confirmed_live)
+    normalized = _normalize_live_scores(ai_scores)
     if not normalized.empty:
         frames.append(normalized)
     if not frames:
@@ -204,7 +204,7 @@ def combine_formal_scores(seed_scores: pd.DataFrame, confirmed_live: pd.DataFram
 
 def build_formal_conclusions(
     seed_scores: pd.DataFrame,
-    confirmed_live: pd.DataFrame,
+    ai_scores: pd.DataFrame,
     *,
     mapping: Mapping[str, str] | None = None,
 ) -> list[dict[str, Any]]:
@@ -212,7 +212,7 @@ def build_formal_conclusions(
 
     不包含失败评分和 seed 示例评价。无可用数据时返回空列表。
     """
-    combined = combine_formal_scores(seed_scores, confirmed_live)
+    combined = combine_formal_scores(seed_scores, ai_scores)
     if combined.empty or "model_name" not in combined.columns:
         return []
 
@@ -250,7 +250,7 @@ def build_formal_conclusions(
 
 def build_model_boundaries(
     seed_scores: pd.DataFrame,
-    confirmed_live: pd.DataFrame,
+    ai_scores: pd.DataFrame,
     errors_df: pd.DataFrame | None = None,
     tasks_df: pd.DataFrame | None = None,
     *,
@@ -261,7 +261,7 @@ def build_model_boundaries(
     The input scope is the same as conclusions: successful AI scores only.
     Failed scores and seed examples are excluded.
     """
-    combined = combine_formal_scores(seed_scores, confirmed_live)
+    combined = combine_formal_scores(seed_scores, ai_scores)
     if combined.empty or "model_name" not in combined.columns or "total_score" not in combined.columns:
         return []
 
@@ -350,9 +350,9 @@ def build_model_boundaries(
     return rows
 
 
-def summarize_formal(seed_scores: pd.DataFrame, confirmed_live: pd.DataFrame) -> dict[str, Any]:
+def summarize_formal(seed_scores: pd.DataFrame, ai_scores: pd.DataFrame) -> dict[str, Any]:
     """评测结论首屏统计：纳入条数、模型数、平均总分与来源构成。"""
-    combined = combine_formal_scores(seed_scores, confirmed_live)
+    combined = combine_formal_scores(seed_scores, ai_scores)
     if combined.empty:
         return {
             "total_rows": 0,
@@ -376,7 +376,7 @@ def summarize_formal(seed_scores: pd.DataFrame, confirmed_live: pd.DataFrame) ->
 
 
 def build_model_issue_summaries(
-    confirmed_live: pd.DataFrame,
+    ai_scores: pd.DataFrame,
     errors_df: pd.DataFrame | None = None,
     tasks_df: pd.DataFrame | None = None,
     *,
@@ -388,13 +388,13 @@ def build_model_issue_summaries(
     row per real model with a current suggestion, main issues, affected cases and
     detail items so the page does not mix different models into a global issue list.
     """
-    combined = combine_formal_scores(pd.DataFrame(), confirmed_live)
+    combined = combine_formal_scores(pd.DataFrame(), ai_scores)
     if combined.empty or "model_name" not in combined.columns:
         return []
 
     boundary_rows = build_model_boundaries(
         pd.DataFrame(),
-        confirmed_live,
+        ai_scores,
         errors_df if isinstance(errors_df, pd.DataFrame) else pd.DataFrame(),
         tasks_df if isinstance(tasks_df, pd.DataFrame) else pd.DataFrame(),
         mapping=mapping,
@@ -411,7 +411,7 @@ def build_model_issue_summaries(
             continue
 
         boundary = boundary_by_model.get(model, {})
-        raw_group = _raw_live_group_for_model(confirmed_live, model)
+        raw_group = _raw_live_group_for_model(ai_scores, model)
         high_errors = _high_severity_errors(_errors_for_model_group(errors_df, scores, model))
         weaknesses = list(boundary.get("major_weaknesses") or _model_dimension_weaknesses(scores))
         sample_count = int(len(scores))
@@ -847,7 +847,7 @@ def _index_answers(responses_df: pd.DataFrame | None) -> dict[tuple[str, str, st
 
 
 def _collect_notes(values) -> list[str]:
-    """去重保序地收集非空复核说明。"""
+    """去重保序地收集非空评分说明。"""
     if values is None:
         return []
     seen: set[str] = set()

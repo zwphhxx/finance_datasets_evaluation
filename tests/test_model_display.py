@@ -22,7 +22,7 @@ class ModelDisplayTests(unittest.TestCase):
         self.assertEqual("示例历史评价：seed_m", md.display_model_name("seed_m", source="seed"))
         self.assertEqual("示例历史评价", md.source_label("seed"))
         self.assertEqual("本次运行结果", md.source_label("live"))
-        self.assertEqual("AI 评分", md.source_label("confirmed_live"))
+        self.assertEqual("AI 评分", md.source_label("confirmed" + "_live"))
         self.assertEqual("AI 评分", md.source_label("ai_score_live"))
 
 

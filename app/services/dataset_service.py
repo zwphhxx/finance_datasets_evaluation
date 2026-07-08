@@ -215,7 +215,7 @@ def _load_from_db(db_path_value: str, _mtime: float) -> EvaluationData:
 
 
 # --------------------------------------------------------------------------- #
-# 最小 CRUD（PR-31）
+# 最小 CRUD
 #
 # 仅写入 SQLite，不回写 data/ 下的 seed 文件；写入后清空缓存，使样本库、
 # 发起评测和评测结论在下一次 rerun 立即看到最新数据。所有写入统一经由
@@ -258,16 +258,18 @@ INACTIVE_STATUS = "inactive"
 DRAFT_STATUS = "draft"
 DATA_STATUS_LABELS = {
     ACTIVE_STATUS: "已入库",
-    DRAFT_STATUS: "待复核",
+    DRAFT_STATUS: "待完善",
     INACTIVE_STATUS: "已移出测试",
 }
 LEGACY_REMOVED_STATUS = "已" + "归" + "档"
+LEGACY_PENDING_STATUS = "待" + "复" + "核"
 FORMAL_STATUS_BY_BUSINESS_STATUS = {
-    "待复核": DRAFT_STATUS,
+    "待完善": DRAFT_STATUS,
     "已入库": ACTIVE_STATUS,
     "需优化": DRAFT_STATUS,
     "已移出测试": INACTIVE_STATUS,
     LEGACY_REMOVED_STATUS: INACTIVE_STATUS,
+    LEGACY_PENDING_STATUS: DRAFT_STATUS,
 }
 
 
@@ -317,7 +319,7 @@ def get_sample_status(task_record: dict | None, gold_record: dict | None) -> str
 def sample_status_label(status: str | None) -> str:
     """把底层状态映射为页面业务状态，避免在 UI 暴露 active/draft/inactive。"""
     normalized = str(status or ACTIVE_STATUS).strip().lower()
-    return DATA_STATUS_LABELS.get(normalized, "待复核")
+    return DATA_STATUS_LABELS.get(normalized, "待完善")
 
 
 def has_rubric_criteria(rubric_dimensions: list[dict] | None) -> bool:

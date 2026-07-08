@@ -91,7 +91,7 @@ class GoldAnswerDisplayTests(unittest.TestCase):
                 "must_have_points": ["覆盖点一", "覆盖点二"],
                 "unacceptable_errors": ["错误一"],
                 "boundary_conditions": "边界条件",
-                "manual_review_notes": "复核提示",
+                "manual_review_notes": "评审提示",
             },
             ensure_ascii=False,
         )
@@ -184,7 +184,7 @@ class AssetSectionTests(unittest.TestCase):
             business_context="业务背景",
             status="已入库",
             difficulty="Medium",
-            reviewer_note="复核备注",
+            reviewer_note="维护备注",
         )
         readiness = ds.assess_sample_readiness(
             {"case_id": "CASE-2", "question": "任务题", "context": "业务背景", "scenario": "场景", "status": "active"},

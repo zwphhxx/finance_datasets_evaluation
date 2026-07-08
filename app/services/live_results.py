@@ -1,4 +1,4 @@
-"""把一次真实多模型评测运行 + 裁判评分，组装成与 seed 完全同形的 EvaluationData（PR-36）。
+"""把一次真实多模型评测运行 + 裁判评分，组装成与 seed 完全同形的 EvaluationData。
 
 既有 8 个分析页都通过 `data_bundle["data"]`（EvaluationData）取数。本模块**不改页面逻辑**，
 而是用真实运行结果构造列结构一致的 EvaluationData，让页面照常渲染真实回答与裁判建议分：

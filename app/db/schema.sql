@@ -1,10 +1,10 @@
--- 项目 SQLite 数据层 schema（PR-30）
+-- 项目 SQLite 数据层 schema
 --
 -- 设计原则：
 --   1. 每张表的业务列与现有 data/ 种子文件（CSV/JSON 与 manifest）的字段一一对应，
 --      便于从种子数据无损导入，并保证页面读取结果与旧数据完全一致。
 --   2. 每张表附带 status、created_at、updated_at 基础字段，便于后续 CRUD 与运行记录留痕。
---   3. 任务题、Gold Answer、Rubric 等核心对象额外保留 version，便于后续版本追踪。
+--   3. 任务题、专业标准答案、评分标准等核心对象额外保留 version，便于后续版本追踪。
 --   4. 仅使用 SQLite 内建能力，不引入任何外部数据库或服务。
 --
 -- 重复执行安全：先 DROP 再 CREATE，确保 init 脚本可重复初始化得到干净结构。
@@ -43,7 +43,7 @@ CREATE TABLE task_cases (
     updated_at           TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Gold Answer：对应 data/gold_answers.json。结构化字段单列存储便于查询；
+-- 专业标准答案：对应 data/gold_answers.json。结构化字段单列存储便于查询；
 -- raw_json 保留原始条目，作为页面重建的权威来源，确保展示结果与旧数据一致。
 CREATE TABLE gold_answers (
     case_id              TEXT PRIMARY KEY,
@@ -63,7 +63,7 @@ CREATE TABLE gold_answers (
     FOREIGN KEY (case_id) REFERENCES task_cases (case_id)
 );
 
--- Rubric 维度：对应 dataset_manifest.yml 的 rubric.dimensions。
+-- 评分标准维度：对应 dataset_manifest.yml 的评分维度配置。
 -- full_mark_standard / deduction_rules 为质量治理补充字段：满分标准与扣分规则，
 -- 由 dataset_manifest.yml 初始化，样本库编辑可按需维护。
 CREATE TABLE rubrics (
@@ -92,7 +92,7 @@ CREATE TABLE model_responses (
     FOREIGN KEY (case_id) REFERENCES task_cases (case_id)
 );
 
--- Rubric 评分：对应 data/scores.csv，与 model_responses 共享 output_id。
+-- 评分记录：对应 data/scores.csv，与 model_responses 共享 output_id。
 CREATE TABLE score_records (
     output_id         INTEGER PRIMARY KEY,
     case_id           TEXT,
@@ -182,7 +182,7 @@ CREATE TABLE error_taxonomy (
     updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- 真实模型评测运行结果（PR-34）。本表不来自任何 seed 文件，仅承载「真实模型评测」页
+-- 真实模型评测运行结果。本表不来自任何 seed 文件，仅承载「发起评测」页
 -- 运行产生的模型回答，与承载评分的 model_responses（seed）分离，避免污染既有分析页。
 -- run_status 为生成业务状态（success/failed/mock）；status 为行生命周期标记（active/inactive）。
 -- 不存储 API Key、Authorization 头或任何认证信息。
@@ -234,9 +234,9 @@ CREATE TABLE live_run_queue (
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- 真实模型评测的 LLM-as-judge 评分（PR-35）。本表不来自任何 seed 文件，仅承载「真实模型评测」
--- 页由裁判模型对照 Gold Answer + Rubric 产出的「机器建议分」，与 seed 的 score_records 分离。
--- review_status 为历史兼容字段：ai_final / pending / confirmed / skipped。
+-- 真实模型评测的 LLM-as-judge 评分。本表不来自任何 seed 文件，仅承载「发起评测」
+-- 页由裁判模型对照专业标准答案与评分标准产出的 AI 评分，与 seed 的 score_records 分离。
+-- review_status 为历史兼容字段；新写入记录默认使用 ai_final。
 -- judge_status 为裁判调用业务状态（success/failed/mock）；mock 模式不产生真实分数（维度列为空）。
 -- eval_model 为被评测模型，judge_model 为裁判模型；不存储任何认证信息。
 CREATE TABLE live_run_scores (
@@ -258,7 +258,7 @@ CREATE TABLE live_run_scores (
     total_score      INTEGER,
     rationale        TEXT,
     review_note      TEXT,
-    review_status    TEXT NOT NULL DEFAULT 'pending',
+    review_status    TEXT NOT NULL DEFAULT 'ai_final',
     latency_ms       INTEGER,
     input_tokens     INTEGER,
     output_tokens    INTEGER,

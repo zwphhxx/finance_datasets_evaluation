@@ -212,7 +212,7 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("er.CompareRunResult", source)
         self.assertNotIn("当前预计生成回答较多，运行时间可能较长，部分模型可能超时。建议分批运行。", source)
         self.assertNotIn("确认按批处理运行", source)
-        self.assertNotIn("不适合面试现场演示", source)
+        self.assertNotIn("不适合" + "面" + "试" + "现场演示", source)
         self.assertNotIn("建议小批量运行", source)
         self.assertNotIn("large_run_confirmed", source)
         self.assertIn("查看全文", source)

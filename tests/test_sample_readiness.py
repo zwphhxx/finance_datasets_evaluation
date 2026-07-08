@@ -173,14 +173,14 @@ class SampleRepositoryReadinessGateTests(unittest.TestCase):
                 "business_context": "背景",
                 "gold_answer": json.dumps({"core_conclusion": "只有结论"}, ensure_ascii=False),
                 "rubric": json.dumps([{"dimension_field": "accuracy_score"}], ensure_ascii=False),
-                "status": "待复核",
+                "status": "待完善",
             }
             sr.create_sample(values, db_path=db_path)
 
             with self.assertRaisesRegex(ValueError, "缺少必须覆盖点"):
                 sr.set_sample_status("READINESS-INCOMPLETE", "已入库", db_path=db_path)
 
-            self.assertEqual("待复核", sr.get_sample("READINESS-INCOMPLETE").status)
+            self.assertEqual("待完善", sr.get_sample("READINESS-INCOMPLETE").status)
             self.assertEqual(ds.DRAFT_STATUS, ds.get_task_case("READINESS-INCOMPLETE", db_path)["status"])
 
 

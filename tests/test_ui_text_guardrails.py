@@ -151,7 +151,7 @@ class VisibleTextGuardrailTests(unittest.TestCase):
         ]
         banned_phrases = [
             "评分" + "确认",
-            "人工" + "复核",
+            "人工" + "复" + "核",
             "人工" + "确认",
             "评分" + "草稿",
             "待" + "确认",

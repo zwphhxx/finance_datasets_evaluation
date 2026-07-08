@@ -1,4 +1,4 @@
-"""初始化 SQLite 数据库并从现有 data/ 种子文件导入数据（PR-30）。
+"""初始化 SQLite 数据库并从现有 data/ 种子文件导入数据。
 
 用法：
     python -m app.db.init_db            # 在默认路径创建数据库（已存在则报错）
