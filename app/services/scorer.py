@@ -446,7 +446,7 @@ def persist_score_outcome(
     *,
     db_path: Path | None = None,
 ) -> bool:
-    """增量写入单条评分草稿；用于边评分边入库。"""
+    """增量写入单条 AI 评分；用于边评分边入库。"""
     try:
         from app.services.dataset_service import database_ready, ensure_recoverable_queue_tables, get_db_path
         from app.db.repository import Repository
@@ -726,7 +726,7 @@ def confirm_score_review(
     *,
     db_path: Path | None = None,
 ) -> bool:
-    """人工复核确认：写入修订后的各维度分与总分，并将 review_status 置为 confirmed。"""
+    """历史兼容：写入修订后的各维度分与总分，并将 review_status 置为 confirmed。"""
     try:
         from app.services.dataset_service import database_ready, get_db_path
         from app.db.repository import Repository
@@ -764,13 +764,13 @@ def confirm_score_reviews_bulk(
     *,
     db_path: Path | None = None,
 ) -> dict[str, Any]:
-    """批量确认低风险评分草稿；仅处理 live_run_scores 中仍为 pending 的记录。"""
+    """历史兼容：批量处理 live_run_scores 中仍为 pending 的记录。"""
     def _result(confirmed_ids: list[int], failed_ids: list[int], reason: str = "") -> dict[str, Any]:
         confirmed_count = len(confirmed_ids)
         failed_count = len(failed_ids)
-        summary = f"已确认 {confirmed_count} 条评分。"
+        summary = f"已处理 {confirmed_count} 条评分。"
         if failed_count:
-            summary += f" {failed_count} 条未确认。"
+            summary += f" {failed_count} 条未处理。"
         if reason:
             summary += f" {reason}"
         return {
@@ -793,7 +793,7 @@ def confirm_score_reviews_bulk(
         if numeric_id not in unique_ids:
             unique_ids.append(numeric_id)
     if not unique_ids:
-        return _result([], [], "没有可确认的评分。")
+        return _result([], [], "没有可处理的评分。")
 
     try:
         from app.services.dataset_service import database_ready, get_db_path
@@ -805,7 +805,7 @@ def confirm_score_reviews_bulk(
         repo = Repository(path)
         rows = repo.list_df("live_run_scores")
         if rows.empty or "id" not in rows.columns:
-            return _result([], unique_ids, "未找到评分草稿。")
+            return _result([], unique_ids, "未找到评分记录。")
 
         id_set = set(unique_ids)
         valid_ids: list[int] = []
@@ -829,10 +829,10 @@ def confirm_score_reviews_bulk(
             if repo.update("live_run_scores", row_id, changes) > 0:
                 confirmed_ids.append(row_id)
         failed = [row_id for row_id in unique_ids if row_id not in set(confirmed_ids)]
-        reason = "" if not failed else "仅待确认且裁判成功的评分支持批量确认。"
+        reason = "" if not failed else "仅裁判成功且处于历史 pending 状态的评分支持批量处理。"
         return _result(confirmed_ids, failed, reason)
     except Exception:
-        return _result([], unique_ids, "批量确认失败。")
+        return _result([], unique_ids, "批量处理失败。")
 
 
 def skip_score_review(
@@ -841,7 +841,7 @@ def skip_score_review(
     *,
     db_path: Path | None = None,
 ) -> bool:
-    """标记评分草稿为暂不采用；记录保留，但不会进入正式结论。"""
+    """历史兼容：标记评分为 skipped；记录保留，但不会进入评测结论。"""
     try:
         from app.services.dataset_service import database_ready, get_db_path
         from app.db.repository import Repository
@@ -871,7 +871,7 @@ def is_mock_score(result: ScoreResult) -> bool:
 
 
 def load_score_rows(score_run_id: str, db_path: Path | None = None) -> list[dict]:
-    """读取某次评分运行已落库的行（含主键 id），供人工复核改分使用；不可用时返回空列表。"""
+    """读取某次评分运行已落库的行（含主键 id）；不可用时返回空列表。"""
     try:
         from app.services.dataset_service import database_ready, get_db_path
         from app.db.repository import Repository

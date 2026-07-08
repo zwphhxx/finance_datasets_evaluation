@@ -3,7 +3,7 @@
 页面与指标层通过本模块获取评测数据，尽量避免直接读取文件。数据源层级为：
 
   - SQLite 是正式评测资产源；`task_cases` / `gold_answers` / `rubrics` 决定样本能否
-    进入发起评测，`live_run_responses` / `live_run_scores` 保存真实运行结果和评分确认结果。
+    进入发起评测，`live_run_responses` / `live_run_scores` 保存真实运行结果和 AI 评分结果。
   - `data/samples.json` 是样本库管理视图、导入导出和备份，由 sample_repository 负责同步。
   - `data/tasks.csv`、`data/gold_answers.json`、manifest 评分标准等 seed 文件只用于初始化
     或数据库不可用时的兼容回退。
@@ -218,7 +218,7 @@ def _load_from_db(db_path_value: str, _mtime: float) -> EvaluationData:
 # 最小 CRUD（PR-31）
 #
 # 仅写入 SQLite，不回写 data/ 下的 seed 文件；写入后清空缓存，使样本库、
-# 发起评测、评分确认和评测结论在下一次 rerun 立即看到最新数据。所有写入统一经由
+# 发起评测和评测结论在下一次 rerun 立即看到最新数据。所有写入统一经由
 # repository，页面层不出现任何 SQL。
 # --------------------------------------------------------------------------- #
 

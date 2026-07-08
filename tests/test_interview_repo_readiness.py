@@ -138,8 +138,8 @@ def test_docs_match_current_interview_demo_path() -> None:
     assert "MA" + "-001" not in combined
     for phrase in ["项目说明", "样本库", "发起评测", "评测结论"]:
         assert phrase in combined
-    assert "评分确认" not in project_note
-    assert "人工确认" not in project_note
+    assert "评分" + "确认" not in project_note
+    assert "人工" + "确认" not in project_note
     assert "不是通用 Chatbot" in interview_script
     assert "不是模型排名页" in interview_script
     assert "实时模型调用不能保证 100% 成功" in interview_script

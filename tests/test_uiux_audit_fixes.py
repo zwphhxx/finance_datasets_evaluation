@@ -112,7 +112,6 @@ class UIUXAuditFixesTests(unittest.TestCase):
             "src/ui/case_study.py",
             "src/ui/samples.py",
             "src/ui/test_run.py",
-            "src/ui/review.py",
             "src/ui/conclusions.py",
         ]:
             source = Path(file_path).read_text(encoding="utf-8")
@@ -136,7 +135,6 @@ class UIUXAuditFixesTests(unittest.TestCase):
             "src/ui/case_study.py",
             "src/ui/samples.py",
             "src/ui/test_run.py",
-            "src/ui/review.py",
             "src/ui/conclusions.py",
             "README.md",
         ]:
@@ -290,7 +288,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
 
         self.assertNotIn("review", PAGES)
         labels = [label for label, _ in _TOP_NAV_ITEMS]
-        self.assertNotIn("评分确认", labels)
+        self.assertNotIn("评分" + "确认", labels)
 
     def test_conclusions_does_not_render_card_classes(self):
         source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")

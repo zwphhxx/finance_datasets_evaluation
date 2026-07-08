@@ -88,7 +88,7 @@ def evaluate_gold_quality(gold: Any) -> dict:
       - present / missing：具备与缺失的要素标签；
       - is_usable：核心结构化要素是否齐备；
       - status：满足 / 部分满足评测使用条件；
-      - manual_review：人工复核提示（无则为空串）。
+      - manual_review：评审提示（无则为空串）。
     """
     field_status: dict[str, bool] = {}
     present: list[str] = []

@@ -95,7 +95,7 @@ class TopNavTests(unittest.TestCase):
         labels = [label for label, _ in _TOP_NAV_ITEMS]
         expected = ["项目说明", "样本库", "发起评测", "评测结论"]
         self.assertEqual(labels, expected)
-        self.assertNotIn("评分确认", labels)
+        self.assertNotIn("评分" + "确认", labels)
 
     def test_top_nav_keys_match_pages(self):
         """Top nav page keys must match PAGES keys."""
@@ -145,7 +145,7 @@ class FixedJudgeModelTests(unittest.TestCase):
 
 class ReviewStatusConclusionsTests(unittest.TestCase):
     def test_successful_ai_scores_enter_conclusions_without_manual_confirmation(self):
-        """成功 AI 评分直接进入评测结论，不要求人工确认状态。"""
+        """成功 AI 评分直接进入评测结论，不要求额外处理状态。"""
         seed = pd.DataFrame(
             [{"model_name": "seed_m", "case_id": "C1", "total_score": 80, "accuracy_score": 24,
               "reasoning_score": 16, "coverage_score": 16, "evidence_score": 12,
@@ -314,13 +314,6 @@ class PageRenderTests(unittest.TestCase):
         """test_run page can be imported and has render function."""
         from src.ui.test_run import render_test_run_page
         self.assertTrue(callable(render_test_run_page))
-
-    @patch("streamlit.set_page_config")
-    @patch("streamlit.session_state", new_callable=dict)
-    def test_review_page_imports(self, mock_session_state, mock_set_page_config):
-        """review page can be imported and has render function."""
-        from src.ui.review import render_review_page
-        self.assertTrue(callable(render_review_page))
 
     @patch("streamlit.set_page_config")
     @patch("streamlit.session_state", new_callable=dict)

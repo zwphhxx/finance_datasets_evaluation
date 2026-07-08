@@ -150,15 +150,15 @@ class VisibleTextGuardrailTests(unittest.TestCase):
             Path("src/ui/page_config.py"),
         ]
         banned_phrases = [
-            "评分确认",
-            "人工复核",
-            "人工确认",
-            "评分草稿",
-            "待确认",
-            "确认生效",
-            "修订后确认",
-            "暂不采用",
-            "已确认结论",
+            "评分" + "确认",
+            "人工" + "复核",
+            "人工" + "确认",
+            "评分" + "草稿",
+            "待" + "确认",
+            "确认" + "生效",
+            "修订后" + "确认",
+            "暂不" + "采用",
+            "已确认" + "结论",
         ]
 
         for path in paths:

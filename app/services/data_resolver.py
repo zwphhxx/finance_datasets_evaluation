@@ -22,7 +22,7 @@ def resolve_active_data(base) -> tuple[Any, dict[str, Any]]:
     """根据会话中的运行 / 评分结果，返回 (EvaluationData, eval_status)。
 
     有运行结果则用真实回答 + 裁判成功评分组装 EvaluationData；否则返回结果类全空的对象，
-    分析页走空状态。eval_status 提供给页面做「建议分 / 待确认」提示。
+    分析页走空状态。eval_status 提供给页面做「AI 评分 / 排除项」提示。
     """
     run = eval_state.get_last_run()
     if run is None:
@@ -40,13 +40,14 @@ def resolve_active_data(base) -> tuple[Any, dict[str, Any]]:
     score_rows = _collect_score_rows(score_result)
     data = build_live_evaluation_data(base, run, score_rows)
     success_rows = [r for r in score_rows if str(r.get("judge_status")) == "success"]
-    confirmed = sum(1 for r in success_rows if str(r.get("review_status")) == "confirmed")
+    excluded = sum(1 for r in score_rows if str(r.get("judge_status")) != "success")
     status = {
         "live": True,
         "result_source": "live",
         "scored": len(success_rows),
-        "confirmed": confirmed,
-        "pending": len(success_rows) - confirmed,
+        "confirmed": len(success_rows),
+        "pending": 0,
+        "excluded": excluded,
         "run_id": getattr(run, "run_id", None),
         "score_run_id": getattr(score_result, "score_run_id", None),
     }
@@ -54,7 +55,7 @@ def resolve_active_data(base) -> tuple[Any, dict[str, Any]]:
 
 
 def _collect_score_rows(score_result) -> list[dict]:
-    """优先取已落库行（反映人工复核值），数据库不可用时回退会话内 ScoreOutcome。"""
+    """优先取已落库行，数据库不可用时回退会话内 ScoreOutcome。"""
     if score_result is None:
         return []
     try:
@@ -91,7 +92,7 @@ def build_data_context_info(base, eval_status: Mapping[str, Any] | None) -> dict
       - data_source: SQLite / seed
       - task_count: 当前可用任务数
       - run_id: 当前会话运行 ID（如有）
-      - score_status: 评分 / 复核状态摘要
+      - score_status: AI 评分状态摘要
     """
     eval_status = eval_status or {}
     task_count = len(getattr(base, "tasks", []))
@@ -104,12 +105,11 @@ def build_data_context_info(base, eval_status: Mapping[str, Any] | None) -> dict
     run_id = eval_status.get("run_id")
     if run_id:
         scored = int(eval_status.get("scored", 0) or 0)
-        confirmed = int(eval_status.get("confirmed", 0) or 0)
-        pending = int(eval_status.get("pending", 0) or 0)
-        if pending > 0:
-            score_status = f"评分 {scored} 条 · 待确认 {pending}"
+        excluded = int(eval_status.get("excluded", 0) or 0)
+        if excluded > 0:
+            score_status = f"AI 评分 {scored} 条 · 排除项 {excluded}"
         else:
-            score_status = f"评分 {scored} 条 · 已确认 {confirmed}"
+            score_status = f"AI 评分 {scored} 条"
     else:
         score_status = "未运行评测"
 
