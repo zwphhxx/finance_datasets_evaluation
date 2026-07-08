@@ -41,7 +41,7 @@ class CaseStudyPresentationTests(unittest.TestCase):
         self.assertIn("使用边界", source)
         self.assertIn("被测模型只看到任务题、业务背景和输出要求", source)
         self.assertIn("被测模型不会看到专业标准答案、必须覆盖点、不可接受错误或评分标准", source)
-        self.assertIn("待确认、暂不采用、评分失败或示例评价均不进入正式结论", source)
+        self.assertIn("失败评分、模拟回退或示例评价均不进入评测结论", source)
         self.assertNotIn("维护样本", source)
         self.assertNotIn("确认可测", source)
         self.assertNotIn("render_inline_status", source)
@@ -52,8 +52,8 @@ class CaseStudyPresentationTests(unittest.TestCase):
         self.assertIn("render_home_section", source)
         for number, title, lead in [
             ("01", "项目定位", "评估模型在财务、法律、投行场景中的回答质量。"),
-            ("02", "评测流程", "从专业样本到人工确认后的正式结论。"),
-            ("03", "数据边界", "结论只代表当前已确认样本，不做脱离样本的泛化排名。"),
+            ("02", "评测流程", "从专业样本到 AI 评分后的评测结论。"),
+            ("03", "数据边界", "结论只代表当前样本范围，不做脱离样本的泛化排名。"),
         ]:
             self.assertIn(f'number="{number}"', source)
             self.assertIn(f'title="{title}"', source)
@@ -68,7 +68,7 @@ class CaseStudyPresentationTests(unittest.TestCase):
         self.assertNotIn("render_process_line(PROCESS_STEPS)", source)
         self.assertEqual(1, source.count("process_steps=PROCESS_STEPS"))
         self.assertIn(
-            'PROCESS_STEPS = ["人工录入样本库", "发起模型评测", "生成评分草稿", "人工确认评分", "进入评测结论"]',
+            'PROCESS_STEPS = ["人工录入样本库", "发起模型评测", "生成 AI 评分", "进入评测结论"]',
             source,
         )
         self.assertIn('title="评测流程"', source)
@@ -159,7 +159,7 @@ class CaseStudyPresentationTests(unittest.TestCase):
             components.render_home_section(
                 number="02",
                 title="评测流程",
-                lead="从专业样本到人工确认后的正式结论。",
+                lead="从专业样本到 AI 评分后的评测结论。",
                 body=["正文"],
                 process_steps=["人工录入样本库", "发起模型评测"],
             )

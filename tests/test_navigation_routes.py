@@ -1,13 +1,13 @@
-"""Audit and prune page routes to core evaluation workflow.
+"""Audit and prune page routes to core AI evaluation workflow.
 
 Covers:
-- PAGES dict has exactly 5 keys: case_study, samples, test_run, review, conclusions
-- Top nav has exactly 5 items
+- PAGES dict exposes exactly 4 user-facing keys: case_study, samples, test_run, conclusions
+- Top nav has exactly 4 items
 - Sidebar does not contain old page titles
 - DEFAULT_PAGE_KEY == "case_study"
 - DEFAULT_JUDGE_MODEL == "deepseek-ai/DeepSeek-V4-Pro"
-- Pending does not enter formal conclusions
-- Confirmed enters formal conclusions
+- AI scoring success enters conclusions directly
+- Failed scoring does not enter conclusions
 - Tested model prompt does not contain Gold Answer
 - All 5 main pages render without error
 """
@@ -27,14 +27,15 @@ from src.ui.page_config import PAGE_CONFIG_BY_KEY, DEFAULT_PAGE_KEY as PC_DEFAUL
 
 
 class PagesDictTests(unittest.TestCase):
-    def test_pages_has_exactly_five_keys(self):
-        """PAGES dict must have exactly 5 entries."""
-        self.assertEqual(5, len(PAGES))
+    def test_pages_has_exactly_four_keys(self):
+        """PAGES dict must expose exactly 4 user-facing entries."""
+        self.assertEqual(4, len(PAGES))
 
     def test_pages_keys_are_expected(self):
-        """PAGES keys must be exactly the 5 core workflow pages."""
-        expected = ["case_study", "samples", "test_run", "review", "conclusions"]
+        """PAGES keys must match the simplified evaluation workflow."""
+        expected = ["case_study", "samples", "test_run", "conclusions"]
         self.assertEqual(sorted(expected), sorted(PAGES.keys()))
+        self.assertNotIn("review", PAGES)
 
     def test_pages_does_not_contain_old_keys(self):
         """Old page keys must not be in PAGES."""
@@ -70,9 +71,9 @@ class PagesDictTests(unittest.TestCase):
 
 
 class PageConfigTests(unittest.TestCase):
-    def test_page_config_has_exactly_five_entries(self):
-        """PAGE_CONFIG_BY_KEY must have exactly 5 entries."""
-        self.assertEqual(5, len(PAGE_CONFIG_BY_KEY))
+    def test_page_config_has_exactly_four_entries(self):
+        """PAGE_CONFIG_BY_KEY must have exactly 4 user-facing entries."""
+        self.assertEqual(4, len(PAGE_CONFIG_BY_KEY))
 
     def test_page_config_keys_match_pages(self):
         """PAGE_CONFIG_BY_KEY keys must match PAGES keys."""
@@ -85,25 +86,26 @@ class PageConfigTests(unittest.TestCase):
 
 
 class TopNavTests(unittest.TestCase):
-    def test_top_nav_has_exactly_five_items(self):
-        """Top nav must have exactly 5 items."""
-        self.assertEqual(5, len(_TOP_NAV_ITEMS))
+    def test_top_nav_has_exactly_four_items(self):
+        """Top nav must have exactly 4 items."""
+        self.assertEqual(4, len(_TOP_NAV_ITEMS))
 
     def test_top_nav_labels_are_core_workflow(self):
         """Top nav labels must match the core evaluation workflow."""
         labels = [label for label, _ in _TOP_NAV_ITEMS]
-        expected = ["项目说明", "样本库", "发起评测", "评分确认", "评测结论"]
+        expected = ["项目说明", "样本库", "发起评测", "评测结论"]
         self.assertEqual(labels, expected)
+        self.assertNotIn("评分确认", labels)
 
     def test_top_nav_keys_match_pages(self):
         """Top nav page keys must match PAGES keys."""
         nav_keys = {key for _, key in _TOP_NAV_ITEMS}
         self.assertEqual(nav_keys, set(PAGES.keys()))
 
-    def test_get_primary_nav_items_returns_five(self):
-        """get_primary_nav_items must return exactly 5 items."""
+    def test_get_primary_nav_items_returns_four(self):
+        """get_primary_nav_items must return exactly 4 items."""
         items = get_primary_nav_items()
-        self.assertEqual(5, len(items))
+        self.assertEqual(4, len(items))
 
 
 class SidebarTests(unittest.TestCase):
@@ -120,9 +122,9 @@ class SidebarTests(unittest.TestCase):
                     f"Old title '{title}' should not appear in page config"
                 )
 
-    def test_all_page_configs_are_five_pages(self):
-        """All page configs must be one of the 5 core pages."""
-        expected_keys = {"case_study", "samples", "test_run", "review", "conclusions"}
+    def test_all_page_configs_are_four_pages(self):
+        """All page configs must be one of the 4 core pages."""
+        expected_keys = {"case_study", "samples", "test_run", "conclusions"}
         self.assertEqual(expected_keys, set(PAGE_CONFIG_BY_KEY.keys()))
 
 
@@ -142,8 +144,8 @@ class FixedJudgeModelTests(unittest.TestCase):
 
 
 class ReviewStatusConclusionsTests(unittest.TestCase):
-    def test_pending_does_not_enter_formal_conclusions(self):
-        """pending 状态的评分不进入正式结论。"""
+    def test_successful_ai_scores_enter_conclusions_without_manual_confirmation(self):
+        """成功 AI 评分直接进入评测结论，不要求人工确认状态。"""
         seed = pd.DataFrame(
             [{"model_name": "seed_m", "case_id": "C1", "total_score": 80, "accuracy_score": 24,
               "reasoning_score": 16, "coverage_score": 16, "evidence_score": 12,
@@ -151,21 +153,21 @@ class ReviewStatusConclusionsTests(unittest.TestCase):
         )
         live = pd.DataFrame([
             {"id": 1, "run_id": "R", "case_id": "C1", "eval_model": "live_m", "judge_status": "success",
-             "review_status": "pending", "status": "active", "total_score": 30,
+             "review_status": "ai_final", "status": "active", "total_score": 30,
              "accuracy_score": 9, "reasoning_score": 6, "coverage_score": 6,
              "evidence_score": 4, "expression_score": 5, "review_note": ""},
         ])
-        confirmed, pending = cc.split_live_scores(live)
-        self.assertEqual(1, len(pending))
-        self.assertEqual(0, len(confirmed))
+        ai_scores, excluded = cc.split_live_scores(live)
+        self.assertEqual(1, len(ai_scores))
+        self.assertEqual(0, len(excluded))
 
-        formal = cc.build_formal_conclusions(seed, confirmed)
+        formal = cc.build_formal_conclusions(seed, ai_scores)
         models = {item["model_name"] for item in formal}
-        self.assertNotIn("live_m", models)
+        self.assertIn("live_m", models)
         self.assertNotIn("seed_m", models)
 
-    def test_confirmed_enters_formal_conclusions(self):
-        """confirmed 状态的评分进入正式结论。"""
+    def test_failed_scores_do_not_enter_conclusions(self):
+        """评分失败、模拟评分和停用记录不进入评测结论。"""
         seed = pd.DataFrame(
             [{"model_name": "seed_m", "case_id": "C1", "total_score": 80, "accuracy_score": 24,
               "reasoning_score": 16, "coverage_score": 16, "evidence_score": 12,
@@ -173,21 +175,31 @@ class ReviewStatusConclusionsTests(unittest.TestCase):
         )
         live = pd.DataFrame([
             {"id": 2, "run_id": "R", "case_id": "C2", "eval_model": "live_m", "judge_status": "success",
-             "review_status": "confirmed", "status": "active", "total_score": 88,
+             "review_status": "ai_final", "status": "active", "total_score": 88,
              "accuracy_score": 26, "reasoning_score": 18, "coverage_score": 18,
              "evidence_score": 13, "expression_score": 13, "review_note": ""},
+            {"id": 3, "run_id": "R", "case_id": "C3", "eval_model": "failed_m", "judge_status": "failed",
+             "review_status": "ai_final", "status": "active", "total_score": None,
+             "accuracy_score": None, "reasoning_score": None, "coverage_score": None,
+             "evidence_score": None, "expression_score": None, "review_note": ""},
+            {"id": 4, "run_id": "R", "case_id": "C4", "eval_model": "mock_m", "judge_status": "mock",
+             "review_status": "ai_final", "status": "active", "total_score": None,
+             "accuracy_score": None, "reasoning_score": None, "coverage_score": None,
+             "evidence_score": None, "expression_score": None, "review_note": ""},
         ])
-        confirmed, pending = cc.split_live_scores(live)
-        self.assertEqual(0, len(pending))
-        self.assertEqual(1, len(confirmed))
+        ai_scores, excluded = cc.split_live_scores(live)
+        self.assertEqual(2, len(excluded))
+        self.assertEqual(["live_m"], ai_scores["eval_model"].tolist())
 
-        formal = cc.build_formal_conclusions(seed, confirmed)
+        formal = cc.build_formal_conclusions(seed, ai_scores)
         models = {item["model_name"] for item in formal}
         self.assertIn("live_m", models)
+        self.assertNotIn("failed_m", models)
+        self.assertNotIn("mock_m", models)
         self.assertNotIn("seed_m", models)
 
-        summary = cc.summarize_formal(seed, confirmed)
-        self.assertEqual(1, summary["confirmed_rows"])
+        summary = cc.summarize_formal(seed, ai_scores)
+        self.assertEqual(1, summary["ai_score_rows"])
         self.assertEqual(1, summary["total_rows"])
 
 

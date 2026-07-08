@@ -14,8 +14,17 @@ from src.ui.page_config import PAGE_CONFIGS, PAGE_CONFIG_BY_KEY
 
 
 PROJECT_NAME = "财务/法律/投行场景大模型对比评测"
-MAIN_PAGE_KEYS = ["case_study", "samples", "test_run", "review", "conclusions"]
-MAIN_NAV_LABELS = ["项目说明", "样本库", "发起评测", "评分确认", "评测结论"]
+MAIN_PAGE_KEYS = ["case_study", "samples", "test_run", "conclusions"]
+MAIN_NAV_LABELS = ["项目说明", "样本库", "发起评测", "评测结论"]
+VISIBLE_UI_FILES = [
+    Path("src/ui/case_study.py"),
+    Path("src/ui/samples.py"),
+    Path("src/ui/test_run.py"),
+    Path("src/ui/conclusions.py"),
+    Path("src/ui/navigation.py"),
+    Path("src/ui/page_config.py"),
+    Path("src/ui/components.py"),
+]
 
 
 class ReadmeCurrentFlowTests(unittest.TestCase):
@@ -27,16 +36,15 @@ class ReadmeCurrentFlowTests(unittest.TestCase):
         for line in [
             "1. **样本库**",
             "2. **发起评测**",
-            "3. **评分确认**",
-            "4. **评测结论**",
+            "3. **评测结论**",
         ]:
             self.assertIn(line, text)
 
         required_boundaries = [
             "被测模型不看到专业标准答案",
-            "裁判评分只是评分草稿",
-            "正式结论只统计已确认评分",
-            "待确认、暂不采用、失败评分和示例评价不进入正式结论",
+            "AI 评分完成后直接形成评测结论",
+            "结论基于当前样本、模型回答和 AI 评分生成",
+            "失败评分和示例评价不进入评测结论",
             "本地 SQLite 数据库属于运行期产物",
             "导出 / 导入",
         ]
@@ -73,11 +81,11 @@ class ReadmeCurrentFlowTests(unittest.TestCase):
 
 
 class NavigationAndPageConfigGuardrailTests(unittest.TestCase):
-    def test_navigation_only_exposes_current_five_pages(self):
+    def test_navigation_only_exposes_current_four_pages(self):
         self.assertEqual(MAIN_PAGE_KEYS, list(PAGES.keys()))
         self.assertEqual(list(zip(MAIN_NAV_LABELS, MAIN_PAGE_KEYS)), _TOP_NAV_ITEMS)
 
-    def test_page_config_only_contains_current_five_pages(self):
+    def test_page_config_only_contains_current_four_pages(self):
         self.assertEqual(MAIN_PAGE_KEYS, [config.page_key for config in PAGE_CONFIGS])
         self.assertEqual(set(MAIN_PAGE_KEYS), set(PAGE_CONFIG_BY_KEY.keys()))
 
@@ -88,7 +96,7 @@ class NavigationAndPageConfigGuardrailTests(unittest.TestCase):
 
 class VisibleTextGuardrailTests(unittest.TestCase):
     def test_visible_ui_and_readme_text_do_not_use_retired_or_promotional_terms(self):
-        paths = [Path("README.md"), *sorted(Path("src/ui").glob("*.py"))]
+        paths = [Path("README.md"), *VISIBLE_UI_FILES]
         banned_terms = [
             "Fin" + "DueEval",
             "Fin" + "DueEval " + "M" + "VP",
@@ -116,7 +124,7 @@ class VisibleTextGuardrailTests(unittest.TestCase):
         paths = [
             Path("README.md"),
             *sorted(Path("docs").glob("*.md")),
-            *sorted(Path("src/ui").glob("*.py")),
+            *VISIBLE_UI_FILES,
         ]
         banned_labels = [
             "Gold Answer",
@@ -131,9 +139,36 @@ class VisibleTextGuardrailTests(unittest.TestCase):
             for label in banned_labels:
                 self.assertNotIn(label, text, f"{path} contains user-facing English label: {label}")
 
+    def test_primary_flow_text_does_not_expose_manual_review_concepts(self):
+        paths = [
+            Path("README.md"),
+            Path("docs/project_note.md"),
+            Path("src/ui/case_study.py"),
+            Path("src/ui/test_run.py"),
+            Path("src/ui/conclusions.py"),
+            Path("src/ui/navigation.py"),
+            Path("src/ui/page_config.py"),
+        ]
+        banned_phrases = [
+            "评分确认",
+            "人工复核",
+            "人工确认",
+            "评分草稿",
+            "待确认",
+            "确认生效",
+            "修订后确认",
+            "暂不采用",
+            "已确认结论",
+        ]
+
+        for path in paths:
+            text = path.read_text(encoding="utf-8")
+            for phrase in banned_phrases:
+                self.assertNotIn(phrase, text, f"{path} exposes manual review phrase: {phrase}")
+
 
 class FormalConclusionStatusGuardrailTests(unittest.TestCase):
-    def test_only_confirmed_live_scores_enter_formal_conclusions(self):
+    def test_successful_ai_scores_enter_conclusions_without_manual_confirmation(self):
         seed_scores = pd.DataFrame([
             {
                 "model_name": "Model_A_baseline",
@@ -152,9 +187,9 @@ class FormalConclusionStatusGuardrailTests(unittest.TestCase):
                 "id": 1,
                 "run_id": "R1",
                 "case_id": "LIVE-OK",
-                "eval_model": "vendor/live-confirmed",
+                "eval_model": "vendor/live-ai-final",
                 "judge_status": "success",
-                "review_status": "confirmed",
+                "review_status": "ai_final",
                 "status": "active",
                 "total_score": 88,
                 "accuracy_score": 26,
@@ -162,39 +197,23 @@ class FormalConclusionStatusGuardrailTests(unittest.TestCase):
                 "coverage_score": 18,
                 "evidence_score": 13,
                 "expression_score": 13,
-                "review_note": "已确认",
+                "review_note": "AI 评分完成",
             },
             {
                 "id": 2,
                 "run_id": "R1",
-                "case_id": "LIVE-PENDING",
-                "eval_model": "vendor/live-pending",
-                "judge_status": "success",
-                "review_status": "pending",
+                "case_id": "LIVE-FAILED",
+                "eval_model": "vendor/live-failed",
+                "judge_status": "failed",
+                "review_status": "ai_final",
                 "status": "active",
-                "total_score": 80,
-                "accuracy_score": 24,
-                "reasoning_score": 16,
-                "coverage_score": 16,
-                "evidence_score": 12,
-                "expression_score": 12,
-                "review_note": "待确认",
-            },
-            {
-                "id": 3,
-                "run_id": "R1",
-                "case_id": "LIVE-SKIPPED",
-                "eval_model": "vendor/live-skipped",
-                "judge_status": "success",
-                "review_status": "skipped",
-                "status": "active",
-                "total_score": 50,
-                "accuracy_score": 15,
-                "reasoning_score": 10,
-                "coverage_score": 10,
-                "evidence_score": 8,
-                "expression_score": 7,
-                "review_note": "暂不采用",
+                "total_score": None,
+                "accuracy_score": None,
+                "reasoning_score": None,
+                "coverage_score": None,
+                "evidence_score": None,
+                "expression_score": None,
+                "review_note": "评分失败",
             },
             {
                 "id": 4,
@@ -202,7 +221,7 @@ class FormalConclusionStatusGuardrailTests(unittest.TestCase):
                 "case_id": "SEED-LIVE",
                 "eval_model": "Model_A_baseline",
                 "judge_status": "success",
-                "review_status": "confirmed",
+                "review_status": "ai_final",
                 "status": "active",
                 "total_score": 100,
                 "accuracy_score": 30,
@@ -214,21 +233,18 @@ class FormalConclusionStatusGuardrailTests(unittest.TestCase):
             },
         ])
 
-        confirmed, pending = cc.split_live_scores(live_scores)
-        self.assertEqual(["vendor/live-confirmed"], confirmed["eval_model"].tolist())
-        self.assertEqual(["vendor/live-pending"], pending["eval_model"].tolist())
+        ai_scores, excluded = cc.split_live_scores(live_scores)
+        self.assertEqual(["vendor/live-ai-final"], ai_scores["eval_model"].tolist())
+        self.assertEqual(["vendor/live-failed"], excluded["eval_model"].tolist())
 
-        formal = cc.build_formal_conclusions(seed_scores, confirmed)
-        self.assertEqual(["vendor/live-confirmed"], [item["model_name"] for item in formal])
+        formal = cc.build_formal_conclusions(seed_scores, ai_scores)
+        self.assertEqual(["vendor/live-ai-final"], [item["model_name"] for item in formal])
 
     def test_conclusion_page_has_clear_empty_state_copy(self):
         text = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
         for phrase in [
-            "当前暂无已确认评分",
-            "当前部署环境的运行期评分数据已重建",
-            "仅存在示例评价或待确认草稿",
+            "暂无 AI 评分结果",
             "发起评测",
-            "评分确认",
         ]:
             self.assertIn(phrase, text)
 

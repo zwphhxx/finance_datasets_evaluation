@@ -52,7 +52,7 @@ from src.ui.test_run import (
 class TestRunFlowStructureTests(unittest.TestCase):
     def test_main_steps_are_execution_flow(self):
         self.assertEqual(
-            ["评测配置", "模型回答", "评分草稿"],
+            ["评测配置", "模型回答", "AI 评分"],
             get_test_run_steps(),
         )
 
@@ -124,7 +124,7 @@ class TestRunFlowStructureTests(unittest.TestCase):
         )
 
         self.assertEqual("回答超过输出长度限制。", _failure_reason_text(outcome))
-        self.assertEqual("系统可使用压缩提示词重试；不完整回答不会进入评分草稿。", _failure_guidance(outcome))
+        self.assertEqual("系统可使用压缩提示词重试；不完整回答不会进入 AI 评分。", _failure_guidance(outcome))
         self.assertNotIn("超时", _failure_reason_text(outcome))
 
     def test_bad_request_guidance_points_to_provider_details(self):
@@ -219,7 +219,7 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn('@st.dialog("模型回答全文"', source)
         self.assertIn("查看技术明细", source)
         self.assertIn('@st.dialog("技术明细"', source)
-        self.assertIn("仅对已完成回答生成评分草稿", source)
+        self.assertIn("仅对已完成回答生成 AI 评分", source)
         self.assertIn("start_run = _render_run_button(", panel_source)
         self.assertIn("if start_run:", panel_source)
         self.assertLess(panel_source.index("with col3:"), panel_source.index("if start_run:"))
@@ -334,7 +334,7 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("markdown-detail-heading", Path("src/ui/components.py").read_text(encoding="utf-8"))
         self.assertIn('st.selectbox(\n        "查看回答"', source)
         self.assertIn("_render_selected_outcome_detail", source)
-        self.assertIn("失败项不会进入评分草稿", source)
+        self.assertIn("失败项不会进入 AI 评分", source)
         self.assertIn("默认展示第一条失败原因", source)
         self.assertIn("回答不完整", source)
         self.assertIn("响应超时", source)
@@ -343,7 +343,7 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("空回答", source)
         self.assertIn("原因：", source)
         self.assertIn("已自动重试", source)
-        self.assertIn("处理：不会进入评分草稿，可重试失败项或更换模型。", source)
+        self.assertIn("处理：不会进入 AI 评分，可重试失败项或更换模型。", source)
         for column in (
             "finish_reason",
             "incomplete_reason",
@@ -423,7 +423,7 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("build_score_view_options", source)
         self.assertIn("default_score_view_index", source)
         self.assertIn("sc.score_single", source)
-        self.assertIn("复核提示", source)
+        self.assertIn("评分说明", source)
         self.assertIn("维度评分", source)
         self.assertIn("评分依据", source)
         self.assertIn("未返回明确依据", source)
@@ -576,10 +576,10 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn('class="markdown-detail-inline-code"', table_html)
 
     def test_answer_markdown_bold_only_lines_render_as_detail_panel_subtitles(self):
-        html = ui_components.markdown_detail_html("**复核提示**\n\n需人工确认评分依据。")
+        html = ui_components.markdown_detail_html("**评分说明**\n\n需查看评分依据。")
 
-        self.assertIn('<div class="markdown-detail-heading">复核提示</div>', html)
-        self.assertIn("<p>需人工确认评分依据。</p>", html)
+        self.assertIn('<div class="markdown-detail-heading">评分说明</div>', html)
+        self.assertIn("<p>需查看评分依据。</p>", html)
 
     def test_answer_markdown_section_numbers_render_as_subtitles(self):
         html = ui_components.markdown_detail_html(
@@ -1031,7 +1031,7 @@ class ScoreDraftTests(unittest.TestCase):
 
         self.assertEqual(1, default_score_view_index(outcomes))
         self.assertEqual("A｜model-failed｜未评分｜失败", options[0]["label"])
-        self.assertEqual("B｜model-ok｜78分｜待确认", options[1]["label"])
+        self.assertEqual("B｜model-ok｜78分｜已生成结论", options[1]["label"])
 
     def test_score_summary_rows_use_dynamic_dimensions_and_pending_review(self):
         dimensions = [
@@ -1066,7 +1066,7 @@ class ScoreDraftTests(unittest.TestCase):
         self.assertEqual("20", rows[0]["准确性"])
         self.assertEqual("10", rows[0]["覆盖度"])
         self.assertEqual("30", rows[0]["总分"])
-        self.assertEqual("待确认", rows[0]["裁判状态"])
+        self.assertEqual("已生成结论", rows[0]["裁判状态"])
 
     def test_score_result_index_rows_only_keep_summary_fields(self):
         result = sc.ScoreResult(
@@ -1087,16 +1087,16 @@ class ScoreDraftTests(unittest.TestCase):
                     scores={"accuracy_score": 22},
                     total_score=85,
                     review_status="pending",
-                    review_note="复核提示不应出现在索引表",
+                    review_note="评分说明不应出现在索引表",
                 ),
             ),
         )
 
         rows = build_score_result_index_rows(result, [{"field": "accuracy_score", "name": "准确性", "full_mark": 30}])
 
-        self.assertEqual([{"模型": "model-a", "样本": "CM-001", "总分": "85 / 30", "状态": "待确认"}], rows)
+        self.assertEqual([{"模型": "model-a", "样本": "CM-001", "总分": "85 / 30", "状态": "已生成结论"}], rows)
         self.assertNotIn("模型ID", rows[0])
-        self.assertNotIn("复核提示", rows[0])
+        self.assertNotIn("评分说明", rows[0])
         self.assertNotIn("评分依据", rows[0])
 
     def test_success_score_draft_detail_uses_markdown_panel_content(self):
@@ -1114,17 +1114,17 @@ class ScoreDraftTests(unittest.TestCase):
             scores={"accuracy_score": 22, "coverage_score": 16},
             total_score=38,
             rationale={"accuracy_score": "判断标准准确。", "coverage_score": "覆盖主要风险。"},
-            review_note="需人工确认评分依据。",
+            review_note="需查看评分依据。",
             review_status="pending",
         )
 
         panel = build_score_draft_detail_panel(outcome, dimensions)
 
-        self.assertEqual("CM-001｜Kimi-K2.6｜38 / 50｜待确认", panel["title"])
+        self.assertEqual("CM-001｜Kimi-K2.6｜38 / 50｜已生成结论", panel["title"])
         self.assertIn("裁判模型：DeepSeek-V4-Pro", panel["meta"])
         self.assertIn("模型 ID：Pro/moonshotai/Kimi-K2.6", panel["meta"])
-        self.assertIn("**复核提示**", panel["markdown"])
-        self.assertIn("需人工确认评分依据。", panel["markdown"])
+        self.assertIn("**评分说明**", panel["markdown"])
+        self.assertIn("需查看评分依据。", panel["markdown"])
         self.assertIn("**维度评分**", panel["markdown"])
         self.assertIn("**专业准确性：22 / 30**", panel["markdown"])
         self.assertIn("评分依据：判断标准准确。", panel["markdown"])
@@ -1145,7 +1145,7 @@ class ScoreDraftTests(unittest.TestCase):
 
         panel = build_score_draft_detail_panel(outcome, [{"field": "accuracy_score", "name": "准确性", "full_mark": 30}])
 
-        self.assertIn("未返回明确复核提示。", panel["markdown"])
+        self.assertIn("未返回明确评分说明。", panel["markdown"])
         self.assertIn("评分依据：未返回明确依据。", panel["markdown"])
 
     def test_failed_score_draft_detail_shows_failure_without_dimension_table(self):
@@ -1169,7 +1169,7 @@ class ScoreDraftTests(unittest.TestCase):
         self.assertIn("模型回答已生成，裁判评分失败。", panel["markdown"])
         self.assertIn("错误码：`timeout`", panel["markdown"])
         self.assertIn("错误信息：请求超时", panel["markdown"])
-        self.assertIn("失败评分不会进入评分确认，也不会纳入正式结论。", panel["markdown"])
+        self.assertIn("失败评分不会进入评测结论。", panel["markdown"])
         self.assertNotIn("**维度评分**", panel["markdown"])
 
     def test_mock_score_draft_detail_is_marked_as_mock(self):
@@ -1189,9 +1189,9 @@ class ScoreDraftTests(unittest.TestCase):
 
         self.assertIn("**模拟评分**", panel["markdown"])
         self.assertIn("未配置真实模型服务，未产生真实评分。", panel["markdown"])
-        self.assertIn("该结果仅用于链路调试，不进入正式结论。", panel["markdown"])
+        self.assertIn("该结果仅用于链路调试，不进入评测结论。", panel["markdown"])
 
-    def test_confirm_review_entry_only_shows_for_pending_success_scores(self):
+    def test_ai_score_entry_shows_for_success_scores(self):
         result = sc.ScoreResult(
             score_run_id="S1",
             run_id="R1",
@@ -1274,7 +1274,7 @@ class ScoreDraftTests(unittest.TestCase):
                 ),
             ),
         )
-        self.assertFalse(has_confirmable_score_drafts(confirmed))
+        self.assertTrue(has_confirmable_score_drafts(confirmed))
         self.assertFalse(has_confirmable_score_drafts(failed))
         self.assertFalse(has_confirmable_score_drafts(mock))
 

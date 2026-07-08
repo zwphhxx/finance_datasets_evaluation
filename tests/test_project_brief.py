@@ -1,4 +1,4 @@
-"""UI shell tests for the current five-page workflow."""
+"""UI shell tests for the current four-page workflow."""
 
 import unittest
 import warnings
@@ -69,16 +69,16 @@ class WorkflowNavTests(unittest.TestCase):
         self.assertEqual(len(group_keys), len(set(group_keys)))
 
     def test_current_pages_are_registered(self):
-        self.assertEqual(["case_study", "samples", "test_run", "review", "conclusions"], list(PAGES.keys()))
-        self.assertEqual(["case_study", "samples", "test_run", "review", "conclusions"], _NAV_GROUPS[-1][1])
+        self.assertEqual(["case_study", "samples", "test_run", "conclusions"], list(PAGES.keys()))
+        self.assertEqual(["case_study", "samples", "test_run", "conclusions"], _NAV_GROUPS[-1][1])
         self.assertEqual("样本库", PAGE_CONFIG_BY_KEY["samples"].title)
         self.assertEqual("发起评测", PAGE_CONFIG_BY_KEY["test_run"].title)
         self.assertEqual("评测结论", PAGE_CONFIG_BY_KEY["conclusions"].title)
 
-    def test_top_nav_has_five_items(self):
-        self.assertEqual(5, len(_TOP_NAV_ITEMS))
+    def test_top_nav_has_four_items(self):
+        self.assertEqual(4, len(_TOP_NAV_ITEMS))
         labels = [label for label, _ in _TOP_NAV_ITEMS]
-        self.assertEqual(["项目说明", "样本库", "发起评测", "评分确认", "评测结论"], labels)
+        self.assertEqual(["项目说明", "样本库", "发起评测", "评测结论"], labels)
 
 
 class PageRenderSmokeTests(unittest.TestCase):
@@ -89,7 +89,6 @@ class PageRenderSmokeTests(unittest.TestCase):
     def test_page_render_functions_exist(self):
         from src.ui.case_study import render_case_study_page
         from src.ui.conclusions import render_conclusions_page
-        from src.ui.review import render_review_page
         from src.ui.samples import render_samples_page
         from src.ui.test_run import render_test_run_page
 
@@ -97,7 +96,6 @@ class PageRenderSmokeTests(unittest.TestCase):
             render_case_study_page,
             render_samples_page,
             render_test_run_page,
-            render_review_page,
             render_conclusions_page,
         ]:
             self.assertTrue(callable(fn))

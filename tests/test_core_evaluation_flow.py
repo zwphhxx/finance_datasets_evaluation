@@ -114,8 +114,8 @@ class FixedJudgeModelTests(unittest.TestCase):
 
 
 class ReviewStatusConclusionsTests(unittest.TestCase):
-    def test_pending_does_not_enter_formal_conclusions(self):
-        """pending 状态的评分不进入正式结论。"""
+    def test_successful_ai_score_enters_conclusions(self):
+        """AI 评分成功后直接进入评测结论。"""
         seed = pd.DataFrame(
             [{"model_name": "seed_m", "case_id": "C1", "total_score": 80, "accuracy_score": 24,
               "reasoning_score": 16, "coverage_score": 16, "evidence_score": 12,
@@ -123,22 +123,21 @@ class ReviewStatusConclusionsTests(unittest.TestCase):
         )
         live = pd.DataFrame([
             {"id": 1, "run_id": "R", "case_id": "C1", "eval_model": "live_m", "judge_status": "success",
-             "review_status": "pending", "status": "active", "total_score": 30,
+             "review_status": "ai_final", "status": "active", "total_score": 30,
              "accuracy_score": 9, "reasoning_score": 6, "coverage_score": 6,
              "evidence_score": 4, "expression_score": 5, "review_note": ""},
         ])
-        confirmed, pending = cc.split_live_scores(live)
-        self.assertEqual(1, len(pending))
-        self.assertEqual(0, len(confirmed))
+        ai_scores, excluded = cc.split_live_scores(live)
+        self.assertEqual(1, len(ai_scores))
+        self.assertEqual(0, len(excluded))
 
-        formal = cc.build_formal_conclusions(seed, confirmed)
-        # pending 和 seed 示例均不进入正式结论。
+        formal = cc.build_formal_conclusions(seed, ai_scores)
         models = {item["model_name"] for item in formal}
-        self.assertNotIn("live_m", models)
+        self.assertIn("live_m", models)
         self.assertNotIn("seed_m", models)
 
-    def test_confirmed_enters_formal_conclusions(self):
-        """confirmed 状态的评分进入正式结论。"""
+    def test_failed_scores_do_not_enter_conclusions(self):
+        """失败评分不进入评测结论。"""
         seed = pd.DataFrame(
             [{"model_name": "seed_m", "case_id": "C1", "total_score": 80, "accuracy_score": 24,
               "reasoning_score": 16, "coverage_score": 16, "evidence_score": 12,
@@ -146,21 +145,26 @@ class ReviewStatusConclusionsTests(unittest.TestCase):
         )
         live = pd.DataFrame([
             {"id": 2, "run_id": "R", "case_id": "C2", "eval_model": "live_m", "judge_status": "success",
-             "review_status": "confirmed", "status": "active", "total_score": 88,
+             "review_status": "ai_final", "status": "active", "total_score": 88,
              "accuracy_score": 26, "reasoning_score": 18, "coverage_score": 18,
              "evidence_score": 13, "expression_score": 13, "review_note": ""},
+            {"id": 3, "run_id": "R", "case_id": "C3", "eval_model": "failed_m", "judge_status": "failed",
+             "review_status": "ai_final", "status": "active", "total_score": None,
+             "accuracy_score": None, "reasoning_score": None, "coverage_score": None,
+             "evidence_score": None, "expression_score": None, "review_note": ""},
         ])
-        confirmed, pending = cc.split_live_scores(live)
-        self.assertEqual(0, len(pending))
-        self.assertEqual(1, len(confirmed))
+        ai_scores, excluded = cc.split_live_scores(live)
+        self.assertEqual(1, len(excluded))
+        self.assertEqual(["live_m"], ai_scores["eval_model"].tolist())
 
-        formal = cc.build_formal_conclusions(seed, confirmed)
+        formal = cc.build_formal_conclusions(seed, ai_scores)
         models = {item["model_name"] for item in formal}
         self.assertIn("live_m", models)
+        self.assertNotIn("failed_m", models)
         self.assertNotIn("seed_m", models)
 
-        summary = cc.summarize_formal(seed, confirmed)
-        self.assertEqual(1, summary["confirmed_rows"])
+        summary = cc.summarize_formal(seed, ai_scores)
+        self.assertEqual(1, summary["ai_score_rows"])
         self.assertEqual(1, summary["total_rows"])
 
 
@@ -188,15 +192,15 @@ class PromptBoundaryTests(unittest.TestCase):
 
 
 class NavigationTests(unittest.TestCase):
-    def test_main_nav_has_exactly_five_items(self):
-        """主导航必须恰好有 5 个条目。"""
+    def test_main_nav_has_exactly_four_items(self):
+        """主导航必须恰好有 4 个条目。"""
         items = get_primary_nav_items()
-        self.assertEqual(5, len(items))
+        self.assertEqual(4, len(items))
 
     def test_top_nav_items_are_core_workflow(self):
         """主导航条目对应核心评测流程。"""
         labels = [label for label, _ in _TOP_NAV_ITEMS]
-        expected = ["项目说明", "样本库", "发起评测", "评分确认", "评测结论"]
+        expected = ["项目说明", "样本库", "发起评测", "评测结论"]
         self.assertEqual(labels, expected)
 
 

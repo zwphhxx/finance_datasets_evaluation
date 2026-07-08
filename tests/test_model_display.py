@@ -22,7 +22,8 @@ class ModelDisplayTests(unittest.TestCase):
         self.assertEqual("示例历史评价：seed_m", md.display_model_name("seed_m", source="seed"))
         self.assertEqual("示例历史评价", md.source_label("seed"))
         self.assertEqual("本次运行结果", md.source_label("live"))
-        self.assertEqual("已确认", md.source_label("confirmed_live"))
+        self.assertEqual("AI 评分", md.source_label("confirmed_live"))
+        self.assertEqual("AI 评分", md.source_label("ai_score_live"))
 
 
 class ConclusionSourceDisplayTests(unittest.TestCase):
@@ -63,19 +64,19 @@ class ConclusionSourceDisplayTests(unittest.TestCase):
                 "review_note": "",
             }
         ])
-        confirmed, _ = cc.split_live_scores(live)
-        rows = cc.build_formal_conclusions(pd.DataFrame(), confirmed)
+        ai_scores, _ = cc.split_live_scores(live)
+        rows = cc.build_formal_conclusions(pd.DataFrame(), ai_scores)
 
         self.assertEqual("vendor/Actual-Model", rows[0]["model_name"])
         self.assertEqual("Actual-Model", rows[0]["display_name"])
-        self.assertEqual("confirmed_live", rows[0]["source"])
-        self.assertEqual("已确认", rows[0]["source_label"])
+        self.assertEqual("ai_score_live", rows[0]["source"])
+        self.assertEqual("AI 评分", rows[0]["source_label"])
 
-    def test_conclusions_page_uses_current_confirmed_results_only(self):
+    def test_conclusions_page_uses_current_ai_scores_only(self):
         source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
 
         self.assertIn("当前结论", source)
-        self.assertIn("cc.build_model_issue_summaries(confirmed_live", source)
+        self.assertIn("cc.build_model_issue_summaries(ai_scores", source)
         self.assertNotIn("Model_A_baseline", source)
 
 

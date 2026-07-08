@@ -402,7 +402,7 @@ def parse_gold_answer_for_display(value) -> dict:
                 field_text(gold, "boundary_conditions", "")
                 or field_text(gold, "materials_to_check", "待补充")
             ),
-            "人工复核提示": field_text(gold, "manual_review_notes", "待补充"),
+            "评审提示": field_text(gold, "manual_review_notes", "待补充"),
             "本题评分关注点": field_text(gold, "scoring_focus", "待补充"),
         },
         "lists": {
@@ -528,7 +528,7 @@ def build_sample_asset_sections(
         },
         {
             "title": "准入检查",
-            "caption": "说明样本为什么可以或不能进入发起评测，并保留人工复核备注。",
+            "caption": "说明样本为什么可以或不能进入发起评测，并保留样本维护备注。",
         },
     ]
 
@@ -651,7 +651,7 @@ def _gold_defaults(value) -> dict[str, str]:
         "core_conclusion": _empty_if_pending(fields.get("标准结论", "")) or fallback,
         "key_evidence": _empty_if_pending(fields.get("关键依据", "")),
         "boundary_conditions": _empty_if_pending(fields.get("边界与需核查事项", "")),
-        "manual_review_notes": _empty_if_pending(fields.get("人工复核提示", "")),
+        "manual_review_notes": _empty_if_pending(fields.get("评审提示", "")),
         "scoring_focus": _empty_if_pending(fields.get("本题评分关注点", "")),
         "must_have_points": _as_lines(lists.get("必须覆盖点", [])),
         "unacceptable_errors": _as_lines(lists.get("不可接受错误", [])),
@@ -1254,7 +1254,7 @@ def _gold_detail_html(gold_display: dict) -> str:
         _list_block_html("必须覆盖点", lists.get("必须覆盖点", [])),
         _list_block_html("不可接受错误", lists.get("不可接受错误", []), tone="risk"),
         _field_block_html("边界与需核查事项", fields.get("边界与需核查事项", "待补充")),
-        _field_block_html("人工复核提示", fields.get("人工复核提示", "待补充")),
+        _field_block_html("评审提示", fields.get("评审提示", "待补充")),
     ]
     scoring_focus = _empty_if_pending(fields.get("本题评分关注点", ""))
     if scoring_focus:
@@ -1323,7 +1323,7 @@ def _readiness_detail_html(sample: sr.Sample, readiness: ds.SampleReadiness) -> 
         ("检查结果", readiness.label),
         ("发起评测可见性", visibility_note),
         ("缺失项", missing_items),
-        ("复核备注", sample.reviewer_note or "未填写"),
+        ("维护备注", sample.reviewer_note or "未填写"),
     ]
     return _kv_grid_html(rows) + _list_block_html("已满足项", satisfied)
 
@@ -1777,7 +1777,7 @@ def _render_sample_editor_dialog_body(
             key=f"{prefix}_gold_boundary",
         )
         manual_review_notes = st.text_area(
-            "人工复核提示",
+            "评审提示",
             value=gold_defaults["manual_review_notes"],
             height=70,
             key=f"{prefix}_gold_review",
@@ -1798,7 +1798,7 @@ def _render_sample_editor_dialog_body(
             key=f"{prefix}_risk_level",
         )
         reviewer_note = st.text_area(
-            "复核备注",
+            "维护备注",
             value=sample.reviewer_note if sample else "",
             height=60,
             key=f"{prefix}_reviewer_note",

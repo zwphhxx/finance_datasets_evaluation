@@ -1,9 +1,9 @@
 """评测结论页与结论汇总服务。
 
-覆盖真实运行数据的区分与正式结论口径：
-  - seed 示例评价不计入正式结论；
-  - pending live 草稿不计入正式结论；
-  - confirmed live 结论计入正式结论；
+覆盖真实运行数据的区分与 AI 结论口径：
+  - seed 示例评价不计入评测结论；
+  - judge_status=success 的 AI 评分计入评测结论；
+  - failed / mock / skipped 记录不计入评测结论；
   - SQLite 不可用时 live 结果回退空表；
   - 模型名变化经展示名映射、字段缺失时不报错。
 
@@ -81,30 +81,30 @@ class FormalConclusionTests(unittest.TestCase):
         self.assertEqual(summary["confirmed_rows"], 0)
         self.assertEqual(summary["total_rows"], 0)
 
-    def test_pending_live_excluded_from_formal(self):
+    def test_success_ai_score_enters_formal_without_manual_status(self):
         live = pd.DataFrame([_live_row("C1", "live-model", "pending", total=30)])
-        confirmed, pending = cc.split_live_scores(live)
-        self.assertEqual(len(confirmed), 0)
-        self.assertEqual(len(pending), 1)
+        ai_scores, excluded = cc.split_live_scores(live)
+        self.assertEqual(len(ai_scores), 1)
+        self.assertEqual(len(excluded), 0)
 
-        formal = cc.build_formal_conclusions(pd.DataFrame(), confirmed)
-        self.assertFalse(any(item["model_name"] == "live-model" for item in formal))
-        summary = cc.summarize_formal(pd.DataFrame(), confirmed)
-        self.assertEqual(summary["confirmed_rows"], 0)
+        formal = cc.build_formal_conclusions(pd.DataFrame(), ai_scores)
+        self.assertTrue(any(item["model_name"] == "live-model" for item in formal))
+        summary = cc.summarize_formal(pd.DataFrame(), ai_scores)
+        self.assertEqual(summary["ai_score_rows"], 1)
 
     def test_confirmed_live_enters_formal(self):
         live = pd.DataFrame([_live_row("C1", "live-model", "confirmed", total=88)])
-        confirmed, _ = cc.split_live_scores(live)
-        self.assertEqual(len(confirmed), 1)
+        ai_scores, _ = cc.split_live_scores(live)
+        self.assertEqual(len(ai_scores), 1)
 
-        formal = cc.build_formal_conclusions(pd.DataFrame(), confirmed, mapping={"live-model": "现场模型"})
+        formal = cc.build_formal_conclusions(pd.DataFrame(), ai_scores, mapping={"live-model": "现场模型"})
         live_items = [item for item in formal if item["model_name"] == "live-model"]
         self.assertEqual(len(live_items), 1)
         self.assertEqual(live_items[0]["display_name"], "现场模型")
         self.assertEqual(live_items[0]["confirmed_count"], 1)
 
-        summary = cc.summarize_formal(pd.DataFrame(), confirmed)
-        self.assertEqual(summary["confirmed_rows"], 1)
+        summary = cc.summarize_formal(pd.DataFrame(), ai_scores)
+        self.assertEqual(summary["ai_score_rows"], 1)
         self.assertEqual(summary["seed_rows"], 0)
         self.assertEqual(summary["total_rows"], 1)
 
@@ -115,9 +115,9 @@ class FormalConclusionTests(unittest.TestCase):
             _live_row("C3", "m", "mock_should_drop", total=10),  # 非 success 由 judge_status 过滤
         ])
         live.loc[2, "judge_status"] = "mock"
-        confirmed, pending = cc.split_live_scores(live)
-        self.assertEqual(len(confirmed), 1)
-        self.assertEqual(len(pending), 1)
+        ai_scores, excluded = cc.split_live_scores(live)
+        self.assertEqual(len(ai_scores), 2)
+        self.assertEqual(len(excluded), 1)
 
     def test_runtime_score_summary_explains_live_status_counts(self):
         live = pd.DataFrame([
@@ -129,80 +129,36 @@ class FormalConclusionTests(unittest.TestCase):
         summary = cc.summarize_runtime_scores(live)
 
         self.assertEqual("SQLite 运行期数据", summary["data_source"])
-        self.assertEqual(3, summary["total"])
-        self.assertEqual(1, summary["confirmed"])
-        self.assertEqual(1, summary["pending"])
-        self.assertEqual(1, summary["skipped"])
-        self.assertEqual(2, summary["models"])
-        self.assertEqual(3, summary["cases"])
+        self.assertEqual(2, summary["total"])
+        self.assertEqual(2, summary["ai_scores"])
+        self.assertEqual(1, summary["excluded"])
+        self.assertEqual(1, summary["models"])
+        self.assertEqual(2, summary["cases"])
 
     def test_conclusion_page_uses_data_maintenance_dialog(self):
         source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
         notice_source = source[
             source.index("def _render_data_source_notice"):
-            source.index("@st.dialog(\"历史评分数据\"")
+            source.index("@st.dialog(\"AI 评测结果数据\"")
         ]
-        dialog_source = source[source.index("@st.dialog(\"历史评分数据\""):]
+        dialog_source = source[source.index("@st.dialog(\"AI 评测结果数据\""):]
 
         self.assertIn("当前结论来源：", notice_source)
         self.assertIn("data_source", notice_source)
         self.assertIn('"数据维护"', notice_source)
         self.assertNotIn("st.download_button", notice_source)
         self.assertNotIn("file_uploader", notice_source)
-        self.assertIn("导出已确认评分", dialog_source)
+        self.assertIn("导出 AI 评测结果", dialog_source)
         self.assertIn("导入评分文件", dialog_source)
-        self.assertIn("从演示评分文件恢复", dialog_source)
+        self.assertIn("从演示结果文件恢复", dialog_source)
 
 
-class DraftRowTests(unittest.TestCase):
-    def test_build_draft_rows_joins_answer_and_marks_pending(self):
-        pending = pd.DataFrame([_live_row("C1", "live-model", "pending", total=42)])
-        responses = pd.DataFrame([
-            {"run_id": "RUN-X", "case_id": "C1", "model_name": "live-model", "answer_text": "现场回答内容"}
-        ])
-        rows = cc.build_draft_rows(pending, responses, mapping={"live-model": "现场模型"})
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["display_name"], "现场模型")
-        self.assertEqual(rows[0]["answer_text"], "现场回答内容")
-        self.assertEqual(rows[0]["review_status"], "pending")
-        self.assertEqual(rows[0]["total_score"], 42)
-
-    def test_build_draft_rows_handles_missing_responses(self):
-        pending = pd.DataFrame([_live_row("C1", "live-model", "pending")])
-        rows = cc.build_draft_rows(pending, None)
-        self.assertEqual(rows[0]["answer_text"], "")
-
-    def test_conclusion_page_does_not_use_session_drafts_when_sqlite_ready(self):
-        calls = {"session": 0}
-        original_ready = conclusions_page.ds.database_ready
-        original_session = conclusions_page._session_draft_rows
-        try:
-            conclusions_page.ds.database_ready = lambda: True
-            conclusions_page._session_draft_rows = lambda: calls.__setitem__("session", calls["session"] + 1) or [
-                {"case_id": "OLD", "review_status": "pending"}
-            ]
-
-            rows = conclusions_page.build_page_draft_rows(pd.DataFrame(), pd.DataFrame())
-        finally:
-            conclusions_page.ds.database_ready = original_ready
-            conclusions_page._session_draft_rows = original_session
-
-        self.assertEqual([], rows)
-        self.assertEqual(0, calls["session"])
-
-    def test_conclusion_page_uses_session_drafts_only_when_sqlite_unavailable(self):
-        original_ready = conclusions_page.ds.database_ready
-        original_session = conclusions_page._session_draft_rows
-        try:
-            conclusions_page.ds.database_ready = lambda: False
-            conclusions_page._session_draft_rows = lambda: [{"case_id": "SESSION", "review_status": "pending"}]
-
-            rows = conclusions_page.build_page_draft_rows(pd.DataFrame(), pd.DataFrame())
-        finally:
-            conclusions_page.ds.database_ready = original_ready
-            conclusions_page._session_draft_rows = original_session
-
-        self.assertEqual("SESSION", rows[0]["case_id"])
+class AiFinalPageTests(unittest.TestCase):
+    def test_conclusion_page_no_longer_uses_session_draft_fallback(self):
+        source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
+        self.assertNotIn("_session_draft_rows", source)
+        self.assertNotIn("build_page_draft_rows", source)
+        self.assertIn("暂无 AI 评分结果", source)
 
 
 class RobustnessTests(unittest.TestCase):

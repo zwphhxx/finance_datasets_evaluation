@@ -1,11 +1,11 @@
-"""评测结论汇总服务（PR-B）。
+"""评测结论汇总服务。
 
-把真实运行结果归一为「正式结论 / 草稿 / 已确认评分」三层，供「评测结论」页取数：
+把真实运行结果归一为「AI 评分结论 / 排除项」两层，供「评测结论」页取数：
 
-  - 草稿评测（draft）：live_run_scores 中 review_status == pending 的现场评分，未进入正式结论；
-  - 已确认评分（confirmed）：live_run_scores 中 review_status == confirmed 的评分，可计入正式结论。
+  - AI 评分结论：live_run_scores 中 judge_status == success 的现场评分；
+  - 排除项：评分失败、模拟评分、停用记录、示例模型记录，以及历史上被标记为 skipped 的记录。
 
-正式结论 = 已确认 live 结论，**绝不包含 pending 草稿或 seed 示例评价**。
+评测结论 = 成功 AI 评分，**不包含失败评分、模拟评分或 seed 示例评价**。
 
 本模块为纯函数 + 只读数据库访问，不依赖 Streamlit 渲染上下文，便于单元测试；任何数据库
 异常都吞掉并回退为空，保证 SQLite 不可用时仍可只用 seed 数据展示。绝不回写 data/ 下 seed 文件。
@@ -21,11 +21,11 @@ import pandas as pd
 from app.services import model_display as md
 from src.metrics import SCORE_DIMENSION_FULL_MARKS, SCORE_DIMENSIONS, get_dimension_gap_ranking
 
-# Rubric 维度字段与中文标签，统一取自 metrics（不在此另立第二份口径）。
+# 评分维度字段与中文标签，统一取自 metrics（不在此另立第二份口径）。
 DIMENSION_FIELDS: list[str] = [field for field, _ in SCORE_DIMENSIONS]
 DIMENSION_LABELS: dict[str, str] = dict(SCORE_DIMENSIONS)
 
-# 归一后的正式打分表列（仅 confirmed live 投影到这里）。
+# 归一后的正式打分表列（成功 AI 评分投影到这里）。
 _FORMAL_COLUMNS = ["model_name", "case_id", *DIMENSION_FIELDS, "total_score", "review_note", "source"]
 
 # 模型展示名映射：键为原始 model_name，值为对外展示名。默认空；seed 示例模型的
@@ -33,7 +33,7 @@ _FORMAL_COLUMNS = ["model_name", "case_id", *DIMENSION_FIELDS, "total_score", "r
 MODEL_DISPLAY_NAMES: dict[str, str] = {}
 
 BOUNDARY_REFERENCE = "可作为初稿参考"
-BOUNDARY_REVIEW = "必须人工复核"
+BOUNDARY_REVIEW = "需谨慎参考"
 BOUNDARY_NOT_EVIDENCE = "不可作为依据"
 
 BOUNDARY_REFERENCE_FLOOR = 85.0
@@ -103,18 +103,16 @@ def _load_live_table(table: str, db_path) -> pd.DataFrame:
 
 
 def split_live_scores(live_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """把 live 评分拆为 (已确认 confirmed, 草稿 pending)，均限定 judge_status=success、未停用。
+    """把 live 评分拆为 (AI 评分结论, 排除项)。
 
-    只有评分成功且人工确认（review_status=confirmed）的行进入 confirmed；其余成功行为草稿。
-    失败 / mock / 暂不采用评分既不进正式结论也不进草稿。
+    AI 评分结论只要求 judge_status=success，并排除停用、示例模型和历史 skipped 记录。
+    失败 / mock / skipped 评分不进入评测结论。
     """
     empty = pd.DataFrame()
     if not isinstance(live_df, pd.DataFrame) or live_df.empty:
         return empty, empty
 
-    df = live_df
-    if "judge_status" in df.columns:
-        df = df[df["judge_status"].astype(str) == "success"]
+    df = live_df.copy()
     if "status" in df.columns:
         df = df[df["status"].astype(str).str.strip().str.lower() != "inactive"]
     if "eval_model" in df.columns:
@@ -122,26 +120,24 @@ def split_live_scores(live_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame
     if df.empty:
         return empty, empty
 
+    judge_status = df.get("judge_status", pd.Series(dtype=str)).astype(str).str.strip().str.lower()
     if "review_status" in df.columns:
-        status = df["review_status"].astype(str).str.strip().str.lower()
+        review_status = df["review_status"].astype(str).str.strip().str.lower()
     else:
-        status = pd.Series(["pending"] * len(df), index=df.index)
-    confirmed = df[status == "confirmed"].reset_index(drop=True)
-    pending = df[status == "pending"].reset_index(drop=True)
-    return confirmed, pending
+        review_status = pd.Series(["ai_final"] * len(df), index=df.index)
+    conclusion_mask = (judge_status == "success") & (review_status != "skipped")
+    ai_scores = df[conclusion_mask].reset_index(drop=True)
+    excluded = df[~conclusion_mask].reset_index(drop=True)
+    return ai_scores, excluded
 
 
 def summarize_runtime_scores(live_df: pd.DataFrame) -> dict[str, Any]:
-    """统计运行期真实评分状态，用于页面解释数据源和空状态原因。
-
-    该摘要不改变正式结论口径；正式结论仍由 split_live_scores + confirmed 过滤决定。
-    """
+    """统计运行期真实评分状态，用于页面解释数据源和空状态原因。"""
     base = {
         "data_source": "SQLite 运行期数据",
         "total": 0,
-        "confirmed": 0,
-        "pending": 0,
-        "skipped": 0,
+        "ai_scores": 0,
+        "excluded": 0,
         "failed_or_mock": 0,
         "models": 0,
         "cases": 0,
@@ -157,18 +153,16 @@ def summarize_runtime_scores(live_df: pd.DataFrame) -> dict[str, Any]:
     if df.empty:
         return base
 
+    ai_scores, excluded = split_live_scores(df)
     judge_status = df.get("judge_status", pd.Series(dtype=str)).astype(str).str.strip().str.lower()
-    success = df[judge_status == "success"].copy()
-    review_status = success.get("review_status", pd.Series(dtype=str)).astype(str).str.strip().str.lower()
     base.update(
         {
-            "total": int(len(success)),
-            "confirmed": int((review_status == "confirmed").sum()),
-            "pending": int((review_status == "pending").sum()),
-            "skipped": int((review_status == "skipped").sum()),
-            "failed_or_mock": int(len(df) - len(success)),
-            "models": int(success["eval_model"].nunique()) if "eval_model" in success.columns else 0,
-            "cases": int(success["case_id"].nunique()) if "case_id" in success.columns else 0,
+            "total": int(len(ai_scores)),
+            "ai_scores": int(len(ai_scores)),
+            "excluded": int(len(excluded)),
+            "failed_or_mock": int((judge_status != "success").sum()),
+            "models": int(ai_scores["eval_model"].nunique()) if "eval_model" in ai_scores.columns else 0,
+            "cases": int(ai_scores["case_id"].nunique()) if "case_id" in ai_scores.columns else 0,
         }
     )
     return base
@@ -187,14 +181,14 @@ def _normalize_live_scores(live_df: pd.DataFrame) -> pd.DataFrame:
         pd.to_numeric(live_df["total_score"], errors="coerce") if "total_score" in live_df.columns else None
     )
     out["review_note"] = live_df.get("review_note")
-    out["source"] = "confirmed_live"
+    out["source"] = "ai_score_live"
     return out
 
 
 def combine_formal_scores(seed_scores: pd.DataFrame, confirmed_live: pd.DataFrame) -> pd.DataFrame:
-    """把已确认 live 结论投影为统一打分表（带 source 列）。
+    """把成功 AI 评分投影为统一打分表（带 source 列）。
 
-    seed_scores 参数保留用于兼容旧调用，但不再纳入正式结论。
+    seed_scores 参数保留用于兼容旧调用，但不再纳入当前结论。
     """
     frames: list[pd.DataFrame] = []
     normalized = _normalize_live_scores(confirmed_live)
@@ -214,9 +208,9 @@ def build_formal_conclusions(
     *,
     mapping: Mapping[str, str] | None = None,
 ) -> list[dict[str, Any]]:
-    """按模型聚合正式结论：平均总分、各 Rubric 维度均分、人工点评摘要与来源构成。
+    """按模型聚合评测结论：平均总分、各评分维度均分、评分说明与来源构成。
 
-    不包含 pending 草稿。无可用数据时返回空列表。
+    不包含失败评分和 seed 示例评价。无可用数据时返回空列表。
     """
     combined = combine_formal_scores(seed_scores, confirmed_live)
     if combined.empty or "model_name" not in combined.columns:
@@ -245,7 +239,8 @@ def build_formal_conclusions(
                 "source": _source_for_group(group),
                 "source_label": display_model_source(_source_for_group(group)),
                 "seed_count": int(source_counts.get("seed", 0)),
-                "confirmed_count": int(source_counts.get("confirmed_live", 0)),
+                "confirmed_count": int(source_counts.get("ai_score_live", 0)),
+                "ai_score_count": int(source_counts.get("ai_score_live", 0)),
             }
         )
     # 按平均总分降序仅为展示稳定性；页面文案说明这只是当前样本内观察。
@@ -263,8 +258,8 @@ def build_model_boundaries(
 ) -> list[dict[str, Any]]:
     """Classify model usage boundaries from formal conclusions and risk signals.
 
-    The input scope is the same as formal conclusions: confirmed live scores only.
-    Pending scores and seed examples are excluded.
+    The input scope is the same as conclusions: successful AI scores only.
+    Failed scores and seed examples are excluded.
     """
     combined = combine_formal_scores(seed_scores, confirmed_live)
     if combined.empty or "model_name" not in combined.columns or "total_score" not in combined.columns:
@@ -309,7 +304,7 @@ def build_model_boundaries(
             reasons.append("高风险任务中出现明显低分")
         elif _high_risk_low_scores(scores, high_risk_cases, HIGH_RISK_REVIEW_FLOOR):
             rank = max(rank, _BOUNDARY_RANK[BOUNDARY_REVIEW])
-            reasons.append("高风险任务表现不足，需人工复核")
+            reasons.append("高风险任务表现不足，需谨慎参考")
 
         if weaknesses:
             severe = [item for item in weaknesses if item["attainment"] < SEVERE_DIMENSION_ATTAINMENT]
@@ -323,7 +318,7 @@ def build_model_boundaries(
         note_rank = _note_risk_rank(notes)
         if note_rank:
             rank = max(rank, note_rank)
-            reasons.append("人工复核说明提示需谨慎" if note_rank == 1 else "人工复核说明提示不可采信")
+            reasons.append("评分说明提示需谨慎" if note_rank == 1 else "评分说明提示不可采信")
 
         boundary = _RANK_BOUNDARY[rank]
         rows.append(
@@ -337,7 +332,8 @@ def build_model_boundaries(
                 "source": _source_for_group(scores),
                 "source_label": display_model_source(_source_for_group(scores)),
                 "seed_count": int(source_counts.get("seed", 0)),
-                "confirmed_count": int(source_counts.get("confirmed_live", 0)),
+                "confirmed_count": int(source_counts.get("ai_score_live", 0)),
+                "ai_score_count": int(source_counts.get("ai_score_live", 0)),
                 "major_weaknesses": weaknesses[:3],
                 "has_high_severity_error": bool(not high_errors.empty),
                 "high_severity_count": int(len(high_errors)),
@@ -355,7 +351,7 @@ def build_model_boundaries(
 
 
 def summarize_formal(seed_scores: pd.DataFrame, confirmed_live: pd.DataFrame) -> dict[str, Any]:
-    """正式结论首屏统计：纳入条数、模型数、平均总分与来源构成。"""
+    """评测结论首屏统计：纳入条数、模型数、平均总分与来源构成。"""
     combined = combine_formal_scores(seed_scores, confirmed_live)
     if combined.empty:
         return {
@@ -365,6 +361,7 @@ def summarize_formal(seed_scores: pd.DataFrame, confirmed_live: pd.DataFrame) ->
             "avg_total": None,
             "seed_rows": 0,
             "confirmed_rows": 0,
+            "ai_score_rows": 0,
         }
     source = combined["source"] if "source" in combined.columns else pd.Series([], dtype=str)
     return {
@@ -373,7 +370,8 @@ def summarize_formal(seed_scores: pd.DataFrame, confirmed_live: pd.DataFrame) ->
         "case_count": int(combined["case_id"].nunique()) if "case_id" in combined.columns else 0,
         "avg_total": float(combined["total_score"].mean()),
         "seed_rows": int((source == "seed").sum()),
-        "confirmed_rows": int((source == "confirmed_live").sum()),
+        "confirmed_rows": int((source == "ai_score_live").sum()),
+        "ai_score_rows": int((source == "ai_score_live").sum()),
     }
 
 
@@ -384,9 +382,9 @@ def build_model_issue_summaries(
     *,
     mapping: Mapping[str, str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Build model-scoped conclusion summaries from confirmed live scores.
+    """Build model-scoped conclusion summaries from successful AI scores.
 
-    The function intentionally excludes seed and pending data. It gives the UI one
+    The function intentionally excludes seed and failed data. It gives the UI one
     row per real model with a current suggestion, main issues, affected cases and
     detail items so the page does not mix different models into a global issue list.
     """
@@ -463,7 +461,7 @@ def build_draft_rows(
     *,
     mapping: Mapping[str, str] | None = None,
 ) -> list[dict[str, Any]]:
-    """把 pending live 评分整理为草稿行：模型、建议分、各维度、复核说明、错误信息与模型回答。
+    """把被排除的 live 评分整理为兼容行：模型、建议分、各维度、说明、错误信息与模型回答。
 
     回答文本从 live_run_responses 按 (run_id, case_id, model_name) 拼接，缺失则留空。
     """
@@ -480,13 +478,13 @@ def build_draft_rows(
                 "row_id": _as_int(row.get("id")),
                 "model_name": _text(eval_model),
                 "display_name": display_model_name(eval_model, mapping, source="live"),
-                "source": "pending_live",
-                "source_label": display_model_source("pending_live"),
+                "source": "excluded_live",
+                "source_label": display_model_source("excluded_live"),
                 "case_id": _text(row.get("case_id")),
                 "total_score": _num(row.get("total_score")),
                 "dimensions": {field: _num(row.get(field)) for field in DIMENSION_FIELDS},
                 "review_note": _text(row.get("review_note")),
-                "review_status": _text(row.get("review_status")) or "pending",
+                "review_status": _text(row.get("review_status")) or "ai_final",
                 "error_code": _text(row.get("error_code")),
                 "error_message": _text(row.get("error_message")),
                 "answer_text": _text(answers.get(key)),
@@ -502,7 +500,7 @@ def summarize_frequent_issues(
     *,
     top_n: int = 4,
 ) -> list[str]:
-    """基于低分维度、错误标签与人工复核说明，归纳当前样本内的高频问题。
+    """基于低分维度、错误标签与评分说明，归纳当前样本内的高频问题。
 
     全部由数据动态推导，不臆造模型缺陷；无数据时返回空列表。
     """
@@ -521,7 +519,7 @@ def summarize_frequent_issues(
     if notes:
         cleaned = _collect_notes(notes)
         if cleaned:
-            issues.append("人工复核反复提到：" + "；".join(cleaned[:2]))
+            issues.append("评分说明反复提到：" + "；".join(cleaned[:2]))
 
     return issues[:top_n]
 
@@ -545,7 +543,7 @@ def _current_suggestion_for_boundary(boundary: Mapping[str, Any], sample_insuffi
     if value == BOUNDARY_REFERENCE:
         return "可作为初稿参考"
     if value == BOUNDARY_REVIEW:
-        return "必须人工复核后使用"
+        return "需谨慎参考"
     if value == BOUNDARY_NOT_EVIDENCE:
         return "暂不建议作为判断依据"
     return "暂不形成判断"
@@ -572,7 +570,7 @@ def _main_issues_for_model(
     if int(boundary.get("high_risk_issue_count") or 0) > 0:
         issues.append("高风险任务表现不足")
     if _texts_indicate_caution(notes):
-        issues.append("复核说明提示需谨慎")
+        issues.append("评分说明提示需谨慎")
     elif _texts_indicate_caution(rationale_snippets):
         issues.append("评分依据提示需关注")
     if not issues:
@@ -584,7 +582,7 @@ def _basis_summary_for_model(boundary: Mapping[str, Any], sample_insufficient: b
     reasons = [_rewrite_reason(reason) for reason in list(boundary.get("reasons") or [])]
     if sample_insufficient and not any("样本数不足" in reason for reason in reasons):
         reasons.insert(0, "样本数不足，暂不形成稳定判断")
-    return "；".join(_dedupe(reasons)[:3]) or "基于已确认评分的平均分和维度表现判断"
+    return "；".join(_dedupe(reasons)[:3]) or "基于 AI 评分的平均分和维度表现判断"
 
 
 def _detail_basis_for_model(
@@ -599,7 +597,7 @@ def _detail_basis_for_model(
 ) -> list[str]:
     reasons: list[str] = []
     if sample_insufficient:
-        reasons.append(f"当前仅有 {sample_count} 条已确认评分，样本覆盖不足。")
+        reasons.append(f"当前仅有 {sample_count} 条 AI 评分，样本覆盖不足。")
     for label in _low_dimension_labels(weaknesses)[:2]:
         reasons.append(f"{label} 得分偏低。")
     for label in _high_error_labels(high_errors)[:2]:
@@ -611,11 +609,11 @@ def _detail_basis_for_model(
                 reasons.append(text)
     if len(reasons) < 3:
         for note in list(notes)[:2]:
-            reasons.append(f"复核说明：{note}")
+            reasons.append(f"评分说明：{note}")
     if len(reasons) < 3:
         for rationale in list(rationale_snippets)[:2]:
             reasons.append(f"评分依据：{rationale}")
-    return _dedupe(reasons)[:4] or ["基于已确认评分的平均分和维度表现判断。"]
+    return _dedupe(reasons)[:4] or ["基于 AI 评分的平均分和维度表现判断。"]
 
 
 def _rewrite_reason(reason: Any) -> str:
@@ -683,12 +681,12 @@ def _texts_indicate_caution(values: Sequence[str]) -> bool:
 
 def _usage_advice(current_suggestion: str) -> str:
     if current_suggestion == "可作为初稿参考":
-        return "可作为初稿参考，仍需结合底稿材料人工确认。"
-    if current_suggestion == "必须人工复核后使用":
-        return "仅建议在人工复核后使用，重点检查低分维度和复核说明。"
+        return "可作为初稿参考，仍需结合底稿材料和专业判断使用。"
+    if current_suggestion == "需谨慎参考":
+        return "建议结合具体任务场景谨慎参考，重点查看低分维度和评分说明。"
     if current_suggestion == "样本不足，暂不形成判断":
-        return "请补充更多已确认样本后再形成稳定判断。"
-    return "当前暂不建议作为判断依据，应先复核问题或补充样本。"
+        return "请补充更多样本评分后再形成稳定判断。"
+    return "当前暂不建议作为判断依据，应先查看问题或补充样本。"
 
 
 def _base_boundary_from_average(avg_total: float) -> tuple[int, list[str]]:
@@ -707,8 +705,8 @@ def _source_for_group(group: pd.DataFrame) -> str:
         return ""
     if len(values) == 1:
         return values[0]
-    if "confirmed_live" in values:
-        return "confirmed_live"
+    if "ai_score_live" in values:
+        return "ai_score_live"
     if "seed" in values:
         return "seed"
     return values[0]

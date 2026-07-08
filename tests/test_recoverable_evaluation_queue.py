@@ -147,7 +147,6 @@ class PageRemovalTests(unittest.TestCase):
                 "case_study",
                 "samples",
                 "test_run",
-                "review",
                 "conclusions",
             ],
             list(PAGES.keys()),

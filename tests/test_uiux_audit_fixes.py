@@ -64,11 +64,11 @@ class UIUXAuditFixesTests(unittest.TestCase):
         for selector in [".metric-card", ".status-badge", ".score-badge", ".review-risk-note"]:
             self.assertNotIn(selector, components.STYLE_CSS)
 
-    def test_top_navigation_has_five_items_and_no_duplicate_html_buttons(self):
+    def test_top_navigation_has_four_items_and_no_duplicate_html_buttons(self):
         from src.ui.navigation import PAGES, _TOP_NAV_ITEMS
         import src.ui.components as components
 
-        self.assertEqual(5, len(_TOP_NAV_ITEMS))
+        self.assertEqual(4, len(_TOP_NAV_ITEMS))
         self.assertEqual(sorted([key for _, key in _TOP_NAV_ITEMS]), sorted(PAGES.keys()))
         self.assertIn(".top-nav-brand", components.STYLE_CSS)
 
@@ -165,7 +165,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
         button_labels = re.findall(r'st\.button\("([^"]+)"', source)
 
         self.assertEqual([], button_labels)
-        for label in ["项目说明", "样本库", "发起评测", "评分确认", "评测结论"]:
+        for label in ["项目说明", "样本库", "发起评测", "评测结论"]:
             self.assertNotIn(label, button_labels)
 
     def test_case_study_does_not_render_status_or_domain_pills(self):
@@ -261,12 +261,12 @@ class UIUXAuditFixesTests(unittest.TestCase):
     def test_test_run_keeps_primary_buttons_for_confirmation_and_execution(self):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
         primary_buttons = re.findall(r'type\s*=\s*"primary"', source)
-        self.assertEqual(4, len(primary_buttons), "样本确认、模型确认、运行和评分可使用 Primary")
-        self.assertIn('"运行模型回答", type="primary"', source)
-        self.assertIn('button_label = "仅对已完成回答生成评分草稿" if partial_run else "生成评分草稿"', source)
-        self.assertIn('button_label, type="primary"', source)
+        self.assertEqual(3, len(primary_buttons), "样本确认、模型确认和运行可使用 Primary")
+        self.assertIn('"运行评测", type="primary"', source)
+        self.assertIn('button_label = "仅对已完成回答生成 AI 评分" if partial_run else "生成 AI 评分"', source)
+        self.assertIn('button_label, type="secondary"', source)
         self.assertIn("has_confirmable_score_drafts(score_result)", source)
-        self.assertIn('"进入评分确认"', source)
+        self.assertIn('"查看评测结论"', source)
         self.assertIn('"确认选择"', source)
         self.assertIn('key="test_run_sample_dialog_confirm"', source)
         self.assertIn('key="test_run_model_dialog_confirm"', source)
@@ -285,16 +285,12 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn("def render_detail_panel_with_action", components_source)
         self.assertIn("detail-panel-toolbar-title", components_source)
 
-    def test_review_seed_mode_hides_direct_confirmation_for_examples(self):
-        page_source = Path("src/ui/review.py").read_text(encoding="utf-8")
-        actions_source = Path("src/ui/review_actions.py").read_text(encoding="utf-8")
-        queue_source = Path("src/ui/review_queue.py").read_text(encoding="utf-8")
-        self.assertIn("score_run_id", page_source)
-        self.assertIn('"确认生效"', actions_source)
-        self.assertIn('@st.dialog("确认生效"', actions_source)
-        self.assertIn('@st.dialog("修订后确认"', actions_source)
-        self.assertIn('@st.dialog("暂不采用"', actions_source)
-        self.assertNotIn("def _render_case_review", page_source + actions_source + queue_source)
+    def test_review_page_is_not_in_primary_navigation(self):
+        from src.ui.navigation import PAGES, _TOP_NAV_ITEMS
+
+        self.assertNotIn("review", PAGES)
+        labels = [label for label, _ in _TOP_NAV_ITEMS]
+        self.assertNotIn("评分确认", labels)
 
     def test_conclusions_does_not_render_card_classes(self):
         source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")

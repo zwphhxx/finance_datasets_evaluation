@@ -84,7 +84,7 @@ rubric:
     name: 专业表达
     weight: 15
     full_mark_standard: 表达清晰、审慎、结构完整，符合财务/法律/投行业务底稿或评审意见的专业语气， 能用简洁语言呈现结论、依据和后续核查事项。
-    deduction_rules: 表述武断、口语化、结构混乱或遗漏必要保留意见时扣分；冗长重复、 术语使用不当或无法支撑人工复核时按影响程度扣分。
+    deduction_rules: 表述武断、口语化、结构混乱或遗漏必要保留意见时扣分；冗长重复、 术语使用不当或无法支撑专业判断时按影响程度扣分。
 gold_answer:
   required_fields:
   - core_conclusion

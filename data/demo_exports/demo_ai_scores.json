@@ -1,9 +1,9 @@
 {
-  "export_type": "confirmed_score_export",
+  "export_type": "ai_score_export",
   "schema_version": 1,
   "project_name": "财务/法律/投行场景大模型对比评测",
   "exported_at": "2026-07-06T00:00:00",
-  "scope": "confirmed",
+  "scope": "ai_scores",
   "row_count": 0,
   "records": []
 }

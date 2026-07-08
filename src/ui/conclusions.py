@@ -1,8 +1,6 @@
 """评测结论页面。
 
-- 只汇总已确认评分。
-- 待确认草稿不进入正式结论。
-- 按模型展示当前判断和待确认评分，不展示示例评价。
+结论页只汇总成功的 AI 评分；失败、模拟回退和被排除记录不进入结论。
 """
 
 from __future__ import annotations
@@ -14,9 +12,7 @@ import streamlit as st
 
 from app.services import conclusions as cc
 from app.services import dataset_service as ds
-from app.services import eval_state
 from app.services import scorer as sc
-from src.ui.page_config import get_page_config
 from src.ui.components import (
     render_empty_state,
     render_inline_status,
@@ -24,6 +20,7 @@ from src.ui.components import (
     render_numbered_section,
     render_page_heading,
 )
+from src.ui.page_config import get_page_config
 
 
 def render_conclusions_page(data_bundle: dict) -> None:
@@ -31,49 +28,43 @@ def render_conclusions_page(data_bundle: dict) -> None:
     tasks = getattr(base, "tasks", None)
 
     live_scores = cc.load_live_scores()
-    confirmed_live, pending_live = cc.split_live_scores(live_scores)
-    responses = cc.load_live_responses()
-    model_summaries = cc.build_model_issue_summaries(confirmed_live, pd.DataFrame(), tasks)
-    draft_rows = build_page_draft_rows(pending_live, responses)
+    ai_scores, excluded_scores = cc.split_live_scores(live_scores)
+    model_summaries = cc.build_model_issue_summaries(ai_scores, pd.DataFrame(), tasks)
 
     config = get_page_config("conclusions")
     render_page_heading(config.title, config.question)
-    _render_data_source_notice(live_scores)
+    _render_data_source_notice(live_scores, ai_scores, excluded_scores)
 
-    _render_current_conclusion(confirmed_live, draft_rows)
+    _render_current_conclusion(ai_scores)
     _render_model_recommendations(model_summaries)
     _render_model_issue_details(model_summaries)
-    _render_drafts(draft_rows)
-
-
-def build_page_draft_rows(pending_live: pd.DataFrame, responses: pd.DataFrame) -> list[dict]:
-    """Build pending draft rows for the page; SQLite state wins over stale session data."""
-    draft_rows = cc.build_draft_rows(pending_live, responses)
-    if draft_rows or ds.database_ready():
-        return draft_rows
-    return _session_draft_rows()
 
 
 # --------------------------------------------------------------------------- #
 # 数据源与导入导出
 # --------------------------------------------------------------------------- #
-def _render_data_source_notice(live_scores: pd.DataFrame) -> None:
+def _render_data_source_notice(
+    live_scores: pd.DataFrame,
+    ai_scores: pd.DataFrame,
+    excluded_scores: pd.DataFrame,
+) -> None:
     summary = cc.summarize_runtime_scores(live_scores)
     source_line = (
         f"当前结论来源：{summary['data_source']}｜"
-        f"已确认 {summary['confirmed']} 条｜"
-        f"待确认 {summary['pending']} 条｜"
-        f"暂不采用 {summary['skipped']} 条"
+        f"AI 评分 {len(ai_scores)} 条｜"
+        f"排除项 {len(excluded_scores)} 条"
     )
     col_text, col_action = st.columns([4.6, 1.0], gap="small")
     with col_text:
         st.caption(source_line)
-        st.caption("正式结论仅包含已确认评分；待确认和暂不采用记录不会纳入。")
+        st.caption(
+            "结论基于当前样本、模型回答和 AI 评分生成，仅代表当前样本范围内的自动评测结果。"
+        )
     with col_action:
         if st.button("数据维护", type="secondary", key="conclusion_data_maintenance", use_container_width=True):
             _render_score_data_maintenance_dialog()
     if not ds.database_ready():
-        st.caption("当前正式评分数据层不可用。请先运行发起评测并生成评分草稿，或通过数据维护导入评分文件。")
+        st.caption("当前评分数据层不可用。请先在发起评测页运行评测，或通过数据维护导入评分文件。")
 
     message = st.session_state.get("conclusion_score_io_message")
     if isinstance(message, dict) and message.get("text"):
@@ -86,23 +77,15 @@ def _render_data_source_notice(live_scores: pd.DataFrame) -> None:
             st.info(str(message["text"]))
 
 
-@st.dialog("历史评分数据", width="large")
+@st.dialog("AI 评测结果数据", width="large")
 def _render_score_data_maintenance_dialog() -> None:
     st.markdown("**导出**")
-    st.caption("默认只导出已确认评分；待确认草稿不会进入正式结论。")
-    include_pending = st.checkbox(
-        "导出时包含待确认草稿",
-        value=False,
-        key="conclusion_export_include_pending",
-        help="默认只导出已确认评分；勾选后同时导出待确认草稿，暂不采用记录不会导出。",
-    )
-    payload = sc.export_score_payload(include_pending=include_pending)
+    st.caption("导出当前已生成的 AI 评分结果；失败评分和模拟回退不会进入结论。")
+    payload = sc.export_score_payload(include_pending=False)
     export_text = sc.serialize_score_export_payload(payload)
-    file_name = f"confirmed_scores_{datetime.now():%Y%m%d_%H%M}.json"
-    if include_pending:
-        file_name = f"confirmed_and_pending_scores_{datetime.now():%Y%m%d_%H%M}.json"
+    file_name = f"ai_scores_{datetime.now():%Y%m%d_%H%M}.json"
     st.download_button(
-        "导出已确认评分",
+        "导出 AI 评测结果",
         data=export_text,
         file_name=file_name,
         mime="application/json",
@@ -130,7 +113,7 @@ def _render_score_data_maintenance_dialog() -> None:
         "取消导入": "cancel",
     }
     if not uploaded:
-        st.caption("可上传已确认评分导出文件，或使用下方演示评分文件恢复。")
+        st.caption("可上传 AI 评测结果导出文件，或使用下方脱敏演示结果文件恢复。")
     else:
         parsed = sc.parse_score_import_content(uploaded.name, uploaded.getvalue())
         rows = parsed.get("rows") or []
@@ -149,8 +132,8 @@ def _render_score_data_maintenance_dialog() -> None:
             st.rerun()
 
     st.markdown("**演示恢复**")
-    st.caption("从仓库中的脱敏演示评分文件恢复已确认评分，不会删除现有评分。")
-    if st.button("从演示评分文件恢复", type="secondary", key="conclusion_restore_demo_scores"):
+    st.caption("从仓库中的脱敏演示结果文件恢复 AI 评分，不会删除现有评分。")
+    if st.button("从演示结果文件恢复", type="secondary", key="conclusion_restore_demo_scores"):
         result = sc.import_demo_confirmed_scores(duplicate_action=action_map[duplicate_label])
         _record_score_io_message(result)
         st.rerun()
@@ -167,35 +150,33 @@ def _record_score_io_message(result: dict) -> None:
 # --------------------------------------------------------------------------- #
 # 01 当前结论
 # --------------------------------------------------------------------------- #
-def _render_current_conclusion(confirmed_live, draft_rows: list[dict]) -> None:
+def _render_current_conclusion(ai_scores: pd.DataFrame) -> None:
     render_numbered_section(
         "01",
         "当前结论",
-        "仅基于已确认评分汇总真实运行结果，不含待确认草稿、暂不采用记录和示例评价。",
+        "基于当前样本、模型回答和 AI 评分汇总结果。",
     )
 
     empty_seed = pd.DataFrame()
-    summary = cc.summarize_formal(empty_seed, confirmed_live)
+    summary = cc.summarize_formal(empty_seed, ai_scores)
     if summary["total_rows"] == 0:
-        render_empty_state("当前暂无已确认评分。")
-        st.markdown(
-            "可能原因：\n"
-            "- 尚未在评分确认页确认生效；\n"
-            "- 当前部署环境的运行期评分数据已重建；\n"
-            "- 仅存在示例评价或待确认草稿，未进入正式结论。\n\n"
-            "请先在“发起评测”页生成评分草稿，并在“评分确认”页确认生效；"
-            "也可以通过“数据维护”导入已确认评分文件恢复演示结论。"
+        render_empty_state("暂无 AI 评分结果。请先在发起评测页运行评测。")
+        st.caption(
+            "结论基于当前样本、模型回答和 AI 评分生成，仅代表当前样本范围内的自动评测结果，"
+            "不代表模型整体能力或采购建议。"
         )
         return
 
-    confirmed = int(summary["confirmed_rows"])
+    ai_score_rows = int(summary.get("ai_score_rows", summary.get("confirmed_rows", 0)))
     models = int(summary["model_count"])
     cases = int(summary.get("case_count", 0))
-    sample_note = "当前样本数较少，仅作为当前样本内观察。" if cases < 3 else "结论仅代表当前已确认样本内观察。"
+    sample_note = "当前样本数较少，仅作为当前样本内观察。" if cases < 3 else "结论仅代表当前样本范围内观察。"
     st.markdown(
-        f"已确认评分 **{confirmed}** 条，覆盖 **{models}** 个模型、**{cases}** 个样本。"
+        f"已生成 AI 评分 **{ai_score_rows}** 条，覆盖 **{models}** 个模型、**{cases}** 个样本。"
     )
-    st.caption(f"{sample_note} 待确认评分和暂不采用记录未纳入正式结论。")
+    st.caption(
+        f"{sample_note} 失败评分、模拟回退和被排除记录不进入评测结论。"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -205,11 +186,11 @@ def _render_model_recommendations(model_summaries: list[dict]) -> None:
     render_numbered_section(
         "02",
         "模型当前判断",
-        "按模型汇总已确认样本、平均分、当前判断和主要依据。",
+        "按模型汇总 AI 评分样本、平均分、当前判断和主要依据。",
     )
 
     if not model_summaries:
-        render_empty_state("暂无模型判断。完成评分确认后，此处会生成模型当前判断。")
+        render_empty_state("暂无模型判断。请先在发起评测页运行评测。")
         return
 
     rows = [_recommendation_row(item) for item in model_summaries]
@@ -219,19 +200,19 @@ def _render_model_recommendations(model_summaries: list[dict]) -> None:
         use_container_width=True,
         column_config={
             "模型": st.column_config.TextColumn("模型", width="medium"),
-            "已确认样本数": st.column_config.NumberColumn("已确认样本数", width="small"),
+            "AI 评分样本数": st.column_config.NumberColumn("AI 评分样本数", width="small"),
             "平均分": st.column_config.NumberColumn("平均分", format="%.1f", width="small"),
             "当前判断": st.column_config.TextColumn("当前判断", width="medium"),
             "主要依据": st.column_config.TextColumn("主要依据", width="large"),
         },
     )
-    st.caption("当前判断只说明模型在当前已确认样本内的使用边界。")
+    st.caption("当前判断只说明模型在当前样本范围内的使用边界。")
 
 
 def _recommendation_row(item: dict) -> dict[str, object]:
     return {
         "模型": str(item.get("display_name") or item.get("model_name") or "未标注模型"),
-        "已确认样本数": int(item.get("sample_count") or 0),
+        "AI 评分样本数": int(item.get("sample_count") or 0),
         "平均分": float(item.get("avg_total") or 0),
         "当前判断": _current_judgment(item),
         "主要依据": _primary_basis(item),
@@ -245,11 +226,11 @@ def _render_model_issue_details(model_summaries: list[dict]) -> None:
     render_numbered_section(
         "03",
         "模型详情",
-        "只展示当前选中模型的判断依据和后续建议。",
+        "展示当前选中模型的判断依据和使用边界。",
     )
 
     if not model_summaries:
-        st.caption("暂无模型详情。确认评分后再查看。")
+        st.caption("暂无模型详情。请先生成 AI 评分。")
         return
 
     selected = model_summaries[0]
@@ -274,8 +255,8 @@ def _render_issue_markdown(item: dict) -> None:
         _current_judgment(item),
         "**主要依据**",
         basis_markdown,
-        "**后续建议**",
-        str(item.get("usage_advice") or "请结合评分依据人工复核。"),
+        "**使用边界**",
+        str(item.get("usage_advice") or "请结合评分依据和业务边界判断。"),
     ])
     meta = f"模型 ID：{model_id}" if model_id and model_id != display else None
     render_markdown_detail_panel(display, markdown, meta=meta)
@@ -290,93 +271,10 @@ def _current_judgment(item: dict) -> str:
 def _primary_basis(item: dict) -> str:
     basis = item.get("detail_basis") or []
     if basis:
-        return _join_texts(basis[:2], "基于已确认评分判断")
-    return str(item.get("basis_summary") or "基于已确认评分判断")
+        return _join_texts(basis[:2], "基于 AI 评分判断")
+    return str(item.get("basis_summary") or "基于 AI 评分判断")
 
 
 def _join_texts(values, fallback: str) -> str:
     texts = [str(value).strip() for value in values if str(value).strip()]
     return "；".join(texts) if texts else fallback
-
-
-# --------------------------------------------------------------------------- #
-# 04 待确认评分草稿
-# --------------------------------------------------------------------------- #
-def _render_drafts(draft_rows: list[dict]) -> None:
-    render_numbered_section(
-        "04",
-        "待确认评分",
-        "评分草稿未确认前不纳入正式结论。",
-    )
-
-    count = len(draft_rows)
-    if count == 0:
-        st.caption("当前没有待确认评分。")
-        return
-
-    st.markdown(f"还有 **{count}** 条评分待确认，未纳入正式结论。")
-    rows = [_draft_row(row) for row in draft_rows[:3]]
-    if rows:
-        st.dataframe(
-            pd.DataFrame(rows),
-            hide_index=True,
-            use_container_width=True,
-            column_config={
-                "样本编号": st.column_config.TextColumn("样本编号", width="small"),
-                "模型": st.column_config.TextColumn("模型", width="medium"),
-                "总分": st.column_config.TextColumn("总分", width="small"),
-            },
-        )
-    if st.button("进入评分确认", key="conc_to_review", type="secondary"):
-        st.session_state.current_page = "review"
-        st.rerun()
-
-
-def _draft_row(row: dict) -> dict[str, str]:
-    score = row.get("total_score")
-    score_text = "—" if score is None else f"{float(score):.0f}"
-    return {
-        "样本编号": str(row.get("case_id") or ""),
-        "模型": str(row.get("display_name") or row.get("model_name") or "未标注模型"),
-        "总分": score_text,
-    }
-
-
-# --------------------------------------------------------------------------- #
-# Backward-compatible helpers
-# --------------------------------------------------------------------------- #
-def _session_draft_rows() -> list[dict]:
-    """数据库不可用时，从会话内最近一次评分构造草稿行（仅展示，不能确认）。"""
-    score_result = eval_state.get_last_score()
-    if score_result is None:
-        return []
-    rows = []
-    for outcome in getattr(score_result, "outcomes", []):
-        if getattr(outcome, "judge_status", "") != "success":
-            continue
-        if str(getattr(outcome, "review_status", "pending")) == "confirmed":
-            continue
-        scores = dict(getattr(outcome, "scores", {}) or {})
-        rows.append(
-            {
-                "row_id": None,
-                "model_name": str(getattr(outcome, "eval_model", "")),
-                "display_name": cc.display_model_name(getattr(outcome, "eval_model", ""), source="live"),
-                "case_id": str(getattr(outcome, "case_id", "")),
-                "total_score": _num(getattr(outcome, "total_score", None)),
-                "dimensions": {field: _num(scores.get(field)) for field in cc.DIMENSION_FIELDS},
-                "review_note": str(getattr(outcome, "review_note", "") or ""),
-                "review_status": str(getattr(outcome, "review_status", "pending") or "pending"),
-                "answer_text": "",
-            }
-        )
-    return rows
-
-
-def _num(value) -> float | None:
-    try:
-        if value is None:
-            return None
-        return float(value)
-    except (TypeError, ValueError):
-        return None

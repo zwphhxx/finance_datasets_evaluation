@@ -6,13 +6,7 @@ from src.ui.navigation import PAGES
 from src.ui.page_config import PAGE_CONFIGS
 
 
-EXPECTED_PAGE_ORDER = [
-    "case_study",
-    "samples",
-    "test_run",
-    "review",
-    "conclusions",
-]
+EXPECTED_PAGE_ORDER = ["case_study", "samples", "test_run", "conclusions"]
 
 BANNED_PHRASES = ["AI赋能", "智能洞察", "一键优化", "专家级", "秒级"]
 
@@ -96,7 +90,6 @@ class UIComponentsTests(unittest.TestCase):
             "src/ui/case_study.py",
             "src/ui/samples.py",
             "src/ui/test_run.py",
-            "src/ui/review.py",
             "src/ui/conclusions.py",
         ]
         for file_path in page_files:
@@ -133,7 +126,7 @@ class UIComponentsTests(unittest.TestCase):
 
         field_html = components.render_long_text_section("标准结论", "第一段\n\n第二段")
         list_html = components.render_field_section("必须覆盖点", ["覆盖点一", "覆盖点二"])
-        markdown_html = components.render_markdown_block("**复核提示**\n\n需人工确认。")
+        markdown_html = components.render_markdown_block("**评分说明**\n\n需查看评分依据。")
 
         self.assertIn('class="document-field"', field_html)
         self.assertIn('class="document-field-title"', field_html)

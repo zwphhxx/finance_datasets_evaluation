@@ -18,7 +18,7 @@
 | gold_answers | `gold_answers` | `data/gold_answers.json` | 专业标准答案。 |
 | rubrics | `rubrics` | `data/dataset_manifest.yml` | 评分维度、满分、满分标准和扣分规则。 |
 | model responses | `model_responses` / `live_run_responses` | `data/model_outputs.csv` | 当前 seed 仅保留表头；真实运行回答写入 live 表。 |
-| score records | `score_records` / `live_run_scores` | `data/scores.csv` | 当前 seed 仅保留表头；评分草稿和已处理评分写入 live 表。 |
+| score records | `score_records` / `live_run_scores` | `data/scores.csv` | 当前 seed 仅保留表头；AI 评分写入 live 表。 |
 | error labels | `error_annotations` | `data/error_labels.csv` | 错误类型、严重程度、错误表现、纠正方向。 |
 | improvement actions | `improvement_actions` | `data/optimization_plan.csv` | 数据补强动作和验证方向。 |
 | samples | `data/samples.json` | `data/samples.json` | 样本库轻量管理视图、导入导出和兼容备份。 |
@@ -69,7 +69,7 @@ PYTHONPATH=. python scripts/replace_samples.py \
 | `boundary_conditions` | 适用边界与待核查事项。 |
 | `must_have_points` | 必须覆盖点，JSON 数组。 |
 | `unacceptable_errors` | 不可接受错误 / 红线错误，JSON 数组。 |
-| `manual_review_notes` | 人工复核提示。 |
+| `manual_review_notes` | 评审提示。 |
 | `raw_json` | 专业标准答案原始结构，用于兼容读取和同步。 |
 
 测试准入至少要求存在核心结论、必须覆盖点和不可接受错误。
@@ -108,11 +108,11 @@ PYTHONPATH=. python scripts/replace_samples.py \
 | `model_name` / `eval_model` | 被测模型。 |
 | 评分维度字段 | 各维度得分。 |
 | `total_score` | 总分。 |
-| `review_note` | 裁判或人工复核说明。 |
-| `review_status` | live 评分复核状态：pending / confirmed。 |
+| `review_note` | AI 评分说明。 |
+| `review_status` | live 评分兼容状态；新评分默认 `ai_final`。 |
 | `judge_status` | 裁判调用状态。 |
 
-`score_records` 是已沉淀评分；`live_run_scores` 中只有 `review_status=confirmed` 的记录进入正式结论。
+`score_records` 是已沉淀评分；`live_run_scores` 中 `judge_status=success` 且未被排除的记录进入评测结论。
 
 ### error labels 与 improvement actions
 
@@ -132,6 +132,6 @@ error_annotations ── improvement_actions
 rubrics ── score dimension fields
 ```
 
-## 正式结论口径
+## 评测结论口径
 
-正式结论只统计已确认评分。待确认草稿不进入正式结论。模型使用边界由 `app/services/conclusions.py` 统一计算，结合平均分、红线错误、关键维度短板、高风险任务表现、样本数量和复核说明。
+评测结论只统计成功 AI 评分。失败评分、模拟回退和示例评价不进入评测结论。模型使用边界由 `app/services/conclusions.py` 统一计算，结合平均分、红线错误、关键维度短板、高风险任务表现、样本数量和评分说明。

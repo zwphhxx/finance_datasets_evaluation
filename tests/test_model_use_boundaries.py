@@ -80,7 +80,7 @@ class ModelBoundaryClassificationTests(unittest.TestCase):
         self.assertEqual(2, row["sample_count"])
         self.assertFalse(row["has_high_severity_error"])
 
-    def test_medium_average_requires_human_review(self):
+    def test_medium_average_requires_caution(self):
         scores = pd.DataFrame([
             _score("C1", "model-mid", 78),
             _score("C2", "model-mid", 72),
@@ -88,7 +88,7 @@ class ModelBoundaryClassificationTests(unittest.TestCase):
 
         row = _boundary_by_model(cc.build_model_boundaries(pd.DataFrame(), scores, pd.DataFrame(), _tasks()))["model-mid"]
 
-        self.assertEqual("必须人工复核", row["boundary"])
+        self.assertEqual("需谨慎参考", row["boundary"])
         self.assertTrue(any("平均分处于中间区间" in reason for reason in row["reasons"]))
 
     def test_low_average_is_not_evidence(self):
@@ -112,7 +112,7 @@ class ModelBoundaryClassificationTests(unittest.TestCase):
 
         row = _boundary_by_model(cc.build_model_boundaries(pd.DataFrame(), scores, errors, _tasks()))["model-risk"]
 
-        self.assertEqual("必须人工复核", row["boundary"])
+        self.assertEqual("需谨慎参考", row["boundary"])
         self.assertTrue(row["has_high_severity_error"])
         self.assertTrue(any("高严重度错误" in reason for reason in row["reasons"]))
 
@@ -138,7 +138,7 @@ class ModelBoundaryClassificationTests(unittest.TestCase):
 
         row = _boundary_by_model(cc.build_model_boundaries(pd.DataFrame(), scores, pd.DataFrame(), _tasks()))["model-weak"]
 
-        self.assertEqual("必须人工复核", row["boundary"])
+        self.assertEqual("需谨慎参考", row["boundary"])
         self.assertTrue(row["major_weaknesses"])
         self.assertTrue(any("风险覆盖" in weakness["dimension"] for weakness in row["major_weaknesses"]))
 
@@ -147,23 +147,23 @@ class ModelBoundaryClassificationTests(unittest.TestCase):
 
         row = _boundary_by_model(cc.build_model_boundaries(pd.DataFrame(), scores, pd.DataFrame(), _tasks()))["model-single"]
 
-        self.assertEqual("必须人工复核", row["boundary"])
+        self.assertEqual("需谨慎参考", row["boundary"])
         self.assertTrue(row["sample_insufficient"])
         self.assertTrue(any("样本数量不足" in reason for reason in row["reasons"]))
 
-    def test_pending_live_scores_do_not_enter_boundaries(self):
+    def test_success_ai_scores_enter_boundaries_without_manual_status(self):
         live = pd.DataFrame([
             _live("C1", "pending-model", "pending", 95),
             _live("C1", "confirmed-model", "confirmed", 91),
             _live("C2", "confirmed-model", "confirmed", 90),
         ])
-        confirmed, pending = cc.split_live_scores(live)
+        ai_scores, excluded = cc.split_live_scores(live)
 
-        result = cc.build_model_boundaries(pd.DataFrame(), confirmed, pd.DataFrame(), _tasks())
+        result = cc.build_model_boundaries(pd.DataFrame(), ai_scores, pd.DataFrame(), _tasks())
         by_model = _boundary_by_model(result)
 
-        self.assertEqual(1, len(pending))
-        self.assertNotIn("pending-model", by_model)
+        self.assertEqual(0, len(excluded))
+        self.assertIn("pending-model", by_model)
         self.assertIn("confirmed-model", by_model)
 
     def test_missing_error_and_risk_columns_do_not_crash(self):

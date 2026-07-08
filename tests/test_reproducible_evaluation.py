@@ -7,7 +7,7 @@
   - 页面副标题强调现场结果受 API/网络/模型版本影响、离线评测才是默认展示依据；
   - 页面显式区分「离线样本评价」与「本次现场运行」；
   - 结果主表展示状态/HTTP/耗时/回答长度/错误码/错误信息/trace_id；
-  - 现场结果默认进入草稿（pending），不进正式结论；仅 confirmed 计入。
+  - 现场结果生成 AI 评分后直接进入评测结论；失败和示例评价不计入。
 
 不执行任何真实外呼；不回写 data/ 下 seed 文件。
 """
@@ -65,7 +65,7 @@ class PageFramingTests(unittest.TestCase):
 
     def test_page_keeps_live_run_boundary_and_auxiliary_details(self):
         self.assertIn("RUN_BOUNDARY_NOTE", _PAGE_SOURCE)
-        self.assertIn("不会覆盖正式结论", _PAGE_SOURCE)
+        self.assertIn("直接用于评测结论", _PAGE_SOURCE)
         self.assertIn("查看评分对比表", _PAGE_SOURCE)
         self.assertIn('@st.dialog("评分对比表"', _PAGE_SOURCE)
         self.assertNotIn('st.expander("评分对比表"', _PAGE_SOURCE)
@@ -119,19 +119,19 @@ class FormalSampleEligibilityTests(unittest.TestCase):
         self.assertNotIn("get_eligible_case_ids", _PAGE_SOURCE)
 
 
-class DraftPendingInvariantTests(unittest.TestCase):
-    """现场运行 + 裁判评分默认 pending，不进正式结论；仅 confirmed 计入。"""
+class AiFinalInvariantTests(unittest.TestCase):
+    """现场运行 + 裁判评分成功后直接进入评测结论。"""
 
-    def test_score_outcome_defaults_to_pending(self):
-        # 裁判评分默认 review_status=pending（建议分，待人工复核）。
+    def test_score_outcome_defaults_to_ai_final(self):
+        # 裁判评分默认 review_status=ai_final（AI 评分直接进入结论）。
         outcome = sc.ScoreOutcome(
             case_id="C1", task_type="analysis", eval_model="m",
             judge_provider="mock", judge_model="judge", judge_status="success",
             scores={}, total_score=70,
         )
-        self.assertEqual("pending", outcome.review_status)
+        self.assertEqual("ai_final", outcome.review_status)
 
-    def test_pending_live_excluded_confirmed_included_in_formal(self):
+    def test_success_live_scores_enter_formal_without_manual_status(self):
         seed = pd.DataFrame(
             [{"model_name": "seed_m", "case_id": "C1", "total_score": 80, "accuracy_score": 24,
               "reasoning_score": 16, "coverage_score": 16, "evidence_score": 12,
@@ -147,19 +147,18 @@ class DraftPendingInvariantTests(unittest.TestCase):
              "accuracy_score": 26, "reasoning_score": 18, "coverage_score": 18,
              "evidence_score": 13, "expression_score": 13, "review_note": ""},
         ])
-        confirmed, pending = cc.split_live_scores(live)
-        self.assertEqual(1, len(pending))
-        self.assertEqual(1, len(confirmed))
+        ai_scores, excluded = cc.split_live_scores(live)
+        self.assertEqual(2, len(ai_scores))
+        self.assertEqual(0, len(excluded))
 
-        formal = cc.build_formal_conclusions(seed, confirmed)
+        formal = cc.build_formal_conclusions(seed, ai_scores)
         models = {item["model_name"] for item in formal}
-        # 已确认的现场模型进入正式结论；待确认草稿和 seed 示例不进入。
+        # 成功 AI 评分进入评测结论；seed 示例不进入。
         self.assertIn("live_m", models)
         self.assertNotIn("seed_m", models)
-        summary = cc.summarize_formal(seed, confirmed)
-        self.assertEqual(1, summary["confirmed_rows"])
-        # pending 那条没有被计入任何正式行。
-        self.assertEqual(1, summary["total_rows"])
+        summary = cc.summarize_formal(seed, ai_scores)
+        self.assertEqual(2, summary["ai_score_rows"])
+        self.assertEqual(2, summary["total_rows"])
 
 
 if __name__ == "__main__":

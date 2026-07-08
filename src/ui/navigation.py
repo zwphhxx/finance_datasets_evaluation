@@ -5,7 +5,6 @@ import streamlit as st
 from src.ui.case_study import render_case_study_page
 from src.ui.samples import render_samples_page
 from src.ui.test_run import render_test_run_page
-from src.ui.review import render_review_page
 from src.ui.conclusions import render_conclusions_page
 from src.ui.components import render_html
 from src.ui.page_config import DEFAULT_PAGE_KEY, PAGE_CONFIG_BY_KEY
@@ -17,24 +16,22 @@ PAGES = {
     "case_study": render_case_study_page,
     "samples": render_samples_page,
     "test_run": render_test_run_page,
-    "review": render_review_page,
     "conclusions": render_conclusions_page,
 }
 
 
-# Top nav: exactly 5 main items matching the core evaluation workflow.
+# Top nav: exactly 4 main items matching the simplified AI evaluation workflow.
 # Maps display label -> page_key for the top nav bar.
 _TOP_NAV_ITEMS = [
     ("项目说明", "case_study"),
     ("样本库", "samples"),
     ("发起评测", "test_run"),
-    ("评分确认", "review"),
     ("评测结论", "conclusions"),
 ]
 
-# Sidebar shows same 5 items only (no old pages).
+# Sidebar shows same 4 items only (no old pages).
 _NAV_GROUPS = [
-    ("", ["case_study", "samples", "test_run", "review", "conclusions"]),
+    ("", ["case_study", "samples", "test_run", "conclusions"]),
 ]
 
 
@@ -45,7 +42,7 @@ def _set_current_page(page_key: str) -> None:
 def render_top_navigation() -> None:
     """Render a lightweight tab-style top navigation."""
     current = st.session_state.get("current_page", DEFAULT_PAGE_KEY)
-    cols = st.columns([3.35, 0.72, 0.72, 0.82, 0.82, 0.82], gap="medium")
+    cols = st.columns([3.35, 0.78, 0.78, 0.86, 0.86], gap="medium")
     with cols[0]:
         render_html(f'<div class="top-nav-brand">{PROJECT_DISPLAY_NAME}</div>')
     for col, (label, page_key) in zip(cols[1:], _TOP_NAV_ITEMS):

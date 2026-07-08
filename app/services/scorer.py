@@ -1,8 +1,7 @@
 """真实模型评测的 LLM-as-judge 评分编排（PR-35）。
 
 在 eval_runner 生成被评测模型回答之后，由「裁判模型」对照该题专业标准答案与评分标准
-各维度打分，产出**机器建议分**。建议分需经人工复核（review_status: pending → confirmed）
-才计入结果，本模块不自动定稿、不下「哪个模型最好」的结论。
+各维度打分，产出 AI 评分。AI 评分成功后写入 live_run_scores，并可直接作为评测结论输入。
 
 边界（重要）：
   - 裁判模型可以看到专业标准答案（评分必需）；这与「被评测模型绝不可见专业标准答案」是两条独立链路，
@@ -32,11 +31,9 @@ from app.services import model_display as md
 # Fixed judge model for scoring (PR-LOGIC1)
 DEFAULT_JUDGE_MODEL = "deepseek-ai/DeepSeek-V4-Pro"
 PROJECT_DISPLAY_NAME = "财务/法律/投行场景大模型对比评测"
-SCORE_EXPORT_TYPE = "confirmed_score_export"
+SCORE_EXPORT_TYPE = "ai_score_export"
 SCORE_EXPORT_SCHEMA_VERSION = 1
-DEMO_CONFIRMED_SCORE_EXPORT_PATH = (
-    Path(__file__).resolve().parents[2] / "data" / "confirmed_score_exports" / "demo_confirmed_scores.json"
-)
+DEMO_AI_SCORE_EXPORT_PATH = Path(__file__).resolve().parents[2] / "data" / "demo_exports" / "demo_ai_scores.json"
 DEFAULT_JUDGE_RETRY_DELAYS: tuple[float, float] = (3.0, 8.0)
 RETRYABLE_JUDGE_ERRORS = {
     "timeout",
@@ -87,7 +84,7 @@ SCORE_IMPORT_REQUIRED_FIELDS = {
     "total_score",
     "review_status",
 }
-SCORE_IMPORT_ALLOWED_REVIEW_STATUS = {"confirmed", "pending", "skipped"}
+SCORE_IMPORT_ALLOWED_REVIEW_STATUS = {"ai_final", "confirmed", "pending", "skipped"}
 SENSITIVE_IMPORT_FIELDS = {
     "api_key",
     "apikey",
@@ -109,7 +106,7 @@ _JUDGE_SYSTEM_PROMPT = (
     "允许模型在后续核查边界中说明仍需进一步核查，但不得将核查边界替代当前数据下的初步判断。"
     "请仅依据题目和专业标准答案评分，不要编造题目没有的事实，不要拔高也不要苛责。"
     "每个维度给出 0 到该维度满分之间的整数分，并给出一句简短依据。"
-    "评分结果只是机器建议分，仍需人工复核。"
+    "评分结果为 AI 自动评测结果，请保留必要的业务边界。"
 )
 
 _GENERAL_DEDUCTION_RULES = (
@@ -144,7 +141,7 @@ class ScoreOutcome:
     total_score: int | None = None
     rationale: Mapping[str, str] = field(default_factory=dict)
     review_note: str = ""
-    review_status: str = "pending"  # pending / confirmed
+    review_status: str = "ai_final"  # ai_final / confirmed / pending / skipped
     latency_ms: int | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
@@ -680,7 +677,7 @@ def _find_score_outcome_row(repo, score_run_id: str, case_id: str, eval_model: s
 
 
 def _should_update_existing_score_outcome(existing: Mapping[str, Any], outcome: ScoreOutcome) -> bool:
-    review_status = str(existing.get("review_status") or "pending").strip().lower()
+    review_status = str(existing.get("review_status") or "ai_final").strip().lower()
     if review_status in {"confirmed", "skipped"}:
         return False
     existing_status = str(existing.get("judge_status") or "").strip().lower()
@@ -708,7 +705,7 @@ def _score_outcome_row(
         "total_score": outcome.total_score,
         "rationale": json.dumps(dict(outcome.rationale), ensure_ascii=False) if outcome.rationale else None,
         "review_note": outcome.review_note or None,
-        "review_status": outcome.review_status or "pending",
+        "review_status": outcome.review_status or "ai_final",
         "latency_ms": outcome.latency_ms,
         "input_tokens": outcome.input_tokens,
         "output_tokens": outcome.output_tokens,
@@ -910,11 +907,10 @@ def load_exportable_score_rows(
     include_pending: bool = False,
     db_path: Path | None = None,
 ) -> list[dict[str, Any]]:
-    """读取可导出的真实评分行。
+    """读取可导出的 AI 评分行。
 
-    默认只导出 review_status=confirmed 且 judge_status=success 的真实运行评分；
-    include_pending=True 时额外包含 pending 草稿，便于演示环境迁移未处理批次。
-    暂不采用记录、seed 模型和 inactive 行始终不导出。
+    默认导出 judge_status=success 的真实运行 AI 评分；历史 skipped 记录、seed 模型和 inactive 行始终不导出。
+    include_pending 参数保留兼容旧调用，不再扩大导出范围。
     """
     try:
         from app.services.dataset_service import database_ready, get_db_path
@@ -934,11 +930,8 @@ def load_exportable_score_rows(
             rows = rows[rows["status"].astype(str).str.strip().str.lower() != "inactive"]
         if "eval_model" in rows.columns:
             rows = rows[~rows["eval_model"].apply(md.is_seed_model)]
-        allowed_statuses = {"confirmed", "pending"} if include_pending else {"confirmed"}
         if "review_status" in rows.columns:
-            rows = rows[rows["review_status"].astype(str).str.strip().str.lower().isin(allowed_statuses)]
-        else:
-            return []
+            rows = rows[rows["review_status"].astype(str).str.strip().str.lower() != "skipped"]
         if "id" in rows.columns:
             rows = rows.sort_values("id")
         return [_score_export_row(row.to_dict()) for _, row in rows.iterrows()]
@@ -947,14 +940,14 @@ def load_exportable_score_rows(
 
 
 def build_score_export_payload(rows: Sequence[Mapping[str, Any]], *, include_pending: bool = False) -> dict[str, Any]:
-    """构造项目内历史评分导出 payload；不包含 API Key 或请求头。"""
+    """构造项目内 AI 评分导出 payload；不包含 API Key 或请求头。"""
     clean_rows = [_score_export_row(dict(row)) for row in rows]
     return {
         "export_type": SCORE_EXPORT_TYPE,
         "schema_version": SCORE_EXPORT_SCHEMA_VERSION,
         "project_name": PROJECT_DISPLAY_NAME,
         "exported_at": datetime.now().isoformat(timespec="seconds"),
-        "scope": "confirmed_and_pending" if include_pending else "confirmed",
+        "scope": "ai_scores",
         "row_count": len(clean_rows),
         "records": clean_rows,
     }
@@ -965,7 +958,7 @@ def export_score_payload(
     include_pending: bool = False,
     db_path: Path | None = None,
 ) -> dict[str, Any]:
-    """读取并构造历史评分导出 payload。"""
+    """读取并构造 AI 评分导出 payload。"""
     rows = load_exportable_score_rows(include_pending=include_pending, db_path=db_path)
     return build_score_export_payload(rows, include_pending=include_pending)
 
@@ -976,9 +969,9 @@ def serialize_score_export_payload(payload: Mapping[str, Any]) -> str:
 
 
 def parse_score_import_content(file_name: str, content: bytes | str) -> dict[str, Any]:
-    """解析项目导出的历史评分文件，返回 rows/errors。
+    """解析项目导出的 AI 评分文件，返回 rows/errors。
 
-    JSON 需带 confirmed_score_export 导出标识；CSV 需至少包含必需字段。
+    JSON 需带 ai_score_export 导出标识；CSV 需至少包含必需字段。
     """
     name = str(file_name or "").strip().lower()
     raw = content.decode("utf-8-sig") if isinstance(content, (bytes, bytearray)) else str(content or "")
@@ -990,7 +983,8 @@ def parse_score_import_content(file_name: str, content: bytes | str) -> dict[str
             payload = json.loads(raw)
         except json.JSONDecodeError:
             return {"ok": False, "rows": [], "errors": ["JSON 文件无法解析。"]}
-        if not isinstance(payload, Mapping) or payload.get("export_type") != SCORE_EXPORT_TYPE:
+        export_type = payload.get("export_type")
+        if not isinstance(payload, Mapping) or export_type not in {SCORE_EXPORT_TYPE, "confirmed_score_export"}:
             return {"ok": False, "rows": [], "errors": ["该 JSON 不是项目导出的历史评分文件。"]}
         if int(payload.get("schema_version") or 0) != SCORE_EXPORT_SCHEMA_VERSION:
             return {"ok": False, "rows": [], "errors": ["评分文件版本不受支持。"]}
@@ -1116,7 +1110,7 @@ def import_score_rows(
 
 def load_demo_score_export_payload(path: Path | None = None) -> dict[str, Any]:
     """Load the committed demo score export payload, returning an empty valid payload if absent."""
-    source = path or DEMO_CONFIRMED_SCORE_EXPORT_PATH
+    source = path or DEMO_AI_SCORE_EXPORT_PATH
     if not source.exists():
         return build_score_export_payload([])
     try:
@@ -1134,7 +1128,7 @@ def import_demo_confirmed_scores(
     duplicate_action: str = "skip",
     db_path: Path | None = None,
 ) -> dict[str, Any]:
-    """Restore the committed demo confirmed-score export into live_run_scores."""
+    """Restore the committed demo AI-score export into live_run_scores."""
     payload = load_demo_score_export_payload(path)
     if payload.get("export_type") != SCORE_EXPORT_TYPE:
         return _import_result(0, 0, 0, ["演示评分文件不是项目导出的评分文件。"])
@@ -1265,7 +1259,7 @@ def _score_outcome_from_row(row: Mapping[str, Any]) -> ScoreOutcome:
         total_score=int(total) if total is not None else None,
         rationale=rationale_map,
         review_note=str(row.get("review_note") or ""),
-        review_status=str(row.get("review_status") or "pending"),
+        review_status=str(row.get("review_status") or "ai_final"),
         latency_ms=int(_as_number(row.get("latency_ms"))) if _as_number(row.get("latency_ms")) is not None else None,
         input_tokens=int(_as_number(row.get("input_tokens"))) if _as_number(row.get("input_tokens")) is not None else None,
         output_tokens=int(_as_number(row.get("output_tokens"))) if _as_number(row.get("output_tokens")) is not None else None,

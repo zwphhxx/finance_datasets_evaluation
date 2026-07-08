@@ -265,14 +265,14 @@ class ScoreCompareTests(unittest.TestCase):
         provider = get_provider("mock")
         return er.run_models(provider, ["mock/chat-base", "mock/chat-reasoning"], _sample_tasks(1))
 
-    def test_fake_judge_scores_each_outcome_pending(self):
+    def test_fake_judge_scores_each_outcome_ai_final(self):
         compare = self._compare()
         tasks_by_case = {str(r["case_id"]): r for r in _sample_tasks(1)}
         result = sc.score_compare(_FakeJudge(), compare, {}, tasks_by_case, _DIMENSIONS, judge_model_id="judge/x")
         self.assertEqual(len(result.outcomes), 2)  # both models' answers scored
         for o in result.outcomes:
             self.assertEqual(o.judge_status, STATUS_SUCCESS)
-            self.assertEqual(o.review_status, "pending")
+            self.assertEqual(o.review_status, "ai_final")
             self.assertEqual(o.total_score, 30 + 18 + 15 + 12 + 10)
             self.assertEqual(o.scores["accuracy_score"], 30)
         self.assertTrue(result.score_run_id.startswith("SCORE-"))
@@ -383,7 +383,7 @@ class ScoreCompareTests(unittest.TestCase):
 
 
 class ScorePersistenceTests(unittest.TestCase):
-    def test_persist_and_confirm_review(self):
+    def test_persist_ai_final_score(self):
         provider = get_provider("mock")
         compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(1))
         tasks_by_case = {str(r["case_id"]): r for r in _sample_tasks(1)}
@@ -393,17 +393,9 @@ class ScorePersistenceTests(unittest.TestCase):
         rows = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)
         self.assertEqual(len(rows), 1)
         row = rows[0]
-        self.assertEqual(row["review_status"], "pending")
-
-        edited = {"accuracy_score": 25, "reasoning_score": 15, "coverage_score": 15,
-                  "evidence_score": 10, "expression_score": 10}
-        self.assertTrue(sc.confirm_score_review(int(row["id"]), edited, "复核已调整", db_path=_DB_PATH))
-
-        after = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)[0]
-        self.assertEqual(after["review_status"], "confirmed")
-        self.assertEqual(int(after["accuracy_score"]), 25)
-        self.assertEqual(int(after["total_score"]), 75)
-        self.assertEqual(after["review_note"], "复核已调整")
+        self.assertEqual(row["review_status"], "ai_final")
+        self.assertEqual(row["judge_status"], "success")
+        self.assertEqual(int(row["total_score"]), 85)
 
     def test_confirm_review_returns_false_when_row_missing(self):
         edited = {"accuracy_score": 25, "reasoning_score": 15, "coverage_score": 15,
@@ -412,7 +404,7 @@ class ScorePersistenceTests(unittest.TestCase):
         self.assertFalse(sc.confirm_score_review(99999999, edited, "不存在的评分", db_path=_DB_PATH))
 
     def test_skip_review_returns_false_when_row_missing(self):
-        self.assertFalse(sc.skip_score_review(99999999, "暂不采用：不存在的评分", db_path=_DB_PATH))
+        self.assertFalse(sc.skip_score_review(99999999, "不存在的评分", db_path=_DB_PATH))
 
     def test_confirm_review_returns_false_when_row_already_processed(self):
         provider = get_provider("mock")
@@ -423,7 +415,6 @@ class ScorePersistenceTests(unittest.TestCase):
         edited = {"accuracy_score": 25, "reasoning_score": 15, "coverage_score": 15,
                   "evidence_score": 10, "expression_score": 10}
 
-        self.assertTrue(sc.confirm_score_review(int(row["id"]), edited, "首次确认", db_path=_DB_PATH))
         self.assertFalse(sc.confirm_score_review(int(row["id"]), edited, "重复确认", db_path=_DB_PATH))
 
     def test_confirm_review_returns_false_for_failed_judge_score(self):
@@ -459,7 +450,7 @@ class ScorePersistenceTests(unittest.TestCase):
 
         rows = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)
         self.assertEqual(1, len(rows))
-        self.assertEqual("pending", rows[0]["review_status"])
+        self.assertEqual("ai_final", rows[0]["review_status"])
         self.assertEqual(outcome.case_id, rows[0]["case_id"])
         self.assertEqual(outcome.eval_model, rows[0]["eval_model"])
 
@@ -514,7 +505,7 @@ class ScorePersistenceTests(unittest.TestCase):
         self.assertEqual(1, len(restored.outcomes))
         self.assertEqual("success", restored.outcomes[0].judge_status)
 
-    def test_score_queue_failed_items_do_not_enter_pending_confirmation(self):
+    def test_score_queue_failed_items_do_not_enter_ai_conclusion(self):
         provider = get_provider("mock")
         compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(1))
         score_run_id = "SCORE-QUEUE-FAILED"
@@ -547,7 +538,9 @@ class ScorePersistenceTests(unittest.TestCase):
         self.assertEqual([(run_outcome.case_id, run_outcome.model_id)], [(item["case_id"], item["eval_model"]) for item in retry_items])
         rows = sc.load_score_rows(score_run_id, db_path=_DB_PATH)
         self.assertEqual("failed", rows[0]["judge_status"])
-        self.assertNotEqual("confirmed", rows[0]["review_status"])
+        ai_scores, excluded = cc.split_live_scores(pd.DataFrame(rows))
+        self.assertTrue(ai_scores.empty)
+        self.assertEqual(1, len(excluded))
 
     def test_failed_score_row_can_be_updated_by_retry_success_without_duplicate(self):
         failed = sc.ScoreOutcome(
@@ -600,9 +593,9 @@ class ScorePersistenceTests(unittest.TestCase):
         self.assertEqual(1, len(rows))
         self.assertEqual("success", rows[0]["judge_status"])
         self.assertEqual(88, int(rows[0]["total_score"]))
-        self.assertEqual("pending", rows[0]["review_status"])
+        self.assertEqual("ai_final", rows[0]["review_status"])
 
-    def test_skip_score_review_marks_not_adopted(self):
+    def test_skip_score_review_returns_false_for_ai_final_score(self):
         provider = get_provider("mock")
         compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(1))
         tasks_by_case = {str(r["case_id"]): r for r in _sample_tasks(1)}
@@ -611,13 +604,12 @@ class ScorePersistenceTests(unittest.TestCase):
         self.assertTrue(sc.persist_score_result(result, db_path=_DB_PATH))
         row = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)[0]
 
-        self.assertTrue(sc.skip_score_review(int(row["id"]), "暂不采用：需补充材料", db_path=_DB_PATH))
+        self.assertFalse(sc.skip_score_review(int(row["id"]), "不进入结论：需补充材料", db_path=_DB_PATH))
 
         after = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)[0]
-        self.assertEqual("skipped", after["review_status"])
-        self.assertEqual("暂不采用：需补充材料", after["review_note"])
+        self.assertEqual("ai_final", after["review_status"])
 
-    def test_bulk_confirm_only_pending_success_scores(self):
+    def test_bulk_confirm_does_not_process_ai_final_scores(self):
         provider = get_provider("mock")
         compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(2))
         tasks_by_case = {str(r["case_id"]): r for r in _sample_tasks(2)}
@@ -626,19 +618,18 @@ class ScorePersistenceTests(unittest.TestCase):
         self.assertTrue(sc.persist_score_result(result, db_path=_DB_PATH))
         rows = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)
         row_ids = [int(row["id"]) for row in rows]
-        note = "低风险评分草稿，经人工批量确认生效。"
+        note = "AI final scores should not need legacy processing."
 
         outcome = sc.confirm_score_reviews_bulk(row_ids, note, db_path=_DB_PATH)
 
-        self.assertEqual(len(row_ids), outcome["confirmed"])
-        self.assertEqual(len(row_ids), outcome["confirmed_count"])
-        self.assertEqual(sorted(row_ids), sorted(outcome["confirmed_ids"]))
-        self.assertEqual([], outcome["failed_ids"])
-        self.assertEqual("已确认 2 条评分。", outcome["summary"])
-        self.assertEqual([], outcome["failed"])
+        self.assertEqual(0, outcome["confirmed"])
+        self.assertEqual(0, outcome["confirmed_count"])
+        self.assertEqual([], outcome["confirmed_ids"])
+        self.assertEqual(sorted(row_ids), sorted(outcome["failed_ids"]))
+        self.assertEqual(len(row_ids), outcome["failed_count"])
+        self.assertEqual(sorted(row_ids), sorted(outcome["failed"]))
         after = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)
-        self.assertTrue(all(row["review_status"] == "confirmed" for row in after))
-        self.assertTrue(all(row["review_note"] == note for row in after))
+        self.assertTrue(all(row["review_status"] == "ai_final" for row in after))
 
     def test_persist_returns_false_without_database(self):
         provider = get_provider("mock")
@@ -657,7 +648,7 @@ class ScorePersistenceTests(unittest.TestCase):
         after = Repository(_DB_PATH).count("score_records")
         self.assertEqual(before, after)
 
-    def test_export_defaults_to_confirmed_and_can_include_pending(self):
+    def test_export_defaults_to_successful_ai_scores(self):
         provider = get_provider("mock")
         compare = er.run_models(provider, ["mock/chat-base"], _sample_tasks(2))
         tasks_by_case = {str(r["case_id"]): r for r in _sample_tasks(2)}
@@ -666,35 +657,20 @@ class ScorePersistenceTests(unittest.TestCase):
         self.assertTrue(sc.persist_score_result(result, db_path=_DB_PATH))
         rows = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)
         self.assertEqual(2, len(rows))
-        first_id = int(rows[0]["id"])
-        edited = {
-            "accuracy_score": 25,
-            "reasoning_score": 15,
-            "coverage_score": 15,
-            "evidence_score": 10,
-            "expression_score": 10,
-        }
-        self.assertTrue(sc.confirm_score_review(first_id, edited, "确认用于导出", db_path=_DB_PATH))
-
-        confirmed_only = [
+        exported = [
             row for row in sc.load_exportable_score_rows(db_path=_DB_PATH)
             if row["score_run_id"] == result.score_run_id
         ]
-        self.assertEqual(1, len(confirmed_only))
-        self.assertEqual("confirmed", confirmed_only[0]["review_status"])
+        self.assertEqual(2, len(exported))
+        self.assertEqual(["ai_final", "ai_final"], sorted(row["review_status"] for row in exported))
 
-        with_pending = [
-            row for row in sc.load_exportable_score_rows(include_pending=True, db_path=_DB_PATH)
-            if row["score_run_id"] == result.score_run_id
-        ]
-        self.assertEqual(["confirmed", "pending"], sorted(row["review_status"] for row in with_pending))
-        payload = sc.build_score_export_payload(confirmed_only)
+        payload = sc.build_score_export_payload(exported)
         text = sc.serialize_score_export_payload(payload)
-        self.assertEqual("confirmed_score_export", payload["export_type"])
+        self.assertEqual("ai_score_export", payload["export_type"])
         self.assertEqual(1, payload["schema_version"])
         self.assertEqual("财务/法律/投行场景大模型对比评测", payload["project_name"])
-        self.assertEqual("confirmed", payload["scope"])
-        self.assertEqual(1, len(payload["records"]))
+        self.assertEqual("ai_scores", payload["scope"])
+        self.assertEqual(2, len(payload["records"]))
         self.assertNotIn("rows", payload)
         self.assertIn(sc.SCORE_EXPORT_TYPE, text)
         self.assertNotIn("api_key", text.lower())
@@ -735,19 +711,13 @@ class ScorePersistenceTests(unittest.TestCase):
         for row in rows:
             repo.insert("live_run_scores", row)
 
-        confirmed_only = [
+        exported = [
             row for row in sc.load_exportable_score_rows(db_path=_DB_PATH)
-            if row["score_run_id"] == score_run_id
-        ]
-        self.assertEqual(["vendor/model-confirmed"], [row["eval_model"] for row in confirmed_only])
-
-        with_pending = [
-            row for row in sc.load_exportable_score_rows(include_pending=True, db_path=_DB_PATH)
             if row["score_run_id"] == score_run_id
         ]
         self.assertEqual(
             ["vendor/model-confirmed", "vendor/model-pending"],
-            sorted(row["eval_model"] for row in with_pending),
+            sorted(row["eval_model"] for row in exported),
         )
 
     def test_import_project_exported_scores_and_skip_duplicates(self):
@@ -769,14 +739,14 @@ class ScorePersistenceTests(unittest.TestCase):
                 "expression_score": 10,
                 "total_score": 75,
                 "rationale": {"accuracy_score": "依据充分"},
-                "review_note": "导入确认记录",
-                "review_status": "confirmed",
+                "review_note": "导入 AI 评分记录",
+                "review_status": "ai_final",
                 "status": "active",
             }
         ]
         payload = sc.build_score_export_payload(source_rows)
         text = sc.serialize_score_export_payload(payload)
-        parsed = sc.parse_score_import_content("confirmed_scores.json", text)
+        parsed = sc.parse_score_import_content("ai_scores.json", text)
         self.assertTrue(parsed["ok"], parsed["errors"])
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -789,11 +759,11 @@ class ScorePersistenceTests(unittest.TestCase):
             imported = Repository(target_db).list_df("live_run_scores")
             matched = imported[imported["score_run_id"] == "SCORE-IMPORT-1"]
             self.assertEqual(1, len(matched))
-            self.assertEqual("confirmed", matched.iloc[0]["review_status"])
-            confirmed, pending = cc.split_live_scores(imported)
-            summary = cc.summarize_formal(pd.DataFrame(), confirmed)
-            self.assertEqual(1, summary["confirmed_rows"])
-            self.assertEqual(0, len(pending))
+            self.assertEqual("ai_final", matched.iloc[0]["review_status"])
+            ai_scores, excluded = cc.split_live_scores(imported)
+            summary = cc.summarize_formal(pd.DataFrame(), ai_scores)
+            self.assertEqual(1, summary["ai_score_rows"])
+            self.assertEqual(0, len(excluded))
 
             duplicate = sc.import_score_rows(parsed["rows"], duplicate_action="skip", db_path=target_db)
             self.assertEqual(0, duplicate["imported_count"])
@@ -838,8 +808,8 @@ class ScorePersistenceTests(unittest.TestCase):
         self.assertTrue(any("不是项目导出的" in error for error in not_project["errors"]))
 
         missing = sc.parse_score_import_content(
-            "confirmed_scores.json",
-            '{"export_type":"confirmed_score_export","schema_version":1,"records":[{"case_id":"C1"}]}',
+            "ai_scores.json",
+            '{"export_type":"ai_score_export","schema_version":1,"records":[{"case_id":"C1"}]}',
         )
         self.assertFalse(missing["ok"])
         self.assertTrue(any("缺少必要字段" in error for error in missing["errors"]))
@@ -847,7 +817,7 @@ class ScorePersistenceTests(unittest.TestCase):
     def test_demo_score_export_file_can_be_loaded_or_reports_missing(self):
         payload = sc.load_demo_score_export_payload()
 
-        self.assertEqual("confirmed_score_export", payload["export_type"])
+        self.assertEqual("ai_score_export", payload["export_type"])
         self.assertEqual(1, payload["schema_version"])
         self.assertIn("records", payload)
 
