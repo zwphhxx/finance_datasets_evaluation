@@ -142,7 +142,7 @@ class VisibleTextGuardrailTests(unittest.TestCase):
     def test_primary_flow_text_does_not_expose_manual_review_concepts(self):
         paths = [
             Path("README.md"),
-            Path("docs/project_note.md"),
+            *sorted(Path("docs").glob("*.md")),
             Path("src/ui/case_study.py"),
             Path("src/ui/test_run.py"),
             Path("src/ui/conclusions.py"),

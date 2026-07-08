@@ -89,7 +89,8 @@ def test_readme_uses_concise_project_submission_structure() -> None:
 
     assert "# 财务/法律/投行场景大模型对比评测" in first_screen
     assert "## " + "面" + "试官快速阅读" not in readme
-    assert "docs/demo_script.md" in readme
+    assert "docs/" + "demo" + "_script.md" not in readme
+    assert "docs/" + "project" + "_note.md" not in readme
     assert "docs/" + "inter" + "view_script.md" not in readme
     assert "## 数据对象与数据流" not in readme
     assert len(readme.splitlines()) < 120
@@ -129,25 +130,9 @@ def test_env_example_uses_project_runtime_defaults() -> None:
     assert "FINDUEVAL_EVAL_TEMPERATURE=0.1" in text
 
 
-def test_docs_match_current_project_demo_path() -> None:
-    project_note = (ROOT / "docs" / "project_note.md").read_text(encoding="utf-8")
-    demo_script = (ROOT / "docs" / "demo_script.md").read_text(encoding="utf-8")
-    combined = project_note + "\n" + demo_script
-
-    assert "评分矩阵" not in combined
-    assert "旧页面" not in combined
-    assert "MED" + "-001" not in combined
-    assert "MA" + "-001" not in combined
-    assert "面" + "试" not in combined
-    assert "面" + "试" + "官" not in combined
-    assert "inter" + "view" + " demo" not in combined.lower()
-    for phrase in ["项目说明", "样本库", "发起评测", "评测结论"]:
-        assert phrase in combined
-    assert "评分" + "确认" not in project_note
-    assert "人工" + "确认" not in project_note
-    assert "不是通用 Chatbot" in demo_script
-    assert "不是模型排名页" in demo_script
-    assert "实时模型调用不能保证 100% 成功" in demo_script
+def test_preparation_documents_are_not_part_of_repository_docs() -> None:
+    assert not (ROOT / "docs" / ("demo" + "_script.md")).exists()
+    assert not (ROOT / "docs" / ("project" + "_note.md")).exists()
 
 
 def test_repository_sources_do_not_contain_packaging_or_process_markers() -> None:
@@ -160,7 +145,19 @@ def test_repository_sources_do_not_contain_packaging_or_process_markers() -> Non
     banned = [
         "面" + "试",
         "面" + "试" + "官",
+        "演示" + "脚本",
+        "展示" + "脚本",
+        "常见" + "追问",
+        "讲解" + "要点",
+        "项目" + "展示说明",
+        "面" + "试" + "展示",
+        "面" + "试" + "项目",
+        "inter" + "view",
+        "inter" + "viewer",
         "inter" + "view" + " demo",
+        "demo" + " script",
+        "demo" + "_script",
+        "project" + "_note",
         "P" + "R-33",
         "P" + "R-34",
         "P" + "R-35",
