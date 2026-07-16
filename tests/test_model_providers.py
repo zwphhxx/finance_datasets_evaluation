@@ -13,12 +13,11 @@ import urllib.error
 from unittest import mock
 
 from app.models import STATUS_FAILED, STATUS_MOCK, STATUS_SUCCESS
+from app.models import siliconflow as sf
 from app.models.base import normalize_messages
 from app.models.mock import MockProvider
 from app.models.registry import get_text_provider, reset_for_testing
-from app.models import siliconflow as sf
 from app.models.siliconflow import SiliconFlowProvider, _HttpResponse
-
 
 _MESSAGES = [{"role": "user", "content": "请概述一笔收购的尽调要点"}]
 

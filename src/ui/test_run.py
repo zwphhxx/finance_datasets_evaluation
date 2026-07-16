@@ -8,10 +8,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from html import escape
 import os
 import re
+from datetime import datetime
+from html import escape
 
 import pandas as pd
 import streamlit as st
@@ -25,14 +25,13 @@ from app.services import model_display as md
 from app.services import scorer as sc
 from src.ui.components import (
     render_empty_state,
-    render_html,
     render_inline_status,
     render_markdown_detail_panel,
     render_numbered_section,
     render_page_heading,
 )
-from src.ui.page_config import get_page_config
 from src.ui.labels import TASK_TYPE_LABELS, display_label, summarize_text
+from src.ui.page_config import get_page_config
 
 MAIN_PROMPT = "选择样本和模型，运行评测并生成 AI 评分。"
 
@@ -2323,7 +2322,6 @@ def render_model_answer_detail(
     meta_parts = [f"耗时：{_latency_label(outcome.latency_ms)}"]
     if outcome.success or outcome.answer_length:
         meta_parts.append(f"回答长度：{_answer_length_label(outcome)}")
-    finish_reason = getattr(outcome, "finish_reason", None)
     meta = "｜".join(meta_parts) + f"\n模型 ID：{outcome.model_id}"
     answer = outcome.answer_text or "—"
     display_text = _answer_preview(answer) if preview else answer

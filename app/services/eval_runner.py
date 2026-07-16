@@ -21,10 +21,10 @@ from typing import Any, Callable, Mapping, Sequence
 from app.models.base import (
     ERROR_EMPTY_RESPONSE,
     ERROR_INCOMPLETE_RESPONSE,
-    GenerationResult,
-    ModelProvider,
     STATUS_FAILED,
     STATUS_MOCK,
+    GenerationResult,
+    ModelProvider,
 )
 
 # 被评测模型可见的任务字段（白名单）。Gold Answer 相关字段一律不在其中。

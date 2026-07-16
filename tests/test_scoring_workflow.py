@@ -13,15 +13,14 @@ from pathlib import Path
 
 import pandas as pd
 
-from app.models.base import GenerationResult, ModelProvider, STATUS_FAILED, STATUS_SUCCESS
+from app.db.repository import Repository
+from app.models.base import STATUS_FAILED, STATUS_SUCCESS, GenerationResult, ModelProvider
 from app.models.registry import get_provider
 from app.services import conclusions as cc
 from app.services import dataset_service as ds
 from app.services import eval_runner as er
 from app.services import scorer as sc
-from app.db.repository import Repository
 from src.ui.navigation import PAGES
-
 
 _TMP = tempfile.TemporaryDirectory()
 _DB_PATH = Path(_TMP.name) / "scoring_workflow_test.db"

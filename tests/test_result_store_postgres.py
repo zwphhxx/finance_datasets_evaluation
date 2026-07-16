@@ -5,7 +5,6 @@ import pytest
 
 from app.persistence.result_store import ResultStore
 
-
 pytestmark = pytest.mark.skipif(
     not os.getenv("TEST_DATABASE_URL"),
     reason="TEST_DATABASE_URL is not configured",

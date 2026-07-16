@@ -9,9 +9,9 @@ import pandas as pd
 from app.services import conclusions as cc
 from src.ui import samples
 from src.ui.components import PROJECT_DISPLAY_NAME as COMPONENT_PROJECT_NAME
-from src.ui.navigation import PAGES, PROJECT_DISPLAY_NAME as NAV_PROJECT_NAME, _TOP_NAV_ITEMS
-from src.ui.page_config import PAGE_CONFIGS, PAGE_CONFIG_BY_KEY
-
+from src.ui.navigation import _TOP_NAV_ITEMS, PAGES
+from src.ui.navigation import PROJECT_DISPLAY_NAME as NAV_PROJECT_NAME
+from src.ui.page_config import PAGE_CONFIG_BY_KEY, PAGE_CONFIGS
 
 PROJECT_NAME = "财务/法律/投行场景大模型对比评测"
 MAIN_PAGE_KEYS = ["case_study", "samples", "test_run", "conclusions"]

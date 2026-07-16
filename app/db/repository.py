@@ -16,7 +16,6 @@ from typing import Any, Iterable
 
 import pandas as pd
 
-
 # 各表主键列名。无单列业务主键的表使用自增 id。
 TABLE_PRIMARY_KEYS: dict[str, str] = {
     "task_cases": "case_id",

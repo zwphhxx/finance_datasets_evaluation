@@ -11,13 +11,13 @@ import time
 from typing import Any, Mapping, Sequence
 
 from app.models.base import (
+    STATUS_FAILED,
+    STATUS_MOCK,
     ConnectivityResult,
     GenerationResult,
     ModelInfo,
     ModelListResult,
     ModelProvider,
-    STATUS_FAILED,
-    STATUS_MOCK,
     normalize_messages,
 )
 

@@ -2,13 +2,12 @@ import os
 
 import streamlit as st
 
-from app.services.data_resolver import build_data_context_info, resolve_active_data
 from app.services import dataset_service as ds
+from app.services.data_resolver import build_data_context_info, resolve_active_data
 from src.data_service import DataLoadError
 from src.ui.components import apply_global_styles
 from src.ui.navigation import PAGES, render_sidebar_navigation
 from src.validators import ValidationResult, validate_evaluation_data
-
 
 AUTO_INIT_DB_ENV = "FINDUEVAL_AUTO_INIT_DB"
 _DISABLED_AUTO_INIT_VALUES = {"0", "false", "no", "off"}

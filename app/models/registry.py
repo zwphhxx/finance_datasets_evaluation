@@ -9,10 +9,15 @@ from __future__ import annotations
 from typing import Callable
 
 from app.models.base import ModelProvider
-from app.models.mock import MockProvider, PROVIDER_NAME as MOCK_NAME
+from app.models.mock import PROVIDER_NAME as MOCK_NAME
+from app.models.mock import MockProvider
 from app.models.siliconflow import (
     PROVIDER_NAME as SILICONFLOW_NAME,
+)
+from app.models.siliconflow import (
     SiliconFlowProvider,
+)
+from app.models.siliconflow import (
     is_configured as siliconflow_configured,
 )
 

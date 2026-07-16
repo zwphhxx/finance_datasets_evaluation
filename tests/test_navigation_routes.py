@@ -19,11 +19,11 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 
 from app.services import conclusions as cc
-from app.services import dataset_service as ds
 from app.services import eval_runner as er
 from app.services import scorer as sc
-from src.ui.navigation import PAGES, get_primary_nav_items, _TOP_NAV_ITEMS, DEFAULT_PAGE_KEY
-from src.ui.page_config import PAGE_CONFIG_BY_KEY, DEFAULT_PAGE_KEY as PC_DEFAULT_PAGE_KEY
+from src.ui.navigation import _TOP_NAV_ITEMS, DEFAULT_PAGE_KEY, PAGES, get_primary_nav_items
+from src.ui.page_config import DEFAULT_PAGE_KEY as PC_DEFAULT_PAGE_KEY
+from src.ui.page_config import PAGE_CONFIG_BY_KEY
 
 
 class PagesDictTests(unittest.TestCase):

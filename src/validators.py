@@ -5,7 +5,7 @@ from typing import Any
 
 import pandas as pd
 
-from src.data_service import EvaluationData, OPTIMIZATION_COMPARISON_COLUMNS
+from src.data_service import OPTIMIZATION_COMPARISON_COLUMNS, EvaluationData
 
 
 @dataclass(frozen=True)

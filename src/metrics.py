@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pandas as pd
 
-
 SCORE_DIMENSIONS = [
     ("accuracy_score", "专业准确性"),
     ("reasoning_score", "推理与场景适配"),
@@ -598,10 +597,6 @@ def get_optimization_change_summary(comparison_df: pd.DataFrame) -> list[str]:
     latest = metrics.iloc[-1]
 
     avg_delta = latest["avg_score"] - baseline["avg_score"]
-    evidence_delta = latest["evidence_score"] - baseline["evidence_score"]
-    reasoning_delta = latest["reasoning_score"] - baseline["reasoning_score"]
-    hallucination_delta = latest["hallucination_rate"] - baseline["hallucination_rate"]
-    red_line_delta = latest["red_line_error_rate"] - baseline["red_line_error_rate"]
 
     return [
         (

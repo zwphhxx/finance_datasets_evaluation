@@ -17,7 +17,7 @@ from app.services import conclusions as cc
 from app.services import dataset_service as ds
 from app.services import eval_runner as er
 from app.services import scorer as sc
-from src.ui.navigation import get_primary_nav_items, _TOP_NAV_ITEMS
+from src.ui.navigation import _TOP_NAV_ITEMS, get_primary_nav_items
 
 
 class SampleJudgmentCriteriaTests(unittest.TestCase):

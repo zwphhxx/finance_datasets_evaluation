@@ -25,7 +25,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
-from app.models.base import ModelProvider, STATUS_FAILED, STATUS_MOCK, STATUS_SUCCESS
+from app.models.base import STATUS_FAILED, STATUS_MOCK, STATUS_SUCCESS, ModelProvider
 from app.services import model_display as md
 
 # Fixed judge model for scoring.
@@ -867,8 +867,8 @@ def import_score_rows(
         return _import_result(0, 0, 0, errors or ["没有可导入的评分记录。"])
 
     try:
-        from app.services.dataset_service import database_ready, get_db_path
         from app.db.repository import Repository
+        from app.services.dataset_service import database_ready, get_db_path
 
         path = db_path or get_db_path()
         if not database_ready(path):

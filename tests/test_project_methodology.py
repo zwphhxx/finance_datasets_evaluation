@@ -1,16 +1,15 @@
 """项目说明页注册、结构和数据边界测试。"""
 
-import unittest
 import types
+import unittest
 from pathlib import Path
 
 import pandas as pd
 
 from src.data_service import load_all_data
 from src.ui.case_study import _build_sample_scope_text, scored_case_count
-from src.ui.navigation import PAGES, _NAV_GROUPS
+from src.ui.navigation import _NAV_GROUPS, PAGES
 from src.ui.page_config import DEFAULT_PAGE_KEY, PAGE_CONFIG_BY_KEY, PAGE_CONTEXTS
-
 
 BANNED_PHRASES = ["AI赋能", "智能洞察", "一键优化", "专家级", "秒级"]
 

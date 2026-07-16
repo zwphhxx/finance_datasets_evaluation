@@ -8,7 +8,6 @@ from src.ui.components import (
     render_home_section,
 )
 
-
 PROCESS_STEPS = ["人工录入样本库", "发起模型评测", "生成 AI 评分", "进入评测结论"]
 
 

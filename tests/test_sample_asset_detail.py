@@ -6,12 +6,12 @@ import unittest
 from app.services import dataset_service as ds
 from app.services import sample_repository as sr
 from src.ui.samples import (
-    build_sample_asset_sections,
-    build_sample_table_rows,
-    build_rubric_rows_for_display,
-    parse_gold_answer_for_display,
     _gold_detail_html,
     _task_detail_html,
+    build_rubric_rows_for_display,
+    build_sample_asset_sections,
+    build_sample_table_rows,
+    parse_gold_answer_for_display,
 )
 
 

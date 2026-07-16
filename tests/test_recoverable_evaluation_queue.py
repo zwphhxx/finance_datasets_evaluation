@@ -22,8 +22,6 @@ from app.services.live_results import (
     synth_output_id,
 )
 from src.ui.navigation import PAGES
-from src.ui.page_config import PAGE_CONFIG_BY_KEY
-
 
 _TMP = tempfile.TemporaryDirectory()
 _DB_PATH = Path(_TMP.name) / "recoverable_queue_test.db"

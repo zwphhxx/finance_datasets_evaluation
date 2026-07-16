@@ -10,14 +10,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.models.base import GenerationResult, ModelProvider, STATUS_FAILED, STATUS_MOCK
+from app.db.repository import Repository
+from app.models.base import STATUS_FAILED, STATUS_MOCK, GenerationResult, ModelProvider
 from app.models.registry import get_provider
 from app.services import dataset_service as ds
 from app.services import eval_runner as er
-from app.db.repository import Repository
 from src.ui.navigation import PAGES
 from src.ui.page_config import PAGE_CONFIG_BY_KEY
-
 
 _TMP = tempfile.TemporaryDirectory()
 _DB_PATH = Path(_TMP.name) / "live_evaluation_test.db"

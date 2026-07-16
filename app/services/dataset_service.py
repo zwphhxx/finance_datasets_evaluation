@@ -21,10 +21,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
 import os
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
@@ -33,8 +33,6 @@ import streamlit as st
 from app.db import DEFAULT_DB_PATH
 from app.db.init_db import initialize_database
 from app.db.repository import Repository
-from src.error_config import evaluate_error_config
-from src.gold_quality import field_list, field_value
 from src.data_service import (
     DATA_FILES,
     OPTIMIZATION_COMPARISON_COLUMNS,
@@ -48,6 +46,8 @@ from src.data_service import (
     read_csv_file,
     read_optional_csv_file,
 )
+from src.error_config import evaluate_error_config
+from src.gold_quality import field_list, field_value
 
 DB_PATH_ENV = "FINDUEVAL_DB_PATH"
 
@@ -704,7 +704,7 @@ def get_rubric_dimensions(db_path: Path | None = None) -> list[dict]:
     维度顺序与满分以 src.metrics 的方法学配置为准（不硬编码第二份）；当 rubrics 表存在且
     有对应行时，用表中的 name / full_mark 覆盖，使数据库初始化后维度信息来自数据。
     """
-    from src.metrics import SCORE_DIMENSIONS, SCORE_DIMENSION_FULL_MARKS
+    from src.metrics import SCORE_DIMENSION_FULL_MARKS, SCORE_DIMENSIONS
 
     defaults = _manifest_rubric_defaults()
     overrides: dict[str, dict] = {}

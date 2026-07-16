@@ -28,14 +28,13 @@ from src.ui.components import (
     render_numbered_section,
     render_page_heading,
 )
-from src.ui.page_config import get_page_config
 from src.ui.labels import (
     DIFFICULTY_LABELS,
     DOMAIN_LABELS,
     TASK_TYPE_LABELS,
     display_label,
 )
-
+from src.ui.page_config import get_page_config
 
 _TEST_STATUS_OPTIONS = ["全部", "可测试", "待补充", "不可测试", "已移出测试"]
 _COMPLETENESS_OPTIONS = ["全部", "通过", "待补充", "已移出测试"]

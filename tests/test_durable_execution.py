@@ -1,7 +1,6 @@
 import pytest
 
-from app.services import conclusions
-from app.services import scorer
+from app.services import conclusions, scorer
 from src.ui import test_run
 
 

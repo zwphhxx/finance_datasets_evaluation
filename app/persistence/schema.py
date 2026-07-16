@@ -16,7 +16,6 @@ from sqlalchemy import (
     text,
 )
 
-
 metadata = MetaData()
 
 

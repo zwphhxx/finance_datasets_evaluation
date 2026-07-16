@@ -12,7 +12,6 @@ from pathlib import Path
 
 import pandas as pd
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_CSV = PROJECT_ROOT / "data" / "final_replacement_samples_13.csv"
 EXPECTED_CASE_IDS = [

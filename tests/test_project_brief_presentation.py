@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from src.data_service import load_all_data
-from src.ui import case_study, labels
+from src.ui import labels
 
 
 class CaseStudyPresentationTests(unittest.TestCase):
