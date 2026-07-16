@@ -1,7 +1,10 @@
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
+import streamlit as st
 
+from app.persistence import _store_for_url, get_result_store
 from app.persistence.config import (
     PersistenceConfigurationError,
     require_durable_live_store,
@@ -18,6 +21,35 @@ def test_database_url_wins_and_uses_psycopg():
 
     assert settings.url.startswith("postgresql+psycopg://")
     assert settings.is_postgresql is True
+
+
+def test_store_factory_does_not_read_secrets_when_database_url_is_set(
+    monkeypatch,
+    tmp_path: Path,
+):
+    environment_db = tmp_path / "environment.db"
+    secret_db = tmp_path / "secret.db"
+    environment_url = f"sqlite:///{environment_db}"
+    secret_url = f"sqlite:///{secret_db}"
+    monkeypatch.setenv("DATABASE_URL", environment_url)
+
+    class SideEffectSecrets(Mapping):
+        def __iter__(self):
+            monkeypatch.setenv("DATABASE_URL", secret_url)
+            return iter({"DATABASE_URL": secret_url})
+
+        def __len__(self):
+            return 1
+
+        def __getitem__(self, key):
+            return {"DATABASE_URL": secret_url}[key]
+
+    monkeypatch.setattr(st, "secrets", SideEffectSecrets())
+    _store_for_url.cache_clear()
+
+    store = get_result_store()
+
+    assert store.engine.url.database == str(environment_db)
 
 
 def test_streamlit_database_secret_is_supported():

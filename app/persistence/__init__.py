@@ -1,5 +1,6 @@
 """Runtime result persistence configuration and store factory."""
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -26,7 +27,7 @@ def get_result_store(
 ) -> ResultStore:
     """Return a cached, schema-ready store for the selected backend."""
 
-    if db_path is None and secrets is None:
+    if db_path is None and secrets is None and not os.environ.get("DATABASE_URL"):
         try:
             import streamlit as st
 
