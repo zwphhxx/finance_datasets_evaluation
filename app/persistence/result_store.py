@@ -86,9 +86,19 @@ class ResultStore:
             raise ResultStoreError("run queue cannot be empty")
         try:
             with self.engine.begin() as connection:
-                self._upsert(connection, live_evaluation_runs, run_row)
+                self._upsert(
+                    connection,
+                    live_evaluation_runs,
+                    run_row,
+                    update_existing=False,
+                )
                 for row in rows:
-                    self._upsert(connection, live_run_queue, row)
+                    self._upsert(
+                        connection,
+                        live_run_queue,
+                        row,
+                        update_existing=False,
+                    )
                 self._refresh_run_counts(connection, str(run_row["run_id"]))
             return True
         except SQLAlchemyError as exc:
@@ -157,7 +167,12 @@ class ResultStore:
         try:
             with self.engine.begin() as connection:
                 for row in payload:
-                    self._upsert(connection, live_score_queue, row)
+                    self._upsert(
+                        connection,
+                        live_score_queue,
+                        row,
+                        update_existing=False,
+                    )
             return True
         except SQLAlchemyError as exc:
             raise ResultStoreError("could not initialize score queue") from exc
@@ -242,7 +257,14 @@ class ResultStore:
         except SQLAlchemyError as exc:
             raise ResultStoreError("could not read latest runtime queue") from exc
 
-    def _upsert(self, connection: Connection, table, row: Mapping[str, Any]) -> None:
+    def _upsert(
+        self,
+        connection: Connection,
+        table,
+        row: Mapping[str, Any],
+        *,
+        update_existing: bool = True,
+    ) -> None:
         values = self._filtered(table.name, row)
         conflict = _CONFLICT_COLUMNS[table.name]
         if self.engine.dialect.name == "postgresql":
@@ -251,6 +273,13 @@ class ResultStore:
             statement = sqlite_insert(table).values(**values)
         else:
             raise ResultStoreError("unsupported runtime result database")
+        if not update_existing:
+            connection.execute(
+                statement.on_conflict_do_nothing(
+                    index_elements=[table.c[name] for name in conflict]
+                )
+            )
+            return
         updates = {
             column: getattr(statement.excluded, column)
             for column in values

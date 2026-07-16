@@ -542,46 +542,33 @@ def persist_run_result(result, db_path: Path | None = None) -> bool:
     返回是否成功落库。任何异常都不向上抛出，保证页面不因落库失败而崩溃。
     """
     try:
-        from app.services.dataset_service import database_ready, get_db_path
-        from app.db.repository import Repository
-
-        path = db_path or get_db_path()
-        if not database_ready(path):
+        outcomes = list(result.outcomes or [])
+        if not outcomes:
             return False
-        _ensure_live_run_response_columns(path)
-        rows = [
+        queue_items = [
             {
-                "run_id": result.run_id,
-                "case_id": o.case_id,
-                "task_type": o.task_type,
-                "provider": o.provider,
-                "model_name": o.model_id,
-                "run_mode": result.mode,
-                "run_status": o.run_status,
-                "answer_text": o.answer_text,
-                "answer_length": o.answer_length,
-                "latency_ms": o.latency_ms,
-                "input_tokens": o.input_tokens,
-                "output_tokens": o.output_tokens,
-                "total_tokens": o.total_tokens,
-                "http_status": o.http_status,
-                "trace_id": o.trace_id,
-                "finish_reason": o.finish_reason,
-                "incomplete_reason": o.incomplete_reason,
-                "retry_count": o.retry_count,
-                "first_finish_reason": o.first_finish_reason,
-                "final_finish_reason": o.final_finish_reason,
-                "timeout_seconds": o.timeout_seconds,
-                "timeout_source": o.timeout_source,
-                "error_code": o.error_code,
-                "error_message": o.error_message,
+                "case_id": outcome.case_id,
+                "model_id": outcome.model_id,
+                "task": {"task_type": outcome.task_type},
             }
-            for o in result.outcomes
+            for outcome in outcomes
         ]
-        if not rows:
+        if not initialize_run_queue(
+            result.run_id,
+            result.provider,
+            queue_items,
+            db_path=db_path,
+        ):
             return False
-        Repository(path).bulk_insert("live_run_responses", rows)
-        return True
+        return all(
+            persist_run_outcome(
+                result.run_id,
+                result.mode,
+                outcome,
+                db_path=db_path,
+            )
+            for outcome in outcomes
+        )
     except Exception:
         return False
 
@@ -596,22 +583,14 @@ def initialize_run_queue(
     provider: str,
     queue_items: Sequence[Mapping[str, Any]],
     *,
+    metadata: Mapping[str, Any] | None = None,
     db_path: Path | None = None,
 ) -> bool:
     """开始调用模型前写入完整队列，用于页面中断后的恢复。"""
     try:
-        from app.services.dataset_service import database_ready, ensure_recoverable_queue_tables, get_db_path
-        from app.db.repository import Repository
-
-        path = db_path or get_db_path()
-        if not database_ready(path):
+        store = _runtime_result_store(db_path)
+        if store is None:
             return False
-        ensure_recoverable_queue_tables(path)
-        repo = Repository(path)
-        existing = _safe_list_df(repo, "live_run_queue")
-        if not existing.empty and "run_id" in existing.columns:
-            if not existing[existing["run_id"].astype(str) == str(run_id)].empty:
-                return True
         rows: list[dict[str, Any]] = []
         for item in queue_items or []:
             task = item.get("task") or {}
@@ -630,8 +609,16 @@ def initialize_run_queue(
             })
         if not rows:
             return False
-        repo.bulk_insert("live_run_queue", rows)
-        return True
+        run_metadata = _build_fallback_run_metadata(
+            run_id,
+            provider,
+            queue_items,
+        )
+        if metadata:
+            run_metadata.update(dict(metadata))
+        run_metadata["run_id"] = str(run_id)
+        run_metadata["provider"] = str(provider or "")
+        return store.initialize_run(run_metadata, rows)
     except Exception:
         return False
 
@@ -644,14 +631,11 @@ def mark_run_queue_item_running(
     db_path: Path | None = None,
 ) -> bool:
     """将一条模型回答队列项标记为运行中，并增加尝试次数。"""
-    return _update_run_queue_item(
-        run_id,
-        case_id,
-        model_id,
-        {"status": "running"},
-        increment_attempt=True,
-        db_path=db_path,
-    )
+    try:
+        store = _runtime_result_store(db_path)
+        return bool(store and store.mark_run_item_running(run_id, case_id, model_id))
+    except Exception:
+        return False
 
 
 def persist_run_outcome(
@@ -663,34 +647,13 @@ def persist_run_outcome(
 ) -> bool:
     """逐条写入模型回答，并同步 live_run_queue 状态。"""
     try:
-        from app.services.dataset_service import database_ready, get_db_path
-        from app.db.repository import Repository
-
-        path = db_path or get_db_path()
-        if not database_ready(path):
+        store = _runtime_result_store(db_path)
+        if store is None:
             return False
-        _ensure_live_run_response_columns(path)
-        repo = Repository(path)
-        existing = _find_run_response_row(repo, run_id, outcome.case_id, outcome.model_id)
-        row = _run_outcome_row(run_id, mode, outcome)
-        if existing is None:
-            repo.insert("live_run_responses", row)
-        else:
-            row_id = _as_int(existing.get("id"))
-            if row_id is not None and _should_update_existing_run_outcome(existing, outcome):
-                repo.update("live_run_responses", row_id, row)
-        _update_run_queue_item(
-            run_id,
-            outcome.case_id,
-            outcome.model_id,
-            {
-                "status": "success" if outcome.success else "failed",
-                "error_code": outcome.error_code,
-                "error_message": outcome.error_message,
-            },
-            db_path=path,
+        return store.save_run_outcome(
+            _run_outcome_row(run_id, mode, outcome),
+            queue_status="success" if outcome.success else "failed",
         )
-        return True
     except Exception:
         return False
 
@@ -698,18 +661,8 @@ def persist_run_outcome(
 def load_run_queue(run_id: str, *, db_path: Path | None = None) -> list[dict[str, Any]]:
     """读取指定 run_id 的可恢复模型回答队列。"""
     try:
-        from app.services.dataset_service import database_ready, ensure_recoverable_queue_tables, get_db_path
-        from app.db.repository import Repository
-
-        path = db_path or get_db_path()
-        if not database_ready(path):
-            return []
-        ensure_recoverable_queue_tables(path)
-        rows = Repository(path).list_df("live_run_queue", order_by="id")
-        if rows.empty or "run_id" not in rows.columns:
-            return []
-        matched = rows[rows["run_id"].astype(str) == str(run_id)]
-        return matched.to_dict("records")
+        store = _runtime_result_store(db_path)
+        return [] if store is None else store.list_rows("live_run_queue", run_id=str(run_id))
     except Exception:
         return []
 
@@ -741,18 +694,8 @@ def queue_items_for_status(
 def latest_run_queue(*, db_path: Path | None = None) -> list[dict[str, Any]]:
     """返回最近一次模型回答队列，供页面 session 丢失时恢复提示。"""
     try:
-        from app.services.dataset_service import database_ready, ensure_recoverable_queue_tables, get_db_path
-        from app.db.repository import Repository
-
-        path = db_path or get_db_path()
-        if not database_ready(path):
-            return []
-        ensure_recoverable_queue_tables(path)
-        frame = Repository(path).list_df("live_run_queue", order_by="id")
-        if frame.empty or "run_id" not in frame.columns:
-            return []
-        latest = str(frame.iloc[-1]["run_id"])
-        return frame[frame["run_id"].astype(str) == latest].to_dict("records")
+        store = _runtime_result_store(db_path)
+        return [] if store is None else store.latest_queue("live_run_queue")
     except Exception:
         return []
 
@@ -760,29 +703,21 @@ def latest_run_queue(*, db_path: Path | None = None) -> list[dict[str, Any]]:
 def restore_compare_result_from_db(run_id: str, *, db_path: Path | None = None) -> CompareRunResult | None:
     """从已落库模型回答重建结果对象；不重新调用模型。"""
     try:
-        from app.services.dataset_service import database_ready, get_db_path
-        from app.db.repository import Repository
-
-        path = db_path or get_db_path()
-        if not database_ready(path):
+        store = _runtime_result_store(db_path)
+        if store is None:
             return None
-        _ensure_live_run_response_columns(path)
-        repo = Repository(path)
-        responses = repo.list_df("live_run_responses", order_by="id")
-        if responses.empty or "run_id" not in responses.columns:
+        matched = store.list_rows("live_run_responses", run_id=str(run_id))
+        if not matched:
             return None
-        matched = responses[responses["run_id"].astype(str) == str(run_id)]
-        if matched.empty:
-            return None
-        outcomes = tuple(_run_outcome_from_row(row) for row in matched.to_dict("records"))
-        queue = load_run_queue(run_id, db_path=path)
+        outcomes = tuple(_run_outcome_from_row(row) for row in matched)
+        queue = load_run_queue(run_id, db_path=db_path)
         model_ids = _dedupe_preserve_order(
             [str(row.get("model_id") or "") for row in queue]
             or [outcome.model_id for outcome in outcomes]
         )
-        provider = str(matched.iloc[0].get("provider") or "")
-        mode = str(matched.iloc[0].get("run_mode") or "live")
-        created_at = str(matched.iloc[0].get("created_at") or datetime.now().isoformat(timespec="seconds"))
+        provider = str(matched[0].get("provider") or "")
+        mode = str(matched[0].get("run_mode") or "live")
+        created_at = str(matched[0].get("created_at") or datetime.now().isoformat(timespec="seconds"))
         return CompareRunResult(
             run_id=str(run_id),
             provider=provider,
@@ -811,13 +746,34 @@ def _dedupe_preserve_order(items: Sequence[str]) -> list[str]:
     return ordered
 
 
-def _safe_list_df(repo, table: str):
-    try:
-        return repo.list_df(table, order_by="id")
-    except Exception:
-        import pandas as pd
+def _runtime_result_store(db_path: Path | None):
+    if db_path is not None and not Path(db_path).exists():
+        return None
+    from app.persistence import get_result_store
 
-        return pd.DataFrame()
+    return get_result_store(db_path)
+
+
+def _build_fallback_run_metadata(
+    run_id: str,
+    provider: str,
+    queue_items: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    from app.services.run_checkpoint import build_run_metadata
+
+    model_ids = _dedupe_preserve_order(
+        [_clean(item.get("model_id")) for item in queue_items or []]
+    )
+    return build_run_metadata(
+        run_id=str(run_id),
+        provider=str(provider or ""),
+        model_ids=model_ids,
+        queue_items=queue_items,
+        generation_parameters={},
+        judge_parameters={},
+        dataset_version="",
+        prompt_payload={"system": _SYSTEM_PROMPT, "output_hint": _OUTPUT_HINT},
+    )
 
 
 def _run_outcome_row(run_id: str, mode: str, outcome: RunOutcome) -> dict[str, Any]:
@@ -849,69 +805,6 @@ def _run_outcome_row(run_id: str, mode: str, outcome: RunOutcome) -> dict[str, A
     }
 
 
-def _find_run_response_row(repo, run_id: str, case_id: str, model_id: str) -> dict[str, Any] | None:
-    rows = _safe_list_df(repo, "live_run_responses")
-    if rows.empty:
-        return None
-    required = {"run_id", "case_id", "model_name"}
-    if not required.issubset(rows.columns):
-        return None
-    matched = rows[
-        (rows["run_id"].astype(str) == str(run_id))
-        & (rows["case_id"].astype(str) == str(case_id))
-        & (rows["model_name"].astype(str) == str(model_id))
-    ]
-    if matched.empty:
-        return None
-    return matched.iloc[0].to_dict()
-
-
-def _should_update_existing_run_outcome(existing: Mapping[str, Any], outcome: RunOutcome) -> bool:
-    existing_status = str(existing.get("run_status") or "").strip().lower()
-    return existing_status != "success" or outcome.success
-
-
-def _update_run_queue_item(
-    run_id: str,
-    case_id: str,
-    model_id: str,
-    changes: dict[str, Any],
-    *,
-    increment_attempt: bool = False,
-    db_path: Path | None = None,
-) -> bool:
-    try:
-        from app.services.dataset_service import database_ready, ensure_recoverable_queue_tables, get_db_path
-        from app.db.repository import Repository
-
-        path = db_path or get_db_path()
-        if not database_ready(path):
-            return False
-        ensure_recoverable_queue_tables(path)
-        repo = Repository(path)
-        rows = repo.list_df("live_run_queue", order_by="id")
-        if rows.empty:
-            return False
-        matched = rows[
-            (rows["run_id"].astype(str) == str(run_id))
-            & (rows["case_id"].astype(str) == str(case_id))
-            & (rows["model_id"].astype(str) == str(model_id))
-        ]
-        if matched.empty:
-            return False
-        row = matched.iloc[0].to_dict()
-        row_id = _as_int(row.get("id"))
-        if row_id is None:
-            return False
-        payload = dict(changes)
-        if increment_attempt:
-            payload["attempt_count"] = int(row.get("attempt_count") or 0) + 1
-        repo.update("live_run_queue", row_id, payload)
-        return True
-    except Exception:
-        return False
-
-
 def _run_outcome_from_row(row: Mapping[str, Any]) -> RunOutcome:
     status = str(row.get("run_status") or "").strip().lower()
     return RunOutcome(
@@ -939,32 +832,6 @@ def _run_outcome_from_row(row: Mapping[str, Any]) -> RunOutcome:
         timeout_seconds=_positive_float(row.get("timeout_seconds")),
         timeout_source=row.get("timeout_source"),
     )
-
-
-def _ensure_live_run_response_columns(db_path: Path) -> None:
-    """Add diagnostic columns to existing runtime DBs without rebuilding data."""
-    import sqlite3
-
-    with sqlite3.connect(str(db_path)) as connection:
-        existing = {
-            row[1]
-            for row in connection.execute("PRAGMA table_info(live_run_responses)").fetchall()
-        }
-        text_columns = (
-            "finish_reason",
-            "incomplete_reason",
-            "first_finish_reason",
-            "final_finish_reason",
-            "timeout_source",
-        )
-        for column in text_columns:
-            if column not in existing:
-                connection.execute(f"ALTER TABLE live_run_responses ADD COLUMN {column} TEXT")
-        if "retry_count" not in existing:
-            connection.execute("ALTER TABLE live_run_responses ADD COLUMN retry_count INTEGER")
-        if "timeout_seconds" not in existing:
-            connection.execute("ALTER TABLE live_run_responses ADD COLUMN timeout_seconds REAL")
-        connection.commit()
 
 
 def _as_int(value: Any) -> int | None:

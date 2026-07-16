@@ -444,7 +444,14 @@ class ScorePersistenceTests(unittest.TestCase):
         self.assertEqual({"queued"}, {row["status"] for row in queued})
 
         first = queue_items[0]
-        sc.mark_score_queue_item_running(score_run_id, first.case_id, first.model_id, db_path=_DB_PATH)
+        self.assertTrue(
+            sc.mark_score_queue_item_running(
+                score_run_id,
+                first.case_id,
+                first.model_id,
+                db_path=_DB_PATH,
+            )
+        )
         score = sc.score_single(
             _FakeJudge(),
             "judge/x",

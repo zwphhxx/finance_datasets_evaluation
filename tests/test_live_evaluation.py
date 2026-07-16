@@ -144,12 +144,34 @@ class PersistenceTests(unittest.TestCase):
             for task in tasks
         ]
 
-        self.assertTrue(er.initialize_run_queue(run_id, "mock", queue_items, db_path=_DB_PATH))
+        run_metadata = {
+            "run_id": run_id,
+            "provider": "mock",
+            "dataset_hash": "d" * 64,
+            "prompt_hash": "p" * 64,
+            "status": "running",
+        }
+        self.assertTrue(
+            er.initialize_run_queue(
+                run_id,
+                "mock",
+                queue_items,
+                metadata=run_metadata,
+                db_path=_DB_PATH,
+            )
+        )
         queued = er.load_run_queue(run_id, db_path=_DB_PATH)
         self.assertEqual(2, len(queued))
         self.assertEqual({"queued"}, {row["status"] for row in queued})
 
-        er.mark_run_queue_item_running(run_id, queue_items[0]["case_id"], "mock/chat-base", db_path=_DB_PATH)
+        self.assertTrue(
+            er.mark_run_queue_item_running(
+                run_id,
+                queue_items[0]["case_id"],
+                "mock/chat-base",
+                db_path=_DB_PATH,
+            )
+        )
         outcome = er.run_single(get_provider("mock"), "mock/chat-base", tasks[0])
         self.assertTrue(er.persist_run_outcome(run_id, "mock", outcome, db_path=_DB_PATH))
 

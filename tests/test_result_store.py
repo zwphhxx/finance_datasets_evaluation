@@ -62,6 +62,27 @@ def test_queue_initialization_is_idempotent(tmp_path):
     assert len(store.list_rows("live_run_queue", run_id="RUN-1")) == 1
 
 
+def test_queue_reinitialization_preserves_completed_status(tmp_path):
+    store = sqlite_store(tmp_path)
+    metadata = run_metadata()
+    queue = [run_queue_row()]
+    store.initialize_run(metadata, queue)
+    store.save_run_outcome(
+        {
+            "run_id": "RUN-1",
+            "case_id": "FD-001",
+            "model_name": "m1",
+            "run_status": "success",
+            "answer_text": "saved",
+        },
+        queue_status="success",
+    )
+
+    store.initialize_run(metadata, queue)
+
+    assert store.list_rows("live_run_queue", run_id="RUN-1")[0]["status"] == "success"
+
+
 def test_mark_running_is_persisted_before_call(tmp_path):
     store = sqlite_store(tmp_path)
     store.initialize_run(run_metadata(), [run_queue_row()])
