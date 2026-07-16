@@ -90,14 +90,10 @@ def load_live_responses(db_path=None) -> pd.DataFrame:
 
 def _load_live_table(table: str, db_path) -> pd.DataFrame:
     try:
-        from app.services.dataset_service import database_ready, get_db_path
-        from app.db.repository import Repository
+        from app.persistence import get_result_store
 
-        path = db_path or get_db_path()
-        if not database_ready(path):
-            return pd.DataFrame()
-        frame = Repository(path).list_df(table, order_by="id")
-        return frame if isinstance(frame, pd.DataFrame) else pd.DataFrame()
+        rows = get_result_store(db_path).list_rows(table)
+        return pd.DataFrame(rows)
     except Exception:
         return pd.DataFrame()
 

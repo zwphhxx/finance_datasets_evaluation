@@ -667,6 +667,23 @@ def load_run_queue(run_id: str, *, db_path: Path | None = None) -> list[dict[str
         return []
 
 
+def load_run_metadata(
+    run_id: str,
+    *,
+    db_path: Path | None = None,
+) -> dict[str, Any] | None:
+    """读取用于验证安全恢复的数据集与提示词版本信息。"""
+
+    try:
+        store = _runtime_result_store(db_path)
+        if store is None:
+            return None
+        rows = store.list_rows("live_evaluation_runs", run_id=str(run_id))
+        return rows[0] if rows else None
+    except Exception:
+        return None
+
+
 def summarize_run_queue(run_id: str, *, db_path: Path | None = None) -> dict[str, int]:
     rows = load_run_queue(run_id, db_path=db_path)
     counts = {"total": len(rows), "queued": 0, "running": 0, "success": 0, "failed": 0, "skipped": 0}

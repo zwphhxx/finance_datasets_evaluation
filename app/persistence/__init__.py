@@ -26,6 +26,13 @@ def get_result_store(
 ) -> ResultStore:
     """Return a cached, schema-ready store for the selected backend."""
 
+    if db_path is None and secrets is None:
+        try:
+            import streamlit as st
+
+            secrets = dict(st.secrets)
+        except Exception:
+            secrets = None
     settings = resolve_result_store_settings(db_path, secrets=secrets)
     return _store_for_url(settings.url)
 

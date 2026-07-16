@@ -163,6 +163,9 @@ class PersistenceTests(unittest.TestCase):
         queued = er.load_run_queue(run_id, db_path=_DB_PATH)
         self.assertEqual(2, len(queued))
         self.assertEqual({"queued"}, {row["status"] for row in queued})
+        saved_metadata = er.load_run_metadata(run_id, db_path=_DB_PATH)
+        self.assertEqual("d" * 64, saved_metadata["dataset_hash"])
+        self.assertEqual("p" * 64, saved_metadata["prompt_hash"])
 
         self.assertTrue(
             er.mark_run_queue_item_running(
