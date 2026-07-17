@@ -104,27 +104,27 @@ git commit -m "feat: select compatible evaluation cohorts"
 - Modify: `tests/test_ui_refactor.py`
 - Modify: `src/ui/conclusions.py`
 
-- [ ] **Step 1: 写入会失败的界面接线测试**
+- [x] **Step 1: 写入会失败的界面接线测试**
 
 增加源码级回归测试，要求结论页调用 `load_current_cohort_scores()`，且不直接用全部 `load_live_scores()` 生成结论。
 
-- [ ] **Step 2: 运行测试并确认失败**
+- [x] **Step 2: 运行测试并确认失败**
 
 Run: `pytest -q tests/test_ui_refactor.py`
 
 Expected: 新测试失败。
 
-- [ ] **Step 3: 修改结论页数据入口**
+- [x] **Step 3: 修改结论页数据入口**
 
 将 `src/ui/conclusions.py` 的结论数据读取改为 `cc.load_current_cohort_scores()`；不修改任何页面文案。
 
-- [ ] **Step 4: 运行相关测试并确认通过**
+- [x] **Step 4: 运行相关测试并确认通过**
 
 Run: `pytest -q tests/test_ui_refactor.py tests/test_conclusions.py tests/test_model_use_boundaries.py`
 
 Expected: 全部通过。
 
-- [ ] **Step 5: 提交界面接线**
+- [x] **Step 5: 提交界面接线**
 
 ```bash
 git add src/ui/conclusions.py tests/test_ui_refactor.py

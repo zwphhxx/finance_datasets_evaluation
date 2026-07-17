@@ -27,7 +27,7 @@ def render_conclusions_page(data_bundle: dict) -> None:
     base = data_bundle.get("base") or data_bundle["data"]
     tasks = getattr(base, "tasks", None)
 
-    live_scores = cc.load_live_scores()
+    live_scores = cc.load_current_cohort_scores()
     ai_scores, excluded_scores = cc.split_live_scores(live_scores)
     model_summaries = cc.build_model_issue_summaries(ai_scores, pd.DataFrame(), tasks)
 
