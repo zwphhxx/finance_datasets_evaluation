@@ -42,6 +42,7 @@ from src.ui.test_run import (
     merge_sample_checkbox_selection,
     prompt_preview_task_for_case,
     requires_large_run_confirmation,
+    resolve_persisted_answer_run_id,
     resolve_eval_max_tokens,
     resolve_eval_temperature,
     sample_checkbox_key,
@@ -644,6 +645,56 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn('<pre class="markdown-detail-code"><code>1. code\n2. code</code></pre>', html)
         self.assertNotIn("<ol", html)
         self.assertNotIn('class="markdown-detail-heading"', html)
+
+
+class PersistedAnswerRecoveryTests(unittest.TestCase):
+    def test_run_selection_prefers_explicit_selection_then_current_then_latest(self):
+        runs = [{"run_id": "RUN-NEW"}, {"run_id": "RUN-OLD"}]
+
+        self.assertEqual(
+            "RUN-OLD",
+            resolve_persisted_answer_run_id(
+                runs,
+                selected_run_id="RUN-OLD",
+                current_run_id="RUN-NEW",
+            ),
+        )
+        self.assertEqual(
+            "RUN-NEW",
+            resolve_persisted_answer_run_id(
+                runs,
+                selected_run_id="missing",
+                current_run_id="RUN-NEW",
+            ),
+        )
+        self.assertEqual(
+            "RUN-NEW",
+            resolve_persisted_answer_run_id(runs),
+        )
+
+    def test_page_restores_persisted_answers_before_checkpoint_resume_gate(self):
+        source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+        selector_source = source[
+            source.index("def _render_persisted_answer_run_selector"):
+            source.index("def _recover_persisted_run")
+        ]
+        recovery_source = source[
+            source.index("def _recover_persisted_run"):
+            source.index("def _recover_latest_score")
+        ]
+
+        self.assertIn("er.list_persisted_answer_runs()", selector_source)
+        self.assertIn('"查看持久化批次"', selector_source)
+        self.assertIn("er.restore_compare_result_from_db(run_id)", recovery_source)
+        self.assertIn("resume_allowed", recovery_source)
+        self.assertLess(
+            recovery_source.index("er.restore_compare_result_from_db(run_id)"),
+            recovery_source.index("_checkpoint_matches_current"),
+        )
+        self.assertNotIn(
+            "if not _checkpoint_matches_current",
+            recovery_source,
+        )
 
 
 class SampleSelectionTests(unittest.TestCase):

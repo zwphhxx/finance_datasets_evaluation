@@ -75,6 +75,7 @@ _MODEL_OPTION_LIMIT = 30
 _ANSWER_PREVIEW_LIMIT = 1500
 _SLOW_MODEL_KEYWORDS = ("longcat", "r1", "reasoning", "thinking")
 _RUN_STATE_KEY = "test_run_run_state"
+_ANSWER_RUN_ID_KEY = "test_run_answer_run_id"
 _PARTIAL_OUTCOMES_KEY = "test_run_partial_outcomes"
 _LAST_RUN_STATUS_KEY = "test_run_last_run_status"
 _SCORE_STATE_KEY = "test_run_score_state"
@@ -204,6 +205,27 @@ def get_test_run_steps() -> list[str]:
 def get_advanced_setting_items() -> list[str]:
     """No advanced controls are exposed on the test-run page."""
     return []
+
+
+def resolve_persisted_answer_run_id(
+    run_summaries: list[dict],
+    *,
+    selected_run_id: str = "",
+    current_run_id: str = "",
+) -> str:
+    """Resolve a stable persisted run selection without inventing a run ID."""
+    available = [
+        str(row.get("run_id") or "").strip()
+        for row in run_summaries or []
+        if str(row.get("run_id") or "").strip()
+    ]
+    selected = str(selected_run_id or "").strip()
+    current = str(current_run_id or "").strip()
+    if selected in available:
+        return selected
+    if current in available:
+        return current
+    return available[0] if available else ""
 
 
 def build_sample_options(
@@ -1175,6 +1197,7 @@ def _set_run_state(
     queue_items: list[dict],
     outcomes: list[er.RunOutcome],
     message: str = "",
+    resume_allowed: bool = True,
 ) -> None:
     st.session_state[_RUN_STATE_KEY] = {
         "status": status,
@@ -1185,6 +1208,7 @@ def _set_run_state(
         "created_at": created_at,
         "queue_items": list(queue_items),
         "message": message,
+        "resume_allowed": bool(resume_allowed),
     }
     st.session_state[_PARTIAL_OUTCOMES_KEY] = list(outcomes)
     st.session_state[_LAST_RUN_STATUS_KEY] = status
@@ -1275,18 +1299,61 @@ def _compare_result_from_state(state: dict | None = None, outcomes: list[er.RunO
     )
 
 
-def _recover_latest_run(task_records: list[dict]) -> object | None:
-    if _run_state() or eval_state.get_last_run() is not None:
-        return eval_state.get_last_run()
-    rows = er.latest_run_queue()
-    if not rows:
-        return None
-    run_id = str(rows[0].get("run_id") or "")
-    if not run_id:
+def _persisted_run_option_label(summary: dict) -> str:
+    created_at = str(summary.get("created_at") or "")[:19].replace("T", " ")
+    return (
+        f"{created_at or '时间未记录'}｜"
+        f"{int(summary.get('model_count') or 0)} 个模型｜"
+        f"{int(summary.get('case_count') or 0)} 个样本｜"
+        f"{int(summary.get('response_count') or 0)} 条回答"
+    )
+
+
+def _render_persisted_answer_run_selector(result) -> str:
+    summaries = er.list_persisted_answer_runs()
+    if not summaries:
+        return ""
+    current_run_id = str(
+        getattr(result, "run_id", "")
+        or _run_state().get("run_id")
+        or ""
+    )
+    available_ids = {
+        str(row.get("run_id") or "")
+        for row in summaries
+    }
+    if current_run_id and current_run_id not in available_ids:
+        return current_run_id
+    selected_run_id = resolve_persisted_answer_run_id(
+        summaries,
+        selected_run_id=str(st.session_state.get(_ANSWER_RUN_ID_KEY) or ""),
+        current_run_id=current_run_id,
+    )
+    if st.session_state.get(_ANSWER_RUN_ID_KEY) not in available_ids:
+        st.session_state[_ANSWER_RUN_ID_KEY] = selected_run_id
+    by_id = {str(row["run_id"]): row for row in summaries}
+    return st.selectbox(
+        "查看持久化批次",
+        options=list(by_id),
+        format_func=lambda run_id: _persisted_run_option_label(by_id[run_id]),
+        key=_ANSWER_RUN_ID_KEY,
+    )
+
+
+def _recover_persisted_run(run_id: str, task_records: list[dict]) -> object | None:
+    rows = er.load_run_queue(run_id)
+    result = er.restore_compare_result_from_db(run_id)
+    if result is None:
         return None
     queue_items = _run_queue_items_from_rows(rows, task_records)
-    model_ids = _dedupe([str(row.get("model_id") or "") for row in rows])
-    provider = str(rows[0].get("provider") or "")
+    model_ids = _dedupe(
+        [str(row.get("model_id") or "") for row in rows]
+        or list(getattr(result, "model_ids", ()) or ())
+    )
+    provider = str(
+        (rows[0].get("provider") if rows else "")
+        or getattr(result, "provider", "")
+    )
     current_metadata = _run_checkpoint_metadata(
         run_id,
         provider,
@@ -1295,29 +1362,43 @@ def _recover_latest_run(task_records: list[dict]) -> object | None:
         _EVAL_TEMPERATURE_DEFAULT,
         resolve_eval_max_tokens(),
     )
-    if not _checkpoint_matches_current(
+    resume_allowed = bool(rows) and _checkpoint_matches_current(
         er.load_run_metadata(run_id),
         current_metadata,
-    ):
-        return None
-    result = er.restore_compare_result_from_db(run_id)
+    )
     summary = er.summarize_run_queue(run_id)
     status = "interrupted" if summary.get("unfinished") else "completed"
-    if result is not None:
-        eval_state.set_last_run(result)
+    eval_state.set_last_run(result)
     _set_run_state(
         status=status,
         run_id=run_id,
-        provider=str(rows[0].get("provider") or getattr(result, "provider", "")),
+        provider=provider,
         model_ids=model_ids,
         mode=str(getattr(result, "mode", "") or "live"),
-        created_at=str(rows[0].get("created_at") or datetime.now().isoformat(timespec="seconds")),
+        created_at=str(
+            (rows[0].get("created_at") if rows else "")
+            or getattr(result, "created_at", "")
+            or datetime.now().isoformat(timespec="seconds")
+        ),
         queue_items=queue_items,
-        outcomes=list(getattr(result, "outcomes", []) or []),
-        message="检测到最近一次运行记录。已完成结果会保留，未完成项可稍后继续。",
+        outcomes=list(getattr(result, "outcomes", ()) or ()),
+        message="检测到持久化运行记录。已完成结果会保留，未完成项可稍后继续。",
+        resume_allowed=resume_allowed,
     )
-    st.session_state["test_run_persisted"] = bool(result is not None and getattr(result, "outcomes", None))
+    st.session_state["test_run_persisted"] = True
     return result
+
+
+def _recover_latest_run(task_records: list[dict]) -> object | None:
+    if _run_state() or eval_state.get_last_run() is not None:
+        return eval_state.get_last_run()
+    summaries = er.list_persisted_answer_runs()
+    if not summaries:
+        return None
+    run_id = str(summaries[0].get("run_id") or "")
+    if not run_id:
+        return None
+    return _recover_persisted_run(run_id, task_records)
 
 
 def _recover_latest_score(compare_result) -> object | None:
@@ -1389,9 +1470,10 @@ def _score_queue_items_from_rows(rows: list[dict], compare_result) -> list[er.Ru
 
 def _finalize_run_result(status: str, state: dict, outcomes: list[er.RunOutcome], message: str = "") -> None:
     queue_items = list(state.get("queue_items") or [])
+    run_id = str(state.get("run_id") or er.generate_run_id())
     _set_run_state(
         status=status,
-        run_id=str(state.get("run_id") or er.generate_run_id()),
+        run_id=run_id,
         provider=str(state.get("provider") or ""),
         model_ids=list(state.get("model_ids") or []),
         mode=str(state.get("mode") or "live"),
@@ -1400,6 +1482,7 @@ def _finalize_run_result(status: str, state: dict, outcomes: list[er.RunOutcome]
         outcomes=outcomes,
         message=message,
     )
+    st.session_state[_ANSWER_RUN_ID_KEY] = run_id
     result = _compare_result_from_state(_run_state(), outcomes)
     if result is not None:
         persisted_from_queue = bool(st.session_state.get("test_run_persisted"))
@@ -2024,6 +2107,9 @@ def _render_live_score_queue(
 
 def _render_results(provider_name: str, temperature, max_tokens, task_records: list[dict]) -> None:
     result = eval_state.get_last_run()
+    selected_run_id = _render_persisted_answer_run_selector(result)
+    if selected_run_id and selected_run_id != str(getattr(result, "run_id", "") or ""):
+        result = _recover_persisted_run(selected_run_id, task_records)
     state = _run_state()
     if result is None and not state:
         result = _recover_latest_run(task_records)
@@ -2067,8 +2153,11 @@ def _render_results(provider_name: str, temperature, max_tokens, task_records: l
 
 def _render_unfinished_run_without_result(state: dict, provider_name: str, temperature, max_tokens) -> None:
     queue_items = list(state.get("queue_items") or [])
+    resume_allowed = bool(state.get("resume_allowed", True))
     st.markdown("**本次运行未完成**")
     st.caption(f"已完成 0 条 · 未完成 {len(queue_items)} 条 · 失败 0 条。未完成项可继续运行。")
+    if not resume_allowed:
+        st.caption("当前运行可查看已保存回答，但运行元数据与当前任务不一致，不能继续未完成项。")
     resume_clicked = False
     col1, col2 = st.columns([1, 1])
     with col1:
@@ -2076,7 +2165,7 @@ def _render_unfinished_run_without_result(state: dict, provider_name: str, tempe
             "继续未完成项",
             key="test_run_resume_empty",
             type="secondary",
-            disabled=not queue_items,
+            disabled=not queue_items or not resume_allowed,
             use_container_width=True,
         )
     with col2:
@@ -2098,6 +2187,7 @@ def _render_unfinished_run_without_result(state: dict, provider_name: str, tempe
 
 def _render_partial_run_notice(result, provider_name: str, temperature, max_tokens) -> None:
     state = _run_state()
+    resume_allowed = bool(state.get("resume_allowed", True))
     queue_items = list(state.get("queue_items") or [])
     outcomes = list(result.outcomes)
     remaining = build_remaining_queue_items(queue_items, outcomes)
@@ -2113,6 +2203,8 @@ def _render_partial_run_notice(result, provider_name: str, temperature, max_toke
     )
     if state.get("message"):
         st.caption(str(state.get("message")))
+    if not resume_allowed:
+        st.caption("当前运行可查看已保存回答，但运行元数据与当前任务不一致，不能继续未完成项。")
     resume_clicked = False
     retry_clicked = False
     col1, col2, col3 = st.columns([1, 1, 1])
@@ -2121,7 +2213,7 @@ def _render_partial_run_notice(result, provider_name: str, temperature, max_toke
             "继续未完成项",
             key="test_run_resume",
             type="secondary",
-            disabled=not remaining,
+            disabled=not remaining or not resume_allowed,
             use_container_width=True,
         )
     with col2:
@@ -2129,7 +2221,7 @@ def _render_partial_run_notice(result, provider_name: str, temperature, max_toke
             "重试失败项",
             key="test_run_retry_failed_run_partial",
             type="secondary",
-            disabled=not failed_items,
+            disabled=not failed_items or not resume_allowed,
             use_container_width=True,
         )
     with col3:
@@ -2162,13 +2254,21 @@ def _render_partial_run_notice(result, provider_name: str, temperature, max_toke
 
 def _render_retry_failed_run_action(result, provider_name: str, temperature, max_tokens) -> None:
     state = _run_state()
+    resume_allowed = bool(state.get("resume_allowed", True))
     queue_items = list(state.get("queue_items") or [])
     outcomes = list(getattr(result, "outcomes", []) or [])
     failed_items = build_failed_run_queue_items(queue_items, outcomes)
     if not failed_items:
         return
     st.caption("部分模型回答失败，可只重试失败项；已完成回答不会重新生成。")
-    if st.button("重试失败项", key="test_run_retry_failed_run", type="secondary"):
+    if not resume_allowed:
+        st.caption("当前运行可查看已保存回答，但运行元数据与当前任务不一致，不能重试失败项。")
+    if st.button(
+        "重试失败项",
+        key="test_run_retry_failed_run",
+        type="secondary",
+        disabled=not resume_allowed,
+    ):
         successful = [outcome for outcome in outcomes if outcome.success]
         _execute_run_queue(
             provider_name,
