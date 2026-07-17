@@ -120,12 +120,14 @@ header,
 .page-title-main {
     min-width: 0;
 }
-.page-title-heading {
+.page-title-heading,
+[data-testid="stMarkdownContainer"] .page-title-heading {
     color: var(--fde-ink);
     font-size: 1.45rem;
     font-weight: 760;
     line-height: 1.24;
     margin: 0;
+    padding: 0;
     letter-spacing: 0;
 }
 .page-title-copy {
@@ -155,12 +157,14 @@ header,
     font-weight: 700;
     margin-bottom: 0.22rem;
 }
-.compact-hero-title {
+.compact-hero-title,
+[data-testid="stMarkdownContainer"] .compact-hero-title {
     color: var(--fde-ink);
     font-size: 1.62rem;
     font-weight: 780;
     line-height: 1.22;
     margin: 0;
+    padding: 0;
 }
 .compact-hero-copy {
     color: var(--fde-muted);
@@ -195,7 +199,8 @@ header,
     margin: 0.35rem 0 1.45rem 0;
     padding-bottom: 0;
 }
-.brief-title {
+.brief-title,
+[data-testid="stMarkdownContainer"] .brief-title {
     color: var(--fde-ink);
     font-size: 2.35rem;
     font-weight: 820;
@@ -203,6 +208,7 @@ header,
     letter-spacing: 0;
     margin: 0;
     max-width: 58rem;
+    padding: 0;
 }
 .process-line {
     display: flex;
@@ -257,11 +263,13 @@ header,
     line-height: 1;
     letter-spacing: 0;
 }
-.section-heading-title {
+.section-heading-title,
+[data-testid="stMarkdownContainer"] .section-heading-title {
     color: var(--fde-ink);
     font-weight: 820;
     line-height: 1.16;
     margin: 0;
+    padding: 0;
 }
 .section-heading-lead {
     color: var(--fde-muted);
@@ -592,15 +600,15 @@ header,
     margin-top: 0.5rem;
     overflow-wrap: anywhere;
 }
-[data-testid="stVerticalBlockBorderWrapper"]:has(.review-summary-toolbar-title) {
+[data-testid="stVerticalBlock"]:has(
+    > [data-testid="stLayoutWrapper"]
+    > [data-testid="stHorizontalBlock"]
+    .review-summary-toolbar-title
+) {
     border-color: var(--fde-line) !important;
     border-radius: var(--fde-radius) !important;
     background: var(--fde-surface) !important;
     box-shadow: none !important;
-    margin: 0.55rem 0 1rem 0;
-}
-[data-testid="stVerticalBlockBorderWrapper"]:has(.review-summary-toolbar-title)
-    [data-testid="stVerticalBlock"] {
     gap: 0.25rem;
 }
 [data-testid="stHorizontalBlock"]:has(.review-summary-toolbar-title) {
@@ -639,15 +647,20 @@ header,
     margin-top: 0.18rem;
     overflow-wrap: anywhere;
 }
-[data-testid="stVerticalBlockBorderWrapper"]:has(.detail-panel-toolbar-title) {
+[data-testid="stMarkdownContainer"]:has(.review-summary-toolbar-title),
+[data-testid="stMarkdownContainer"]:has(.detail-panel-toolbar-title),
+[data-testid="stMarkdownContainer"]:has(.sample-detail-toolbar-title) {
+    margin-bottom: 0 !important;
+}
+[data-testid="stVerticalBlock"]:has(
+    > [data-testid="stLayoutWrapper"]
+    > [data-testid="stHorizontalBlock"]
+    .detail-panel-toolbar-title
+) {
     border-color: var(--fde-line) !important;
     border-radius: var(--fde-radius) !important;
     background: var(--fde-surface) !important;
     box-shadow: none !important;
-    margin: 0.55rem 0 1rem 0;
-}
-[data-testid="stVerticalBlockBorderWrapper"]:has(.detail-panel-toolbar-title)
-    [data-testid="stVerticalBlock"] {
     gap: 0.25rem;
 }
 [data-testid="stHorizontalBlock"]:has(.detail-panel-toolbar-title) {

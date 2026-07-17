@@ -336,7 +336,7 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("_model_short_name", source)
         self.assertIn("_task_lookup_for_result", source)
         self.assertIn("markdown-detail-heading", Path("src/ui/components.py").read_text(encoding="utf-8"))
-        self.assertIn('st.selectbox(\n        "查看回答"', source)
+        self.assertRegex(source, r'st\.selectbox\(\s*"查看回答"')
         self.assertIn("_render_selected_outcome_detail", source)
         self.assertIn("失败项不会进入 AI 评分", source)
         self.assertIn("默认展示第一条失败原因", source)

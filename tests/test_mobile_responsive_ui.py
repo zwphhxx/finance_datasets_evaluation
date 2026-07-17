@@ -90,6 +90,61 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             )
         )
 
+    def test_custom_headings_override_streamlit_native_spacing(self):
+        from src.ui.components import STYLE_CSS
+
+        for selector in [
+            '[data-testid="stMarkdownContainer"] .page-title-heading',
+            '[data-testid="stMarkdownContainer"] .compact-hero-title',
+            '[data-testid="stMarkdownContainer"] .brief-title',
+            '[data-testid="stMarkdownContainer"] .section-heading-title',
+        ]:
+            declarations = _declarations_for_selector(STYLE_CSS, selector)
+            self.assertTrue(declarations, selector)
+            self.assertTrue(
+                any(re.search(r"padding\s*:\s*0\s*;", rule) for rule in declarations),
+                selector,
+            )
+
+        mobile_css = self._responsive_css().split(
+            "@media (max-width: 760px)",
+            1,
+        )[1].split("@media (max-width: 480px)", 1)[0]
+        expected_mobile_sizes = {
+            '[data-testid="stMarkdownContainer"] .page-title-heading': "1.3rem",
+            '[data-testid="stMarkdownContainer"] .brief-title': "1.78rem",
+        }
+        for selector, expected_size in expected_mobile_sizes.items():
+            self.assertTrue(
+                any(
+                    re.search(
+                        rf"font-size\s*:\s*{re.escape(expected_size)}\s*;",
+                        rule,
+                    )
+                    for rule in _declarations_for_selector(mobile_css, selector)
+                ),
+                selector,
+            )
+
+    def test_mobile_home_page_uses_compact_section_rhythm(self):
+        mobile_css = self._responsive_css().split(
+            "@media (max-width: 760px)",
+            1,
+        )[1].split("@media (max-width: 480px)", 1)[0]
+
+        self.assertTrue(
+            any(
+                re.search(r"margin-top\s*:\s*1\.75rem\s*;", rule)
+                for rule in _declarations_for_selector(mobile_css, ".home-section")
+            )
+        )
+        self.assertTrue(
+            any(
+                re.search(r"margin-top\s*:\s*1\.25rem\s*;", rule)
+                for rule in _declarations_for_selector(mobile_css, ".home-section-first")
+            )
+        )
+
     def test_mobile_columns_dialogs_and_tables_fit_the_viewport(self):
         css = self._responsive_css()
 
@@ -238,6 +293,59 @@ class MobileResponsiveUIContracts(unittest.TestCase):
                     disabled_selector,
                 )
             )
+        )
+
+        answer_viewer_selector = (
+            ".stApp:has(.st-key-test_run_answer_viewer) .st-key-test_run_run"
+        )
+        self.assertTrue(
+            any(
+                re.search(r"position\s*:\s*static\b", declarations)
+                for declarations in _declarations_for_selector(
+                    mobile_css,
+                    answer_viewer_selector,
+                )
+            )
+        )
+
+        run_button_wrapper = ".st-key-test_run_run .stButton"
+        self.assertTrue(
+            any(
+                re.search(r"width\s*:\s*100%\s*;", declarations)
+                for declarations in _declarations_for_selector(
+                    mobile_css,
+                    run_button_wrapper,
+                )
+            )
+        )
+
+    def test_answer_viewer_and_detail_toolbar_have_stable_mobile_spacing(self):
+        from src.ui.components import STYLE_CSS
+
+        test_run_source = TEST_RUN_PATH.read_text(encoding="utf-8")
+        self.assertIn(
+            'with st.container(key="test_run_answer_viewer"):',
+            test_run_source,
+        )
+
+        normalized_css = re.sub(r"\s+", " ", STYLE_CSS)
+        self.assertRegex(
+            normalized_css,
+            (
+                r'\[data-testid="stMarkdownContainer"\]:has\('
+                r'\.detail-panel-toolbar-title\)[^{]*\{[^}]*'
+                r'margin-bottom\s*:\s*0\s*!important\s*;'
+            ),
+        )
+        self.assertRegex(
+            normalized_css,
+            (
+                r'\[data-testid="stVerticalBlock"\]:has\('
+                r'\s*> \[data-testid="stLayoutWrapper"\] '
+                r'> \[data-testid="stHorizontalBlock"\] '
+                r'\.detail-panel-toolbar-title\s*\)[^{]*\{[^}]*'
+                r'gap\s*:\s*0\.25rem\s*;'
+            ),
         )
 
     def test_sample_table_has_a_stable_key_and_mobile_minimum_width(self):

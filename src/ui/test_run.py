@@ -2375,16 +2375,17 @@ def _render_answer_viewer(result, task_records: list[dict]) -> str | None:
         st.caption("暂无回答可查看。")
         return None
 
-    task_lookup = _task_lookup_for_result(result, task_records)
-    options = build_outcome_view_options(outcomes, task_lookup)
-    selected = st.selectbox(
-        "查看回答",
-        options=[int(item["index"]) for item in options],
-        index=default_outcome_view_index(outcomes),
-        format_func=lambda idx: str(options[idx]["label"]),
-        key=f"test_run_view_outcome_{_safe_key(getattr(result, 'run_id', 'current'))}",
-    )
-    return _render_selected_outcome_detail(outcomes[int(selected)], task_lookup)
+    with st.container(key="test_run_answer_viewer"):
+        task_lookup = _task_lookup_for_result(result, task_records)
+        options = build_outcome_view_options(outcomes, task_lookup)
+        selected = st.selectbox(
+            "查看回答",
+            options=[int(item["index"]) for item in options],
+            index=default_outcome_view_index(outcomes),
+            format_func=lambda idx: str(options[idx]["label"]),
+            key=f"test_run_view_outcome_{_safe_key(getattr(result, 'run_id', 'current'))}",
+        )
+        return _render_selected_outcome_detail(outcomes[int(selected)], task_lookup)
 
 
 def _render_selected_outcome_detail(outcome: er.RunOutcome, task_lookup: dict[str, dict]) -> str | None:

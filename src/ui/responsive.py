@@ -29,7 +29,7 @@ MOBILE_RESPONSIVE_CSS = r"""
         overflow-x: clip;
         padding-left: 0.875rem;
         padding-right: 0.875rem;
-        padding-bottom: calc(6.75rem + env(safe-area-inset-bottom));
+        padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
     }
     .st-key-samples_title_bar [data-testid="stHorizontalBlock"] {
         align-items: stretch;
@@ -86,8 +86,11 @@ MOBILE_RESPONSIVE_CSS = r"""
         padding-left: 0.65rem;
         padding-right: 0.65rem;
     }
-    .page-title-heading {
+    [data-testid="stMarkdownContainer"] .page-title-heading {
         font-size: 1.3rem;
+    }
+    [data-testid="stMarkdownContainer"] .brief-title {
+        font-size: 1.78rem;
     }
     .page-title-copy {
         font-size: 0.9rem;
@@ -96,8 +99,16 @@ MOBILE_RESPONSIVE_CSS = r"""
         align-items: baseline;
         column-gap: 0.65rem;
         grid-template-columns: 2.5rem minmax(0, 1fr);
-        margin: 1.25rem 0 0.8rem;
-        padding-top: 0.75rem;
+        margin: 0.85rem 0 0.65rem;
+        padding-top: 0.65rem;
+    }
+    .home-section {
+        margin-top: 1.75rem;
+        padding-top: 1.2rem;
+    }
+    .home-section-first {
+        margin-top: 1.25rem;
+        padding-top: 0;
     }
     .detail-panel-body,
     .sample-detail-panel-body {
@@ -168,6 +179,9 @@ MOBILE_RESPONSIVE_CSS = r"""
         min-width: 0;
         width: auto !important;
     }
+    .st-key-test_run_answer_viewer {
+        gap: 0.7rem;
+    }
     .st-key-test_run_run {
         background: var(--fde-bg);
         border-top: 1px solid var(--fde-line);
@@ -185,7 +199,11 @@ MOBILE_RESPONSIVE_CSS = r"""
         min-height: 44px;
         width: 100%;
     }
-    .st-key-test_run_run:has(button:disabled) {
+    .st-key-test_run_run .stButton {
+        width: 100%;
+    }
+    .st-key-test_run_run:has(button:disabled),
+    .stApp:has(.st-key-test_run_answer_viewer) .st-key-test_run_run {
         background: transparent;
         border-top: 0;
         box-shadow: none;
@@ -195,15 +213,25 @@ MOBILE_RESPONSIVE_CSS = r"""
         right: auto;
         width: 100%;
     }
+    .stApp:has(.st-key-test_run_run:not(:has(button:disabled))) .block-container {
+        padding-bottom: calc(6.75rem + env(safe-area-inset-bottom));
+    }
+    .stApp:has(.st-key-test_run_answer_viewer) .block-container {
+        padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+    }
     body:has([data-testid="stDialog"]) .st-key-test_run_run {
         visibility: hidden;
     }
     .stApp:has(input:focus) .st-key-test_run_run,
     .stApp:has(textarea:focus) .st-key-test_run_run {
+        background: transparent;
         border-top: 0;
         box-shadow: none;
+        left: auto;
         padding: 0;
         position: static;
+        right: auto;
+        width: 100%;
     }
     .stButton > button,
     .stDownloadButton > button,
@@ -226,7 +254,7 @@ MOBILE_RESPONSIVE_CSS = r"""
     .top-nav-brand {
         font-size: 0.86rem;
     }
-    .brief-title {
+    [data-testid="stMarkdownContainer"] .brief-title {
         font-size: 1.6rem;
     }
     .section-heading-page .section-heading-title {
