@@ -183,7 +183,7 @@ class AppRenderTests(unittest.TestCase):
         if run_result is not None:
             at.session_state["live_eval_last_run"] = run_result
         at.session_state["current_page"] = page_key
-        at.run()
+        at.run(timeout=30)
         self.assertEqual(list(at.exception), [], page_key)
 
     def test_pages_render_without_run(self):

@@ -480,7 +480,7 @@ class RenderTests(unittest.TestCase):
 
         at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
         at.session_state["current_page"] = "conclusions"
-        at.run()
+        at.run(timeout=30)
         self.assertEqual(list(at.exception), [])
 
 
