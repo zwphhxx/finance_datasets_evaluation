@@ -998,7 +998,11 @@ def _render_sample_checkbox_table(sample_options: list[dict], selected_cases: li
     selected_set = set(selected_cases or [])
     checkbox_values: dict[str, bool] = {}
 
-    with st.container(height=SAMPLE_TABLE_HEIGHT, border=True):
+    with st.container(
+        height=SAMPLE_TABLE_HEIGHT,
+        border=True,
+        key="test_run_sample_table",
+    ):
         header_cols = st.columns(SAMPLE_TABLE_COLUMN_WIDTHS, gap="small")
         for col, header in zip(header_cols, SAMPLE_TABLE_HEADERS, strict=True):
             with col:
