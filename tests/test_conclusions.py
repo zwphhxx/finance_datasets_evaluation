@@ -13,6 +13,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -42,6 +43,41 @@ def _live_row(case_id, model, status, total=80, **scores):
                 "evidence_score": 12, "expression_score": 12}
     defaults.update(scores)
     row.update(defaults)
+    return row
+
+
+def _run_row(run_id, *, created_at, prompt_hash="prompt-a", **overrides):
+    row = {
+        "run_id": run_id,
+        "status": "completed",
+        "dataset_version": "v2",
+        "dataset_hash": "dataset-a",
+        "prompt_hash": prompt_hash,
+        "generation_parameters_json": '{"max_tokens": 4096, "temperature": 0.1}',
+        "judge_parameters_json": '{"judge_model": "judge-a", "max_tokens": 2048, "temperature": 0.0}',
+        "created_at": created_at,
+        "updated_at": created_at,
+    }
+    row.update(overrides)
+    return row
+
+
+def _cohort_score(row_id, run_id, case_id, model, *, updated_at, judge_status="success", **overrides):
+    row = {
+        "id": row_id,
+        "score_run_id": f"SCORE-{run_id}",
+        "run_id": run_id,
+        "case_id": case_id,
+        "eval_model": model,
+        "judge_mode": "live",
+        "judge_status": judge_status,
+        "review_status": "ai_final",
+        "status": "active",
+        "total_score": 80,
+        "created_at": updated_at,
+        "updated_at": updated_at,
+    }
+    row.update(overrides)
     return row
 
 
@@ -118,6 +154,15 @@ class FormalConclusionTests(unittest.TestCase):
         self.assertEqual(len(ai_scores), 2)
         self.assertEqual(len(excluded), 1)
 
+    def test_mock_judge_mode_never_enters_conclusions_even_with_success_status(self):
+        live = pd.DataFrame([_live_row("C1", "mock-mode", "ai_final", total=90)])
+        live.loc[0, "judge_mode"] = "mock"
+
+        ai_scores, excluded = cc.split_live_scores(live)
+
+        self.assertTrue(ai_scores.empty)
+        self.assertEqual(1, len(excluded))
+
     def test_runtime_score_summary_explains_live_status_counts(self):
         live = pd.DataFrame([
             _live_row("C1", "vendor/live-a", "confirmed", total=80),
@@ -150,6 +195,126 @@ class FormalConclusionTests(unittest.TestCase):
         self.assertIn("导出 AI 评测结果", dialog_source)
         self.assertIn("导入评分文件", dialog_source)
         self.assertIn("从演示结果文件恢复", dialog_source)
+
+
+class CompatibleCohortTests(unittest.TestCase):
+    def test_compatible_runs_merge_even_when_json_key_order_differs(self):
+        runs = pd.DataFrame([
+            _run_row("RUN-OLD", created_at="2026-07-16T10:00:00"),
+            _run_row(
+                "RUN-NEW",
+                created_at="2026-07-17T10:00:00",
+                generation_parameters_json='{"temperature":0.1,"max_tokens":4096}',
+                judge_parameters_json='{"temperature":0.0,"max_tokens":2048,"judge_model":"judge-a"}',
+            ),
+        ])
+        scores = pd.DataFrame([
+            _cohort_score(1, "RUN-OLD", "C1", "model-old", updated_at="2026-07-16T11:00:00"),
+            _cohort_score(2, "RUN-NEW", "C1", "model-new", updated_at="2026-07-17T11:00:00"),
+        ])
+
+        selected = cc.select_current_cohort_scores(runs, scores)
+        ai_scores, excluded = cc.split_live_scores(selected)
+
+        self.assertEqual({"model-old", "model-new"}, set(ai_scores["eval_model"]))
+        self.assertTrue(excluded.empty)
+
+    def test_latest_incompatible_prompt_becomes_baseline_and_excludes_old_run(self):
+        runs = pd.DataFrame([
+            _run_row("RUN-OLD", created_at="2026-07-16T10:00:00", prompt_hash="prompt-old"),
+            _run_row("RUN-NEW", created_at="2026-07-17T10:00:00", prompt_hash="prompt-new"),
+        ])
+        scores = pd.DataFrame([
+            _cohort_score(1, "RUN-OLD", "C1", "model-old", updated_at="2026-07-16T11:00:00"),
+            _cohort_score(2, "RUN-NEW", "C1", "model-new", updated_at="2026-07-17T11:00:00"),
+        ])
+
+        selected = cc.select_current_cohort_scores(runs, scores)
+        ai_scores, _ = cc.split_live_scores(selected)
+
+        self.assertEqual(["RUN-NEW"], ai_scores["run_id"].tolist())
+
+    def test_latest_success_wins_and_newer_failure_does_not_replace_it(self):
+        runs = pd.DataFrame([
+            _run_row("RUN-A", created_at="2026-07-16T10:00:00"),
+            _run_row("RUN-B", created_at="2026-07-17T10:00:00"),
+        ])
+        scores = pd.DataFrame([
+            _cohort_score(10, "RUN-A", "C1", "same-model", updated_at="2026-07-16T11:00:00"),
+            _cohort_score(11, "RUN-B", "C1", "same-model", updated_at="2026-07-17T11:00:00"),
+            _cohort_score(
+                12,
+                "RUN-B",
+                "C1",
+                "same-model",
+                updated_at="2026-07-17T12:00:00",
+                judge_status="failed",
+                score_run_id="SCORE-RETRY",
+            ),
+        ])
+
+        selected = cc.select_current_cohort_scores(runs, scores)
+        ai_scores, excluded = cc.split_live_scores(selected)
+
+        self.assertEqual([11], ai_scores["id"].tolist())
+        self.assertEqual([12], excluded["id"].tolist())
+
+    def test_database_id_breaks_ties_between_equally_timed_successes(self):
+        runs = pd.DataFrame([
+            _run_row("RUN-A", created_at="2026-07-17T10:00:00"),
+        ])
+        scores = pd.DataFrame([
+            _cohort_score(
+                21,
+                "RUN-A",
+                "C1",
+                "same-model",
+                updated_at="2026-07-17T11:00:00",
+                score_run_id="SCORE-NEWER-ID",
+            ),
+            _cohort_score(
+                20,
+                "RUN-A",
+                "C1",
+                "same-model",
+                updated_at="2026-07-17T11:00:00",
+                score_run_id="SCORE-OLDER-ID",
+            ),
+        ])
+
+        selected = cc.select_current_cohort_scores(runs, scores)
+        ai_scores, _ = cc.split_live_scores(selected)
+
+        self.assertEqual([21], ai_scores["id"].tolist())
+
+    def test_missing_required_run_metadata_never_guesses_a_cohort(self):
+        runs = pd.DataFrame([
+            _run_row("RUN-MISSING", created_at="2026-07-17T10:00:00", prompt_hash=""),
+        ])
+        scores = pd.DataFrame([
+            _cohort_score(1, "RUN-MISSING", "C1", "model-a", updated_at="2026-07-17T11:00:00"),
+        ])
+
+        selected = cc.select_current_cohort_scores(runs, scores)
+
+        self.assertTrue(selected.empty)
+
+    def test_loader_reads_runs_and_scores_before_selecting_current_cohort(self):
+        tables = {
+            "live_evaluation_runs": [_run_row("RUN-A", created_at="2026-07-17T10:00:00")],
+            "live_run_scores": [
+                _cohort_score(1, "RUN-A", "C1", "model-a", updated_at="2026-07-17T11:00:00")
+            ],
+        }
+
+        class Store:
+            def list_rows(self, table):
+                return tables[table]
+
+        with patch("app.persistence.get_result_store", return_value=Store()):
+            selected = cc.load_current_cohort_scores()
+
+        self.assertEqual(["model-a"], selected["eval_model"].tolist())
 
 
 class AiFinalPageTests(unittest.TestCase):

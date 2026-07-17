@@ -79,6 +79,13 @@ def load_live_scores(db_path=None) -> pd.DataFrame:
     return _load_live_table("live_run_scores", db_path)
 
 
+def load_current_cohort_scores(db_path=None) -> pd.DataFrame:
+    """读取当前元数据兼容比较组的评分；无法验证兼容性时返回空表。"""
+    runs = _load_live_table("live_evaluation_runs", db_path)
+    scores = _load_live_table("live_run_scores", db_path)
+    return select_current_cohort_scores(runs, scores)
+
+
 def load_live_responses(db_path=None) -> pd.DataFrame:
     """读取全部 live_run_responses 行（含模型回答），用于草稿区拼接回答。"""
     return _load_live_table("live_run_responses", db_path)
@@ -92,6 +99,131 @@ def _load_live_table(table: str, db_path) -> pd.DataFrame:
         return pd.DataFrame(rows)
     except Exception:
         return pd.DataFrame()
+
+
+def select_current_cohort_scores(runs_df: pd.DataFrame, scores_df: pd.DataFrame) -> pd.DataFrame:
+    """选择最新正式运行的兼容批次，并保留每个样本模型的最新成功评分。"""
+    if not isinstance(scores_df, pd.DataFrame):
+        return pd.DataFrame()
+    empty = scores_df.iloc[0:0].copy()
+    if (
+        not isinstance(runs_df, pd.DataFrame)
+        or runs_df.empty
+        or scores_df.empty
+        or "run_id" not in runs_df.columns
+        or "run_id" not in scores_df.columns
+    ):
+        return empty
+
+    scores = scores_df.copy()
+    success_mask = _successful_conclusion_score_mask(scores)
+    successful_run_ids = set(scores.loc[success_mask, "run_id"].map(_text))
+    successful_run_ids.discard("")
+    if not successful_run_ids:
+        return empty
+
+    runs = runs_df.copy()
+    run_status = _text_series(runs, "status", "").str.lower()
+    runs["_cohort_signature"] = runs.apply(_cohort_signature, axis=1)
+    runs = runs[
+        (run_status == "completed")
+        & runs["run_id"].map(_text).isin(successful_run_ids)
+        & runs["_cohort_signature"].notna()
+    ].copy()
+    if runs.empty:
+        return empty
+
+    runs["_cohort_updated_order"] = pd.to_datetime(
+        _text_series(runs, "updated_at", ""), errors="coerce", utc=True
+    )
+    runs["_cohort_created_order"] = pd.to_datetime(
+        _text_series(runs, "created_at", ""), errors="coerce", utc=True
+    )
+    runs["_cohort_run_order"] = runs["run_id"].map(_text)
+    runs = runs.sort_values(
+        ["_cohort_updated_order", "_cohort_created_order", "_cohort_run_order"],
+        kind="mergesort",
+        na_position="first",
+    )
+    baseline_signature = runs.iloc[-1]["_cohort_signature"]
+    compatible_run_ids = set(
+        runs.loc[runs["_cohort_signature"] == baseline_signature, "run_id"].map(_text)
+    )
+
+    cohort = scores[scores["run_id"].map(_text).isin(compatible_run_ids)].copy()
+    if cohort.empty:
+        return empty
+
+    success_mask = _successful_conclusion_score_mask(cohort)
+    successful = cohort[success_mask].copy()
+    excluded = cohort[~success_mask].copy()
+    if not successful.empty and {"case_id", "eval_model"}.issubset(successful.columns):
+        successful["_cohort_updated_order"] = pd.to_datetime(
+            _text_series(successful, "updated_at", ""), errors="coerce", utc=True
+        )
+        successful["_cohort_created_order"] = pd.to_datetime(
+            _text_series(successful, "created_at", ""), errors="coerce", utc=True
+        )
+        successful["_cohort_id_order"] = pd.to_numeric(
+            successful.get("id", pd.Series(index=successful.index, dtype=float)),
+            errors="coerce",
+        )
+        successful = successful.sort_values(
+            ["_cohort_updated_order", "_cohort_created_order", "_cohort_id_order"],
+            kind="mergesort",
+            na_position="first",
+        ).drop_duplicates(["case_id", "eval_model"], keep="last")
+        successful = successful.drop(
+            columns=["_cohort_updated_order", "_cohort_created_order", "_cohort_id_order"]
+        )
+
+    return pd.concat([successful, excluded], ignore_index=True, sort=False)
+
+
+def _cohort_signature(row: pd.Series) -> tuple[str, str, str, str, str] | None:
+    values = tuple(_text(row.get(field)) for field in ("dataset_version", "dataset_hash", "prompt_hash"))
+    generation = _canonical_json_mapping(row.get("generation_parameters_json"))
+    judge = _canonical_json_mapping(row.get("judge_parameters_json"))
+    if not all(values) or generation is None or judge is None:
+        return None
+    return (*values, generation, judge)
+
+
+def _canonical_json_mapping(value: Any) -> str | None:
+    if isinstance(value, Mapping):
+        payload = dict(value)
+    else:
+        text = _text(value)
+        if not text:
+            return None
+        try:
+            payload = json.loads(text)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+    if not isinstance(payload, Mapping):
+        return None
+    try:
+        return json.dumps(dict(payload), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _successful_conclusion_score_mask(df: pd.DataFrame) -> pd.Series:
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return pd.Series(False, index=getattr(df, "index", None), dtype=bool)
+    active = _text_series(df, "status", "active").str.lower() != "inactive"
+    successful = _text_series(df, "judge_status", "").str.lower() == "success"
+    included = _text_series(df, "review_status", "ai_final").str.lower() != "skipped"
+    live_mode = _text_series(df, "judge_mode", "live").str.lower() != "mock"
+    real_model = ~_text_series(df, "eval_model", "").apply(md.is_seed_model)
+    has_run = _text_series(df, "run_id", "") != ""
+    return active & successful & included & live_mode & real_model & has_run
+
+
+def _text_series(df: pd.DataFrame, column: str, default: str) -> pd.Series:
+    if column in df.columns:
+        return df[column].map(lambda value: _text(value, default))
+    return pd.Series(default, index=df.index, dtype="object")
 
 
 def split_live_scores(live_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -117,7 +249,11 @@ def split_live_scores(live_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame
         review_status = df["review_status"].astype(str).str.strip().str.lower()
     else:
         review_status = pd.Series(["ai_final"] * len(df), index=df.index)
-    conclusion_mask = (judge_status == "success") & (review_status != "skipped")
+    if "judge_mode" in df.columns:
+        judge_mode = df["judge_mode"].astype(str).str.strip().str.lower()
+    else:
+        judge_mode = pd.Series(["live"] * len(df), index=df.index)
+    conclusion_mask = (judge_status == "success") & (review_status != "skipped") & (judge_mode != "mock")
     ai_scores = df[conclusion_mask].reset_index(drop=True)
     excluded = df[~conclusion_mask].reset_index(drop=True)
     return ai_scores, excluded
