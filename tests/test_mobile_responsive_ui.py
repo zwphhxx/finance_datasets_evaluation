@@ -121,10 +121,9 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             "@media (max-width: 760px)",
             1,
         )[1].split("@media (max-width: 480px)", 1)[0]
-        rules = _css_rules(mobile_css)
         fixed_rules = [
             (selectors, declarations)
-            for selectors, declarations in rules
+            for selectors, declarations in _css_rules(css)
             if re.search(r"position\s*:\s*fixed\b", declarations)
         ]
 
@@ -150,7 +149,7 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         )
         self.assertEqual(
             [],
-            _declarations_for_selector(mobile_css, old_dialog_selector),
+            _declarations_for_selector(css, old_dialog_selector),
         )
 
         for focus_selector in [
