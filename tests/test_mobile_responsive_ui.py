@@ -61,7 +61,7 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             css,
             re.compile(
                 r'\.stApp:has\(\[data-testid="stDialog"\]\)'
-                r"\s+\.st-key-test_run_run\s*\{[^}]*display\s*:\s*none",
+                r"\s+\.st-key-test_run_run\s*\{[^}]*visibility\s*:\s*hidden",
                 re.DOTALL,
             ),
         )
@@ -69,6 +69,8 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             css,
             re.compile(
                 r"\.stApp:has\(input:focus\)"
+                r"\s+\.st-key-test_run_run\s*,\s*"
+                r"\.stApp:has\(textarea:focus\)"
                 r"\s+\.st-key-test_run_run\s*\{[^}]*position\s*:\s*static",
                 re.DOTALL,
             ),
