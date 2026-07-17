@@ -1298,7 +1298,11 @@ def _rubric_detail_html(rubric_rows: list[dict[str, str]]) -> str:
             f"<td>{_html_multiline(row.get(header), fallback='待补充')}</td>"
             for header in headers
         ) + "</tr>"
-    return f'{note}<table class="sample-detail-table"><thead><tr>{header_html}</tr></thead><tbody>{row_html}</tbody></table>'
+    return (
+        f'{note}<div class="sample-detail-table-wrap">'
+        f'<table class="sample-detail-table"><thead><tr>{header_html}</tr></thead>'
+        f"<tbody>{row_html}</tbody></table></div>"
+    )
 
 
 def _rubric_rows_are_complete(rubric_rows: list[dict[str, str]]) -> bool:

@@ -5,7 +5,6 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RESPONSIVE_PATH = PROJECT_ROOT / "src" / "ui" / "responsive.py"
 COMPONENTS_PATH = PROJECT_ROOT / "src" / "ui" / "components.py"
-SAMPLES_PATH = PROJECT_ROOT / "src" / "ui" / "samples.py"
 TEST_RUN_PATH = PROJECT_ROOT / "src" / "ui" / "test_run.py"
 
 
@@ -72,19 +71,40 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             self.assertIn(contract, css)
 
     def test_sample_detail_tables_own_mobile_scroll_container(self):
-        samples_source = SAMPLES_PATH.read_text(encoding="utf-8")
-        self.assertIn('class="sample-detail-table"', samples_source)
+        from src.ui.samples import _rubric_detail_html
 
+        html = _rubric_detail_html(
+            [
+                {
+                    "评分维度": "准确性",
+                    "满分": "10",
+                    "满分标准": "结论准确且有依据",
+                    "扣分规则": "事实错误扣分",
+                }
+            ]
+        )
+        self.assertIn('<div class="sample-detail-table-wrap">', html)
+        self.assertIn('<table class="sample-detail-table">', html)
+        wrapper_open = html.index('<div class="sample-detail-table-wrap">')
+        table_open = html.index('<table class="sample-detail-table">')
+        table_close = html.index("</table>")
+        wrapper_close = html.index("</div>", table_close)
+        self.assertLess(wrapper_open, table_open)
+        self.assertLess(table_close, wrapper_close)
+
+        mobile_css = self._responsive_css().split(
+            "@media (max-width: 760px)",
+            1,
+        )[1].split("@media (max-width: 480px)", 1)[0]
         declarations = _declarations_for_selector(
-            self._responsive_css(),
-            ".sample-detail-table",
+            mobile_css,
+            ".sample-detail-table-wrap",
         )
         self.assertTrue(
             any(
                 all(
                     re.search(contract, rule)
                     for contract in [
-                        r"display\s*:\s*block\s*;",
                         r"max-width\s*:\s*100%\s*;",
                         r"overflow-x\s*:\s*auto\s*;",
                     ]
@@ -92,6 +112,8 @@ class MobileResponsiveUIContracts(unittest.TestCase):
                 for rule in declarations
             )
         )
+        for rule in _declarations_for_selector(mobile_css, ".sample-detail-table"):
+            self.assertNotRegex(rule, r"display\s*:")
 
     def test_run_action_is_the_only_fixed_element_and_yields_to_overlays(self):
         css = self._responsive_css()

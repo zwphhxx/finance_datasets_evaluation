@@ -97,8 +97,7 @@ MOBILE_RESPONSIVE_CSS = r"""
         overflow-x: auto;
         overscroll-behavior-inline: contain;
     }
-    .sample-detail-table {
-        display: block;
+    .sample-detail-table-wrap {
         max-width: 100%;
         overflow-x: auto;
         overscroll-behavior-inline: contain;
