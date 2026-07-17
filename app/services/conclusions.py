@@ -576,6 +576,46 @@ def build_model_issue_summaries(
     return summaries
 
 
+def build_answer_detail_rows(
+    scores_df: pd.DataFrame,
+    responses_df: pd.DataFrame | None,
+    *,
+    mapping: Mapping[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    """按运行、样本和模型把当前评分精确连接到持久化回答。"""
+    if not isinstance(scores_df, pd.DataFrame) or scores_df.empty:
+        return []
+    answers = _index_answers(responses_df)
+    rows: list[dict[str, Any]] = []
+    for _, score in scores_df.iterrows():
+        run_id = _text(score.get("run_id"))
+        case_id = _text(score.get("case_id"))
+        model_name = _text(score.get("eval_model"))
+        key = (run_id, case_id, model_name)
+        rows.append(
+            {
+                "run_id": run_id,
+                "case_id": case_id,
+                "model_name": model_name,
+                "display_name": display_model_name(
+                    model_name,
+                    mapping,
+                    source="live",
+                ),
+                "total_score": _num(score.get("total_score")),
+                "answer_text": _text(answers.get(key)),
+            }
+        )
+    rows.sort(
+        key=lambda row: (
+            row["display_name"],
+            row["case_id"],
+            row["run_id"],
+        )
+    )
+    return rows
+
+
 def build_draft_rows(
     pending_live: pd.DataFrame,
     responses_df: pd.DataFrame | None = None,

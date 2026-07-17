@@ -317,6 +317,66 @@ class CompatibleCohortTests(unittest.TestCase):
         self.assertEqual(["model-a"], selected["eval_model"].tolist())
 
 
+class AnswerDetailJoinTests(unittest.TestCase):
+    def test_answers_join_by_run_case_and_model_without_cross_run_leakage(self):
+        scores = pd.DataFrame([
+            _cohort_score(
+                1,
+                "RUN-A",
+                "C1",
+                "same-model",
+                updated_at="2026-07-16T11:00:00",
+                total_score=81,
+            ),
+            _cohort_score(
+                2,
+                "RUN-B",
+                "C1",
+                "same-model",
+                updated_at="2026-07-17T11:00:00",
+                total_score=92,
+            ),
+        ])
+        responses = pd.DataFrame([
+            {
+                "run_id": "RUN-A",
+                "case_id": "C1",
+                "model_name": "same-model",
+                "answer_text": "回答 A",
+            },
+            {
+                "run_id": "RUN-B",
+                "case_id": "C1",
+                "model_name": "same-model",
+                "answer_text": "回答 B",
+            },
+        ])
+
+        rows = cc.build_answer_detail_rows(scores, responses)
+
+        by_run = {row["run_id"]: row for row in rows}
+        self.assertEqual("回答 A", by_run["RUN-A"]["answer_text"])
+        self.assertEqual("回答 B", by_run["RUN-B"]["answer_text"])
+        self.assertEqual(81.0, by_run["RUN-A"]["total_score"])
+        self.assertEqual(92.0, by_run["RUN-B"]["total_score"])
+
+    def test_missing_answer_stays_visible_as_empty_detail(self):
+        scores = pd.DataFrame([
+            _cohort_score(
+                1,
+                "RUN-A",
+                "C1",
+                "model-a",
+                updated_at="2026-07-16T11:00:00",
+            )
+        ])
+
+        rows = cc.build_answer_detail_rows(scores, pd.DataFrame())
+
+        self.assertEqual(1, len(rows))
+        self.assertEqual("", rows[0]["answer_text"])
+
+
 class AiFinalPageTests(unittest.TestCase):
     def test_conclusion_page_no_longer_uses_session_draft_fallback(self):
         source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
