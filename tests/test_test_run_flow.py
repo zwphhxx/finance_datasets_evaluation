@@ -873,7 +873,10 @@ class SampleSelectionTests(unittest.TestCase):
 
         self.assertIn("SAMPLE_TABLE_COLUMN_WIDTHS", table_source)
         self.assertIn("SAMPLE_TABLE_HEADERS", table_source)
-        self.assertIn("st.container(height=SAMPLE_TABLE_HEIGHT, border=True)", table_source)
+        self.assertIn("st.container(", table_source)
+        self.assertIn("height=SAMPLE_TABLE_HEIGHT", table_source)
+        self.assertIn("border=True", table_source)
+        self.assertIn('key="test_run_sample_table"', table_source)
         self.assertIn('st.markdown(f"**{header}**")', table_source)
         self.assertIn("st.checkbox(", table_source)
         self.assertNotIn("st.data_editor", table_source)
