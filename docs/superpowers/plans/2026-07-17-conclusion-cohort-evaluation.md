@@ -138,7 +138,7 @@ git commit -m "fix: scope conclusions to compatible runs"
 - Verify: `src/ui/conclusions.py`
 - Verify: `data/fin_eval_v2.jsonl`
 
-- [ ] **Step 1: 运行完整测试和静态检查**
+- [x] **Step 1: 运行完整测试和静态检查**
 
 Run:
 
@@ -150,13 +150,13 @@ python scripts/validate_dataset.py
 
 Expected: 所有测试通过，ruff 无错误，数据集校验通过。
 
-- [ ] **Step 2: 运行 PostgreSQL 持久化测试**
+- [x] **Step 2: 运行 PostgreSQL 持久化测试**
 
 Run: `pytest -q tests/test_postgres_store.py tests/test_persistence.py tests/test_eval_runner.py tests/test_scorer.py`
 
 Expected: 全部通过。
 
-- [ ] **Step 3: 对 Supabase 当前 39 条评分进行只读重算**
+- [x] **Step 3: 对 Supabase 当前 39 条评分进行只读重算**
 
 读取 `FRESH-SCORE-20260717-CURRENT13-V1`，断言：
 
@@ -171,7 +171,7 @@ Expected: 全部通过。
 **Files:**
 - Verify: Git history and GitHub Actions
 
-- [ ] **Step 1: 提交实施计划中的剩余跟踪更新（如有）**
+- [x] **Step 1: 提交实施计划中的剩余跟踪更新（如有）**
 
 只提交本任务相关文件；不得加入用户的 `.claude/` 目录或本地 secret。
 
