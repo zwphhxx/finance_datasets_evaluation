@@ -6,6 +6,8 @@ from textwrap import dedent
 
 import streamlit as st
 
+from src.ui.responsive import MOBILE_RESPONSIVE_CSS
+
 PROJECT_DISPLAY_NAME = "财务/法律/投行场景大模型对比评测"
 
 
@@ -877,6 +879,11 @@ div[data-testid="stDialog"] {
 </style>
 """
 
+STYLE_CSS = STYLE_CSS.replace(
+    "</style>",
+    f"{MOBILE_RESPONSIVE_CSS}\n</style>",
+)
+
 
 def _clean_html(html: str) -> str:
     text = dedent(str(html or "")).strip()
@@ -1451,10 +1458,12 @@ def _markdown_table_html(rows: list[list[str]]) -> str:
         for row in body_rows
     )
     return (
+        '<div class="markdown-detail-table-scroll">'
         '<table class="markdown-detail-table">'
         f"<thead><tr>{header_html}</tr></thead>"
         f"<tbody>{body_html}</tbody>"
         "</table>"
+        "</div>"
     )
 
 
