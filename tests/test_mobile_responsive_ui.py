@@ -117,7 +117,11 @@ class MobileResponsiveUIContracts(unittest.TestCase):
 
     def test_run_action_is_the_only_fixed_element_and_yields_to_overlays(self):
         css = self._responsive_css()
-        rules = _css_rules(css)
+        mobile_css = css.split(
+            "@media (max-width: 760px)",
+            1,
+        )[1].split("@media (max-width: 480px)", 1)[0]
+        rules = _css_rules(mobile_css)
         fixed_rules = [
             (selectors, declarations)
             for selectors, declarations in rules
@@ -130,13 +134,23 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         self.assertRegex(fixed_declarations, r"position\s*:\s*fixed\b")
 
         dialog_selector = (
-            '.stApp:has([data-testid="stDialog"]) .st-key-test_run_run'
+            'body:has([data-testid="stDialog"]) .st-key-test_run_run'
         )
         self.assertTrue(
             any(
                 re.search(r"visibility\s*:\s*hidden\b", declarations)
-                for declarations in _declarations_for_selector(css, dialog_selector)
+                for declarations in _declarations_for_selector(
+                    mobile_css,
+                    dialog_selector,
+                )
             )
+        )
+        old_dialog_selector = (
+            '.stApp:has([data-testid="stDialog"]) .st-key-test_run_run'
+        )
+        self.assertEqual(
+            [],
+            _declarations_for_selector(mobile_css, old_dialog_selector),
         )
 
         for focus_selector in [
@@ -146,7 +160,10 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             self.assertTrue(
                 any(
                     re.search(r"position\s*:\s*static\b", declarations)
-                    for declarations in _declarations_for_selector(css, focus_selector)
+                    for declarations in _declarations_for_selector(
+                        mobile_css,
+                        focus_selector,
+                    )
                 ),
                 focus_selector,
             )

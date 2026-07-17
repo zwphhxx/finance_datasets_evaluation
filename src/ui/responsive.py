@@ -164,7 +164,7 @@ MOBILE_RESPONSIVE_CSS = r"""
         min-height: 44px;
         width: 100%;
     }
-    .stApp:has([data-testid="stDialog"]) .st-key-test_run_run {
+    body:has([data-testid="stDialog"]) .st-key-test_run_run {
         visibility: hidden;
     }
     .stApp:has(input:focus) .st-key-test_run_run,
