@@ -5,6 +5,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RESPONSIVE_PATH = PROJECT_ROOT / "src" / "ui" / "responsive.py"
 COMPONENTS_PATH = PROJECT_ROOT / "src" / "ui" / "components.py"
+SAMPLES_PATH = PROJECT_ROOT / "src" / "ui" / "samples.py"
 TEST_RUN_PATH = PROJECT_ROOT / "src" / "ui" / "test_run.py"
 
 
@@ -69,6 +70,28 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             "overflow-wrap: anywhere",
         ]:
             self.assertIn(contract, css)
+
+    def test_sample_detail_tables_own_mobile_scroll_container(self):
+        samples_source = SAMPLES_PATH.read_text(encoding="utf-8")
+        self.assertIn('class="sample-detail-table"', samples_source)
+
+        declarations = _declarations_for_selector(
+            self._responsive_css(),
+            ".sample-detail-table",
+        )
+        self.assertTrue(
+            any(
+                all(
+                    re.search(contract, rule)
+                    for contract in [
+                        r"display\s*:\s*block\s*;",
+                        r"max-width\s*:\s*100%\s*;",
+                        r"overflow-x\s*:\s*auto\s*;",
+                    ]
+                )
+                for rule in declarations
+            )
+        )
 
     def test_run_action_is_the_only_fixed_element_and_yields_to_overlays(self):
         css = self._responsive_css()

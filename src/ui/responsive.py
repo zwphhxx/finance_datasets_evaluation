@@ -92,8 +92,13 @@ MOBILE_RESPONSIVE_CSS = r"""
         word-break: break-word;
     }
     .markdown-detail-code,
-    .markdown-detail-table-scroll,
-    .sample-detail-table-wrap {
+    .markdown-detail-table-scroll {
+        max-width: 100%;
+        overflow-x: auto;
+        overscroll-behavior-inline: contain;
+    }
+    .sample-detail-table {
+        display: block;
         max-width: 100%;
         overflow-x: auto;
         overscroll-behavior-inline: contain;
