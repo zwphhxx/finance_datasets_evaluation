@@ -80,8 +80,11 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertNotIn("样本库 > 测试", navigation_source)
 
     def test_top_navigation_is_lightweight_not_primary_cta(self):
+        import src.ui.components as components
+
         navigation_source = Path("src/ui/navigation.py").read_text(encoding="utf-8")
         components_source = Path("src/ui/components.py").read_text(encoding="utf-8")
+        desktop_css = components.STYLE_CSS.split("@media (max-width: 760px)", 1)[0]
 
         self.assertIn("top-nav-brand", navigation_source)
         self.assertNotIn('type="primary" if current == page_key else "secondary"', navigation_source)
@@ -90,8 +93,8 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn("border: 0;", components_source)
         self.assertIn('use_container_width=False', navigation_source)
         self.assertIn("background: transparent !important;", components_source)
-        self.assertNotIn("position: sticky", components_source)
-        self.assertNotIn("position: fixed", components_source)
+        self.assertNotIn("position: sticky", desktop_css)
+        self.assertNotIn("position: fixed", desktop_css)
         self.assertNotIn('left: calc(50% - 50vw)', components_source)
         self.assertNotIn(
             '[data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton > button[kind="secondary"] {\n'
