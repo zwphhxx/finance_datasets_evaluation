@@ -943,22 +943,24 @@ def _formal_sync_feedback_suffix() -> tuple[str, str]:
 # New sample-library UI
 # --------------------------------------------------------------------------- #
 def _render_samples_title_bar(config) -> None:
-    col1, col2, col3, col4 = st.columns([3.7, 0.9, 0.9, 1.35], gap="small")
-    with col1:
-        render_page_heading(config.title, config.question)
-    with col2:
-        st.write("")
-        if st.button("新增样本", key="samples_create_open", type="secondary", use_container_width=True):
-            _open_create_dialog()
-    with col3:
-        st.write("")
-        if st.button("导入 CSV", key="samples_import_csv_open", type="secondary", use_container_width=True):
-            _open_import_csv_dialog()
-    with col4:
-        st.write("")
-        if st.button("同步样本库", key="samples_sync_assets", type="tertiary", use_container_width=True):
-            _sync_samples_to_formal_assets()
-            st.rerun()
+    with st.container(key="samples_title_bar"):
+        col1, col2, col3, col4 = st.columns(
+            [3.7, 0.9, 0.9, 1.35],
+            gap="small",
+            vertical_alignment="bottom",
+        )
+        with col1:
+            render_page_heading(config.title, config.question)
+        with col2:
+            if st.button("新增样本", key="samples_create_open", type="secondary", use_container_width=True):
+                _open_create_dialog()
+        with col3:
+            if st.button("导入 CSV", key="samples_import_csv_open", type="secondary", use_container_width=True):
+                _open_import_csv_dialog()
+        with col4:
+            if st.button("同步样本库", key="samples_sync_assets", type="tertiary", use_container_width=True):
+                _sync_samples_to_formal_assets()
+                st.rerun()
     _render_sample_operation_message()
     _render_sample_source_status()
 

@@ -779,19 +779,19 @@ def _render_configuration_panel(
     if slow_notice:
         st.caption(slow_notice)
 
-    col1, col2, col3 = st.columns([1, 1, 1.2])
-    with col1:
-        if st.button("选择样本", key="test_run_open_samples", type="secondary", use_container_width=True):
-            _open_sample_dialog(sample_options)
-    with col2:
-        if st.button("选择模型", key="test_run_open_models", type="secondary", use_container_width=True):
-            _open_model_dialog(provider_name)
     start_run = False
-    with col3:
-        start_run = _render_run_button(
-            run_plan,
-            service_ready=(mode == "live"),
-        )
+    with st.container(key="test_run_actions"):
+        with st.container(key="test_run_action_samples"):
+            if st.button("选择样本", key="test_run_open_samples", type="secondary", use_container_width=True):
+                _open_sample_dialog(sample_options)
+        with st.container(key="test_run_action_models"):
+            if st.button("选择模型", key="test_run_open_models", type="secondary", use_container_width=True):
+                _open_model_dialog(provider_name)
+        with st.container(key="test_run_action_primary"):
+            start_run = _render_run_button(
+                run_plan,
+                service_ready=(mode == "live"),
+            )
     if not run_plan["can_run"]:
         st.caption("请选择样本和模型后运行。")
     if selected_tasks:

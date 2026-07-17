@@ -223,7 +223,10 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("仅对已完成回答生成 AI 评分", source)
         self.assertIn("start_run = _render_run_button(", panel_source)
         self.assertIn("if start_run:", panel_source)
-        self.assertLess(panel_source.index("with col3:"), panel_source.index("if start_run:"))
+        self.assertLess(
+            panel_source.index('with st.container(key="test_run_action_primary"):'),
+            panel_source.index("if start_run:"),
+        )
         self.assertLess(panel_source.index("if start_run:"), panel_source.index("_execute_run_queue("))
         self.assertNotIn("_execute_run_queue(", run_button_source)
         self.assertIn("eval_temperature = _current_eval_temperature()", panel_source)

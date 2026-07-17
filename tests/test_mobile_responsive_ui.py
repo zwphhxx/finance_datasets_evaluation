@@ -6,6 +6,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RESPONSIVE_PATH = PROJECT_ROOT / "src" / "ui" / "responsive.py"
 COMPONENTS_PATH = PROJECT_ROOT / "src" / "ui" / "components.py"
 TEST_RUN_PATH = PROJECT_ROOT / "src" / "ui" / "test_run.py"
+SAMPLES_PATH = PROJECT_ROOT / "src" / "ui" / "samples.py"
 
 
 def _css_rules(css: str) -> list[tuple[set[str], str]]:
@@ -58,17 +59,72 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         ]:
             self.assertIn(contract, css)
 
+    def test_mobile_navigation_and_section_spacing_use_the_full_viewport(self):
+        css = self._responsive_css()
+        mobile_css = css.split(
+            "@media (max-width: 760px)",
+            1,
+        )[1].split("@media (max-width: 480px)", 1)[0]
+        nav_selector = (
+            '.block-container [data-testid="stHorizontalBlock"]:has(.top-nav-brand)'
+        )
+        nav_rules = _declarations_for_selector(mobile_css, nav_selector)
+        self.assertTrue(
+            any(re.search(r"width\s*:\s*100vw\s*;", rule) for rule in nav_rules)
+        )
+        self.assertTrue(
+            any(re.search(r"max-width\s*:\s*none\s*;", rule) for rule in nav_rules)
+        )
+        self.assertTrue(
+            any(re.search(r"margin\s*:\s*0\s+-0\.875rem\s*;", rule) for rule in nav_rules)
+        )
+
+        section_rules = _declarations_for_selector(mobile_css, ".section-heading-page")
+        self.assertTrue(
+            any(
+                re.search(
+                    r"grid-template-columns\s*:\s*2\.5rem\s+minmax\(0,\s*1fr\)\s*;",
+                    rule,
+                )
+                for rule in section_rules
+            )
+        )
+
     def test_mobile_columns_dialogs_and_tables_fit_the_viewport(self):
         css = self._responsive_css()
 
         for contract in [
-            '.block-container [data-testid="stHorizontalBlock"]',
+            ".st-key-samples_title_bar",
             '[data-testid="stDialog"] [role="dialog"]',
             '[data-testid="stDataFrame"]',
             ".markdown-detail-table-scroll",
             "overflow-wrap: anywhere",
         ]:
             self.assertIn(contract, css)
+
+    def test_mobile_column_stacking_is_scoped_to_named_layouts(self):
+        css = self._responsive_css()
+        mobile_css = css.split(
+            "@media (max-width: 760px)",
+            1,
+        )[1].split("@media (max-width: 480px)", 1)[0]
+
+        global_rules = _declarations_for_selector(
+            mobile_css,
+            '.block-container [data-testid="stHorizontalBlock"]',
+        )
+        self.assertFalse(
+            any(re.search(r"flex-direction\s*:\s*column\b", rule) for rule in global_rules),
+            "mobile stacking must be limited to named page regions",
+        )
+        scoped_rules = _declarations_for_selector(
+            mobile_css,
+            '.st-key-samples_title_bar [data-testid="stHorizontalBlock"]',
+        )
+        self.assertTrue(
+            any(re.search(r"flex-direction\s*:\s*column\b", rule) for rule in scoped_rules),
+            "the sample title action region still needs an explicit mobile stack",
+        )
 
     def test_sample_detail_tables_own_mobile_scroll_container(self):
         from src.ui.samples import _rubric_detail_html
@@ -167,6 +223,23 @@ class MobileResponsiveUIContracts(unittest.TestCase):
                 focus_selector,
             )
 
+        disabled_selector = ".st-key-test_run_run:has(button:disabled)"
+        self.assertTrue(
+            any(
+                all(
+                    re.search(contract, rule)
+                    for contract in [
+                        r"position\s*:\s*static\b",
+                        r"width\s*:\s*100%\s*;",
+                    ]
+                )
+                for rule in _declarations_for_selector(
+                    mobile_css,
+                    disabled_selector,
+                )
+            )
+        )
+
     def test_sample_table_has_a_stable_key_and_mobile_minimum_width(self):
         test_run_source = TEST_RUN_PATH.read_text(encoding="utf-8")
 
@@ -177,6 +250,52 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         css = self._responsive_css()
         self.assertIn(".st-key-test_run_sample_table", css)
         self.assertIn("min-width: 44rem", css)
+
+    def test_run_action_is_rendered_outside_streamlit_columns(self):
+        import inspect
+
+        from src.ui.test_run import _render_configuration_panel
+
+        source = inspect.getsource(_render_configuration_panel)
+        self.assertIn('with st.container(key="test_run_actions"):', source)
+        self.assertIn('with st.container(key="test_run_action_samples"):', source)
+        self.assertIn('with st.container(key="test_run_action_models"):', source)
+        self.assertIn('with st.container(key="test_run_action_primary"):', source)
+        self.assertNotIn("st.columns(", source)
+
+    def test_run_action_group_uses_desktop_grid_and_mobile_stack(self):
+        css = self._responsive_css()
+        desktop_css, mobile_and_below = css.split("@media (max-width: 760px)", 1)
+        mobile_css = mobile_and_below.split("@media (max-width: 480px)", 1)[0]
+
+        self.assertRegex(
+            desktop_css,
+            (
+                r"\.st-key-test_run_actions\s*\{[^}]*"
+                r"display\s*:\s*grid\s*;[^}]*"
+                r"grid-template-columns\s*:\s*1fr\s+1fr\s+1\.2fr\s*;"
+            ),
+        )
+        mobile_rules = _declarations_for_selector(
+            mobile_css,
+            ".st-key-test_run_actions",
+        )
+        self.assertTrue(
+            any(
+                re.search(r"grid-template-columns\s*:\s*1fr\s*;", rule)
+                for rule in mobile_rules
+            )
+        )
+
+    def test_sample_title_actions_use_bottom_alignment_without_blank_rows(self):
+        import inspect
+
+        from src.ui.samples import _render_samples_title_bar
+
+        source = inspect.getsource(_render_samples_title_bar)
+        self.assertIn('with st.container(key="samples_title_bar"):', source)
+        self.assertIn('vertical_alignment="bottom"', source)
+        self.assertNotIn('st.write("")', source)
 
     def test_components_load_responsive_css_and_wrap_markdown_tables(self):
         import src.ui.components as components

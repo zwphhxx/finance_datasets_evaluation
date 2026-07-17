@@ -1,6 +1,12 @@
 """Shared responsive styles for the Streamlit user interface."""
 
 MOBILE_RESPONSIVE_CSS = r"""
+.st-key-test_run_actions {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: 1fr 1fr 1.2fr;
+}
+
 @media (min-width: 761px) and (max-width: 860px) {
     .block-container {
         max-width: 100%;
@@ -25,31 +31,38 @@ MOBILE_RESPONSIVE_CSS = r"""
         padding-right: 0.875rem;
         padding-bottom: calc(6.75rem + env(safe-area-inset-bottom));
     }
-    .block-container [data-testid="stHorizontalBlock"] {
+    .st-key-samples_title_bar [data-testid="stHorizontalBlock"] {
         align-items: stretch;
         flex-direction: column;
         gap: 0.55rem;
         width: 100%;
     }
-    .block-container [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+    .st-key-samples_title_bar
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
         flex: 1 1 100% !important;
         min-width: 0;
         width: 100% !important;
+    }
+    .st-key-test_run_actions {
+        gap: 0.55rem;
+        grid-template-columns: 1fr;
     }
     .block-container [data-testid="stHorizontalBlock"]:has(.top-nav-brand) {
         align-items: center;
         background: color-mix(in srgb, var(--fde-bg) 92%, transparent);
         border-bottom: 1px solid var(--fde-line);
+        box-sizing: border-box;
         display: grid;
         gap: 0.4rem;
         grid-template-columns: repeat(4, max-content);
-        margin: 0 -0.875rem 1rem;
+        margin: 0 -0.875rem;
+        max-width: none;
         overflow-x: auto;
         padding: 0.45rem 0.875rem 0.55rem;
         position: sticky;
         scrollbar-width: thin;
         top: 0;
-        width: auto;
+        width: 100vw;
         z-index: 50;
     }
     .block-container [data-testid="stHorizontalBlock"]:has(.top-nav-brand)
@@ -78,6 +91,13 @@ MOBILE_RESPONSIVE_CSS = r"""
     }
     .page-title-copy {
         font-size: 0.9rem;
+    }
+    .section-heading-page {
+        align-items: baseline;
+        column-gap: 0.65rem;
+        grid-template-columns: 2.5rem minmax(0, 1fr);
+        margin: 1.25rem 0 0.8rem;
+        padding-top: 0.75rem;
     }
     .detail-panel-body,
     .sample-detail-panel-body {
@@ -158,10 +178,21 @@ MOBILE_RESPONSIVE_CSS = r"""
         padding: 0.65rem 0.875rem calc(0.65rem + env(safe-area-inset-bottom));
         position: fixed;
         right: 0;
+        width: 100vw;
         z-index: 45;
     }
     .st-key-test_run_run .stButton > button {
         min-height: 44px;
+        width: 100%;
+    }
+    .st-key-test_run_run:has(button:disabled) {
+        background: transparent;
+        border-top: 0;
+        box-shadow: none;
+        left: auto;
+        padding: 0;
+        position: static;
+        right: auto;
         width: 100%;
     }
     body:has([data-testid="stDialog"]) .st-key-test_run_run {
