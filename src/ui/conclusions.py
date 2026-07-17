@@ -30,6 +30,8 @@ def render_conclusions_page(data_bundle: dict) -> None:
     live_scores = cc.load_current_cohort_scores()
     ai_scores, excluded_scores = cc.split_live_scores(live_scores)
     model_summaries = cc.build_model_issue_summaries(ai_scores, pd.DataFrame(), tasks)
+    live_responses = cc.load_live_responses()
+    answer_rows = cc.build_answer_detail_rows(ai_scores, live_responses)
 
     config = get_page_config("conclusions")
     render_page_heading(config.title, config.question)
@@ -37,7 +39,7 @@ def render_conclusions_page(data_bundle: dict) -> None:
 
     _render_current_conclusion(ai_scores)
     _render_model_recommendations(model_summaries)
-    _render_model_issue_details(model_summaries)
+    _render_model_issue_details(model_summaries, answer_rows)
 
 
 # --------------------------------------------------------------------------- #
@@ -222,7 +224,10 @@ def _recommendation_row(item: dict) -> dict[str, object]:
 # --------------------------------------------------------------------------- #
 # 03 模型详情
 # --------------------------------------------------------------------------- #
-def _render_model_issue_details(model_summaries: list[dict]) -> None:
+def _render_model_issue_details(
+    model_summaries: list[dict],
+    answer_rows: list[dict],
+) -> None:
     render_numbered_section(
         "03",
         "模型详情",
@@ -243,6 +248,7 @@ def _render_model_issue_details(model_summaries: list[dict]) -> None:
         selected = options[label]
 
     _render_issue_markdown(selected)
+    _render_model_answer_details(selected, answer_rows)
 
 
 def _render_issue_markdown(item: dict) -> None:
@@ -260,6 +266,51 @@ def _render_issue_markdown(item: dict) -> None:
     ])
     meta = f"模型 ID：{model_id}" if model_id and model_id != display else None
     render_markdown_detail_panel(display, markdown, meta=meta)
+
+
+def _render_model_answer_details(
+    selected_model: dict,
+    answer_rows: list[dict],
+) -> None:
+    model_name = str(selected_model.get("model_name") or "")
+    rows = [
+        row
+        for row in answer_rows
+        if str(row.get("model_name") or "") == model_name
+    ]
+    if not rows:
+        st.caption("当前模型暂无可查看的持久化回答。")
+        return
+
+    selected_index = st.selectbox(
+        "选择样本查看回答",
+        options=list(range(len(rows))),
+        format_func=lambda index: (
+            f"{rows[index]['case_id']}｜{_answer_score_label(rows[index])}"
+        ),
+        key=f"conclusion_answer_select_{_safe_key(model_name)}",
+    )
+    row = rows[int(selected_index)]
+    answer_text = str(row.get("answer_text") or "").strip()
+    render_markdown_detail_panel(
+        title=f"{row['case_id']}｜{row['display_name']}",
+        meta=f"运行批次：{row['run_id']}",
+        markdown_text=(
+            f"**模型回答**\n\n{answer_text}"
+            if answer_text
+            else "**模型回答**\n\n暂无模型回答。"
+        ),
+    )
+
+
+def _answer_score_label(row: dict) -> str:
+    value = row.get("total_score")
+    return "未评分" if value is None else f"{float(value):.0f}分"
+
+
+def _safe_key(value: object) -> str:
+    text = str(value or "")
+    return "".join(char if char.isalnum() else "_" for char in text)
 
 
 def _current_judgment(item: dict) -> str:

@@ -376,6 +376,23 @@ class AnswerDetailJoinTests(unittest.TestCase):
         self.assertEqual(1, len(rows))
         self.assertEqual("", rows[0]["answer_text"])
 
+    def test_conclusion_page_loads_and_renders_persisted_answers(self):
+        source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
+        render_source = source[
+            source.index("def render_conclusions_page"):
+            source.index("# --------------------------------------------------------------------------- #")
+        ]
+        detail_source = source[
+            source.index("def _render_model_issue_details"):
+        ]
+
+        self.assertIn("cc.load_live_responses()", render_source)
+        self.assertIn("cc.build_answer_detail_rows", render_source)
+        self.assertIn("answer_rows", render_source)
+        self.assertIn('"选择样本查看回答"', detail_source)
+        self.assertIn("render_markdown_detail_panel", detail_source)
+        self.assertIn('row.get("answer_text")', detail_source)
+
 
 class AiFinalPageTests(unittest.TestCase):
     def test_conclusion_page_no_longer_uses_session_draft_fallback(self):
