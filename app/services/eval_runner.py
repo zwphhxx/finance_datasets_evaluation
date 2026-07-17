@@ -747,6 +747,106 @@ def restore_compare_result_from_db(run_id: str, *, db_path: Path | None = None) 
         return None
 
 
+def build_persisted_answer_run_summaries(
+    runs: Sequence[Mapping[str, Any]],
+    queue_rows: Sequence[Mapping[str, Any]],
+    responses: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """汇总具有持久化回答的运行，供页面在会话丢失后只读恢复。"""
+    run_metadata = {
+        _clean(row.get("run_id")): dict(row)
+        for row in runs or []
+        if _clean(row.get("run_id"))
+    }
+    queue_by_run: dict[str, list[Mapping[str, Any]]] = {}
+    for row in queue_rows or []:
+        run_id = _clean(row.get("run_id"))
+        if run_id:
+            queue_by_run.setdefault(run_id, []).append(row)
+
+    responses_by_run: dict[str, list[Mapping[str, Any]]] = {}
+    for row in responses or []:
+        run_id = _clean(row.get("run_id"))
+        if run_id and _clean(row.get("case_id")) and _clean(row.get("model_name")):
+            responses_by_run.setdefault(run_id, []).append(row)
+
+    summaries: list[dict[str, Any]] = []
+    for run_id, answer_rows in responses_by_run.items():
+        metadata = run_metadata.get(run_id, {})
+        queued = queue_by_run.get(run_id, [])
+        models = {
+            _clean(row.get("model_name"))
+            for row in answer_rows
+            if _clean(row.get("model_name"))
+        }
+        cases = {
+            _clean(row.get("case_id"))
+            for row in answer_rows
+            if _clean(row.get("case_id"))
+        }
+        success_count = sum(
+            _clean(row.get("run_status")).lower() in {"success", STATUS_MOCK}
+            and bool(_clean(row.get("answer_text")))
+            for row in answer_rows
+        )
+        unfinished_count = sum(
+            _clean(row.get("status")).lower() in {"queued", "running"}
+            for row in queued
+        )
+        order_values = [
+            metadata.get("updated_at"),
+            metadata.get("created_at"),
+            *(row.get("updated_at") or row.get("created_at") for row in answer_rows),
+        ]
+        order_text = max((_timestamp_text(value) for value in order_values), default="")
+        order_id = max((_as_int(row.get("id")) or 0 for row in answer_rows), default=0)
+        summaries.append(
+            {
+                "run_id": run_id,
+                "provider": _clean(metadata.get("provider"))
+                or _clean(answer_rows[0].get("provider")),
+                "status": _clean(metadata.get("status")) or "completed",
+                "created_at": _timestamp_text(metadata.get("created_at")),
+                "updated_at": _timestamp_text(metadata.get("updated_at")),
+                "response_count": len(answer_rows),
+                "success_count": success_count,
+                "case_count": len(cases),
+                "model_count": len(models),
+                "queue_count": len(queued),
+                "unfinished_count": unfinished_count,
+                "_order_text": order_text,
+                "_order_id": order_id,
+            }
+        )
+
+    summaries.sort(
+        key=lambda row: (row["_order_text"], row["_order_id"], row["run_id"]),
+        reverse=True,
+    )
+    for row in summaries:
+        row.pop("_order_text", None)
+        row.pop("_order_id", None)
+    return summaries
+
+
+def list_persisted_answer_runs(
+    *,
+    db_path: Path | None = None,
+) -> list[dict[str, Any]]:
+    """读取全部可查看的持久化回答批次；数据库异常时返回空列表。"""
+    try:
+        store = _runtime_result_store(db_path)
+        if store is None:
+            return []
+        return build_persisted_answer_run_summaries(
+            store.list_rows("live_evaluation_runs"),
+            store.list_rows("live_run_queue"),
+            store.list_rows("live_run_responses"),
+        )
+    except Exception:
+        return []
+
+
 def is_mock_result(result) -> bool:
     return result.mode == "mock" or any(o.run_status == STATUS_MOCK for o in result.outcomes)
 
@@ -858,6 +958,14 @@ def _as_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _timestamp_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if hasattr(value, "isoformat"):
+        return str(value.isoformat())
+    return str(value).strip()
 
 
 def _clean(value: Any) -> str:

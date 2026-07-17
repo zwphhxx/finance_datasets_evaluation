@@ -502,5 +502,108 @@ class PersistFlagTests(unittest.TestCase):
         self.assertNotIn('test_run_persisted"] = er.is_mock_result', source)
 
 
+class PersistedAnswerRunTests(unittest.TestCase):
+    def test_summaries_include_only_runs_with_responses_and_sort_latest_first(self):
+        runs = [
+            {
+                "run_id": "RUN-OLD",
+                "provider": "siliconflow",
+                "status": "completed",
+                "created_at": "2026-07-16T10:00:00",
+                "updated_at": "2026-07-16T11:00:00",
+            },
+            {
+                "run_id": "RUN-NEW",
+                "provider": "siliconflow",
+                "status": "completed",
+                "created_at": "2026-07-17T10:00:00",
+                "updated_at": "2026-07-17T11:00:00",
+            },
+            {
+                "run_id": "RUN-EMPTY",
+                "provider": "siliconflow",
+                "status": "completed",
+                "created_at": "2026-07-18T10:00:00",
+                "updated_at": "2026-07-18T11:00:00",
+            },
+        ]
+        queue = [
+            {"id": 1, "run_id": "RUN-OLD", "case_id": "C1", "model_id": "m1", "status": "success"},
+            {"id": 2, "run_id": "RUN-OLD", "case_id": "C2", "model_id": "m1", "status": "success"},
+            {"id": 3, "run_id": "RUN-NEW", "case_id": "C1", "model_id": "m2", "status": "success"},
+            {"id": 4, "run_id": "RUN-EMPTY", "case_id": "C1", "model_id": "m3", "status": "queued"},
+        ]
+        responses = [
+            {
+                "id": 10,
+                "run_id": "RUN-OLD",
+                "case_id": "C1",
+                "model_name": "m1",
+                "run_status": "success",
+                "answer_text": "旧回答 1",
+            },
+            {
+                "id": 11,
+                "run_id": "RUN-OLD",
+                "case_id": "C2",
+                "model_name": "m1",
+                "run_status": "success",
+                "answer_text": "旧回答 2",
+            },
+            {
+                "id": 12,
+                "run_id": "RUN-NEW",
+                "case_id": "C1",
+                "model_name": "m2",
+                "run_status": "success",
+                "answer_text": "新回答",
+            },
+        ]
+
+        summaries = er.build_persisted_answer_run_summaries(runs, queue, responses)
+
+        self.assertEqual(["RUN-NEW", "RUN-OLD"], [row["run_id"] for row in summaries])
+        self.assertEqual(2, summaries[1]["response_count"])
+        self.assertEqual(2, summaries[1]["case_count"])
+        self.assertEqual(1, summaries[1]["model_count"])
+        self.assertEqual(2, summaries[1]["success_count"])
+        self.assertEqual(0, summaries[1]["unfinished_count"])
+
+    def test_loader_reads_runs_queue_and_responses(self):
+        tables = {
+            "live_evaluation_runs": [
+                {
+                    "run_id": "RUN-A",
+                    "provider": "siliconflow",
+                    "status": "completed",
+                    "created_at": "2026-07-17T10:00:00",
+                    "updated_at": "2026-07-17T11:00:00",
+                }
+            ],
+            "live_run_queue": [
+                {"id": 1, "run_id": "RUN-A", "case_id": "C1", "model_id": "m1", "status": "success"}
+            ],
+            "live_run_responses": [
+                {
+                    "id": 2,
+                    "run_id": "RUN-A",
+                    "case_id": "C1",
+                    "model_name": "m1",
+                    "run_status": "success",
+                    "answer_text": "已保存回答",
+                }
+            ],
+        }
+
+        class Store:
+            def list_rows(self, table):
+                return tables[table]
+
+        with mock.patch("app.persistence.get_result_store", return_value=Store()):
+            summaries = er.list_persisted_answer_runs()
+
+        self.assertEqual(["RUN-A"], [row["run_id"] for row in summaries])
+
+
 if __name__ == "__main__":
     unittest.main()
