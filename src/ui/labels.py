@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pandas as pd
 
-
 # Display-name mappings: translate stored English field values to business
 # Chinese labels. Unmapped values fall back to the raw value so new data is
 # never dropped or hidden. These are presentation labels, not invented data.

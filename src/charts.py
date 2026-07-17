@@ -4,8 +4,6 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from src.ui.components import render_empty_state
-
 from src.metrics import (
     get_error_type_counts,
     get_model_average_scores,
@@ -15,7 +13,7 @@ from src.metrics import (
     get_model_total_scores,
     get_optimization_comparison_metrics,
 )
-
+from src.ui.components import render_empty_state
 
 # Unified chart palette so every page shares one visual language instead of the
 # default Streamlit colors. Models map to the first colors in declared order.

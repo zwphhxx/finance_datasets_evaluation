@@ -23,7 +23,6 @@ from app.services import scorer as sc
 from src.ui.page_config import PAGE_CONFIG_BY_KEY
 from src.ui.test_run import eligible_case_ids
 
-
 _PAGE_SOURCE = Path("src/ui/test_run.py").read_text(encoding="utf-8")
 
 

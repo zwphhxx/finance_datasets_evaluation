@@ -25,15 +25,15 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from app.models.base import (
-    ConnectivityResult,
     ERROR_EMPTY_RESPONSE,
     ERROR_INCOMPLETE_RESPONSE,
+    STATUS_FAILED,
+    STATUS_SUCCESS,
+    ConnectivityResult,
     GenerationResult,
     ModelInfo,
     ModelListResult,
     ModelProvider,
-    STATUS_FAILED,
-    STATUS_SUCCESS,
     detect_incomplete_answer,
     extract_answer_text,
     extract_finish_reason,

@@ -13,15 +13,14 @@ from pathlib import Path
 
 import pandas as pd
 
-from app.models.base import GenerationResult, ModelProvider, STATUS_FAILED, STATUS_SUCCESS
+from app.db.repository import Repository
+from app.models.base import STATUS_FAILED, STATUS_SUCCESS, GenerationResult, ModelProvider
 from app.models.registry import get_provider
 from app.services import conclusions as cc
 from app.services import dataset_service as ds
 from app.services import eval_runner as er
 from app.services import scorer as sc
-from app.db.repository import Repository
 from src.ui.navigation import PAGES
-
 
 _TMP = tempfile.TemporaryDirectory()
 _DB_PATH = Path(_TMP.name) / "scoring_workflow_test.db"
@@ -444,7 +443,14 @@ class ScorePersistenceTests(unittest.TestCase):
         self.assertEqual({"queued"}, {row["status"] for row in queued})
 
         first = queue_items[0]
-        sc.mark_score_queue_item_running(score_run_id, first.case_id, first.model_id, db_path=_DB_PATH)
+        self.assertTrue(
+            sc.mark_score_queue_item_running(
+                score_run_id,
+                first.case_id,
+                first.model_id,
+                db_path=_DB_PATH,
+            )
+        )
         score = sc.score_single(
             _FakeJudge(),
             "judge/x",

@@ -3,11 +3,11 @@ from __future__ import annotations
 import streamlit as st
 
 from src.ui.case_study import render_case_study_page
+from src.ui.components import render_html
+from src.ui.conclusions import render_conclusions_page
+from src.ui.page_config import DEFAULT_PAGE_KEY, PAGE_CONFIG_BY_KEY
 from src.ui.samples import render_samples_page
 from src.ui.test_run import render_test_run_page
-from src.ui.conclusions import render_conclusions_page
-from src.ui.components import render_html
-from src.ui.page_config import DEFAULT_PAGE_KEY, PAGE_CONFIG_BY_KEY
 
 PROJECT_DISPLAY_NAME = "财务/法律/投行场景大模型对比评测"
 

@@ -5,7 +5,6 @@ from pathlib import Path
 from src.ui.navigation import PAGES
 from src.ui.page_config import PAGE_CONFIGS
 
-
 EXPECTED_PAGE_ORDER = ["case_study", "samples", "test_run", "conclusions"]
 
 BANNED_PHRASES = ["AI赋能", "智能洞察", "一键优化", "专家级", "秒级"]

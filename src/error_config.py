@@ -17,7 +17,6 @@ import math
 from dataclasses import dataclass
 from typing import Iterable, Mapping
 
-
 # 问题类别常量，便于调用方分组展示或映射到校验报告。
 INVALID_LABEL = "invalid_label"
 HIGH_FREQ_WITHOUT_ACTION = "high_freq_without_action"

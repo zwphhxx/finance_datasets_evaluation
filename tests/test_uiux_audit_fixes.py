@@ -65,8 +65,8 @@ class UIUXAuditFixesTests(unittest.TestCase):
             self.assertNotIn(selector, components.STYLE_CSS)
 
     def test_top_navigation_has_four_items_and_no_duplicate_html_buttons(self):
-        from src.ui.navigation import PAGES, _TOP_NAV_ITEMS
         import src.ui.components as components
+        from src.ui.navigation import _TOP_NAV_ITEMS, PAGES
 
         self.assertEqual(4, len(_TOP_NAV_ITEMS))
         self.assertEqual(sorted([key for _, key in _TOP_NAV_ITEMS]), sorted(PAGES.keys()))
@@ -284,7 +284,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn("detail-panel-toolbar-title", components_source)
 
     def test_review_page_is_not_in_primary_navigation(self):
-        from src.ui.navigation import PAGES, _TOP_NAV_ITEMS
+        from src.ui.navigation import _TOP_NAV_ITEMS, PAGES
 
         self.assertNotIn("review", PAGES)
         labels = [label for label, _ in _TOP_NAV_ITEMS]

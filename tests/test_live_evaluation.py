@@ -10,14 +10,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.models.base import GenerationResult, ModelProvider, STATUS_FAILED, STATUS_MOCK
+from app.db.repository import Repository
+from app.models.base import STATUS_FAILED, STATUS_MOCK, GenerationResult, ModelProvider
 from app.models.registry import get_provider
 from app.services import dataset_service as ds
 from app.services import eval_runner as er
-from app.db.repository import Repository
 from src.ui.navigation import PAGES
 from src.ui.page_config import PAGE_CONFIG_BY_KEY
-
 
 _TMP = tempfile.TemporaryDirectory()
 _DB_PATH = Path(_TMP.name) / "live_evaluation_test.db"
@@ -144,12 +143,37 @@ class PersistenceTests(unittest.TestCase):
             for task in tasks
         ]
 
-        self.assertTrue(er.initialize_run_queue(run_id, "mock", queue_items, db_path=_DB_PATH))
+        run_metadata = {
+            "run_id": run_id,
+            "provider": "mock",
+            "dataset_hash": "d" * 64,
+            "prompt_hash": "p" * 64,
+            "status": "running",
+        }
+        self.assertTrue(
+            er.initialize_run_queue(
+                run_id,
+                "mock",
+                queue_items,
+                metadata=run_metadata,
+                db_path=_DB_PATH,
+            )
+        )
         queued = er.load_run_queue(run_id, db_path=_DB_PATH)
         self.assertEqual(2, len(queued))
         self.assertEqual({"queued"}, {row["status"] for row in queued})
+        saved_metadata = er.load_run_metadata(run_id, db_path=_DB_PATH)
+        self.assertEqual("d" * 64, saved_metadata["dataset_hash"])
+        self.assertEqual("p" * 64, saved_metadata["prompt_hash"])
 
-        er.mark_run_queue_item_running(run_id, queue_items[0]["case_id"], "mock/chat-base", db_path=_DB_PATH)
+        self.assertTrue(
+            er.mark_run_queue_item_running(
+                run_id,
+                queue_items[0]["case_id"],
+                "mock/chat-base",
+                db_path=_DB_PATH,
+            )
+        )
         outcome = er.run_single(get_provider("mock"), "mock/chat-base", tasks[0])
         self.assertTrue(er.persist_run_outcome(run_id, "mock", outcome, db_path=_DB_PATH))
 

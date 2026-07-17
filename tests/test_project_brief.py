@@ -4,7 +4,7 @@ import unittest
 import warnings
 
 import src.ui.components as components
-from src.ui.navigation import PAGES, _NAV_GROUPS, _TOP_NAV_ITEMS
+from src.ui.navigation import _NAV_GROUPS, _TOP_NAV_ITEMS, PAGES
 from src.ui.page_config import PAGE_CONFIG_BY_KEY
 
 

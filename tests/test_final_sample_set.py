@@ -9,7 +9,6 @@ import csv
 import json
 import shutil
 import unittest
-import re
 from pathlib import Path
 from tempfile import TemporaryDirectory
 

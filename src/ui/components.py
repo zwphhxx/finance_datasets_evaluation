@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from html import escape
 import re
+from html import escape
 from textwrap import dedent
 
 import streamlit as st
-
 
 PROJECT_DISPLAY_NAME = "财务/法律/投行场景大模型对比评测"
 

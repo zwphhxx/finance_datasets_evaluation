@@ -8,10 +8,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from html import escape
 import os
 import re
+from datetime import datetime
+from html import escape
 
 import pandas as pd
 import streamlit as st
@@ -25,14 +25,13 @@ from app.services import model_display as md
 from app.services import scorer as sc
 from src.ui.components import (
     render_empty_state,
-    render_html,
     render_inline_status,
     render_markdown_detail_panel,
     render_numbered_section,
     render_page_heading,
 )
-from src.ui.page_config import get_page_config
 from src.ui.labels import TASK_TYPE_LABELS, display_label, summarize_text
+from src.ui.page_config import get_page_config
 
 MAIN_PROMPT = "选择样本和模型，运行评测并生成 AI 评分。"
 
@@ -87,6 +86,70 @@ _JUDGE_MAX_TOKENS = 2048
 _EVAL_MAX_TOKENS_DEFAULT = 4096
 _EVAL_MAX_TOKENS_LIMIT = 8192
 _EVAL_MAX_TOKENS_ENV = "FINDUEVAL_EVAL_MAX_TOKENS"
+
+
+def _persistence_gate(result: bool) -> None:
+    if not result:
+        raise RuntimeError("runtime persistence required")
+
+
+def _require_persistence_preflight(provider_name: str) -> None:
+    from app.persistence import (
+        ResultStoreSettings,
+        get_result_store,
+        require_durable_live_store,
+    )
+
+    store = get_result_store()
+    settings = ResultStoreSettings(url="", is_postgresql=store.is_postgresql)
+    require_durable_live_store(provider_name, settings)
+    _persistence_gate(store.ping())
+
+
+def _run_checkpoint_metadata(
+    run_id: str,
+    provider: str,
+    model_ids: list[str],
+    queue_items: list[dict],
+    temperature,
+    max_tokens,
+) -> dict:
+    from app.services.run_checkpoint import build_run_metadata
+
+    versions = ds.list_dataset_versions()
+    prompt_payload = [
+        {
+            "case_id": str(item.get("case_id") or ""),
+            "messages": er.build_messages(item.get("task") or {}),
+        }
+        for item in queue_items
+    ]
+    return build_run_metadata(
+        run_id=run_id,
+        provider=provider,
+        model_ids=model_ids,
+        queue_items=queue_items,
+        generation_parameters={"temperature": temperature, "max_tokens": max_tokens},
+        judge_parameters={
+            "temperature": _JUDGE_TEMPERATURE,
+            "max_tokens": _JUDGE_MAX_TOKENS,
+            "judge_model": sc.DEFAULT_JUDGE_MODEL,
+        },
+        dataset_version=versions[0] if versions else "",
+        prompt_payload=prompt_payload,
+    )
+
+
+def _checkpoint_matches_current(
+    saved: dict | None,
+    current: dict,
+) -> bool:
+    if not saved:
+        return False
+    return all(
+        str(saved.get(field) or "") == str(current.get(field) or "")
+        for field in ("dataset_version", "dataset_hash", "prompt_hash")
+    )
 
 
 def resolve_eval_max_tokens(raw_value: str | None = None) -> int:
@@ -1212,7 +1275,7 @@ def _compare_result_from_state(state: dict | None = None, outcomes: list[er.RunO
     )
 
 
-def _recover_latest_run_from_sqlite(task_records: list[dict]) -> object | None:
+def _recover_latest_run(task_records: list[dict]) -> object | None:
     if _run_state() or eval_state.get_last_run() is not None:
         return eval_state.get_last_run()
     rows = er.latest_run_queue()
@@ -1221,8 +1284,23 @@ def _recover_latest_run_from_sqlite(task_records: list[dict]) -> object | None:
     run_id = str(rows[0].get("run_id") or "")
     if not run_id:
         return None
-    result = er.restore_compare_result_from_db(run_id)
     queue_items = _run_queue_items_from_rows(rows, task_records)
+    model_ids = _dedupe([str(row.get("model_id") or "") for row in rows])
+    provider = str(rows[0].get("provider") or "")
+    current_metadata = _run_checkpoint_metadata(
+        run_id,
+        provider,
+        model_ids,
+        queue_items,
+        _EVAL_TEMPERATURE_DEFAULT,
+        resolve_eval_max_tokens(),
+    )
+    if not _checkpoint_matches_current(
+        er.load_run_metadata(run_id),
+        current_metadata,
+    ):
+        return None
+    result = er.restore_compare_result_from_db(run_id)
     summary = er.summarize_run_queue(run_id)
     status = "interrupted" if summary.get("unfinished") else "completed"
     if result is not None:
@@ -1231,7 +1309,7 @@ def _recover_latest_run_from_sqlite(task_records: list[dict]) -> object | None:
         status=status,
         run_id=run_id,
         provider=str(rows[0].get("provider") or getattr(result, "provider", "")),
-        model_ids=_dedupe([str(row.get("model_id") or "") for row in rows]),
+        model_ids=model_ids,
         mode=str(getattr(result, "mode", "") or "live"),
         created_at=str(rows[0].get("created_at") or datetime.now().isoformat(timespec="seconds")),
         queue_items=queue_items,
@@ -1242,7 +1320,7 @@ def _recover_latest_run_from_sqlite(task_records: list[dict]) -> object | None:
     return result
 
 
-def _recover_latest_score_from_sqlite(compare_result) -> object | None:
+def _recover_latest_score(compare_result) -> object | None:
     if _score_state() or eval_state.get_last_score() is not None:
         return eval_state.get_last_score()
     rows = sc.latest_score_queue()
@@ -1378,7 +1456,29 @@ def _execute_run_queue(
         "created_at": created_at,
         "queue_items": all_queue,
     }
-    er.initialize_run_queue(run_id, state_provider, all_queue)
+    interruption_message = "本次运行出现单条失败。已完成结果会保留，未完成项可稍后继续。"
+    try:
+        _require_persistence_preflight(state_provider)
+        metadata = _run_checkpoint_metadata(
+            run_id,
+            state_provider,
+            model_list,
+            all_queue,
+            temperature,
+            max_tokens,
+        )
+        _persistence_gate(
+            er.initialize_run_queue(
+                run_id,
+                state_provider,
+                all_queue,
+                metadata=metadata,
+            )
+        )
+    except Exception:
+        _finalize_run_result("interrupted", state, outcomes, interruption_message)
+        st.rerun()
+        return
     _set_run_state(
         status="running",
         run_id=run_id,
@@ -1397,7 +1497,18 @@ def _execute_run_queue(
     for index, item in enumerate(queue_items):
         waiting = queue_items[index + 1:]
         _render_live_run_queue(queue_slot, all_queue, outcomes, item, waiting, mode)
-        er.mark_run_queue_item_running(run_id, item["case_id"], item["model_id"])
+        try:
+            _persistence_gate(
+                er.mark_run_queue_item_running(
+                    run_id,
+                    item["case_id"],
+                    item["model_id"],
+                )
+            )
+        except RuntimeError:
+            interrupted = True
+            message = interruption_message
+            break
         try:
             outcome = er.run_single(
                 provider,
@@ -1409,10 +1520,19 @@ def _execute_run_queue(
             )
         except Exception:
             outcome = _unexpected_failure_outcome(provider, item)
-            message = "本次运行出现单条失败。已完成结果会保留，未完成项可稍后继续。"
+            message = interruption_message
         outcomes.append(outcome)
         persisted = er.persist_run_outcome(run_id, mode, outcome)
-        st.session_state["test_run_persisted"] = bool(st.session_state.get("test_run_persisted") or persisted)
+        try:
+            _persistence_gate(persisted)
+        except RuntimeError:
+            interrupted = True
+            message = interruption_message
+        st.session_state["test_run_persisted"] = (
+            bool(st.session_state.get("test_run_persisted") or persisted)
+            if persisted
+            else False
+        )
         _set_run_state(
             status="running",
             run_id=run_id,
@@ -1530,7 +1650,7 @@ def _execute_retry_score_queue(
     judge_provider = str(getattr(provider, "name", ""))
     gold_map = getattr(base, "gold_answer_map", {}) or {}
     tasks_by_case = {str(row.get("case_id") or ""): row for row in task_records}
-    state = _score_state()
+    state = _score_state() or {}
     original_queue = list(state.get("queue_items") or build_score_queue_items(compare_result))
     skipped_count = int(state.get("skipped_count") or build_score_plan_summary(compare_result)["skipped"])
     created_at = str(getattr(score_result, "created_at", "") or datetime.now().isoformat(timespec="seconds"))
@@ -1540,10 +1660,38 @@ def _execute_retry_score_queue(
     st.session_state[_SCORE_RETRY_RUNNING_KEY] = True
     _render_live_score_queue(queue_slot, retry_items, retried_outcomes, retry_items[0], retry_items[1:], 0, mode)
 
+    interruption_message = "本次评分未完成。已生成的 AI 评分已保留，未完成项可重新评分。"
+    interrupted = False
+    try:
+        _require_persistence_preflight(judge_provider)
+        _persistence_gate(
+            sc.initialize_score_queue(
+                score_run_id,
+                run_id,
+                original_queue,
+                judge_provider,
+                judge_model,
+            )
+        )
+    except Exception:
+        interrupted = True
+
     for index, run_outcome in enumerate(retry_items):
+        if interrupted:
+            break
         waiting = retry_items[index + 1:]
         _render_live_score_queue(queue_slot, retry_items, retried_outcomes, run_outcome, waiting, 0, mode)
-        sc.mark_score_queue_item_running(score_run_id, run_outcome.case_id, run_outcome.model_id)
+        try:
+            _persistence_gate(
+                sc.mark_score_queue_item_running(
+                    score_run_id,
+                    run_outcome.case_id,
+                    run_outcome.model_id,
+                )
+            )
+        except RuntimeError:
+            interrupted = True
+            break
         task = tasks_by_case.get(run_outcome.case_id) or {
             "case_id": run_outcome.case_id,
             "task_type": run_outcome.task_type,
@@ -1573,8 +1721,14 @@ def _execute_retry_score_queue(
             mode,
             retry_outcome,
         )
-        st.session_state["test_run_score_persisted"] = bool(
-            st.session_state.get("test_run_score_persisted") or persisted
+        try:
+            _persistence_gate(persisted)
+        except RuntimeError:
+            interrupted = True
+        st.session_state["test_run_score_persisted"] = (
+            bool(st.session_state.get("test_run_score_persisted") or persisted)
+            if persisted
+            else False
         )
         _set_score_state(
             status="running",
@@ -1591,12 +1745,18 @@ def _execute_retry_score_queue(
         next_item = waiting[0] if waiting else None
         next_waiting = waiting[1:] if waiting else []
         _render_live_score_queue(queue_slot, retry_items, retried_outcomes, next_item, next_waiting, 0, mode)
+        if interrupted:
+            break
 
     success_count = sum(1 for outcome in retried_outcomes if outcome.ok)
     failed_count = len(retried_outcomes) - success_count
-    message = f"已重试 {len(retried_outcomes)} 条，成功 {success_count} 条，仍失败 {failed_count} 条。"
+    message = (
+        interruption_message
+        if interrupted
+        else f"已重试 {len(retried_outcomes)} 条，成功 {success_count} 条，仍失败 {failed_count} 条。"
+    )
     _set_score_state(
-        status="completed",
+        status="interrupted" if interrupted else "completed",
         score_run_id=score_run_id,
         run_id=run_id,
         judge_provider=judge_provider,
@@ -1653,7 +1813,22 @@ def _execute_score_queue(
         "queue_items": full_queue,
         "skipped_count": int(skipped_count),
     }
-    sc.initialize_score_queue(score_run_id, state["run_id"], full_queue, judge_provider, judge_model)
+    interruption_message = "本次评分未完成。已生成的 AI 评分已保留，未完成项可重新评分。"
+    try:
+        _require_persistence_preflight(judge_provider)
+        _persistence_gate(
+            sc.initialize_score_queue(
+                score_run_id,
+                state["run_id"],
+                full_queue,
+                judge_provider,
+                judge_model,
+            )
+        )
+    except Exception:
+        _finalize_score_result("interrupted", state, outcomes, interruption_message)
+        st.rerun()
+        return
     _set_score_state(
         status="running",
         score_run_id=score_run_id,
@@ -1675,7 +1850,18 @@ def _execute_score_queue(
     for index, run_outcome in enumerate(queue_items):
         waiting = queue_items[index + 1:]
         _render_live_score_queue(queue_slot, full_queue, outcomes, run_outcome, waiting, skipped_count, mode)
-        sc.mark_score_queue_item_running(score_run_id, run_outcome.case_id, run_outcome.model_id)
+        try:
+            _persistence_gate(
+                sc.mark_score_queue_item_running(
+                    score_run_id,
+                    run_outcome.case_id,
+                    run_outcome.model_id,
+                )
+            )
+        except RuntimeError:
+            interrupted = True
+            message = interruption_message
+            break
         task = tasks_by_case.get(run_outcome.case_id) or {
             "case_id": run_outcome.case_id,
             "task_type": run_outcome.task_type,
@@ -1696,7 +1882,7 @@ def _execute_score_queue(
         except Exception:
             score_outcome = _unexpected_score_failure_outcome(provider, judge_model, run_outcome, dimensions)
             interrupted = True
-            message = "本次评分未完成。已生成的 AI 评分已保留，未完成项可重新评分。"
+            message = interruption_message
         outcomes.append(score_outcome)
         persisted = sc.persist_score_outcome(
             score_run_id,
@@ -1706,8 +1892,15 @@ def _execute_score_queue(
             mode,
             score_outcome,
         )
-        st.session_state["test_run_score_persisted"] = bool(
-            st.session_state.get("test_run_score_persisted") or persisted
+        try:
+            _persistence_gate(persisted)
+        except RuntimeError:
+            interrupted = True
+            message = interruption_message
+        st.session_state["test_run_score_persisted"] = (
+            bool(st.session_state.get("test_run_score_persisted") or persisted)
+            if persisted
+            else False
         )
         _set_score_state(
             status="running",
@@ -1833,7 +2026,7 @@ def _render_results(provider_name: str, temperature, max_tokens, task_records: l
     result = eval_state.get_last_run()
     state = _run_state()
     if result is None and not state:
-        result = _recover_latest_run_from_sqlite(task_records)
+        result = _recover_latest_run(task_records)
         state = _run_state()
     if result is None and state and _partial_outcomes():
         result = _compare_result_from_state(state, _partial_outcomes())
@@ -2129,7 +2322,6 @@ def render_model_answer_detail(
     meta_parts = [f"耗时：{_latency_label(outcome.latency_ms)}"]
     if outcome.success or outcome.answer_length:
         meta_parts.append(f"回答长度：{_answer_length_label(outcome)}")
-    finish_reason = getattr(outcome, "finish_reason", None)
     meta = "｜".join(meta_parts) + f"\n模型 ID：{outcome.model_id}"
     answer = outcome.answer_text or "—"
     display_text = _answer_preview(answer) if preview else answer
@@ -2175,7 +2367,7 @@ def render_model_answer_detail(
 def _render_scoring(base, provider_name: str, task_records: list[dict]) -> None:
     result = eval_state.get_last_run()
     if result is None:
-        result = _recover_latest_run_from_sqlite(task_records)
+        result = _recover_latest_run(task_records)
     if result is None:
         st.caption("请先运行评测，系统会基于成功回答生成 AI 评分。")
         return
@@ -2184,7 +2376,7 @@ def _render_scoring(base, provider_name: str, task_records: list[dict]) -> None:
     partial_run = run_status in {"running", "interrupted", "failed"}
     existing_score_result = eval_state.get_last_score()
     if existing_score_result is None:
-        existing_score_result = _recover_latest_score_from_sqlite(result)
+        existing_score_result = _recover_latest_score(result)
     score_plan = build_score_plan_summary(result, existing_score_result)
     existing_scores = list(getattr(existing_score_result, "outcomes", []) or [])
     if partial_run:
@@ -2228,9 +2420,9 @@ def _render_score_results(base, provider_name: str, task_records: list[dict]) ->
     compare_result = eval_state.get_last_run()
     state = _score_state()
     if compare_result is None:
-        compare_result = _recover_latest_run_from_sqlite(task_records)
+        compare_result = _recover_latest_run(task_records)
     if score_result is None and not state:
-        score_result = _recover_latest_score_from_sqlite(compare_result)
+        score_result = _recover_latest_score(compare_result)
         state = _score_state()
     if score_result is None and state and _partial_score_outcomes():
         score_result = _score_result_from_state(state, _partial_score_outcomes())

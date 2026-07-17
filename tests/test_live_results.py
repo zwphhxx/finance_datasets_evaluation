@@ -18,18 +18,16 @@ from unittest import mock
 
 from app.models.base import (
     ERROR_EMPTY_RESPONSE,
+    STATUS_FAILED,
+    STATUS_SUCCESS,
     GenerationResult,
     ModelInfo,
     ModelListResult,
     ModelProvider,
-    STATUS_FAILED,
-    STATUS_SUCCESS,
     extract_answer_text,
 )
-from app.models import siliconflow as sf
 from app.models.siliconflow import SiliconFlowProvider, _HttpResponse
 from app.services import eval_runner as er
-
 
 _MESSAGES = [{"role": "user", "content": "请概述一笔收购的尽调要点"}]
 

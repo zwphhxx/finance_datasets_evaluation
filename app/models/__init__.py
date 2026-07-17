@@ -7,17 +7,17 @@
 from __future__ import annotations
 
 from app.models.base import (
-    ConnectivityResult,
     ERROR_EMPTY_RESPONSE,
     ERROR_INCOMPLETE_RESPONSE,
+    STATUS_FAILED,
+    STATUS_MOCK,
+    STATUS_SUCCESS,
+    ConnectivityResult,
     GenerationResult,
     ModelClient,
     ModelInfo,
     ModelListResult,
     ModelProvider,
-    STATUS_FAILED,
-    STATUS_MOCK,
-    STATUS_SUCCESS,
     extract_answer_text,
     extract_finish_reason,
 )

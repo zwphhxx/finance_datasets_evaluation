@@ -22,7 +22,6 @@ from typing import Any
 
 import pandas as pd
 
-
 REMOVED_FROM_TEST_STATUS = "已移出测试"
 _LEGACY_REMOVED_STATUS = "已" + "归" + "档"
 _LEGACY_PENDING_STATUS = "待" + "复" + "核"

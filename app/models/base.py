@@ -12,7 +12,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
-
 # 统一的状态取值：成功 / 失败 / mock（占位回退）。
 STATUS_SUCCESS = "success"
 STATUS_FAILED = "failed"
