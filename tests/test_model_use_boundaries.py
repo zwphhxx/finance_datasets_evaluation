@@ -80,6 +80,32 @@ class ModelBoundaryClassificationTests(unittest.TestCase):
         self.assertEqual(2, row["sample_count"])
         self.assertFalse(row["has_high_severity_error"])
 
+    def test_positive_risk_wording_does_not_downgrade_structured_scores(self):
+        scores = pd.DataFrame([
+            _score("C1", "model-positive-note", 92, review_note="风险覆盖全面，无不可接受错误"),
+            _score("C2", "model-positive-note", 90, review_note="风险覆盖全面，无不可接受错误"),
+        ])
+
+        row = _boundary_by_model(
+            cc.build_model_boundaries(pd.DataFrame(), scores, pd.DataFrame(), _tasks())
+        )["model-positive-note"]
+
+        self.assertEqual("可作为初稿参考", row["boundary"])
+        self.assertFalse(any("评分说明提示" in reason for reason in row["reasons"]))
+
+    def test_positive_review_note_remains_detail_instead_of_main_issue(self):
+        scores = pd.DataFrame([
+            _score("C1", "model-positive-detail", 92, review_note="风险覆盖全面，无不可接受错误"),
+            _score("C2", "model-positive-detail", 90, review_note="风险覆盖全面，无不可接受错误"),
+            _score("C3", "model-positive-detail", 91, review_note="风险覆盖全面，无不可接受错误"),
+        ])
+
+        row = cc.build_model_issue_summaries(scores, pd.DataFrame(), _tasks())[0]
+
+        self.assertEqual("可作为初稿参考", row["current_suggestion"])
+        self.assertNotIn("评分说明提示需谨慎", row["main_issues"])
+        self.assertTrue(any("评分说明：风险覆盖全面" in detail for detail in row["detail_basis"]))
+
     def test_medium_average_requires_caution(self):
         scores = pd.DataFrame([
             _score("C1", "model-mid", 78),
@@ -128,6 +154,28 @@ class ModelBoundaryClassificationTests(unittest.TestCase):
         row = _boundary_by_model(cc.build_model_boundaries(pd.DataFrame(), scores, errors, tasks))["model-high-risk"]
 
         self.assertEqual("不可作为依据", row["boundary"])
+        self.assertTrue(any("高风险任务" in reason for reason in row["reasons"]))
+
+    def test_high_risk_low_score_requires_caution_without_forcing_danger(self):
+        scores = pd.DataFrame([
+            _score("C1", "model-high-risk-low-score", 52),
+            _score("C2", "model-high-risk-low-score", 100),
+            _score("C3", "model-high-risk-low-score", 100),
+            _score("C4", "model-high-risk-low-score", 100),
+        ])
+        tasks = _tasks(
+            {"case_id": "C1", "risk_level": "高"},
+            {"case_id": "C2", "risk_level": "中"},
+            {"case_id": "C3", "risk_level": "中"},
+            {"case_id": "C4", "risk_level": "低"},
+        )
+
+        row = _boundary_by_model(
+            cc.build_model_boundaries(pd.DataFrame(), scores, pd.DataFrame(), tasks)
+        )["model-high-risk-low-score"]
+
+        self.assertGreaterEqual(row["avg_total"], cc.BOUNDARY_REFERENCE_FLOOR)
+        self.assertEqual("需谨慎参考", row["boundary"])
         self.assertTrue(any("高风险任务" in reason for reason in row["reasons"]))
 
     def test_weak_dimension_is_reported_in_reasons(self):

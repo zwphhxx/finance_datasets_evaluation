@@ -55,10 +55,6 @@ _BOUNDARY_RANK = {
     BOUNDARY_NOT_EVIDENCE: 2,
 }
 _RANK_BOUNDARY = {rank: boundary for boundary, rank in _BOUNDARY_RANK.items()}
-_NOT_EVIDENCE_NOTE_KEYWORDS = ("不可采信", "不可作为依据", "不能采信", "不应采信", "重大遗漏", "重大错误")
-_CAUTION_NOTE_KEYWORDS = ("谨慎", "需谨慎", "需进一步", "证据不足", "不足", "风险")
-
-
 def display_model_name(
     name: Any,
     mapping: Mapping[str, str] | None = None,
@@ -296,8 +292,8 @@ def build_model_boundaries(
 
         high_risk_low_scores = _high_risk_low_scores(scores, high_risk_cases, BOUNDARY_PASS_FLOOR)
         if high_risk_low_scores:
-            rank = _BOUNDARY_RANK[BOUNDARY_NOT_EVIDENCE]
-            reasons.append("高风险任务中出现明显低分")
+            rank = max(rank, _BOUNDARY_RANK[BOUNDARY_REVIEW])
+            reasons.append("高风险任务中出现明显低分，需谨慎参考")
         elif _high_risk_low_scores(scores, high_risk_cases, HIGH_RISK_REVIEW_FLOOR):
             rank = max(rank, _BOUNDARY_RANK[BOUNDARY_REVIEW])
             reasons.append("高风险任务表现不足，需谨慎参考")
@@ -310,11 +306,6 @@ def build_model_boundaries(
             if severe:
                 rank = _BOUNDARY_RANK[BOUNDARY_NOT_EVIDENCE]
                 reasons.append("关键维度严重低分")
-
-        note_rank = _note_risk_rank(notes)
-        if note_rank:
-            rank = max(rank, note_rank)
-            reasons.append("评分说明提示需谨慎" if note_rank == 1 else "评分说明提示不可采信")
 
         boundary = _RANK_BOUNDARY[rank]
         rows.append(
@@ -419,8 +410,6 @@ def build_model_issue_summaries(
             boundary=boundary,
             weaknesses=weaknesses,
             high_errors=high_errors,
-            notes=notes,
-            rationale_snippets=rationale_snippets,
             sample_insufficient=sample_insufficient,
         )
         summaries.append(
@@ -550,8 +539,6 @@ def _main_issues_for_model(
     boundary: Mapping[str, Any],
     weaknesses: Sequence[Mapping[str, Any]],
     high_errors: pd.DataFrame,
-    notes: Sequence[str],
-    rationale_snippets: Sequence[str],
     sample_insufficient: bool,
 ) -> list[str]:
     issues: list[str] = []
@@ -565,10 +552,6 @@ def _main_issues_for_model(
         issues.append("存在高严重度错误")
     if int(boundary.get("high_risk_issue_count") or 0) > 0:
         issues.append("高风险任务表现不足")
-    if _texts_indicate_caution(notes):
-        issues.append("评分说明提示需谨慎")
-    elif _texts_indicate_caution(rationale_snippets):
-        issues.append("评分依据提示需关注")
     if not issues:
         issues.append("当前样本内未见突出问题")
     return _dedupe(issues)[:4]
@@ -668,11 +651,6 @@ def _parse_rationale(raw: Any) -> dict[str, str]:
     if not isinstance(payload, Mapping):
         return {}
     return {str(key): _text(value) for key, value in payload.items() if _text(value)}
-
-
-def _texts_indicate_caution(values: Sequence[str]) -> bool:
-    text = " ".join(_text(value) for value in values)
-    return bool(text and any(keyword in text for keyword in (*_CAUTION_NOTE_KEYWORDS, "不足", "缺少", "遗漏", "未能")))
 
 
 def _usage_advice(current_suggestion: str) -> str:
@@ -808,17 +786,6 @@ def _model_dimension_weaknesses(group: pd.DataFrame) -> list[dict[str, Any]]:
             )
     rows.sort(key=lambda item: (item["attainment"], -item["gap"], item["dimension"]))
     return rows
-
-
-def _note_risk_rank(notes: Sequence[str]) -> int:
-    text = " ".join(notes)
-    if not text:
-        return 0
-    if any(keyword in text for keyword in _NOT_EVIDENCE_NOTE_KEYWORDS):
-        return _BOUNDARY_RANK[BOUNDARY_NOT_EVIDENCE]
-    if any(keyword in text for keyword in _CAUTION_NOTE_KEYWORDS):
-        return _BOUNDARY_RANK[BOUNDARY_REVIEW]
-    return 0
 
 
 def _dedupe(values: Sequence[str]) -> list[str]:
