@@ -915,10 +915,9 @@ def _render_sample_operation_message() -> None:
         st.error(message)
     elif level == "warning":
         st.warning(message)
-    elif level == "info":
-        st.info(message)
     else:
-        st.success(message)
+        # success/info：轻量确认用 toast，避免横幅把页面内容下推。
+        st.toast(message)
 
 
 def _sync_samples_to_formal_assets() -> None:
@@ -996,8 +995,19 @@ def render_samples_page(data_bundle: dict) -> None:
     if not filtered:
         render_empty_state("没有符合当前条件的样本。")
     else:
+        st.caption("点击表格任意行选择样本，在下方 03 区查看评测资产结构。")
         _render_samples_table(filtered, readiness_map, task_records)
+        render_html('<div class="mobile-scroll-hint">表格可左右滑动查看完整内容</div>')
+        selected = _ensure_selected_sample(filtered)
+        if selected is not None:
+            render_html(
+                '<div class="table-selection-echo">'
+                f'已选 {escape(str(selected.sample_id))} · '
+                '<a href="#fde-current-sample">查看下方 03 当前样本 ↓</a>'
+                "</div>"
+            )
 
+    render_html('<a id="fde-current-sample"></a>')
     render_numbered_section("03", "当前样本", "选择一个样本，查看评测资产结构。")
     _render_sample_detail(filtered, readiness_map, task_records, gold_map, rubric_dimensions)
     _render_test_run_availability_note(samples, readiness_map)

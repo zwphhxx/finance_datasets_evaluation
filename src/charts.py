@@ -44,11 +44,12 @@ def themed_bar_chart(
     y_title: str,
     color_field: str | None = None,
     color_title: str | None = None,
+    y_format: str | None = None,
 ) -> None:
     """Render a brand-themed grouped/simple bar chart with Chinese axis titles."""
     encodings = {
         "x": alt.X(f"{x}:N", title=x_title, axis=alt.Axis(labelAngle=0)),
-        "y": alt.Y(f"{y}:Q", title=y_title),
+        "y": alt.Y(f"{y}:Q", title=y_title, scale=alt.Scale(zero=True)),
         "tooltip": list(data.columns),
     }
     if color_field:
@@ -62,6 +63,11 @@ def themed_bar_chart(
         encodings["color"] = alt.value(BRAND_BLUE)
 
     chart = alt.Chart(data).mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(**encodings)
+    if y_format:
+        labels = chart.mark_text(dy=-6, color=AXIS_LABEL_COLOR).encode(
+            text=alt.Text(f"{y}:Q", format=y_format)
+        )
+        chart = chart + labels
     st.altair_chart(_base_config(chart), use_container_width=True)
 
 

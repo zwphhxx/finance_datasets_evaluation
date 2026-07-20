@@ -382,6 +382,27 @@ header,
     line-height: 1.6;
     margin: 0.5rem 0 1rem 0;
 }
+.table-selection-echo {
+    color: var(--fde-muted);
+    font-size: 0.86rem;
+    margin: 0.35rem 0 0.75rem;
+}
+.table-selection-echo a {
+    color: var(--fde-accent);
+    font-weight: 650;
+    text-decoration: none;
+}
+.mobile-scroll-hint {
+    display: none;
+}
+@media (max-width: 760px) {
+    .mobile-scroll-hint {
+        color: var(--fde-muted);
+        display: block;
+        font-size: 0.8rem;
+        margin: 0.25rem 0 0.5rem;
+    }
+}
 .detail-panel,
 .sample-detail-panel {
     border: 1px solid var(--fde-line);

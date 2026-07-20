@@ -17,6 +17,7 @@ from src.charts import themed_bar_chart
 from src.ui import conclusions_data as cd
 from src.ui.components import (
     render_empty_state,
+    render_html,
     render_inline_status,
     render_markdown_detail_panel,
     render_numbered_section,
@@ -29,10 +30,11 @@ def render_conclusions_page(data_bundle: dict) -> None:
     base = data_bundle.get("base") or data_bundle["data"]
     tasks = getattr(base, "tasks", None)
 
-    live_scores = cd.load_current_cohort_scores()
+    with st.spinner("正在汇总 AI 评分结果…"):
+        live_scores = cd.load_current_cohort_scores()
+        live_responses = cd.load_live_responses()
     ai_scores, excluded_scores = cc.split_live_scores(live_scores)
     model_summaries = cc.build_model_issue_summaries(ai_scores, pd.DataFrame(), tasks)
-    live_responses = cd.load_live_responses()
     answer_rows = cc.build_answer_detail_rows(ai_scores, live_responses)
 
     config = get_page_config("conclusions")
@@ -74,7 +76,7 @@ def _render_data_source_notice(
     if isinstance(message, dict) and message.get("text"):
         level = str(message.get("level") or "info")
         if level == "success":
-            st.success(str(message["text"]))
+            st.toast(str(message["text"]))
         elif level == "warning":
             st.warning(str(message["text"]))
         else:
@@ -167,6 +169,9 @@ def _render_current_conclusion(ai_scores: pd.DataFrame) -> None:
     summary = cc.summarize_formal(empty_seed, ai_scores)
     if summary["total_rows"] == 0:
         render_empty_state("暂无 AI 评分结果。请先在发起评测页运行评测。")
+        if st.button("去发起评测", key="conclusion_goto_test_run_empty", type="secondary"):
+            st.session_state.current_page = "test_run"
+            st.rerun()
         st.caption(
             "结论基于当前样本、模型回答和 AI 评分生成，仅代表当前样本范围内的自动评测结果，"
             "不代表模型整体能力或采购建议。"
@@ -197,6 +202,9 @@ def _render_model_recommendations(model_summaries: list[dict]) -> None:
 
     if not model_summaries:
         render_empty_state("暂无模型判断。请先在发起评测页运行评测。")
+        if st.button("去发起评测", key="conclusion_goto_test_run_models", type="secondary"):
+            st.session_state.current_page = "test_run"
+            st.rerun()
         return
 
     rows = [_recommendation_row(item) for item in model_summaries]
@@ -212,13 +220,14 @@ def _render_model_recommendations(model_summaries: list[dict]) -> None:
             "主要依据": st.column_config.TextColumn("主要依据", width="large"),
         },
     )
+    render_html('<div class="mobile-scroll-hint">表格可左右滑动查看完整内容</div>')
     chart_rows = pd.DataFrame(
         {
             "模型": [str(item.get("display_name") or item.get("model_name") or "未标注模型") for item in model_summaries],
             "平均分": [float(item.get("avg_total") or 0) for item in model_summaries],
         }
     )
-    themed_bar_chart(chart_rows, x="模型", y="平均分", x_title="模型", y_title="平均分")
+    themed_bar_chart(chart_rows, x="模型", y="平均分", x_title="模型", y_title="平均分", y_format=".1f")
     st.caption("当前判断只说明模型在当前样本范围内的使用边界。")
 
 
