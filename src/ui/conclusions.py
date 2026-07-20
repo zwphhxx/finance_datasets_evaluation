@@ -212,6 +212,13 @@ def _render_model_recommendations(model_summaries: list[dict]) -> None:
             "主要依据": st.column_config.TextColumn("主要依据", width="large"),
         },
     )
+    chart_rows = pd.DataFrame(
+        {
+            "模型": [str(item.get("display_name") or item.get("model_name") or "未标注模型") for item in model_summaries],
+            "平均分": [float(item.get("avg_total") or 0) for item in model_summaries],
+        }
+    )
+    themed_bar_chart(chart_rows, x="模型", y="平均分", x_title="模型", y_title="平均分")
     st.caption("当前判断只说明模型在当前样本范围内的使用边界。")
 
 
