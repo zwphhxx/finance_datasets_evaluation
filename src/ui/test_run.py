@@ -735,9 +735,9 @@ def _selected_model_ids_from_state() -> list[str]:
 def _selected_sample_summary(selected_tasks: list[dict]) -> str:
     if not selected_tasks:
         return "未选择"
-    labels = [f'{item["case_id"]} · {item["title"]}' for item in selected_tasks[:2]]
-    suffix = f" 等 {len(selected_tasks)} 个" if len(selected_tasks) > 2 else f"（{len(selected_tasks)} 个）"
-    return "；".join(labels) + suffix
+    ids = [str(item["case_id"]) for item in selected_tasks[:3]]
+    suffix = f" 等 {len(selected_tasks)} 个" if len(selected_tasks) > 3 else ""
+    return "、".join(ids) + suffix
 
 
 def _selected_model_summary(model_ids: list[str]) -> str:
@@ -793,8 +793,6 @@ def _render_configuration_panel(
                 run_plan,
                 service_ready=(mode == "live"),
             )
-    if not run_plan["can_run"]:
-        st.caption("请选择样本和模型后运行。")
     if selected_tasks:
         if st.button(
             "查看本题发送给被测模型的提示词",

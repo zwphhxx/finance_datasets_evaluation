@@ -1065,8 +1065,8 @@ def _sample_table_height(row_count: int) -> int:
 def _sample_table_column_config() -> dict:
     return {
         "样本编号": st.column_config.TextColumn("样本编号", width="small"),
-        "任务标题": st.column_config.TextColumn("任务标题", width="large"),
-        "专业场景": st.column_config.TextColumn("专业场景", width="medium"),
+        "任务标题": st.column_config.TextColumn("任务标题", width="medium"),
+        "专业场景": st.column_config.TextColumn("专业场景", width="small"),
         "测试状态": st.column_config.TextColumn("测试状态", width="small"),
         "完整度": st.column_config.TextColumn("完整度", width="small"),
         "更新时间": st.column_config.TextColumn("更新时间", width="small"),
