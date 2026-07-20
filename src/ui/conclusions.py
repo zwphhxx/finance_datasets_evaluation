@@ -67,7 +67,7 @@ def _render_data_source_notice(
             "结论基于当前样本、模型回答和 AI 评分生成，仅代表当前样本范围内的自动评测结果。"
         )
     with col_action:
-        if st.button("数据维护", type="secondary", key="conclusion_data_maintenance", use_container_width=True):
+        if st.button("数据维护", type="tertiary", key="conclusion_data_maintenance", use_container_width=True):
             _render_score_data_maintenance_dialog()
     if not ds.database_ready():
         st.caption("当前评分数据层不可用。请先在发起评测页运行评测，或通过数据维护导入评分文件。")
