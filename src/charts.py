@@ -146,8 +146,6 @@ def render_model_domain_score_chart(
 
 def render_error_distribution_summary_chart(error_df, empty_message="暂无错误标签数据，无法展示错误分布。"):
     """Render error distribution by error type from normalized metrics."""
-    import streamlit as st
-
     from src.metrics import get_error_distribution_summary
 
     summary = get_error_distribution_summary(error_df)

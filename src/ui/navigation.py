@@ -35,10 +35,6 @@ _NAV_GROUPS = [
 ]
 
 
-def _set_current_page(page_key: str) -> None:
-    st.session_state.current_page = page_key
-
-
 def render_top_navigation() -> None:
     """Render a lightweight tab-style top navigation."""
     current = st.session_state.get("current_page", DEFAULT_PAGE_KEY)

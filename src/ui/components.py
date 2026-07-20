@@ -889,14 +889,9 @@ div[data-testid="stDialog"] {
         margin-left: 0;
     }
 }
-</style>
 """
 
-STYLE_CSS = STYLE_CSS.replace(
-    "</style>",
-    f"{MOBILE_RESPONSIVE_CSS}\n</style>",
-)
-
+STYLE_CSS = f"{STYLE_CSS}{MOBILE_RESPONSIVE_CSS}\n</style>\n"
 
 def _clean_html(html: str) -> str:
     text = dedent(str(html or "")).strip()
@@ -1065,14 +1060,6 @@ def render_aux_action_bar(title: str, actions: list[dict[str, object]]) -> str |
     usable_actions = [action for action in actions or [] if action.get("label")]
     render_html(f'<div class="aux-action-bar"><span class="aux-action-bar-label">{escape(str(title))}</span></div>')
     if not usable_actions:
-        return None
-
-    if not hasattr(st, "button"):
-        static_actions = "".join(
-            f'<span class="aux-action-static">{escape(str(action.get("label") or ""))}</span>'
-            for action in usable_actions
-        )
-        render_html(f'<div class="aux-action-static-row">{static_actions}</div>')
         return None
 
     clicked: str | None = None
