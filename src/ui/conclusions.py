@@ -13,6 +13,8 @@ import streamlit as st
 from app.services import conclusions as cc
 from app.services import dataset_service as ds
 from app.services import scorer as sc
+from src.charts import themed_bar_chart
+from src.ui import conclusions_data as cd
 from src.ui.components import (
     render_empty_state,
     render_inline_status,
@@ -27,10 +29,10 @@ def render_conclusions_page(data_bundle: dict) -> None:
     base = data_bundle.get("base") or data_bundle["data"]
     tasks = getattr(base, "tasks", None)
 
-    live_scores = cc.load_current_cohort_scores()
+    live_scores = cd.load_current_cohort_scores()
     ai_scores, excluded_scores = cc.split_live_scores(live_scores)
     model_summaries = cc.build_model_issue_summaries(ai_scores, pd.DataFrame(), tasks)
-    live_responses = cc.load_live_responses()
+    live_responses = cd.load_live_responses()
     answer_rows = cc.build_answer_detail_rows(ai_scores, live_responses)
 
     config = get_page_config("conclusions")
@@ -131,6 +133,7 @@ def _render_score_data_maintenance_dialog() -> None:
         if rows and st.button("导入评分文件", type="primary", key="conclusion_import_scores_submit"):
             result = sc.import_score_rows(rows, duplicate_action=action_map[duplicate_label])
             _record_score_io_message(result)
+            cd.clear_conclusions_caches()
             st.rerun()
 
     st.markdown("**演示恢复**")
@@ -138,6 +141,7 @@ def _render_score_data_maintenance_dialog() -> None:
     if st.button("从演示结果文件恢复", type="secondary", key="conclusion_restore_demo_scores"):
         result = sc.import_demo_ai_scores(duplicate_action=action_map[duplicate_label])
         _record_score_io_message(result)
+        cd.clear_conclusions_caches()
         st.rerun()
 
 

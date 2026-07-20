@@ -23,6 +23,7 @@ from app.services import eval_runner as er
 from app.services import eval_state
 from app.services import model_display as md
 from app.services import scorer as sc
+from src.ui import conclusions_data as cd
 from src.ui.components import (
     render_empty_state,
     render_inline_status,
@@ -1497,6 +1498,8 @@ def _finalize_run_result(status: str, state: dict, outcomes: list[er.RunOutcome]
         eval_state.set_last_run(result)
         _clear_score_state()
         st.session_state["test_run_persisted"] = persisted
+        if persisted:
+            cd.clear_conclusions_caches()
 
 
 def _unexpected_failure_outcome(provider, item: dict) -> er.RunOutcome:
@@ -1696,6 +1699,7 @@ def _finalize_score_result(status: str, state: dict, outcomes: list[sc.ScoreOutc
         eval_state.set_last_score(score_result)
         st.session_state["test_run_score_dims"] = list(st.session_state.get("test_run_score_dims") or [])
         st.session_state["test_run_score_persisted"] = persisted
+        cd.clear_conclusions_caches()
 
 
 def _replace_score_outcomes(

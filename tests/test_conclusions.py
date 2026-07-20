@@ -386,7 +386,7 @@ class AnswerDetailJoinTests(unittest.TestCase):
             source.index("def _render_model_issue_details"):
         ]
 
-        self.assertIn("cc.load_live_responses()", render_source)
+        self.assertIn("cd.load_live_responses()", render_source)
         self.assertIn("cc.build_answer_detail_rows", render_source)
         self.assertIn("answer_rows", render_source)
         self.assertIn('"选择样本查看回答"', detail_source)
