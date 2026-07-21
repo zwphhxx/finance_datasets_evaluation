@@ -250,7 +250,7 @@ def _run_outcome_from_generation_result(
 ) -> RunOutcome:
     answer = result.response_text or ""
 
-    # 兜底：即便某个 provider 把「HTTP 成功但空回答」标成功，运行侧也不当成功。
+    # 防御性校验：即便某个 provider 把「HTTP 成功但空回答」标成功，运行侧也不当成功。
     # mock 始终有占位内容，不受影响。
     run_status = result.status
     success = result.ok
@@ -445,7 +445,7 @@ def run_models(
     该 (模型, 任务) 的 RunOutcome，不中断整体。模型列表为空时 outcomes 为空。
 
     progress_callback（可选）在每道生成开始前回调 (已完成数, 总数, 当前模型, 当前任务)，
-    供页面做逐条进度反馈；不传则行为不变。回调异常被吞掉，不影响运行。
+    供页面做逐条进度反馈；不传则行为不变。回调异常静默处理，不影响运行。
     """
     unique_models = _dedupe_preserve_order(model_ids)
     rid = run_id or generate_run_id()

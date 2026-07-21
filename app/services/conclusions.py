@@ -8,7 +8,7 @@
 评测结论 = 成功 AI 评分，**不包含失败评分、模拟评分或 seed 示例评价**。
 
 本模块为纯函数 + 只读数据库访问，不依赖 Streamlit 渲染上下文，便于单元测试；任何数据库
-异常都吞掉并回退为空，保证 SQLite 不可用时仍可只用 seed 数据展示。绝不回写 data/ 下 seed 文件。
+数据库异常时降级为空表，保证仅用 seed 数据也可正常展示。绝不回写 data/ 下 seed 文件。
 """
 
 from __future__ import annotations

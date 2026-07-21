@@ -27,7 +27,7 @@ except ImportError:  # pragma: no cover - PyYAML is part of the project env.
 
 
 PROJECT_ROOT = get_project_root()
-DEFAULT_SOURCE_CSV = PROJECT_ROOT / "data" / "final_replacement_samples_13.csv"
+DEFAULT_SOURCE_CSV = PROJECT_ROOT / "data" / "professional_samples_13.csv"
 DEFAULT_DATA_DIR = PROJECT_ROOT / "data"
 
 EXPECTED_CASE_IDS = [

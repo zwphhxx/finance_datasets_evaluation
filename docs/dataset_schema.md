@@ -27,11 +27,11 @@
 
 ## 样本整体替换
 
-`data/final_replacement_samples_13.csv` 是当前 13 条样本的唯一替换来源。重复执行以下命令可覆盖重写 seed 文件、样本库管理视图，并重建运行期 SQLite：
+`data/professional_samples_13.csv` 是当前 13 条样本的唯一替换来源。重复执行以下命令可覆盖重写 seed 文件、样本库管理视图，并重建运行期 SQLite：
 
 ```bash
 PYTHONPATH=. python scripts/replace_samples.py \
-  --csv data/final_replacement_samples_13.csv \
+  --csv data/professional_samples_13.csv \
   --data-dir data \
   --db app/db/findueval.db
 ```
@@ -134,4 +134,4 @@ rubrics ── score dimension fields
 
 ## 评测结论口径
 
-评测结论只统计成功 AI 评分。失败评分、模拟回退和示例评价不进入评测结论。模型使用边界由 `app/services/conclusions.py` 统一计算，结合平均分、红线错误、关键维度短板、高风险任务表现、样本数量和评分说明。
+评测结论只统计成功 AI 评分。失败评分、演示数据和示例评价不进入评测结论。模型使用边界由 `app/services/conclusions.py` 统一计算，结合平均分、红线错误、关键维度短板、高风险任务表现、样本数量和评分说明。

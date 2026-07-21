@@ -19,7 +19,7 @@ from src.data_service import active_case_ids, load_all_data
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = PROJECT_ROOT / "data"
-SOURCE_CSV = DATA_DIR / "final_replacement_samples_13.csv"
+SOURCE_CSV = DATA_DIR / "professional_samples_13.csv"
 
 ALLOWED_DOMAINS = {"Capital Markets", "Financial", "Legal"}
 EXPECTED_CASE_IDS = [

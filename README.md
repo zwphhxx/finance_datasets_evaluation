@@ -29,14 +29,14 @@
 - 法律场景：`LD-001` 至 `LD-004`，共 4 条；
 - 投行场景：`CM-001` 至 `CM-004`，共 4 条。
 
-样本来源为 `data/final_replacement_samples_13.csv`。详细字段、数据结构和 SQLite / 文件映射见 `docs/dataset_schema.md`。
+样本来源为 `data/professional_samples_13.csv`。详细字段、数据结构和 SQLite / 文件映射见 `docs/dataset_schema.md`。
 
 ## 评测边界
 
 - 样本为脱敏抽象任务，不包含真实公司、真实交易、真实个人或敏感数据。
 - 被测模型不看到专业标准答案、必须覆盖点、不可接受错误或评分标准。
 - AI 评分完成后直接形成评测结论。
-- 结论基于当前样本、模型回答和 AI 评分生成；失败评分和示例评价不进入评测结论，模拟回退也不作为结论来源。
+- 结论基于当前样本、模型回答和 AI 评分生成；失败评分和示例评价不进入评测结论，演示数据也不作为结论来源。
 - 结论只代表当前样本范围，不代表模型整体能力或采购建议。
 - 实时模型调用依赖外部服务，不能保证每次都成功。
 
@@ -79,7 +79,7 @@ streamlit run app.py
 
 ```bash
 PYTHONPATH=. python scripts/replace_samples.py \
-  --csv data/final_replacement_samples_13.csv \
+  --csv data/professional_samples_13.csv \
   --data-dir data \
   --skip-db
 ```

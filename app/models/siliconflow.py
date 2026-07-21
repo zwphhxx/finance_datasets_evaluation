@@ -131,7 +131,7 @@ def _read_config_value_with_source(key: str) -> tuple[str | None, str | None]:
     try:
         import streamlit as st
 
-        # st.secrets 在无 secrets.toml 时访问会抛异常，需整体兜底。
+        # st.secrets 在无 secrets.toml 时访问会抛异常，需整体降级处理。
         if key in st.secrets:
             value = str(st.secrets[key]).strip()
             if value:
