@@ -399,7 +399,7 @@ class AiFinalPageTests(unittest.TestCase):
         source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
         self.assertNotIn("_session_draft_rows", source)
         self.assertNotIn("build_page_draft_rows", source)
-        self.assertIn("暂无 AI 评分结果", source)
+        self.assertIn("暂无模型判断", source)
 
 
 class RobustnessTests(unittest.TestCase):

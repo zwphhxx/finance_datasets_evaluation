@@ -974,7 +974,7 @@ def render_samples_page(data_bundle: dict) -> None:
         completeness=completeness,
     )
 
-    render_numbered_section("02", "样本列表", "展示当前查询结果。")
+    render_numbered_section("02", "样本列表")
     if not filtered:
         render_empty_state("没有符合当前条件的样本。")
     else:
@@ -991,7 +991,7 @@ def render_samples_page(data_bundle: dict) -> None:
             )
 
     render_html('<a id="fde-current-sample"></a>')
-    render_numbered_section("03", "当前样本", "选择一个样本，查看评测资产结构。")
+    render_numbered_section("03", "当前样本")
     _render_sample_detail(filtered, readiness_map, task_records, gold_map, rubric_dimensions)
     _render_test_run_availability_note(samples, readiness_map)
 
@@ -1005,15 +1005,17 @@ def _render_filters(
 ) -> tuple[str, str, str, str]:
     domain_options = ["全部"] + PROFESSIONAL_SCENE_OPTIONS
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2 = st.columns([3.0, 1.4])
     keyword = col1.text_input(
         "关键词",
         placeholder="编号、标题、任务题、业务背景",
         key="samples_keyword_search",
     )
     domain = col2.selectbox("专业场景", domain_options, key="samples_filter_domain")
-    test_status = col3.selectbox("测试状态", _TEST_STATUS_OPTIONS, key="samples_filter_test_status")
-    completeness = col4.selectbox("完整度", _COMPLETENESS_OPTIONS, key="samples_filter_completeness")
+    with st.expander("更多筛选（测试状态 / 完整度）", expanded=False):
+        more_col1, more_col2 = st.columns(2)
+        test_status = more_col1.selectbox("测试状态", _TEST_STATUS_OPTIONS, key="samples_filter_test_status")
+        completeness = more_col2.selectbox("完整度", _COMPLETENESS_OPTIONS, key="samples_filter_completeness")
     return keyword, domain, test_status, completeness
 
 

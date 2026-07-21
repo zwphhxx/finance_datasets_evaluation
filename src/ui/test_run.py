@@ -757,7 +757,6 @@ def _render_configuration_panel(
         ("已选样本", _selected_sample_summary(selected_tasks)),
         ("已选模型", _selected_model_summary(model_ids)),
         ("预计模型回答", f"{run_plan['planned_responses']} 条"),
-        ("回答随机性", f"{eval_temperature:.1f}"),
         ("当前运行模式", _mode_label(mode)),
     ]
     render_inline_status(rows)

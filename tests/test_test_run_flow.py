@@ -204,7 +204,7 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("计划回答", source)
         self.assertIn("未完成", source)
         self.assertIn("已覆盖样本", source)
-        self.assertIn("回答随机性", panel_source)
+        self.assertNotIn("回答随机性", panel_source)
         self.assertIn("er.run_single", source)
         self.assertIn("retry_max_tokens=_EVAL_MAX_TOKENS_LIMIT", source)
         self.assertIn("er.CompareRunResult", source)

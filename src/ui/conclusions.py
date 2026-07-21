@@ -41,7 +41,6 @@ def render_conclusions_page(data_bundle: dict) -> None:
     render_page_heading(config.title, config.question)
     _render_data_source_notice(live_scores, ai_scores, excluded_scores)
 
-    _render_current_conclusion(ai_scores)
     _render_model_recommendations(model_summaries)
     _render_model_issue_details(model_summaries, answer_rows)
 
@@ -55,9 +54,13 @@ def _render_data_source_notice(
     excluded_scores: pd.DataFrame,
 ) -> None:
     summary = cc.summarize_runtime_scores(live_scores)
+    counts = cc.summarize_formal(pd.DataFrame(), ai_scores)
+    models = int(counts["model_count"])
+    cases = int(counts.get("case_count", 0))
+    coverage = f"（{models} 个模型 × {cases} 个样本）" if len(ai_scores) else ""
     source_line = (
         f"当前结论来源：{summary['data_source']}｜"
-        f"AI 评分 {len(ai_scores)} 条｜"
+        f"AI 评分 {len(ai_scores)} 条{coverage}｜"
         f"排除项 {len(excluded_scores)} 条 · "
         "仅代表当前样本范围内的自动评测结果。"
     )
@@ -154,48 +157,13 @@ def _record_score_io_message(result: dict) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# 01 当前结论
-# --------------------------------------------------------------------------- #
-def _render_current_conclusion(ai_scores: pd.DataFrame) -> None:
-    render_numbered_section(
-        "01",
-        "当前结论",
-        "基于当前样本、模型回答和 AI 评分汇总结果。",
-    )
-
-    empty_seed = pd.DataFrame()
-    summary = cc.summarize_formal(empty_seed, ai_scores)
-    if summary["total_rows"] == 0:
-        render_empty_state("暂无 AI 评分结果。请先在发起评测页运行评测。")
-        if st.button("去发起评测", key="conclusion_goto_test_run_empty", type="secondary"):
-            st.session_state.current_page = "test_run"
-            st.rerun()
-        st.caption(
-            "结论基于当前样本、模型回答和 AI 评分生成，仅代表当前样本范围内的自动评测结果，"
-            "不代表模型整体能力或采购建议。"
-        )
-        return
-
-    ai_score_rows = int(summary.get("ai_score_rows", summary.get("confirmed_rows", 0)))
-    models = int(summary["model_count"])
-    cases = int(summary.get("case_count", 0))
-    sample_note = "当前样本数较少，仅作为当前样本内观察。" if cases < 3 else ""
-    st.markdown(
-        f"已生成 AI 评分 **{ai_score_rows}** 条，覆盖 **{models}** 个模型、**{cases}** 个样本。"
-    )
-    st.caption(
-        f"{sample_note}失败评分、模拟回退和被排除记录不进入评测结论。"
-    )
-
-
-# --------------------------------------------------------------------------- #
-# 02 模型当前判断
+# 01 模型当前判断
 # --------------------------------------------------------------------------- #
 def _render_model_recommendations(model_summaries: list[dict]) -> None:
     render_numbered_section(
-        "02",
+        "01",
         "模型当前判断",
-        "按模型汇总 AI 评分样本、平均分、当前判断和主要依据。",
+        "按模型汇总 AI 评分与当前判断。失败评分、模拟回退和被排除记录不进入结论。",
     )
 
     if not model_summaries:
@@ -206,7 +174,7 @@ def _render_model_recommendations(model_summaries: list[dict]) -> None:
         return
 
     rows = [_recommendation_row(item) for item in model_summaries]
-    st.caption("点击表格任意行选择模型，在下方 03 区查看该模型的使用边界与回答。")
+    st.caption("点击表格任意行选择模型，在下方 02 区查看该模型的使用边界与回答。")
     event = st.dataframe(
         pd.DataFrame(rows),
         hide_index=True,
@@ -230,7 +198,7 @@ def _render_model_recommendations(model_summaries: list[dict]) -> None:
         )
     current_choice = st.session_state.get("conclusion_selected_model")
     if current_choice:
-        st.caption(f"已选 {current_choice} · 详情见下方 03")
+        st.caption(f"已选 {current_choice} · 详情见下方 02")
     render_html('<div class="mobile-scroll-hint">表格可左右滑动查看完整内容</div>')
     chart_rows = pd.DataFrame(
         {
@@ -252,14 +220,14 @@ def _recommendation_row(item: dict) -> dict[str, object]:
 
 
 # --------------------------------------------------------------------------- #
-# 03 模型详情
+# 02 模型详情
 # --------------------------------------------------------------------------- #
 def _render_model_issue_details(
     model_summaries: list[dict],
     answer_rows: list[dict],
 ) -> None:
     render_numbered_section(
-        "03",
+        "02",
         "模型详情",
         "展示当前选中模型的判断依据和使用边界。",
     )

@@ -243,7 +243,7 @@ class FormalConclusionStatusGuardrailTests(unittest.TestCase):
     def test_conclusion_page_has_clear_empty_state_copy(self):
         text = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
         for phrase in [
-            "暂无 AI 评分结果",
+            "暂无模型判断",
             "发起评测",
         ]:
             self.assertIn(phrase, text)
