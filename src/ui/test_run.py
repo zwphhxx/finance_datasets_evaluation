@@ -766,6 +766,10 @@ def _current_run_mode(provider_name: str) -> str:
     return "live" if provider_name == sf.PROVIDER_NAME and sf.is_configured() else "unconfigured"
 
 
+def _status_row(label: str, value: str, *, warn: bool = False) -> tuple[str, ...]:
+    return (label, value, "warning") if warn else (label, value)
+
+
 def _render_configuration_panel(
     sample_options: list[dict],
     selected_tasks: list[dict],
@@ -778,9 +782,13 @@ def _render_configuration_panel(
     mode = _current_run_mode(provider_name)
     eval_temperature = _current_eval_temperature()
     rows = [
-        ("已选样本", _selected_sample_summary(selected_tasks)),
-        ("已选模型", _selected_model_summary(model_ids)),
-        ("预计模型回答", f"{run_plan['planned_responses']} 条"),
+        _status_row("已选样本", _selected_sample_summary(selected_tasks), warn=not selected_tasks),
+        _status_row("已选模型", _selected_model_summary(model_ids), warn=not model_ids),
+        _status_row(
+            "预计模型回答",
+            f"{run_plan['planned_responses']} 条",
+            warn=not run_plan["planned_responses"],
+        ),
         ("当前运行模式", _mode_label(mode)),
     ]
     render_inline_status(rows)

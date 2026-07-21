@@ -176,8 +176,8 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             '.st-key-samples_title_bar [data-testid="stHorizontalBlock"]',
         )
         self.assertTrue(
-            any(re.search(r"flex-direction\s*:\s*column\b", rule) for rule in scoped_rules),
-            "the sample title action region still needs an explicit mobile stack",
+            any(re.search(r"grid-template-columns\s*:\s*1fr 1fr", rule) for rule in scoped_rules),
+            "the sample title actions stay side-by-side and compact on mobile",
         )
 
     def test_sample_detail_tables_own_mobile_scroll_container(self):

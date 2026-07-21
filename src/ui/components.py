@@ -328,6 +328,9 @@ header,
 .section-heading-title .fde-badge {
     margin-left: 0.55rem;
 }
+.inline-status-item .fde-badge {
+    margin-top: 0.1rem;
+}
 .model-boundary-line {
     align-items: baseline;
     display: flex;
@@ -987,12 +990,24 @@ def render_empty_state(message: str) -> None:
     render_html(f'<div class="empty-state">{escape(str(message))}</div>')
 
 
-def render_inline_status(items: list[tuple[str, str]]) -> None:
-    parts = "".join(
-        f'<div class="inline-status-item"><span>{escape(str(label))}</span><strong>{escape(str(value))}</strong></div>'
-        for label, value in items
-    )
+def render_inline_status(items: list[tuple[str, ...]]) -> None:
+    parts = "".join(_inline_status_item_html(item) for item in items)
     render_html(f'<div class="inline-status">{parts}</div>')
+
+
+def _inline_status_item_html(item: tuple[str, ...]) -> str:
+    label, value = str(item[0]), str(item[1])
+    tone = str(item[2]) if len(item) > 2 else ""
+    value_html = (
+        render_badge(value, tone)
+        if tone
+        else f"<strong>{escape(value)}</strong>"
+    )
+    return (
+        '<div class="inline-status-item">'
+        f"<span>{escape(label)}</span>{value_html}"
+        "</div>"
+    )
 
 
 def render_field_section(label: str, value, fallback: str = "待补充", *, tone: str | None = None) -> str:

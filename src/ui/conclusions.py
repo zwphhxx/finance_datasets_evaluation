@@ -33,7 +33,7 @@ def render_conclusions_page(data_bundle: dict) -> None:
     base = data_bundle.get("base") or data_bundle["data"]
     tasks = getattr(base, "tasks", None)
 
-    with st.spinner("正在汇总 AI 评分结果…"):
+    with st.spinner("正在汇总 AI 评分结果，首次加载可能需要半分钟…"):
         live_scores = cd.load_current_cohort_scores()
         live_responses = cd.load_live_responses()
     ai_scores, excluded_scores = cc.split_live_scores(live_scores)
@@ -67,12 +67,13 @@ def _render_data_source_notice(
         f"排除项 {len(excluded_scores)} 条 · "
         "仅代表当前样本范围内的自动评测结果。"
     )
-    col_text, col_action = st.columns([4.6, 1.0], gap="small")
-    with col_text:
-        st.caption(source_line)
-    with col_action:
-        if st.button("数据维护", type="tertiary", key="conclusion_data_maintenance", use_container_width=True):
-            _render_score_data_maintenance_dialog()
+    with st.container(key="conclusion_data_notice"):
+        col_text, col_action = st.columns([4.6, 1.0], gap="small")
+        with col_text:
+            st.caption(source_line)
+        with col_action:
+            if st.button("数据维护", type="tertiary", key="conclusion_data_maintenance", use_container_width=True):
+                _render_score_data_maintenance_dialog()
     if not ds.database_ready():
         st.caption("当前评分数据层不可用。请先在发起评测页运行评测，或通过数据维护导入评分文件。")
 

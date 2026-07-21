@@ -205,6 +205,8 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("未完成", source)
         self.assertIn("已覆盖样本", source)
         self.assertNotIn("回答随机性", panel_source)
+        self.assertIn('_status_row("已选模型", _selected_model_summary(model_ids), warn=not model_ids)', panel_source)
+        self.assertIn('return (label, value, "warning") if warn else (label, value)', source)
         self.assertIn("er.run_single", source)
         self.assertIn("retry_max_tokens=_EVAL_MAX_TOKENS_LIMIT", source)
         self.assertIn("er.CompareRunResult", source)

@@ -32,16 +32,40 @@ MOBILE_RESPONSIVE_CSS = r"""
         padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
     }
     .st-key-samples_title_bar [data-testid="stHorizontalBlock"] {
-        align-items: stretch;
-        flex-direction: column;
+        display: grid;
         gap: 0.55rem;
+        grid-template-columns: 1fr 1fr;
         width: 100%;
     }
-    .st-key-samples_title_bar
-        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
-        flex: 1 1 100% !important;
+    .st-key-samples_title_bar [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        flex: 0 0 auto !important;
         min-width: 0;
+        width: auto !important;
+    }
+    .st-key-samples_title_bar [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:first-child {
+        grid-column: 1 / -1;
         width: 100% !important;
+    }
+    .st-key-samples_title_bar .stButton > button {
+        min-height: 2.2rem;
+        padding-bottom: 0.25rem;
+        padding-top: 0.25rem;
+    }
+    .st-key-conclusion_data_notice [data-testid="stHorizontalBlock"] {
+        align-items: center;
+        display: grid;
+        gap: 0.55rem;
+        grid-template-columns: 1fr max-content;
+        width: 100%;
+    }
+    .st-key-conclusion_data_notice [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        flex: 0 0 auto !important;
+        min-width: 0;
+        width: auto !important;
+    }
+    .st-key-conclusion_data_notice .stButton > button {
+        min-height: 2.2rem;
+        width: auto;
     }
     .st-key-test_run_actions {
         gap: 0.55rem;
