@@ -760,7 +760,6 @@ def _render_configuration_panel(
         ("回答随机性", f"{eval_temperature:.1f}"),
         ("当前运行模式", _mode_label(mode)),
     ]
-    st.markdown("**当前评测配置**")
     render_inline_status(rows)
     if mode == "unconfigured":
         st.caption("当前未配置模型服务密钥，暂不能发起真实调用。模拟回退仅用于开发兜底，不作为页面可选服务。")

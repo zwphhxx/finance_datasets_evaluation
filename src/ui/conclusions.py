@@ -58,14 +58,12 @@ def _render_data_source_notice(
     source_line = (
         f"当前结论来源：{summary['data_source']}｜"
         f"AI 评分 {len(ai_scores)} 条｜"
-        f"排除项 {len(excluded_scores)} 条"
+        f"排除项 {len(excluded_scores)} 条 · "
+        "仅代表当前样本范围内的自动评测结果。"
     )
     col_text, col_action = st.columns([4.6, 1.0], gap="small")
     with col_text:
         st.caption(source_line)
-        st.caption(
-            "结论基于当前样本、模型回答和 AI 评分生成，仅代表当前样本范围内的自动评测结果。"
-        )
     with col_action:
         if st.button("数据维护", type="tertiary", key="conclusion_data_maintenance", use_container_width=True):
             _render_score_data_maintenance_dialog()
@@ -208,10 +206,14 @@ def _render_model_recommendations(model_summaries: list[dict]) -> None:
         return
 
     rows = [_recommendation_row(item) for item in model_summaries]
-    st.dataframe(
+    st.caption("点击表格任意行选择模型，在下方 03 区查看该模型的使用边界与回答。")
+    event = st.dataframe(
         pd.DataFrame(rows),
         hide_index=True,
         use_container_width=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="conclusion_model_judgment_table",
         column_config={
             "模型": st.column_config.TextColumn("模型", width="medium"),
             "AI 评分样本数": st.column_config.NumberColumn("AI 评分样本数", width="small"),
@@ -220,6 +222,15 @@ def _render_model_recommendations(model_summaries: list[dict]) -> None:
             "主要依据": st.column_config.TextColumn("主要依据", width="large"),
         },
     )
+    selected_rows = getattr(getattr(event, "selection", None), "rows", None) or []
+    if selected_rows and 0 <= selected_rows[0] < len(model_summaries):
+        chosen = model_summaries[selected_rows[0]]
+        st.session_state["conclusion_selected_model"] = str(
+            chosen.get("display_name") or chosen.get("model_name") or ""
+        )
+    current_choice = st.session_state.get("conclusion_selected_model")
+    if current_choice:
+        st.caption(f"已选 {current_choice} · 详情见下方 03")
     render_html('<div class="mobile-scroll-hint">表格可左右滑动查看完整内容</div>')
     chart_rows = pd.DataFrame(
         {
@@ -263,8 +274,9 @@ def _render_model_issue_details(
             str(item.get("display_name") or item.get("model_name") or "未标注模型"): item
             for item in model_summaries
         }
-        label = st.selectbox("选择模型查看详情", list(options.keys()), key="conclusion_model_issue_select")
-        selected = options[label]
+        chosen = st.session_state.get("conclusion_selected_model")
+        if chosen in options:
+            selected = options[chosen]
 
     _render_issue_markdown(selected)
     _render_model_answer_details(selected, answer_rows)
@@ -273,13 +285,7 @@ def _render_model_issue_details(
 def _render_issue_markdown(item: dict) -> None:
     display = str(item.get("display_name") or item.get("model_name") or "未标注模型")
     model_id = str(item.get("model_name") or "")
-    basis_items = item.get("detail_basis") or item.get("main_issues") or []
-    basis_markdown = "\n".join(f"- {text}" for text in basis_items[:4]) or "- 当前样本内暂无补充说明"
     markdown = "\n\n".join([
-        "**当前判断**",
-        _current_judgment(item),
-        "**主要依据**",
-        basis_markdown,
         "**使用边界**",
         str(item.get("usage_advice") or "请结合评分依据和业务边界判断。"),
     ])
