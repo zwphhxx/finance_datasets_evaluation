@@ -263,7 +263,7 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("系统提示词", source)
         self.assertIn("用户提示词", source)
         self.assertIn("不包含专业标准答案、必须覆盖点、不可接受错误或评分标准", source)
-        self.assertIn("请以本弹窗内容为准判断被测模型实际收到的信息", source)
+        self.assertIn("以下为被测模型实际收到的全部内容，不包含专业标准答案、必须覆盖点、不可接受错误或评分标准。", source)
         self.assertNotIn("core_conclusion", source[source.index("def _render_prompt_preview_dialog"):])
 
     def test_judge_temperature_stays_fixed_and_not_exposed(self):
@@ -316,7 +316,7 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("sc.initialize_score_queue", source)
         self.assertIn("sc.mark_score_queue_item_running", source)
         self.assertIn("sc.restore_score_result_from_db", source)
-        self.assertIn("当前任务在页面内执行", source)
+        self.assertIn("运行中请勿刷新或关闭页面", source)
         self.assertIn("已完成结果会保留，未完成项可稍后继续", source)
 
     def test_run_results_use_selector_for_answer_review(self):
@@ -686,7 +686,7 @@ class PersistedAnswerRecoveryTests(unittest.TestCase):
         ]
 
         self.assertIn("er.list_persisted_answer_runs()", selector_source)
-        self.assertIn('"查看持久化批次"', selector_source)
+        self.assertIn('"查看历史批次"', selector_source)
         self.assertIn("er.restore_compare_result_from_db(run_id)", recovery_source)
         self.assertIn("resume_allowed", recovery_source)
         self.assertLess(

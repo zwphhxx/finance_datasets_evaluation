@@ -262,7 +262,7 @@ def split_live_scores(live_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame
 def summarize_runtime_scores(live_df: pd.DataFrame) -> dict[str, Any]:
     """统计运行期真实评分状态，用于页面解释数据源和空状态原因。"""
     base = {
-        "data_source": "SQLite 运行期数据",
+        "data_source": "评测运行数据",
         "total": 0,
         "ai_scores": 0,
         "excluded": 0,

@@ -1,6 +1,6 @@
 """评测结论页面。
 
-结论页只汇总成功的 AI 评分；失败、模拟回退和被排除记录不进入结论。
+结论页只汇总成功的 AI 评分；失败、演示数据和被排除记录不进入结论。
 """
 
 from __future__ import annotations
@@ -75,7 +75,7 @@ def _render_data_source_notice(
             if st.button("数据维护", type="tertiary", key="conclusion_data_maintenance", use_container_width=True):
                 _render_score_data_maintenance_dialog()
     if not ds.database_ready():
-        st.caption("当前评分数据层不可用。请先在发起评测页运行评测，或通过数据维护导入评分文件。")
+        st.caption("评分数据暂不可用。请先在发起评测页运行评测，或通过数据维护导入评分文件。")
 
     message = st.session_state.get("conclusion_score_io_message")
     if isinstance(message, dict) and message.get("text"):
@@ -88,10 +88,10 @@ def _render_data_source_notice(
             st.info(str(message["text"]))
 
 
-@st.dialog("AI 评测结果数据", width="large")
+@st.dialog("数据维护", width="large")
 def _render_score_data_maintenance_dialog() -> None:
     st.markdown("**导出**")
-    st.caption("导出当前已生成的 AI 评分结果；失败评分和模拟回退不会进入结论。")
+    st.caption("导出当前已生成的 AI 评分结果；失败评分和演示数据不会进入结论。")
     payload = sc.export_score_payload(include_pending=False)
     export_text = sc.serialize_score_export_payload(payload)
     file_name = f"ai_scores_{datetime.now():%Y%m%d_%H%M}.json"
@@ -106,7 +106,7 @@ def _render_score_data_maintenance_dialog() -> None:
     )
 
     st.markdown("**导入**")
-    st.caption("仅导入本项目导出的评分 JSON；重复记录按 score_run_id、case_id 和 eval_model 判断。")
+    st.caption("仅导入本项目导出的评分 JSON；重复记录按运行批次、样本和模型判断。")
     uploaded = st.file_uploader(
         "上传评分 JSON 文件",
         type=["json"],
@@ -124,7 +124,7 @@ def _render_score_data_maintenance_dialog() -> None:
         "取消导入": "cancel",
     }
     if not uploaded:
-        st.caption("可上传 AI 评测结果导出文件，或使用下方脱敏演示结果文件恢复。")
+        st.caption("可上传 AI 评测结果导出文件，或使用下方演示数据恢复。")
     else:
         parsed = sc.parse_score_import_content(uploaded.name, uploaded.getvalue())
         rows = parsed.get("rows") or []
@@ -144,7 +144,7 @@ def _render_score_data_maintenance_dialog() -> None:
             st.rerun()
 
     st.markdown("**演示恢复**")
-    st.caption("从仓库中的脱敏演示结果文件恢复 AI 评分，不会删除现有评分。")
+    st.caption("从仓库中的演示数据恢复 AI 评分，不会删除现有评分。")
     if st.button("从演示结果文件恢复", type="secondary", key="conclusion_restore_demo_scores"):
         result = sc.import_demo_ai_scores(duplicate_action=action_map[duplicate_label])
         _record_score_io_message(result)
@@ -167,12 +167,12 @@ def _render_model_recommendations(model_summaries: list[dict]) -> None:
     render_numbered_section(
         "01",
         "模型当前判断",
-        "按模型汇总 AI 评分与当前判断。失败评分、模拟回退和被排除记录不进入结论。",
+        "按模型汇总 AI 评分与当前判断。",
     )
 
     if not model_summaries:
         render_empty_state("暂无模型判断。请先在发起评测页运行评测。")
-        if st.button("去发起评测", key="conclusion_goto_test_run_models", type="secondary"):
+        if st.button("发起评测", key="conclusion_goto_test_run_models", type="secondary"):
             st.session_state.current_page = "test_run"
             st.rerun()
         return
@@ -279,7 +279,7 @@ def _render_model_answer_details(
         if str(row.get("model_name") or "") == model_name
     ]
     if not rows:
-        st.caption("当前模型暂无可查看的持久化回答。")
+        st.caption("当前模型暂无可查看的回答记录。")
         return
 
     selected_index = st.selectbox(

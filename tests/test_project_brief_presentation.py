@@ -41,7 +41,7 @@ class CaseStudyPresentationTests(unittest.TestCase):
         self.assertIn("使用边界", source)
         self.assertIn("被测模型只看到任务题、业务背景和输出要求", source)
         self.assertIn("被测模型不会看到专业标准答案、必须覆盖点、不可接受错误或评分标准", source)
-        self.assertIn("失败评分、模拟回退或示例评价均不进入评测结论", source)
+        self.assertIn("失败评分、演示数据或示例评价均不进入评测结论", source)
         self.assertNotIn("维护样本", source)
         self.assertNotIn("确认可测", source)
         self.assertNotIn("render_inline_status", source)

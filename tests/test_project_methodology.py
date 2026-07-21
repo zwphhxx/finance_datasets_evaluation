@@ -62,7 +62,7 @@ class RegistrationTests(unittest.TestCase):
         self.assertIn("主要问题", source)
         self.assertNotIn("本项目不判断哪个模型最好", source)
         self.assertIn("被测模型不会看到专业标准答案、必须覆盖点、不可接受错误或评分标准", source)
-        self.assertIn("失败评分、模拟回退或示例评价均不进入评测结论", source)
+        self.assertIn("失败评分、演示数据或示例评价均不进入评测结论", source)
 
 
 class DynamicStatsTests(unittest.TestCase):

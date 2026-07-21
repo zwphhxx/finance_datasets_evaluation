@@ -172,7 +172,7 @@ class FormalConclusionTests(unittest.TestCase):
         ])
         summary = cc.summarize_runtime_scores(live)
 
-        self.assertEqual("SQLite 运行期数据", summary["data_source"])
+        self.assertEqual("评测运行数据", summary["data_source"])
         self.assertEqual(2, summary["total"])
         self.assertEqual(2, summary["ai_scores"])
         self.assertEqual(1, summary["excluded"])
@@ -183,9 +183,9 @@ class FormalConclusionTests(unittest.TestCase):
         source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
         notice_source = source[
             source.index("def _render_data_source_notice"):
-            source.index("@st.dialog(\"AI 评测结果数据\"")
+            source.index("@st.dialog(\"数据维护\"")
         ]
-        dialog_source = source[source.index("@st.dialog(\"AI 评测结果数据\""):]
+        dialog_source = source[source.index("@st.dialog(\"数据维护\""):]
 
         self.assertIn("当前结论来源：", notice_source)
         self.assertIn("data_source", notice_source)

@@ -52,11 +52,11 @@ NO_TESTABLE_SAMPLE_MESSAGE = (
 TEST_RUN_STEPS = ["评测配置", "模型回答", "AI 评分"]
 _STATUS_BADGE = {
     "success": ("成功", "success"),
-    "mock": ("模拟回退", "neutral"),
+    "mock": ("演示模式", "neutral"),
     "failed": ("失败", "danger"),
 }
 
-_MODE_LABEL = {"mock": "模拟回退", "live": "真实调用", "unconfigured": "未配置"}
+_MODE_LABEL = {"mock": "演示模式", "live": "真实调用", "unconfigured": "未配置"}
 _REVIEW_STATUS_LABEL = {
     "ai_final": "已生成结论",
     "pending": "已生成结论",
@@ -653,7 +653,7 @@ def render_test_run_page(data_bundle: dict) -> None:
 
     tasks_df = base.tasks
     if tasks_df is None or tasks_df.empty:
-        render_empty_state("当前数据集没有可用任务样本。")
+        render_empty_state("当前样本库没有可用样本。")
         return
     task_records = tasks_df.to_dict("records")
     gold_map = getattr(base, "gold_answer_map", {}) or {}
@@ -793,8 +793,8 @@ def _render_configuration_panel(
     ]
     render_inline_status(rows)
     if mode == "unconfigured":
-        st.caption("当前未配置模型服务密钥，暂不能发起真实调用。模拟回退仅用于开发兜底，不作为页面可选服务。")
-    st.caption("当前任务在页面内执行。运行中不建议刷新或关闭页面；已完成结果会保留，未完成项可继续运行。")
+        st.caption("当前未配置模型服务密钥，暂不能发起真实调用。")
+    st.caption("运行中请勿刷新或关闭页面；已完成结果会保留，未完成项可继续运行。")
     slow_notice = slow_model_notice(model_ids)
     if slow_notice:
         st.caption(slow_notice)
@@ -910,8 +910,7 @@ def _render_prompt_preview_dialog(sample_options: list[dict]) -> None:
 
     task = prompt_preview_task_for_case(sample_options, selected_ids, current)
     messages = er.build_messages(task)
-    st.caption("仅展示被测模型可见字段，不包含专业标准答案、必须覆盖点、不可接受错误或评分标准。")
-    st.caption("请以本弹窗内容为准判断被测模型实际收到的信息。")
+    st.caption("以下为被测模型实际收到的全部内容，不包含专业标准答案、必须覆盖点、不可接受错误或评分标准。")
     for message in messages:
         role = str(message.get("role") or "")
         label = "系统提示词" if role == "system" else "用户提示词"
@@ -1090,7 +1089,7 @@ def _render_model_selection_dialog() -> None:
         key=_MODEL_DIALOG_TEMPERATURE_KEY,
         help="同一批评测内所有被测模型使用相同设置；裁判评分固定为 0.0。",
     )
-    st.caption("同一批评测内所有被测模型使用相同回答随机性，便于横向比较。")
+    st.caption("所有被测模型使用相同回答随机性，便于横向比较。")
 
     result = provider.list_models()
     available_models = list(result.models) if result.ok else []
@@ -1356,7 +1355,7 @@ def _render_persisted_answer_run_selector(result, summaries: list[dict] | None =
         st.session_state[_ANSWER_RUN_ID_KEY] = selected_run_id
     by_id = {str(row["run_id"]): row for row in summaries}
     return st.selectbox(
-        "查看持久化批次",
+        "查看历史批次",
         options=list(by_id),
         format_func=lambda run_id: _persisted_run_option_label(by_id[run_id]),
         key=_ANSWER_RUN_ID_KEY,
@@ -1405,7 +1404,7 @@ def _recover_persisted_run(run_id: str, task_records: list[dict]) -> object | No
         ),
         queue_items=queue_items,
         outcomes=list(getattr(result, "outcomes", ()) or ()),
-        message="检测到持久化运行记录。已完成结果会保留，未完成项可稍后继续。",
+        message="检测到历史运行记录。已完成结果会保留，未完成项可稍后继续。",
         resume_allowed=resume_allowed,
     )
     st.session_state["test_run_persisted"] = True
@@ -2177,7 +2176,7 @@ def _render_results(
     elif failed:
         st.caption("失败项不会进入 AI 评分。")
     if er.is_mock_result(result):
-        st.caption("本次为模拟回退模式运行，回答为模拟生成。")
+        st.caption("本次为演示模式运行，回答为模拟生成，不进入结论。")
 
     if _render_answer_viewer(result, task_records) == "technical_details":
         _render_technical_details_dialog(result)
@@ -2588,7 +2587,7 @@ def _render_score_results(base, provider_name: str, task_records: list[dict]) ->
     elif state and state.get("message"):
         st.caption(str(state.get("message")))
     if sc.is_mock_score(score_result):
-        st.caption("本次为模拟回退模式：未产生真实评分，各维度留空。")
+        st.caption("本次为演示模式：未产生真实评分，各维度留空。")
 
     _render_score_result_list(score_result, dimensions)
     if _render_score_detail_viewer(score_result, dimensions):

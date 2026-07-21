@@ -249,7 +249,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertNotIn("当前样本：", samples_source)
         self.assertNotIn('st.expander("任务内容", expanded=False)', samples_source)
         self.assertNotIn(".current-sample-summary", components_source)
-        self.assertIn("维护正式评测样本。完整且已入库的样本可以进入发起评测。", page_config_source)
+        self.assertIn("维护正式评测样本。完整且已入库的样本可以在发起评测中使用。", page_config_source)
         self.assertNotIn("新增和编辑会同步任务题", samples_source)
 
     def test_test_run_keeps_primary_buttons_for_confirmation_and_execution(self):

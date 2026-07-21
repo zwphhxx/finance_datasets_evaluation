@@ -19,7 +19,7 @@ PAGE_CONFIGS = [
     PageConfig(
         page_key="samples",
         title="样本库",
-        question="维护正式评测样本。完整且已入库的样本可以进入发起评测。",
+        question="维护正式评测样本。完整且已入库的样本可以在发起评测中使用。",
     ),
     PageConfig(
         page_key="test_run",
