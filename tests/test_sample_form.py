@@ -13,7 +13,7 @@ from src.ui import samples
 class SampleFormSimplificationTests(unittest.TestCase):
     def test_sample_table_uses_professional_scene_column(self):
         self.assertEqual(
-            ["样本编号", "任务标题", "专业场景", "测试状态", "完整度", "更新时间", "操作"],
+            ["样本编号", "任务标题", "专业场景", "测试状态", "完整度"],
             samples._SAMPLE_TABLE_COLUMNS,
         )
 

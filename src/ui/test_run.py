@@ -766,7 +766,6 @@ def _render_configuration_panel(
     rows = [
         ("已选样本", _selected_sample_summary(selected_tasks)),
         ("已选模型", _selected_model_summary(model_ids)),
-        ("当前模型服务", _SILICONFLOW_LABEL),
         ("预计模型回答", f"{run_plan['planned_responses']} 条"),
         ("回答随机性", f"{eval_temperature:.1f}"),
         ("当前运行模式", _mode_label(mode)),

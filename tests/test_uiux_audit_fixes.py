@@ -185,8 +185,6 @@ class UIUXAuditFixesTests(unittest.TestCase):
 
         self.assertIn("st.dataframe", samples_source)
         self.assertIn('"测试状态"', samples_source)
-        self.assertIn('"操作"', samples_source)
-        self.assertIn('"查看"', samples_source)
         self.assertNotIn('"缺失项摘要"', samples_source)
         self.assertNotIn("sample-index-grid", samples_source)
         self.assertNotIn("samples_view_", samples_source)
@@ -227,7 +225,6 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertNotIn("_render_sample_selectbox_fallback", samples_source)
         self.assertNotIn("samples_index_select_fallback", samples_source)
         self.assertNotIn('"选择样本"', samples_source)
-        self.assertIn('"查看"', samples_source)
         self.assertNotIn('with st.expander("样本管理"', samples_source)
         self.assertNotIn("st.tabs([\"新增样本\", \"编辑样本\", \"状态管理\", \"导入导出\"])", samples_source)
 

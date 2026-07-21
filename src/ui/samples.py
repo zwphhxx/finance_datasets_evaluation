@@ -72,7 +72,7 @@ OUTPUT_REQUIREMENT_OPTIONS = [
 ]
 DIFFICULTY_FORM_OPTIONS = ["基础", "中等", "复杂"]
 RISK_LEVEL_OPTIONS = ["低", "中", "高"]
-_SAMPLE_TABLE_COLUMNS = ["样本编号", "任务标题", "专业场景", "测试状态", "完整度", "更新时间", "操作"]
+_SAMPLE_TABLE_COLUMNS = ["样本编号", "任务标题", "专业场景", "测试状态", "完整度"]
 _CSV_TEMPLATE_COLUMNS = [
     "case_id",
     "title",
@@ -326,8 +326,6 @@ def build_sample_table_rows(
             "专业场景": _professional_scene_label(task_record, sample),
             "测试状态": test_status,
             "完整度": _completeness_label(sample, readiness),
-            "更新时间": _format_date(sample.updated_at),
-            "操作": "查看",
         })
     return rows
 
@@ -920,17 +918,6 @@ def _render_sample_operation_message() -> None:
         st.toast(message)
 
 
-def _sync_samples_to_formal_assets() -> None:
-    result = sr.sync_all_samples_to_formal_assets(db_path=_formal_db_path_for_ui())
-    failures = result.get("failures") or []
-    level = "success" if result.get("sqlite_ready") and not result.get("failed_count") else "warning"
-    message = str(result.get("message") or "同步完成。")
-    if failures:
-        first = failures[0]
-        message += f" 首条失败：{first.get('case_id', '未知样本')}：{first.get('reason', '未知原因')}"
-    _store_sample_operation_message(message, level=level)
-
-
 def _formal_sync_feedback_suffix() -> tuple[str, str]:
     status = sr.sample_data_source_status()
     if status.get("sqlite_ready"):
@@ -943,8 +930,8 @@ def _formal_sync_feedback_suffix() -> tuple[str, str]:
 # --------------------------------------------------------------------------- #
 def _render_samples_title_bar(config) -> None:
     with st.container(key="samples_title_bar"):
-        col1, col2, col3, col4 = st.columns(
-            [3.7, 0.9, 0.9, 1.35],
+        col1, col2, col3 = st.columns(
+            [4.0, 1.0, 1.0],
             gap="small",
             vertical_alignment="bottom",
         )
@@ -956,10 +943,6 @@ def _render_samples_title_bar(config) -> None:
         with col3:
             if st.button("导入 CSV", key="samples_import_csv_open", type="secondary", use_container_width=True):
                 _open_import_csv_dialog()
-        with col4:
-            if st.button("同步样本库", key="samples_sync_assets", type="tertiary", use_container_width=True):
-                _sync_samples_to_formal_assets()
-                st.rerun()
     _render_sample_operation_message()
     _render_sample_source_status()
 
@@ -1079,8 +1062,6 @@ def _sample_table_column_config() -> dict:
         "专业场景": st.column_config.TextColumn("专业场景", width="small"),
         "测试状态": st.column_config.TextColumn("测试状态", width="small"),
         "完整度": st.column_config.TextColumn("完整度", width="small"),
-        "更新时间": st.column_config.TextColumn("更新时间", width="small"),
-        "操作": st.column_config.TextColumn("操作", width="small"),
     }
 
 

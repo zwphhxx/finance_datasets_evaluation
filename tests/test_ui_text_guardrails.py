@@ -252,12 +252,11 @@ class FormalConclusionStatusGuardrailTests(unittest.TestCase):
 class SampleLibraryGuardrailTests(unittest.TestCase):
     def test_sample_table_contract_and_current_sample_actions(self):
         self.assertEqual(
-            ["样本编号", "任务标题", "专业场景", "测试状态", "完整度", "更新时间", "操作"],
+            ["样本编号", "任务标题", "专业场景", "测试状态", "完整度"],
             samples._SAMPLE_TABLE_COLUMNS,
         )
 
         table_source = inspect.getsource(samples.build_sample_table_rows)
-        self.assertIn('"操作": "查看"', table_source)
         self.assertNotIn("删除", table_source)
         self.assertNotIn("编辑", table_source)
         self.assertNotIn("移出测试", table_source)

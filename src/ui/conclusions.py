@@ -181,12 +181,12 @@ def _render_current_conclusion(ai_scores: pd.DataFrame) -> None:
     ai_score_rows = int(summary.get("ai_score_rows", summary.get("confirmed_rows", 0)))
     models = int(summary["model_count"])
     cases = int(summary.get("case_count", 0))
-    sample_note = "当前样本数较少，仅作为当前样本内观察。" if cases < 3 else "结论仅代表当前样本范围内观察。"
+    sample_note = "当前样本数较少，仅作为当前样本内观察。" if cases < 3 else ""
     st.markdown(
         f"已生成 AI 评分 **{ai_score_rows}** 条，覆盖 **{models}** 个模型、**{cases}** 个样本。"
     )
     st.caption(
-        f"{sample_note} 失败评分、模拟回退和被排除记录不进入评测结论。"
+        f"{sample_note}失败评分、模拟回退和被排除记录不进入评测结论。"
     )
 
 
@@ -228,7 +228,6 @@ def _render_model_recommendations(model_summaries: list[dict]) -> None:
         }
     )
     themed_bar_chart(chart_rows, x="模型", y="平均分", x_title="模型", y_title="平均分", y_format=".1f")
-    st.caption("当前判断只说明模型在当前样本范围内的使用边界。")
 
 
 def _recommendation_row(item: dict) -> dict[str, object]:
