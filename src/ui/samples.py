@@ -1198,11 +1198,11 @@ def render_sample_detail_panel(
     body = "".join(body_sections)
     render_detail_panel(body)
     with st.expander("专业标准答案", expanded=False):
-        render_html(_detail_section_html("专业标准答案", _gold_detail_html(gold_display)))
+        render_html(_detail_section_html("", _gold_detail_html(gold_display)))
     with st.expander(scoring_title, expanded=False):
-        render_html(_detail_section_html(scoring_title, _rubric_detail_html(rubric_rows)))
+        render_html(_detail_section_html("", _rubric_detail_html(rubric_rows)))
     with st.expander("历史运行与优化", expanded=False):
-        render_html(_detail_section_html("历史运行与优化", _error_optimization_detail_html(sample)))
+        render_html(_detail_section_html("", _error_optimization_detail_html(sample)))
 
 
 def _readiness_needs_attention(sample: sr.Sample, readiness: ds.SampleReadiness) -> bool:

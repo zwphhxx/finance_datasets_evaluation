@@ -22,6 +22,7 @@ from app.services import dataset_service as ds
 from app.services import eval_runner as er
 from app.services import eval_state
 from app.services import model_display as md
+from app.services import sample_repository as sr
 from app.services import scorer as sc
 from src.ui import conclusions_data as cd
 from src.ui.components import (
@@ -223,21 +224,28 @@ def build_sample_options(
     task_records: list[dict],
     gold_map: dict,
     rubric_dimensions: list[dict] | None,
+    title_map: dict[str, str] | None = None,
 ) -> list[dict]:
     """Build compact selectable samples using the shared formal readiness gate."""
     options: list[dict] = []
     for case_id in eligible_case_ids(task_records, gold_map, rubric_dimensions):
         row = next((item for item in task_records if str(item.get("case_id") or "").strip() == case_id), {})
         scenario = _dash(row.get("scenario"))
+        scene = scenario.split("——")[0].strip() or scenario
         task_type = display_label(row.get("task_type"), TASK_TYPE_LABELS)
-        title_source = row.get("title") or row.get("expected_capability") or row.get("question")
-        summary = summarize_text(title_source, 24)
+        title_source = (
+            (title_map or {}).get(case_id)
+            or row.get("title")
+            or row.get("expected_capability")
+            or row.get("question")
+        )
+        summary = summarize_text(title_source, 32)
         difficulty = _dash(row.get("difficulty"))
-        label = f"{case_id} · {scenario} · {task_type} · {summary}"
+        label = f"{case_id} · {scene} · {task_type} · {summary}"
         options.append({
             "case_id": case_id,
             "label": label,
-            "scenario": scenario,
+            "scenario": scene,
             "task_type": task_type,
             "title": summary,
             "difficulty": difficulty,
@@ -659,7 +667,8 @@ def render_test_run_page(data_bundle: dict) -> None:
     gold_map = getattr(base, "gold_answer_map", {}) or {}
     testable_dimensions = ds.get_testable_rubric_dimensions()
 
-    sample_options = build_sample_options(task_records, gold_map, testable_dimensions)
+    sample_title_map = {s.sample_id: s.title for s in sr.load_samples() if s.title}
+    sample_options = build_sample_options(task_records, gold_map, testable_dimensions, title_map=sample_title_map)
     _ensure_default_selected_cases(sample_options)
     provider_name = _current_provider_name()
     selected_tasks = _selected_tasks_from_state(sample_options)
@@ -975,6 +984,30 @@ def _render_sample_selection_dialog(sample_options: list[dict]) -> None:
         difficulty = st.selectbox("难度", difficulties, key="test_run_sample_difficulty")
 
     filtered_options = filter_sample_selection_options(sample_options, keyword, scenario, difficulty)
+    bulk_cols = st.columns([1.1, 0.7, 3.2])
+    with bulk_cols[0]:
+        if st.button(
+            "全选当前筛选结果",
+            key="test_run_sample_select_filtered",
+            type="tertiary",
+            disabled=not filtered_options,
+        ):
+            merged = _dedupe(list(selected_cases) + [item["case_id"] for item in filtered_options])
+            st.session_state["test_run_cases_dialog_selected"] = merged
+            for item in filtered_options:
+                st.session_state[sample_checkbox_key(item["case_id"])] = True
+            st.rerun()
+    with bulk_cols[1]:
+        if st.button(
+            "清空",
+            key="test_run_sample_clear_selected",
+            type="tertiary",
+            disabled=not selected_cases,
+        ):
+            st.session_state["test_run_cases_dialog_selected"] = []
+            for case_id in all_case_ids:
+                st.session_state[sample_checkbox_key(case_id)] = False
+            st.rerun()
     checkbox_values: dict[str, bool] = {}
     if not filtered_options:
         st.caption("当前没有符合条件的可测样本。")
@@ -1105,7 +1138,7 @@ def _render_model_selection_dialog() -> None:
             available_models, search_keyword, _MODEL_OPTION_LIMIT,
         )
         if matched_count > _MODEL_OPTION_LIMIT:
-            st.caption("结果较多，请继续输入关键词缩小范围。")
+            st.caption(f"共匹配 {matched_count} 个模型，显示前 {len(visible_options)} 个；输入关键词可缩小范围。")
         if visible_options:
             if st.session_state.get("test_run_model_select") not in visible_options:
                 st.session_state["test_run_model_select"] = visible_options[0]
@@ -1147,8 +1180,6 @@ def _render_model_selection_dialog() -> None:
                         item for item in chosen_models if item != model_id
                     ]
                     st.rerun()
-    else:
-        st.caption("尚未选择模型。")
     st.caption(f"已选模型：{len(chosen_models)} 个")
     col1, col2 = st.columns(2)
     with col1:

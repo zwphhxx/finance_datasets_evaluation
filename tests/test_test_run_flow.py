@@ -152,6 +152,7 @@ class TestRunFlowStructureTests(unittest.TestCase):
         self.assertIn("st.checkbox", source)
         self.assertIn("test_run_case_checkbox_", source)
         self.assertIn("关键词搜索", source)
+        self.assertIn("全选当前筛选结果", source)
         self.assertIn("当前没有符合条件的可测样本", source)
         self.assertIn("模型服务：", source)
         self.assertIn("硅基流动", source)
@@ -749,6 +750,41 @@ class SampleSelectionTests(unittest.TestCase):
         self.assertLessEqual(len(options[0]["label"]), 90)
         self.assertNotIn("Gold", options[0]["label"])
         self.assertNotIn("Rub" + "ric", options[0]["label"])
+
+    def test_sample_options_prefer_repository_titles_over_question_prefix(self):
+        tasks = [
+            {
+                "case_id": "A",
+                "status": ds.ACTIVE_STATUS,
+                "question": "请基于已提供模拟数据形成初步判断，按统一模板作答。",
+                "context": "背景",
+                "scenario": "财务尽调",
+                "task_type": "risk_identification",
+            },
+        ]
+        gold_map = {
+            "A": {
+                "core_conclusion": "结论",
+                "must_have_points": ["覆盖点"],
+                "unacceptable_errors": ["错误"],
+            },
+        }
+        dimensions = [
+            {
+                "field": "accuracy_score",
+                "name": "准确性",
+                "full_mark": 30,
+                "full_mark_standard": "回答完整准确覆盖标准。",
+                "deduction_rules": "缺少关键判断或依据时扣分。",
+            }
+        ]
+
+        options = build_sample_options(
+            tasks, gold_map, dimensions, title_map={"A": "财务场景——收入真实性与应收账款回款异常回复"}
+        )
+
+        self.assertEqual("财务场景——收入真实性与应收账款回款异常回复", options[0]["title"])
+        self.assertNotIn("请基于已提供模拟数据", options[0]["title"])
 
     def test_sample_dialog_filters_use_search_scene_and_difficulty(self):
         sample_options = [

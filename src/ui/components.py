@@ -1032,9 +1032,15 @@ def render_markdown_block(markdown_text: str) -> str:
 
 
 def document_section_html(title: str, content_html: str) -> str:
+    title_html = ""
+    if str(title).strip():
+        title_html = (
+            '<div class="document-section-title sample-detail-section-title">'
+            f"{escape(str(title))}</div>"
+        )
     return (
         '<section class="document-section sample-detail-section">'
-        f'<div class="document-section-title sample-detail-section-title">{escape(str(title))}</div>'
+        f"{title_html}"
         f"{content_html}"
         "</section>"
     )
