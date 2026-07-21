@@ -270,7 +270,7 @@ header,
     border-bottom: 1px solid var(--fde-line);
     padding: 0.28rem 0 0.42rem 0;
 }
-.inline-status-item span {
+.inline-status-item span:not(.fde-badge) {
     display: block;
     color: var(--fde-muted);
     font-size: 0.75rem;
