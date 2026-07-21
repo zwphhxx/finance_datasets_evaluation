@@ -1186,40 +1186,40 @@ def render_sample_detail_panel(
     rubric_rows: list[dict[str, str]],
 ) -> None:
     task_prompt, business_context, output_requirement = _task_markdown_values(sample, task_record)
-    test_status = _test_status_label(sample, readiness)
-    completeness = _completeness_label(sample, readiness)
     scoring_title = "评分标准" if _rubric_rows_are_complete(rubric_rows) else "评分维度配置"
-    body = "".join([
-        _detail_section_html("基本信息", _basic_info_html(sample, readiness, task_record, test_status, completeness)),
+    body_sections = [
+        _detail_section_html("基本信息", _basic_info_html(sample, task_record)),
         _detail_section_html("任务内容", _task_detail_html(task_prompt, business_context, output_requirement)),
-        _detail_section_html("专业标准答案", _gold_detail_html(gold_display)),
-        _detail_section_html(scoring_title, _rubric_detail_html(rubric_rows)),
-        _detail_section_html("准入状态", _readiness_detail_html(sample, readiness)),
-        _detail_section_html("历史运行与优化", _error_optimization_detail_html(sample)),
-    ])
+    ]
+    if _readiness_needs_attention(sample, readiness):
+        body_sections.append(_detail_section_html("准入状态", _readiness_detail_html(sample, readiness)))
+    body = "".join(body_sections)
     render_detail_panel(body)
+    with st.expander("专业标准答案", expanded=False):
+        render_html(_detail_section_html("专业标准答案", _gold_detail_html(gold_display)))
+    with st.expander(scoring_title, expanded=False):
+        render_html(_detail_section_html(scoring_title, _rubric_detail_html(rubric_rows)))
+    with st.expander("历史运行与优化", expanded=False):
+        render_html(_detail_section_html("历史运行与优化", _error_optimization_detail_html(sample)))
+
+
+def _readiness_needs_attention(sample: sr.Sample, readiness: ds.SampleReadiness) -> bool:
+    """Only surface the readiness block when the sample needs action."""
+    if not readiness.is_testable or readiness.missing_items:
+        return True
+    return sample.status != "已入库"
 
 
 def _detail_section_html(title: str, content_html: str) -> str:
     return document_section_html(title, content_html)
 
 
-def _basic_info_html(
-    sample: sr.Sample,
-    readiness: ds.SampleReadiness,
-    task_record: dict,
-    test_status: str,
-    completeness: str,
-) -> str:
+def _basic_info_html(sample: sr.Sample, task_record: dict) -> str:
     risk_level = task_record.get("risk_level") or getattr(sample, "risk_level", "") or "待补充"
     rows = [
         ("专业场景", _professional_scene_label(task_record, sample)),
         ("难度", _difficulty_label(sample.difficulty or task_record.get("difficulty"))),
         ("风险等级", risk_level),
-        ("测试状态", test_status),
-        ("样本状态", _sample_status_label(sample)),
-        ("完整度", completeness or readiness.label),
-        ("更新时间", _format_date(sample.updated_at)),
     ]
     return _kv_grid_html(rows)
 
