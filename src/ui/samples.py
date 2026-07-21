@@ -27,6 +27,7 @@ from src.ui.components import (
     render_long_text_section,
     render_numbered_section,
     render_page_heading,
+    render_selection_echo,
 )
 from src.ui.labels import (
     DIFFICULTY_LABELS,
@@ -983,11 +984,10 @@ def render_samples_page(data_bundle: dict) -> None:
         render_html('<div class="mobile-scroll-hint">表格可左右滑动查看完整内容</div>')
         selected = _ensure_selected_sample(filtered)
         if selected is not None:
-            render_html(
-                '<div class="table-selection-echo">'
-                f'已选 {escape(str(selected.sample_id))} · '
-                '<a href="#fde-current-sample">查看下方 03 当前样本 ↓</a>'
-                "</div>"
+            render_selection_echo(
+                f"已选 {selected.sample_id}",
+                "#fde-current-sample",
+                "查看下方 03 当前样本 ↓",
             )
 
     render_html('<a id="fde-current-sample"></a>')

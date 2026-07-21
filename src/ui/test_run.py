@@ -669,10 +669,34 @@ def render_test_run_page(data_bundle: dict) -> None:
     render_numbered_section("01", TEST_RUN_STEPS[0])
     _render_configuration_panel(sample_options, selected_tasks, model_ids, provider_name, run_plan, base, task_records)
 
-    render_numbered_section("02", TEST_RUN_STEPS[1])
-    _render_results(provider_name, _current_eval_temperature(), _EVAL_MAX_TOKENS, task_records)
+    answer_run_summaries = er.list_persisted_answer_runs()
+    persisted_answers = sum(int(item.get("success_count") or 0) for item in answer_run_summaries)
+    scored_count = sum(
+        1
+        for row in sc.latest_score_queue()
+        if str(row.get("status") or "").strip().lower() == "success"
+    )
 
-    render_numbered_section("03", TEST_RUN_STEPS[2])
+    answer_badge = (
+        (f"已有 {persisted_answers} 条回答", "success")
+        if persisted_answers
+        else ("待运行", "neutral")
+    )
+    render_numbered_section("02", TEST_RUN_STEPS[1], badge=answer_badge)
+    _render_results(
+        provider_name,
+        _current_eval_temperature(),
+        _EVAL_MAX_TOKENS,
+        task_records,
+        answer_run_summaries=answer_run_summaries,
+    )
+
+    score_badge = (
+        (f"已有 {scored_count} 条评分", "success")
+        if scored_count
+        else ("待评分", "neutral")
+    )
+    render_numbered_section("03", TEST_RUN_STEPS[2], badge=score_badge)
     _render_scoring(base, provider_name, task_records)
     _render_score_results(base, provider_name, task_records)
     _render_pending_dialogs(sample_options)
@@ -1299,8 +1323,9 @@ def _persisted_run_option_label(summary: dict) -> str:
     )
 
 
-def _render_persisted_answer_run_selector(result) -> str:
-    summaries = er.list_persisted_answer_runs()
+def _render_persisted_answer_run_selector(result, summaries: list[dict] | None = None) -> str:
+    if summaries is None:
+        summaries = er.list_persisted_answer_runs()
     if not summaries:
         return ""
     current_run_id = str(
@@ -2098,9 +2123,15 @@ def _render_live_score_queue(
             st.caption(f"等待中：{waiting_text}{suffix}")
 
 
-def _render_results(provider_name: str, temperature, max_tokens, task_records: list[dict]) -> None:
+def _render_results(
+    provider_name: str,
+    temperature,
+    max_tokens,
+    task_records: list[dict],
+    answer_run_summaries: list[dict] | None = None,
+) -> None:
     result = eval_state.get_last_run()
-    selected_run_id = _render_persisted_answer_run_selector(result)
+    selected_run_id = _render_persisted_answer_run_selector(result, summaries=answer_run_summaries)
     if selected_run_id and selected_run_id != str(getattr(result, "run_id", "") or ""):
         result = _recover_persisted_run(selected_run_id, task_records)
     state = _run_state()

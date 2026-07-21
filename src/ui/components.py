@@ -302,6 +302,48 @@ header,
     font-weight: 650;
     text-decoration: none;
 }
+.fde-badge {
+    border-radius: 999px;
+    display: inline-block;
+    font-size: 0.76rem;
+    font-weight: 650;
+    line-height: 1.55;
+    padding: 0.06rem 0.5rem;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+.fde-badge-neutral {
+    background: var(--fde-surface);
+    border: 1px solid var(--fde-line);
+    color: var(--fde-muted);
+}
+.fde-badge-success {
+    background: var(--fde-success-bg);
+    color: var(--fde-success-text);
+}
+.fde-badge-warning {
+    background: var(--fde-warning-bg);
+    color: var(--fde-warning-text);
+}
+.section-heading-title .fde-badge {
+    margin-left: 0.55rem;
+}
+.model-boundary-line {
+    align-items: baseline;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0.35rem 0 0.9rem;
+}
+.model-boundary-line strong {
+    color: var(--fde-ink);
+    font-size: 1rem;
+    font-weight: 720;
+}
+.model-boundary-usage {
+    color: var(--fde-muted);
+    font-size: 0.9rem;
+}
 .mobile-scroll-hint {
     display: none;
 }
@@ -872,6 +914,7 @@ def _section_heading_html(
     lead: str | None = None,
     *,
     variant: str = "page",
+    badge: tuple[str, str] | None = None,
 ) -> str:
     normalized = str(variant or "page").strip().lower()
     if normalized not in {"home", "page"}:
@@ -881,11 +924,12 @@ def _section_heading_html(
         if str(lead or "").strip()
         else ""
     )
+    badge_html = render_badge(badge[0], badge[1]) if badge else ""
     return f"""
         <div class="section-heading section-heading-{normalized}">
             <span class="section-heading-number">{escape(str(number))}</span>
             <div class="section-heading-main">
-                <h2 class="section-heading-title">{escape(str(title))}</h2>
+                <h2 class="section-heading-title">{escape(str(title))}{badge_html}</h2>
                 {lead_html}
             </div>
         </div>
@@ -898,12 +942,45 @@ def render_section_heading(
     lead: str | None = None,
     *,
     variant: str = "page",
+    badge: tuple[str, str] | None = None,
 ) -> None:
-    render_html(_section_heading_html(number, title, lead, variant=variant))
+    render_html(_section_heading_html(number, title, lead, variant=variant, badge=badge))
 
 
-def render_numbered_section(index: str, title: str, caption: str | None = None) -> None:
-    render_section_heading(index, title, caption, variant="page")
+def render_numbered_section(
+    index: str,
+    title: str,
+    caption: str | None = None,
+    *,
+    badge: tuple[str, str] | None = None,
+) -> None:
+    render_section_heading(index, title, caption, variant="page", badge=badge)
+
+
+_BADGE_TONES = {"neutral", "success", "warning"}
+
+
+def render_badge(text: str, tone: str = "neutral") -> str:
+    """Return a small status badge span; tone: neutral/success/warning."""
+    normalized = str(tone or "neutral").strip().lower()
+    if normalized not in _BADGE_TONES:
+        normalized = "neutral"
+    return f'<span class="fde-badge fde-badge-{normalized}">{escape(str(text))}</span>'
+
+
+def render_selection_echo(
+    text: str,
+    anchor_href: str | None = None,
+    anchor_label: str | None = None,
+) -> None:
+    """Render the muted current-selection line shown under a selectable table."""
+    link = ""
+    if anchor_href and anchor_label:
+        link = (
+            f' · <a href="{escape(str(anchor_href), quote=True)}">'
+            f"{escape(str(anchor_label))}</a>"
+        )
+    render_html(f'<div class="table-selection-echo">{escape(str(text))}{link}</div>')
 
 
 def render_empty_state(message: str) -> None:

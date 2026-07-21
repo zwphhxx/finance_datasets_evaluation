@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from html import escape
 
 import pandas as pd
 import streamlit as st
@@ -16,12 +17,14 @@ from app.services import scorer as sc
 from src.charts import themed_bar_chart
 from src.ui import conclusions_data as cd
 from src.ui.components import (
+    render_badge,
     render_empty_state,
     render_html,
     render_inline_status,
     render_markdown_detail_panel,
     render_numbered_section,
     render_page_heading,
+    render_selection_echo,
 )
 from src.ui.page_config import get_page_config
 
@@ -198,7 +201,7 @@ def _render_model_recommendations(model_summaries: list[dict]) -> None:
         )
     current_choice = st.session_state.get("conclusion_selected_model")
     if current_choice:
-        st.caption(f"已选 {current_choice} · 详情见下方 02")
+        render_selection_echo(f"已选 {current_choice}", "#fde-model-details", "详情见下方 02 ↓")
     render_html('<div class="mobile-scroll-hint">表格可左右滑动查看完整内容</div>')
     chart_rows = pd.DataFrame(
         {
@@ -220,16 +223,17 @@ def _recommendation_row(item: dict) -> dict[str, object]:
 
 
 # --------------------------------------------------------------------------- #
-# 02 模型详情
+# 02 模型回答明细
 # --------------------------------------------------------------------------- #
 def _render_model_issue_details(
     model_summaries: list[dict],
     answer_rows: list[dict],
 ) -> None:
+    render_html('<a id="fde-model-details"></a>')
     render_numbered_section(
         "02",
-        "模型详情",
-        "展示当前选中模型的判断依据和使用边界。",
+        "模型回答明细",
+        "点击 01 表格行切换模型，查看该模型在各样本上的回答。",
     )
 
     if not model_summaries:
@@ -252,13 +256,15 @@ def _render_model_issue_details(
 
 def _render_issue_markdown(item: dict) -> None:
     display = str(item.get("display_name") or item.get("model_name") or "未标注模型")
-    model_id = str(item.get("model_name") or "")
-    markdown = "\n\n".join([
-        "**使用边界**",
-        str(item.get("usage_advice") or "请结合评分依据和业务边界判断。"),
-    ])
-    meta = f"模型 ID：{model_id}" if model_id and model_id != display else None
-    render_markdown_detail_panel(display, markdown, meta=meta)
+    judgment = _current_judgment(item)
+    usage = str(item.get("usage_advice") or "请结合评分依据和业务边界判断。")
+    render_html(
+        '<div class="model-boundary-line">'
+        f"<strong>{escape(display)}</strong>"
+        f"{render_badge(judgment, _judgment_tone(judgment))}"
+        f'<span class="model-boundary-usage">使用边界：{escape(usage)}</span>'
+        "</div>"
+    )
 
 
 def _render_model_answer_details(
@@ -309,7 +315,24 @@ def _safe_key(value: object) -> str:
 def _current_judgment(item: dict) -> str:
     if int(item.get("sample_count") or 0) < 3:
         return "样本不足，暂不形成判断"
-    return str(item.get("current_suggestion") or "暂不形成判断")
+    suggestion = str(item.get("current_suggestion") or "暂不形成判断")
+    return f"{_judgment_symbol(suggestion)}{suggestion}"
+
+
+def _judgment_symbol(judgment: str) -> str:
+    if "谨慎" in judgment or "不建议" in judgment:
+        return "⚠ "
+    if "可作为" in judgment:
+        return "✓ "
+    return ""
+
+
+def _judgment_tone(judgment: str) -> str:
+    if "谨慎" in judgment or "不建议" in judgment:
+        return "warning"
+    if "可作为" in judgment:
+        return "success"
+    return "neutral"
 
 
 def _primary_basis(item: dict) -> str:

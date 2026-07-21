@@ -235,6 +235,8 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertNotIn("展示当前查询结果。", samples_source)
         self.assertNotIn("选择一个样本，查看评测资产结构。", samples_source)
         self.assertIn("render_sample_detail_panel", samples_source)
+        self.assertIn("render_badge", components_source)
+        self.assertIn("render_selection_echo", components_source)
         self.assertIn("render_detail_panel(body)", samples_source)
         self.assertIn("sample-detail-toolbar-title", components_source)
         self.assertIn(".sample-detail-panel", components_source)
