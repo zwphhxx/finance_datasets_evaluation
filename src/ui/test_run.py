@@ -198,16 +198,6 @@ def _current_eval_temperature() -> float:
     return _normalize_eval_temperature(st.session_state.get(_EVAL_TEMPERATURE_KEY))
 
 
-def get_test_run_steps() -> list[str]:
-    """Return the visible execution steps for the test-run page."""
-    return TEST_RUN_STEPS[:]
-
-
-def get_advanced_setting_items() -> list[str]:
-    """No advanced controls are exposed on the test-run page."""
-    return []
-
-
 def resolve_persisted_answer_run_id(
     run_summaries: list[dict],
     *,

@@ -95,7 +95,6 @@ class MobileResponsiveUIContracts(unittest.TestCase):
 
         for selector in [
             '[data-testid="stMarkdownContainer"] .page-title-heading',
-            '[data-testid="stMarkdownContainer"] .compact-hero-title',
             '[data-testid="stMarkdownContainer"] .brief-title',
             '[data-testid="stMarkdownContainer"] .section-heading-title',
         ]:

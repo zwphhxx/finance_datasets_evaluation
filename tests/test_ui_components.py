@@ -19,17 +19,12 @@ class UIComponentsTests(unittest.TestCase):
             "render_html",
             "render_page_heading",
             "render_numbered_section",
-            "render_document_block",
             "render_field_section",
             "render_long_text_section",
             "render_markdown_block",
             "render_detail_panel",
-            "render_kv_grid",
             "render_inline_status",
             "render_empty_state",
-            "render_clean_list",
-            "render_compact_hero",
-            "render_status_pill",
         ]
         for name in expected_functions:
             self.assertTrue(hasattr(components, name), name)
@@ -75,7 +70,6 @@ class UIComponentsTests(unittest.TestCase):
         self.assertEqual(EXPECTED_PAGE_ORDER, list(PAGES.keys()))
         for config in PAGE_CONFIGS:
             self.assertTrue(config.title.strip())
-            self.assertTrue(config.nav_summary.strip())
             self.assertTrue(callable(PAGES[config.page_key]))
 
     def test_app_routes_through_navigation_without_radio(self):
@@ -103,17 +97,12 @@ class UIComponentsTests(unittest.TestCase):
         signatures = {
             "render_page_heading": ["title", "description"],
             "render_numbered_section": ["index", "title", "caption"],
-            "render_document_block": ["body_html", "title", "meta"],
             "render_field_section": ["label", "value", "fallback"],
             "render_long_text_section": ["label", "value", "fallback"],
             "render_markdown_block": ["markdown_text"],
             "render_detail_panel": ["body_html", "title", "meta"],
-            "render_kv_grid": ["items"],
             "render_inline_status": ["items"],
             "render_empty_state": ["message"],
-            "render_clean_list": ["items"],
-            "render_compact_hero": ["eyebrow", "title", "question", "stats"],
-            "render_status_pill": ["text", "level"],
         }
         for function_name, parameter_names in signatures.items():
             actual = inspect.signature(getattr(components, function_name))
@@ -136,7 +125,6 @@ class UIComponentsTests(unittest.TestCase):
         self.assertIn("<li>覆盖点一</li>", list_html)
         self.assertIn('class="markdown-detail-body document-markdown"', markdown_html)
 
-        self.assertIn(".document-block", components.STYLE_CSS)
         self.assertIn("max-width: min(100%, 960px)", components.STYLE_CSS)
         self.assertIn(".document-field + .document-field", components.STYLE_CSS)
         self.assertIn(".document-list-risk", components.STYLE_CSS)

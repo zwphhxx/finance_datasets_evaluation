@@ -3,11 +3,10 @@ import os
 import streamlit as st
 
 from app.services import dataset_service as ds
-from app.services.data_resolver import build_data_context_info, resolve_active_data
+from app.services.data_resolver import resolve_active_data
 from src.data_service import DataLoadError
 from src.ui.components import apply_global_styles
 from src.ui.navigation import PAGES, render_sidebar_navigation
-from src.validators import ValidationResult, validate_evaluation_data
 
 AUTO_INIT_DB_ENV = "FINDUEVAL_AUTO_INIT_DB"
 _DISABLED_AUTO_INIT_VALUES = {"0", "false", "no", "off"}
@@ -46,26 +45,13 @@ except DataLoadError as exc:
     st.error(str(exc))
     st.stop()
 
-try:
-    # 数据质量校验仍针对数据集本体（题库 / Gold 等 seed 资产）。
-    validation_result = validate_evaluation_data(base)
-except Exception:
-    validation_result = ValidationResult(
-        errors=["数据质量检查未能完成。请检查数据结构后重试。"],
-        warnings=[],
-    )
-
 # 把会话中的真实运行 + 裁判评分组装为分析页可用的 EvaluationData；未运行时结果类为空。
-data, eval_status = resolve_active_data(base)
+data, _eval_status = resolve_active_data(base)
 
 data_bundle = {
     "data": data,
     "base": base,
-    "validation_result": validation_result,
-    "eval_status": eval_status,
-    "data_context": build_data_context_info(base, eval_status),
 }
 
-st.session_state["data_context"] = data_bundle["data_context"]
 page = render_sidebar_navigation()
 PAGES[page](data_bundle)

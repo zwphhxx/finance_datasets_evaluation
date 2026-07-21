@@ -36,8 +36,6 @@ from src.ui.test_run import (
     default_outcome_view_index,
     default_score_view_index,
     filter_sample_selection_options,
-    get_advanced_setting_items,
-    get_test_run_steps,
     has_confirmable_score_drafts,
     merge_sample_checkbox_selection,
     prompt_preview_task_for_case,
@@ -52,13 +50,12 @@ from src.ui.test_run import (
 
 class TestRunFlowStructureTests(unittest.TestCase):
     def test_main_steps_are_execution_flow(self):
+        from src.ui.test_run import TEST_RUN_STEPS
+
         self.assertEqual(
             ["评测配置", "模型回答", "AI 评分"],
-            get_test_run_steps(),
+            TEST_RUN_STEPS,
         )
-
-    def test_advanced_settings_keep_technical_controls_collapsed(self):
-        self.assertEqual([], get_advanced_setting_items())
 
     def test_eval_max_tokens_default_and_env_override_are_bounded(self):
         self.assertEqual(4096, _EVAL_MAX_TOKENS_DEFAULT)

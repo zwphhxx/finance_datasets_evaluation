@@ -142,59 +142,6 @@ header,
     gap: 0.5rem;
     flex-shrink: 0;
 }
-.compact-hero {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 1.3rem;
-    align-items: end;
-    margin: 0.35rem 0 1.2rem 0;
-    padding-bottom: 0.9rem;
-    border-bottom: 1px solid var(--fde-line);
-}
-.compact-hero-eyebrow {
-    color: var(--fde-muted);
-    font-size: 0.78rem;
-    font-weight: 700;
-    margin-bottom: 0.22rem;
-}
-.compact-hero-title,
-[data-testid="stMarkdownContainer"] .compact-hero-title {
-    color: var(--fde-ink);
-    font-size: 1.62rem;
-    font-weight: 780;
-    line-height: 1.22;
-    margin: 0;
-    padding: 0;
-}
-.compact-hero-copy {
-    color: var(--fde-muted);
-    font-size: 0.96rem;
-    line-height: 1.58;
-    margin: 0.38rem 0 0 0;
-}
-.compact-hero-stats {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.7rem;
-    justify-content: flex-end;
-}
-.compact-hero-stat {
-    min-width: 5.2rem;
-    border-left: 1px solid var(--fde-line);
-    padding-left: 0.75rem;
-}
-.compact-hero-stat strong {
-    display: block;
-    color: var(--fde-ink);
-    font-size: 1.25rem;
-    line-height: 1.1;
-}
-.compact-hero-stat span {
-    display: block;
-    color: var(--fde-muted);
-    font-size: 0.78rem;
-    margin-top: 0.2rem;
-}
 .brief-intro {
     margin: 0.35rem 0 1.45rem 0;
     padding-bottom: 0;
@@ -225,13 +172,6 @@ header,
     height: 1px;
     background: var(--fde-line-strong);
     flex: 0 0 auto;
-}
-.process-line-text {
-    color: var(--fde-ink);
-    font-size: 0.94rem;
-    font-weight: 680;
-    line-height: 1.5;
-    margin: 0.85rem 0 0.35rem 0;
 }
 .brief-note {
     border-left: 2px solid var(--fde-accent);
@@ -343,36 +283,6 @@ header,
     font-weight: 650;
     line-height: 1.45;
 }
-.aux-action-bar {
-    border-top: 1px solid var(--fde-line);
-    color: var(--fde-muted);
-    font-size: 0.82rem;
-    font-weight: 680;
-    line-height: 1.45;
-    margin: 0.5rem 0 0.35rem 0;
-    padding-top: 0.58rem;
-}
-.aux-action-bar-label {
-    color: var(--fde-muted);
-    font-size: 0.82rem;
-    font-weight: 680;
-    line-height: 1.45;
-}
-.aux-action-static-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin: 0.1rem 0 0.75rem 0;
-}
-.aux-action-static {
-    border: 1px solid var(--fde-line);
-    border-radius: 8px;
-    color: var(--fde-text);
-    display: inline-flex;
-    font-size: 0.86rem;
-    font-weight: 650;
-    padding: 0.32rem 0.62rem;
-}
 .empty-state {
     border: 1px solid var(--fde-line);
     border-radius: var(--fde-radius);
@@ -470,7 +380,6 @@ header,
     font-weight: 760;
     margin-bottom: 0.48rem;
 }
-.document-block,
 .document-section,
 .markdown-detail-body,
 .review-summary-panel-body {
@@ -792,38 +701,6 @@ header,
     font-size: 0.78rem;
     font-weight: 720;
 }
-.clean-list {
-    margin: 0.25rem 0 0.85rem 1.1rem;
-    padding: 0;
-    color: var(--fde-ink);
-    line-height: 1.65;
-}
-.clean-list li {
-    margin: 0.18rem 0;
-}
-.inline-pill {
-    display: inline-flex;
-    align-items: center;
-    border: 1px solid var(--fde-line);
-    border-radius: 999px;
-    background: var(--fde-surface-subtle);
-    color: var(--fde-muted);
-    padding: 0.12rem 0.5rem;
-    font-size: 0.78rem;
-    font-weight: 650;
-}
-.inline-pill-success {
-    background: var(--fde-success-bg);
-    color: var(--fde-success-text);
-}
-.inline-pill-warning {
-    background: var(--fde-warning-bg);
-    color: var(--fde-warning-text);
-}
-.inline-pill-danger {
-    background: var(--fde-danger-bg);
-    color: var(--fde-danger-text);
-}
 .stButton > button {
     border-radius: 6px !important;
     box-shadow: none !important;
@@ -871,13 +748,11 @@ div[data-testid="stDialog"] {
     color: var(--fde-text);
 }
 @media (max-width: 760px) {
-    .page-title-row,
-    .compact-hero {
+    .page-title-row {
         grid-template-columns: 1fr;
         display: block;
     }
-    .page-title-actions,
-    .compact-hero-stats {
+    .page-title-actions {
         justify-content: flex-start;
         margin-top: 0.75rem;
     }
@@ -947,33 +822,6 @@ def render_page_heading(title: str, description: str | None = None) -> None:
     )
 
 
-def render_compact_hero(
-    eyebrow: str,
-    title: str,
-    question: str | None = None,
-    stats: list[tuple[str, str]] | None = None,
-) -> None:
-    stat_html = "".join(
-        f'<div class="compact-hero-stat"><strong>{escape(str(value))}</strong><span>{escape(str(label))}</span></div>'
-        for value, label in (stats or [])
-    )
-    eyebrow_html = f'<div class="compact-hero-eyebrow">{escape(str(eyebrow))}</div>' if eyebrow else ""
-    question_html = f'<p class="compact-hero-copy">{escape(str(question))}</p>' if question else ""
-    aside_html = f'<div class="compact-hero-stats">{stat_html}</div>' if stat_html else ""
-    render_html(
-        f"""
-        <div class="compact-hero">
-            <div>
-                {eyebrow_html}
-                <h1 class="compact-hero-title">{escape(str(title))}</h1>
-                {question_html}
-            </div>
-            {aside_html}
-        </div>
-        """
-    )
-
-
 def render_brief_intro(title: str, note: str) -> None:
     render_html(
         f"""
@@ -1007,12 +855,6 @@ def render_home_section(
         </section>
         """
     )
-
-
-def render_process_line(steps: list[str]) -> None:
-    if not steps:
-        return
-    render_html(_process_line_html(steps))
 
 
 def _process_line_html(steps: list[str]) -> str:
@@ -1076,37 +918,6 @@ def render_inline_status(items: list[tuple[str, str]]) -> None:
     render_html(f'<div class="inline-status">{parts}</div>')
 
 
-def render_aux_action_bar(title: str, actions: list[dict[str, object]]) -> str | None:
-    """Render a low-emphasis action row and return the clicked action id."""
-    usable_actions = [action for action in actions or [] if action.get("label")]
-    render_html(f'<div class="aux-action-bar"><span class="aux-action-bar-label">{escape(str(title))}</span></div>')
-    if not usable_actions:
-        return None
-
-    clicked: str | None = None
-    for action in usable_actions:
-        label = str(action.get("label") or "")
-        action_id = str(action.get("id") or action.get("key") or label)
-        if st.button(
-            label,
-            key=str(action.get("key") or action_id),
-            type=str(action.get("type") or "secondary"),
-            disabled=bool(action.get("disabled", False)),
-            use_container_width=bool(action.get("use_container_width", False)),
-        ):
-            clicked = action_id
-    return clicked
-
-
-def render_document_block(body_html: str, title: str | None = None, meta: str | None = None) -> None:
-    """Render long-form professional materials inside the shared detail panel."""
-    content = f'<div class="document-block">{body_html}</div>'
-    if title or meta:
-        render_detail_panel(content, title=title, meta=meta)
-        return
-    render_html(content)
-
-
 def render_field_section(label: str, value, fallback: str = "待补充", *, tone: str | None = None) -> str:
     """Return a shared field block for long text or list-like professional materials."""
     if isinstance(value, (list, tuple, set)):
@@ -1162,14 +973,6 @@ def _document_paragraphs_html(value, fallback: str = "待补充") -> str:
 
 def _document_inline_html(value) -> str:
     return escape(str(value or "").strip()).replace("\n", "<br>")
-
-
-def render_kv_grid(items: list[tuple[str, object]]) -> None:
-    parts = "".join(
-        f'<div class="sample-detail-kv"><span>{escape(str(label))}</span><strong>{escape(str(value))}</strong></div>'
-        for label, value in items
-    )
-    render_html(f'<div class="sample-detail-kv-grid">{parts}</div>')
 
 
 def render_detail_panel(body_html: str, title: str | None = None, meta: str | None = None) -> None:
@@ -1486,15 +1289,3 @@ def _markdown_table_html(rows: list[list[str]]) -> str:
         "</table>"
         "</div>"
     )
-
-
-def render_clean_list(items: list[str]) -> None:
-    rows = "".join(f"<li>{escape(str(item))}</li>" for item in items)
-    render_html(f'<ul class="clean-list">{rows}</ul>')
-
-
-def render_status_pill(text: str, level: str = "neutral") -> None:
-    normalized = str(level or "neutral").strip().lower()
-    if normalized not in {"success", "warning", "danger", "neutral"}:
-        normalized = "neutral"
-    render_html(f'<span class="inline-pill inline-pill-{normalized}">{escape(str(text))}</span>')

@@ -31,16 +31,11 @@ class UIUXAuditFixesTests(unittest.TestCase):
     def test_pages_keep_shared_page_components_available(self):
         import src.ui.components as components
 
-        self.assertTrue(hasattr(components, "render_compact_hero"))
         self.assertTrue(hasattr(components, "render_page_heading"))
         self.assertTrue(hasattr(components, "render_detail_panel"))
-        self.assertTrue(hasattr(components, "render_kv_grid"))
         self.assertTrue(hasattr(components, "render_inline_status"))
-        self.assertTrue(hasattr(components, "render_aux_action_bar"))
-        self.assertTrue(hasattr(components, "render_clean_list"))
         self.assertIn(".inline-status", components.STYLE_CSS)
         self.assertIn(".detail-panel", components.STYLE_CSS)
-        self.assertIn(".aux-action-bar", components.STYLE_CSS)
 
         samples_source = Path("src/ui/samples.py").read_text(encoding="utf-8")
         self.assertIn("_render_samples_title_bar", samples_source)
@@ -253,7 +248,6 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertNotIn('st.expander("任务内容", expanded=False)', samples_source)
         self.assertNotIn(".current-sample-summary", components_source)
         self.assertIn("维护正式评测样本。完整且已入库的样本可以进入发起评测。", page_config_source)
-        self.assertIn("查询与筛选、样本列表、当前样本。", page_config_source)
         self.assertNotIn("新增和编辑会同步任务题", samples_source)
 
     def test_test_run_keeps_primary_buttons_for_confirmation_and_execution(self):

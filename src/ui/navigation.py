@@ -29,11 +29,6 @@ _TOP_NAV_ITEMS = [
     ("评测结论", "conclusions"),
 ]
 
-# Sidebar shows same 4 items only (no old pages).
-_NAV_GROUPS = [
-    ("", ["case_study", "samples", "test_run", "conclusions"]),
-]
-
 
 def render_top_navigation() -> None:
     """Render a lightweight tab-style top navigation."""

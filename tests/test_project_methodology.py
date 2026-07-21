@@ -8,8 +8,8 @@ import pandas as pd
 
 from src.data_service import load_all_data
 from src.ui.case_study import _build_sample_scope_text, scored_case_count
-from src.ui.navigation import _NAV_GROUPS, PAGES
-from src.ui.page_config import DEFAULT_PAGE_KEY, PAGE_CONFIG_BY_KEY, PAGE_CONTEXTS
+from src.ui.navigation import _TOP_NAV_ITEMS, PAGES
+from src.ui.page_config import DEFAULT_PAGE_KEY, PAGE_CONFIG_BY_KEY
 
 BANNED_PHRASES = ["AI赋能", "智能洞察", "一键优化", "专家级", "秒级"]
 
@@ -23,17 +23,15 @@ class RegistrationTests(unittest.TestCase):
     def test_methodology_is_default_landing_page(self):
         self.assertEqual("case_study", DEFAULT_PAGE_KEY)
 
-    def test_first_nav_group_contains_methodology(self):
-        first_group_keys = _NAV_GROUPS[0][1]
-        self.assertIn("case_study", first_group_keys)
+    def test_first_nav_item_is_methodology(self):
+        self.assertEqual("case_study", _TOP_NAV_ITEMS[0][1])
 
     def test_page_context_is_complete_and_clean(self):
-        context = PAGE_CONTEXTS["项目说明"]
-        for key in ("question", "boundary", "highlights"):
-            self.assertTrue(context[key].strip(), key)
-        combined = " ".join(context.values())
+        config = PAGE_CONFIG_BY_KEY["case_study"]
+        self.assertTrue(config.title.strip())
+        self.assertTrue(config.question.strip())
         for phrase in BANNED_PHRASES:
-            self.assertNotIn(phrase, combined)
+            self.assertNotIn(phrase, f"{config.title} {config.question}")
 
     def test_source_uses_current_shared_components_only(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")

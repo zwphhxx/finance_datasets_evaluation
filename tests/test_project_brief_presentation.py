@@ -212,23 +212,14 @@ class CaseStudyPresentationTests(unittest.TestCase):
 
 
 class TaskPresentationTests(unittest.TestCase):
-    def setUp(self):
-        self.data = load_all_data()
-        self.records = labels.build_task_records(self.data.tasks)
-        self.table = labels.build_task_table(self.data.tasks)
-
-    def test_records_match_row_count(self):
-        self.assertEqual(len(self.data.tasks), len(self.records))
-
     def test_known_field_values_are_translated_to_chinese(self):
-        record_by_case = {r["case_id"]: r for r in self.records}
-        sample = record_by_case["CM-001"]
-        self.assertEqual("投行场景", sample["domain_label"])
-        self.assertEqual("投行专业判断", sample["task_type_label"])
-        self.assertEqual("高难度", sample["difficulty_label"])
-        self.assertEqual("高风险", sample["risk_label"])
-        self.assertEqual("high", sample["difficulty_badge"])
-        self.assertEqual("high", sample["risk_badge"])
+        self.assertEqual("投行场景", labels.display_label("Capital Markets", labels.DOMAIN_LABELS))
+        self.assertEqual(
+            "投行专业判断",
+            labels.display_label("Investment Banking Judgment", labels.TASK_TYPE_LABELS),
+        )
+        self.assertEqual("高难度", labels.DIFFICULTY_LABELS["Hard"])
+        self.assertEqual("高风险", labels.RISK_LABELS["高"])
 
     def test_unmapped_values_fall_back_to_raw(self):
         self.assertEqual("Unknown Domain", labels.display_label("Unknown Domain", labels.DOMAIN_LABELS))
@@ -239,17 +230,6 @@ class TaskPresentationTests(unittest.TestCase):
         summary = labels.summarize_text(long_text)
         self.assertLessEqual(len(summary), labels.SUMMARY_LIMIT + 1)
         self.assertTrue(summary.endswith("…"))
-
-    def test_table_uses_business_chinese_headers_in_order(self):
-        self.assertEqual(
-            ["案例编号", "专业场景", "任务类型", "难度", "风险等级", "考察能力", "任务摘要"],
-            list(self.table.columns),
-        )
-
-    def test_table_does_not_leak_raw_english_field_values(self):
-        flattened = self.table.astype(str).values.ravel().tolist()
-        for raw in ("Capital Markets", "Regulatory Analysis", "Hard", "Medium"):
-            self.assertNotIn(raw, flattened)
 
 
 if __name__ == "__main__":

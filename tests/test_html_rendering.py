@@ -57,11 +57,8 @@ class HtmlRenderingTests(unittest.TestCase):
         cases = [
             lambda c: c.render_page_heading("标题", "副标题"),
             lambda c: c.render_numbered_section("01", "样本列表", "说明"),
-            lambda c: c.render_document_block(c.render_long_text_section("标准结论", "正文"), title="专业标准答案"),
             lambda c: c.render_detail_panel("<p>正文</p>", title="标题"),
             lambda c: c.render_inline_status([("本页回答", "评测"), ("数据边界", "当前样本内观察")]),
-            lambda c: c.render_clean_list(["A", "B"]),
-            lambda c: c.render_compact_hero("项目概览", "项目说明", "说明", [("1", "样本")]),
         ]
         for case in cases:
             self._assert_no_code_block(_capture_render(case))

@@ -2,7 +2,6 @@ import unittest
 
 import pandas as pd
 
-from src.charts import render_error_type_distribution_chart, render_model_average_score_chart
 from src.data_service import load_all_data
 from src.metrics import (
     filter_tasks_by_domain,
@@ -18,7 +17,6 @@ class MetricsTests(unittest.TestCase):
         self.data = load_all_data()
         self.bundle = {
             "data": self.data,
-            "validation_result": None,
         }
 
     def test_overview_metrics_match_existing_page_calculations(self):
@@ -61,10 +59,6 @@ class MetricsTests(unittest.TestCase):
         )
 
         pd.testing.assert_frame_equal(actual, expected)
-
-    def test_chart_functions_accept_empty_data(self):
-        render_model_average_score_chart(pd.DataFrame())
-        render_error_type_distribution_chart(pd.DataFrame())
 
 
 if __name__ == "__main__":

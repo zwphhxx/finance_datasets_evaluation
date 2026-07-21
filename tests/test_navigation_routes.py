@@ -289,9 +289,6 @@ class PageRenderTests(unittest.TestCase):
         return {
             "data": mock_data,
             "base": mock_base,
-            "validation_result": MagicMock(),
-            "eval_status": {},
-            "data_context": {},
         }
 
     @patch("streamlit.set_page_config")

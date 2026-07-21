@@ -20,7 +20,7 @@ import pandas as pd
 from app.services import conclusions as cc
 from src.data_service import load_all_data
 from src.ui.navigation import PAGES
-from src.ui.page_config import PAGE_CONFIG_BY_KEY, PAGE_CONTEXTS
+from src.ui.page_config import PAGE_CONFIG_BY_KEY
 
 
 def _seed_scores():
@@ -85,7 +85,7 @@ class RegistrationTests(unittest.TestCase):
     def test_page_registered_with_config(self):
         self.assertIn("conclusions", PAGES)
         self.assertIn("conclusions", PAGE_CONFIG_BY_KEY)
-        self.assertIn("评测结论", PAGE_CONTEXTS)
+        self.assertEqual("评测结论", PAGE_CONFIG_BY_KEY["conclusions"].title)
 
     def test_positioning_not_a_leaderboard(self):
         # The formal-conclusion positioning lives in case_study (project intro).

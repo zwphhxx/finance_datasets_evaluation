@@ -52,15 +52,13 @@ class DefaultActiveTaskSelectionTests(unittest.TestCase):
 
 
 class PageFramingTests(unittest.TestCase):
-    def test_subtitle_emphasizes_reproducibility_and_offline_default(self):
+    def test_question_emphasizes_reproducibility_and_offline_default(self):
         config = PAGE_CONFIG_BY_KEY["test_run"]
-        subtitle = config.subtitle
-        # 页面副标题应包含评测相关关键词
-        self.assertIn("评测", subtitle)
+        # 页面引导语应包含评测相关关键词
+        self.assertIn("评测", config.question)
 
     def test_boundary_mentions_prompt_separation(self):
-        config = PAGE_CONFIG_BY_KEY["test_run"]
-        self.assertIn("不看到专业标准答案", config.boundary)
+        self.assertIn("不看到专业标准答案", _PAGE_SOURCE)
 
     def test_page_keeps_live_run_boundary_and_auxiliary_details(self):
         self.assertIn("RUN_BOUNDARY_NOTE", _PAGE_SOURCE)
