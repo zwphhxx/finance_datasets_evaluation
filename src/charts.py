@@ -7,7 +7,7 @@ import streamlit as st
 # Unified chart palette so every page shares one visual language instead of the
 # default Streamlit colors. Models map to the first colors in declared order.
 BRAND_BLUE = "#12345a"
-SERIES_PALETTE = ["#12345a", "#3b7dd8", "#9ec3ec", "#c89b3c", "#247a4b"]
+SERIES_PALETTE = ["#12345a", "#33567e", "#5b7ba3", "#88a1c2", "#b9c9dc"]
 AXIS_LABEL_COLOR = "#607089"
 
 

@@ -24,12 +24,12 @@ STYLE_CSS = """
     --fde-muted: #6a7686;
     --fde-accent: #33465f;
     --fde-accent-soft: #eef2f6;
-    --fde-success-bg: #edf3ef;
-    --fde-success-text: #2f5d3f;
-    --fde-warning-bg: #f5f0e7;
-    --fde-warning-text: #6f5430;
-    --fde-danger-bg: #f5ecec;
-    --fde-danger-text: #7a3f3f;
+    --fde-success-bg: var(--fde-accent-soft);
+    --fde-success-text: var(--fde-accent);
+    --fde-warning-bg: var(--fde-surface);
+    --fde-warning-text: var(--fde-ink);
+    --fde-danger-bg: var(--fde-accent-soft);
+    --fde-danger-text: var(--fde-ink);
     --fde-radius: 10px;
     --fde-max-width: 1120px;
 }
@@ -323,6 +323,7 @@ header,
 }
 .fde-badge-warning {
     background: var(--fde-warning-bg);
+    border: 1px solid var(--fde-line-strong);
     color: var(--fde-warning-text);
 }
 .section-heading-title .fde-badge {
