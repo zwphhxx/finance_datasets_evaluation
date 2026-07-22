@@ -251,7 +251,7 @@ header,
     font-weight: 400;
 }
 .home-section-body {
-    margin-left: 6.05rem;
+    margin-left: 0;
 }
 .home-section-body p {
     color: var(--fde-text);

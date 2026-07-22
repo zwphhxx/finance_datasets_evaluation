@@ -984,7 +984,7 @@ def _render_sample_selection_dialog(sample_options: list[dict]) -> None:
         difficulty = st.selectbox("难度", difficulties, key="test_run_sample_difficulty")
 
     filtered_options = filter_sample_selection_options(sample_options, keyword, scenario, difficulty)
-    bulk_cols = st.columns([1.1, 0.7, 3.2])
+    bulk_cols = st.columns([0.72, 0.48, 3.8])
     with bulk_cols[0]:
         if st.button(
             "全选当前筛选结果",
@@ -2072,7 +2072,13 @@ def _render_run_button(
     service_ready: bool = True,
 ) -> bool:
     disabled = not run_plan["can_run"] or not service_ready
-    clicked = st.button("运行评测", type="primary", disabled=disabled, key="test_run_run")
+    clicked = st.button(
+        "运行评测",
+        type="primary",
+        disabled=disabled,
+        key="test_run_run",
+        use_container_width=True,
+    )
 
     if disabled:
         if not service_ready:

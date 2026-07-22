@@ -51,9 +51,9 @@ def themed_bar_chart(
     else:
         encodings["color"] = alt.value(BRAND_BLUE)
 
-    chart = alt.Chart(data).mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(**encodings)
+    chart = alt.Chart(data).mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3, size=56).encode(**encodings)
     if y_format:
-        labels = chart.mark_text(dy=-6, color=AXIS_LABEL_COLOR).encode(
+        labels = chart.mark_text(dy=-6, color=AXIS_LABEL_COLOR, fontSize=12, fontWeight=600).encode(
             text=alt.Text(f"{y}:Q", format=y_format)
         )
         chart = chart + labels

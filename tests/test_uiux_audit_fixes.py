@@ -257,7 +257,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
         primary_buttons = re.findall(r'type\s*=\s*"primary"', source)
         self.assertEqual(3, len(primary_buttons), "样本确认、模型确认和运行可使用 Primary")
-        self.assertIn('"运行评测", type="primary"', source)
+        self.assertIn('"运行评测",\n        type="primary",', source)
         self.assertIn('button_label = "仅对已完成回答生成 AI 评分" if partial_run else "生成 AI 评分"', source)
         self.assertIn('button_label, type="secondary"', source)
         self.assertIn("has_confirmable_score_drafts(score_result)", source)

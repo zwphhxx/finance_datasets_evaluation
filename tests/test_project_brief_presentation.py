@@ -88,7 +88,7 @@ class CaseStudyPresentationTests(unittest.TestCase):
             ".section-heading-page",
             "grid-template-columns: 4.8rem minmax(0, 1fr);",
             "align-items: baseline;",
-            "margin-left: 6.05rem;",
+            "margin-left: 0;",
             "font-size: 2.05rem;",
             "font-size: 1.62rem;",
             "grid-template-columns: 3.4rem minmax(0, 1fr);",

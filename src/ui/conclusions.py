@@ -322,9 +322,9 @@ def _current_judgment(item: dict) -> str:
 
 def _judgment_symbol(judgment: str) -> str:
     if "谨慎" in judgment or "不建议" in judgment:
-        return "⚠ "
+        return "⚠ "
     if "可作为" in judgment:
-        return "✓ "
+        return "✓ "
     return ""
 
 
