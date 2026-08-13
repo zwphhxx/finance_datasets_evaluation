@@ -224,7 +224,10 @@ class EvaluationWorkflow:
         except Exception as exc:
             self._stop(run_id, "could not initialize evaluation queues", exc)
         self._owned_run_ids.add(run_id)
-        self._execute_items(ref, config, judge_model)
+        try:
+            self._execute_items(ref, config, judge_model)
+        finally:
+            self._owned_run_ids.discard(run_id)
         return ref
 
     def load_evaluation_status(self, run_id: str) -> EvaluationRunStatus:
@@ -251,10 +254,13 @@ class EvaluationWorkflow:
             self._stop(run_id, "could not claim evaluation run", exc)
         if not claimed:
             return self.load_evaluation_status(run_id)
-        self._owned_run_ids.add(run_id)
-        self._session_stopped_run_ids.discard(run_id)
         ref = EvaluationRunRef(run_id, derive_status(run, answers, scores, self._run_is_stale(run)).score_run_id)
-        self._execute_items(ref, config, judge_model)
+        self._session_stopped_run_ids.discard(run_id)
+        self._owned_run_ids.add(run_id)
+        try:
+            self._execute_items(ref, config, judge_model)
+        finally:
+            self._owned_run_ids.discard(run_id)
         return self.load_evaluation_status(run_id)
 
     def _execute_items(

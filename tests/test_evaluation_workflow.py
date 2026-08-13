@@ -1,8 +1,9 @@
 from datetime import datetime, timedelta
 from pathlib import Path
+from threading import Event, Thread
 
 import pytest
-from sqlalchemy import update
+from sqlalchemy import delete, update
 
 from app.models.base import GenerationResult, ModelListResult, ModelProvider, STATUS_FAILED, STATUS_SUCCESS
 from app.persistence.result_store import ResultStore, ResultStoreError
@@ -526,14 +527,17 @@ def test_continue_answer_save_failure_stops_before_score_or_later_pair(tmp_path,
     monkeypatch.setattr(store, "save_run_outcome", lambda *args, **kwargs: (_ for _ in ()).throw(ResultStoreError("save failed")))
     record_score(monkeypatch, events)
 
+    active = workflow(
+        store,
+        RecordingProvider(responses=[(STATUS_SUCCESS, "one"), (STATUS_SUCCESS, "two")], events=events),
+        RecordingProvider(events=events),
+    )
     with pytest.raises(WorkflowStopped):
-        workflow(
-            store,
-            RecordingProvider(responses=[(STATUS_SUCCESS, "one"), (STATUS_SUCCESS, "two")], events=events),
-            RecordingProvider(events=events),
-        ).continue_evaluation("RUN-FIXED", config(first, second))
+        active.continue_evaluation("RUN-FIXED", config(first, second))
 
     assert events == ["answer_call:m1"]
+    current = active.load_evaluation_status("RUN-FIXED")
+    assert (current.state, current.persistence_failed_in_session) == ("stopped", True)
     assert workflow(store, RecordingProvider(), RecordingProvider()).load_evaluation_status("RUN-FIXED").state == "interrupted"
 
 
@@ -709,14 +713,17 @@ def test_score_save_failure_stops_before_later_pair_and_retains_answer(tmp_path,
     record_score(monkeypatch, events)
     monkeypatch.setattr(store, "save_score_outcome", lambda *args, **kwargs: (_ for _ in ()).throw(ResultStoreError("score save failed")))
 
+    active = workflow(
+        store,
+        RecordingProvider(responses=[(STATUS_SUCCESS, "one"), (STATUS_SUCCESS, "two")], events=events),
+        RecordingProvider(events=events),
+    )
     with pytest.raises(WorkflowStopped):
-        workflow(
-            store,
-            RecordingProvider(responses=[(STATUS_SUCCESS, "one"), (STATUS_SUCCESS, "two")], events=events),
-            RecordingProvider(events=events),
-        ).continue_evaluation("RUN-FIXED", config(first, second))
+        active.continue_evaluation("RUN-FIXED", config(first, second))
 
     assert events == ["answer_call:m1", "score_call:C1"]
+    current = active.load_evaluation_status("RUN-FIXED")
+    assert (current.state, current.persistence_failed_in_session) == ("stopped", True)
     assert store.list_rows("live_run_responses", run_id="RUN-FIXED", case_id="C1")[0]["answer_text"] == "one"
 
 
@@ -746,7 +753,7 @@ def test_derive_status_distinguishes_partial_from_all_failed_pairs():
     assert (status.state, status.succeeded, status.failed, status.pending) == ("partial", 1, 1, 0)
 
 
-def test_different_score_run_ids_are_rejected_as_inconsistent_checkpoint(tmp_path):
+def test_different_score_run_ids_reject_load_and_continue_before_claim_or_provider_calls(tmp_path, monkeypatch):
     from app.services.evaluation_workflow import WorkflowCheckpointError
 
     store = sqlite_store(tmp_path)
@@ -768,9 +775,17 @@ def test_different_score_run_ids_are_rejected_as_inconsistent_checkpoint(tmp_pat
             .where(live_score_queue.c.case_id == "C2")
             .values(score_run_id="OTHER-SCORE")
         )
+    claims, events = [], []
+    monkeypatch.setattr(store, "claim_run", lambda *args: claims.append(args) or True)
+    active = workflow(store, RecordingProvider(responses=[], events=events), RecordingProvider(events=events))
 
     with pytest.raises(WorkflowCheckpointError, match="checkpoint"):
-        workflow(store, RecordingProvider(), RecordingProvider()).load_evaluation_status("RUN-FIXED")
+        active.load_evaluation_status("RUN-FIXED")
+    with pytest.raises(WorkflowCheckpointError, match="checkpoint"):
+        active.continue_evaluation("RUN-FIXED", config(first, second))
+
+    assert claims == []
+    assert events == []
 
 
 def test_stop_write_failure_keeps_current_instance_stopped_and_fresh_instance_interrupted(tmp_path, monkeypatch):
@@ -794,3 +809,125 @@ def test_stop_write_failure_keeps_current_instance_stopped_and_fresh_instance_in
 
     assert active.load_evaluation_status("RUN-FIXED").state == "stopped"
     assert workflow(store, RecordingProvider(), RecordingProvider()).load_evaluation_status("RUN-FIXED").state == "interrupted"
+
+
+def test_checkpoint_error_releases_ownership_so_current_load_is_interrupted(tmp_path, monkeypatch):
+    from app.services.evaluation_workflow import WorkflowCheckpointError
+
+    store = sqlite_store(tmp_path)
+    original_initialize = store.initialize_evaluation
+    monkeypatch.setattr("app.services.evaluation_workflow.er.generate_run_id", lambda: "RUN-FIXED")
+    monkeypatch.setattr("app.services.evaluation_workflow.sc.generate_score_run_id", lambda: "SCORE-FIXED")
+
+    def initialize_then_corrupt(*args):
+        original_initialize(*args)
+        with store.engine.begin() as connection:
+            connection.execute(
+                update(live_run_queue)
+                .where(live_run_queue.c.run_id == "RUN-FIXED")
+                .values(status="success")
+            )
+
+    monkeypatch.setattr(store, "initialize_evaluation", initialize_then_corrupt)
+    active = workflow(store, RecordingProvider(), RecordingProvider())
+
+    with pytest.raises(WorkflowCheckpointError, match="checkpoint"):
+        active.start_evaluation(config(item("C1", "m1")))
+
+    status = active.load_evaluation_status("RUN-FIXED")
+    assert (status.state, status.resumable) == ("interrupted", True)
+
+
+def test_concurrent_continuation_allows_only_claim_winner_to_call_provider(tmp_path, monkeypatch):
+    store = sqlite_store(tmp_path)
+    pair = item("C1", "m1")
+    _initialize_checkpoint(store, "RUN-FIXED", "SCORE-FIXED", pair)
+    store.mark_run_stopped("RUN-FIXED", "resume")
+    events, started, release = [], Event(), Event()
+
+    class BlockingProvider(RecordingProvider):
+        def generate_response(self, *args, **kwargs):
+            self.events.append("answer_call:m1")
+            started.set()
+            assert release.wait(timeout=5)
+            return GenerationResult(self.name, "m1", STATUS_SUCCESS, response_text="answer")
+
+    record_score(monkeypatch, events)
+    first = workflow(store, BlockingProvider(events=events), RecordingProvider(events=events))
+    second = workflow(store, RecordingProvider(responses=[], events=events), RecordingProvider(events=events))
+    first_result, first_errors = [], []
+
+    def run_first():
+        try:
+            first_result.append(first.continue_evaluation("RUN-FIXED", config(pair)))
+        except Exception as exc:
+            first_errors.append(exc)
+
+    thread = Thread(target=run_first)
+    thread.start()
+    assert started.wait(timeout=5)
+    loser = second.continue_evaluation("RUN-FIXED", config(pair))
+    release.set()
+    thread.join(timeout=5)
+
+    assert first_errors == []
+    assert not thread.is_alive()
+    assert loser.state == "interrupted"
+    assert first_result[0].state == "completed"
+    assert events == ["answer_call:m1", "score_call:C1"]
+
+
+@pytest.mark.parametrize("queue_table", [live_run_queue, live_score_queue])
+def test_missing_queue_rejects_load_and_continue_before_claim_or_provider_calls(tmp_path, monkeypatch, queue_table):
+    from app.services.evaluation_workflow import WorkflowCheckpointError
+
+    store = sqlite_store(tmp_path)
+    pair = item("C1", "m1")
+    _initialize_checkpoint(store, "RUN-FIXED", "SCORE-FIXED", pair)
+    with store.engine.begin() as connection:
+        connection.execute(delete(queue_table).where(queue_table.c.run_id == "RUN-FIXED"))
+    claims, events = [], []
+    monkeypatch.setattr(store, "claim_run", lambda *args: claims.append(args) or True)
+    active = workflow(store, RecordingProvider(responses=[], events=events), RecordingProvider(events=events))
+
+    with pytest.raises(WorkflowCheckpointError, match="checkpoint"):
+        active.load_evaluation_status("RUN-FIXED")
+    with pytest.raises(WorkflowCheckpointError, match="checkpoint"):
+        active.continue_evaluation("RUN-FIXED", config(pair))
+
+    assert claims == []
+    assert events == []
+
+
+def test_misaligned_queue_rejects_continue_before_claim_or_provider_calls(tmp_path, monkeypatch):
+    from app.services.evaluation_workflow import WorkflowCheckpointError
+
+    store = sqlite_store(tmp_path)
+    first, second = item("C1", "m1"), item("C2", "m2")
+    metadata = build_run_metadata(
+        run_id="RUN-FIXED", provider="test-live", model_ids=("m1", "m2"), queue_items=(first, second),
+        generation_parameters={"temperature": 0.2, "max_tokens": 128},
+        judge_parameters={"judge_model": "judge-1", "temperature": 0.0, "max_tokens": 128},
+        dataset_version="v1", prompt_payload=("system", "hint"),
+    )
+    store.initialize_evaluation(
+        metadata,
+        [{"run_id": "RUN-FIXED", "case_id": row["case_id"], "model_id": row["model_id"]} for row in (first, second)],
+        [{"score_run_id": "SCORE-FIXED", "run_id": "RUN-FIXED", "case_id": row["case_id"], "eval_model": row["model_id"]} for row in (first, second)],
+    )
+    with store.engine.begin() as connection:
+        connection.execute(
+            update(live_score_queue)
+            .where(live_score_queue.c.case_id == "C2")
+            .values(eval_model="different-model")
+        )
+    claims, events = [], []
+    monkeypatch.setattr(store, "claim_run", lambda *args: claims.append(args) or True)
+
+    with pytest.raises(WorkflowCheckpointError, match="checkpoint"):
+        workflow(store, RecordingProvider(responses=[], events=events), RecordingProvider(events=events)).continue_evaluation(
+            "RUN-FIXED", config(first, second)
+        )
+
+    assert claims == []
+    assert events == []
