@@ -402,6 +402,8 @@ class AnswerDetailJoinTests(unittest.TestCase):
 
         self.assertIn("current_result_store_failure()", render_source)
         self.assertIn("render_persistence_status", render_source)
+        self.assertIn('st.spinner("正在汇总 AI 评分结果…")', render_source)
+        self.assertNotIn("首次加载可能需要半分钟", render_source)
 
 
 class AiFinalPageTests(unittest.TestCase):

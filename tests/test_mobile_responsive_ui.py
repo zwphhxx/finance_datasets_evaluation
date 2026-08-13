@@ -420,6 +420,38 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         self.assertIn('vertical_alignment="bottom"', source)
         self.assertNotIn('st.write("")', source)
 
+    def test_sample_title_actions_keep_mobile_touch_height(self):
+        css = self._responsive_css()
+        mobile_css = css.split(
+            "@media (max-width: 760px)",
+            1,
+        )[1].split("@media (max-width: 480px)", 1)[0]
+        rules = _declarations_for_selector(
+            mobile_css,
+            ".st-key-samples_title_bar .stButton > button",
+        )
+
+        self.assertTrue(
+            any(re.search(r"min-height\s*:\s*44px\s*;", rule) for rule in rules)
+        )
+
+    def test_mobile_notice_and_table_tools_keep_touch_height(self):
+        css = self._responsive_css()
+        mobile_css = css.split(
+            "@media (max-width: 760px)",
+            1,
+        )[1].split("@media (max-width: 480px)", 1)[0]
+
+        for selector in [
+            ".st-key-conclusion_data_notice .stButton > button",
+            'button[kind="elementToolbar"]',
+        ]:
+            rules = _declarations_for_selector(mobile_css, selector)
+            self.assertTrue(
+                any(re.search(r"min-height\s*:\s*44px\s*;", rule) for rule in rules),
+                selector,
+            )
+
     def test_components_load_responsive_css_and_wrap_markdown_tables(self):
         import src.ui.components as components
         from src.ui.responsive import MOBILE_RESPONSIVE_CSS

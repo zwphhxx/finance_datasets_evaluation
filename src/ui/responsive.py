@@ -83,7 +83,7 @@ MOBILE_RESPONSIVE_CSS = r"""
         width: 100% !important;
     }
     .st-key-samples_title_bar .stButton > button {
-        min-height: 2.2rem;
+        min-height: 44px;
         padding-bottom: 0.25rem;
         padding-top: 0.25rem;
     }
@@ -100,8 +100,12 @@ MOBILE_RESPONSIVE_CSS = r"""
         width: auto !important;
     }
     .st-key-conclusion_data_notice .stButton > button {
-        min-height: 2.2rem;
+        min-height: 44px;
         width: auto;
+    }
+    button[kind="elementToolbar"] {
+        min-height: 44px;
+        min-width: 44px;
     }
     .st-key-test_run_actions {
         gap: 0.55rem;
