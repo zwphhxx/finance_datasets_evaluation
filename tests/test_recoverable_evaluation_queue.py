@@ -10,6 +10,7 @@ test fabricates judge scores beyond what the adapter is explicitly handed.
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from app.models.registry import get_provider
 from app.services import dataset_service as ds
@@ -194,6 +195,53 @@ class AppRenderTests(unittest.TestCase):
         run = _run(2)
         for page_key in self._PAGES:
             self._render(page_key, run_result=run)
+
+
+class FormalRecoveryTests(unittest.TestCase):
+    def test_recovery_never_offers_demo_or_mock_answer_runs(self):
+        runs = [
+            {"run_id": "RUN-LIVE", "provider": "vendor", "status": "completed"},
+            {"run_id": "RUN-DEMO", "provider": "demo", "status": "completed"},
+            {"run_id": "RUN-MOCK", "provider": "vendor", "status": "completed"},
+        ]
+        queue = [
+            {"run_id": "RUN-LIVE", "case_id": "FD-001", "model_id": "vendor/live", "status": "success"},
+            {"run_id": "RUN-DEMO", "case_id": "FD-001", "model_id": "vendor/demo", "status": "queued"},
+            {"run_id": "RUN-MOCK", "case_id": "FD-001", "model_id": "vendor/mock", "status": "queued"},
+        ]
+        responses = [
+            {
+                "run_id": "RUN-LIVE", "case_id": "FD-001", "model_name": "vendor/live",
+                "provider": "vendor", "run_mode": "live", "run_status": "success", "answer_text": "正式回答",
+            },
+            {
+                "run_id": "RUN-DEMO", "case_id": "FD-001", "model_name": "vendor/demo",
+                "provider": "demo", "run_mode": "demo", "run_status": "success", "answer_text": "演示回答",
+            },
+            {
+                "run_id": "RUN-MOCK", "case_id": "FD-001", "model_name": "vendor/mock",
+                "provider": "mock", "run_mode": "mock", "run_status": "success", "answer_text": "模拟回答",
+            },
+        ]
+
+        summaries = er.build_persisted_answer_run_summaries(runs, queue, responses)
+
+        self.assertEqual(["RUN-LIVE"], [row["run_id"] for row in summaries])
+
+    def test_queued_demo_or_mock_runs_without_answers_are_not_recovery_candidates(self):
+        class Store:
+            def latest_queue(self, table):
+                assert table == "live_run_queue"
+                return [
+                    {"run_id": "RUN-LIVE", "provider": "vendor", "status": "queued"},
+                    {"run_id": "RUN-DEMO", "provider": "demo", "status": "queued"},
+                    {"run_id": "RUN-MOCK", "provider": "mock", "status": "queued"},
+                ]
+
+        with mock.patch("app.persistence.get_result_store", return_value=Store()):
+            candidates = er.latest_run_queue()
+
+        self.assertEqual(["RUN-LIVE"], [row["run_id"] for row in candidates])
 
 
 if __name__ == "__main__":

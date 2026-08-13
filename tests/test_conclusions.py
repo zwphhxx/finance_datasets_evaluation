@@ -195,7 +195,34 @@ class FormalConclusionTests(unittest.TestCase):
         self.assertIn('st.popover("数据维护"', notice_source)
         self.assertIn("导出 AI 评测结果", maintenance_source)
         self.assertIn("导入评分文件", maintenance_source)
-        self.assertIn("从演示结果文件恢复", maintenance_source)
+        self.assertNotIn("从演示结果文件恢复", maintenance_source)
+
+    def test_load_live_responses_hides_demo_and_mock_history(self):
+        rows = pd.DataFrame([
+            {
+                "run_id": "RUN-LIVE",
+                "case_id": "C1",
+                "model_name": "vendor/live",
+                "run_status": "success",
+                "run_mode": "live",
+                "provider": "vendor",
+                "answer_text": "正式回答",
+            },
+            {
+                "run_id": "RUN-DEMO",
+                "case_id": "C1",
+                "model_name": "vendor/demo",
+                "run_status": "success",
+                "run_mode": "demo",
+                "provider": "vendor",
+                "answer_text": "演示回答",
+            },
+        ])
+
+        with patch("app.services.conclusions._load_live_table", return_value=rows):
+            loaded = cc.load_live_responses()
+
+        self.assertEqual(["RUN-LIVE"], loaded["run_id"].tolist())
 
 
 class CompatibleCohortTests(unittest.TestCase):

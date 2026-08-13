@@ -19,6 +19,7 @@ from typing import Any, Collection, Mapping, Sequence
 import pandas as pd
 
 from app.services import model_display as md
+from app.services import formal_records as formal
 from src.metrics import SCORE_DIMENSION_FULL_MARKS, SCORE_DIMENSIONS, get_dimension_gap_ranking
 
 # 评分维度字段与中文标签，统一取自 metrics（不在此另立第二份口径）。
@@ -101,10 +102,7 @@ def load_live_responses(
 ) -> pd.DataFrame:
     """读取全部 live_run_responses 行（含模型回答），用于草稿区拼接回答。"""
     rows = _load_live_table("live_run_responses", db_path)
-    if allowed_case_ids is None or rows.empty or "case_id" not in rows.columns:
-        return rows
-    allowed = {_text(case_id) for case_id in allowed_case_ids if _text(case_id)}
-    return rows[rows["case_id"].map(_text).isin(allowed)].copy()
+    return formal.filter_formal_responses(rows, allowed_case_ids)
 
 
 def _load_live_table(table: str, db_path) -> pd.DataFrame:
@@ -242,15 +240,7 @@ def _canonical_json_mapping(value: Any) -> str | None:
 
 
 def _successful_conclusion_score_mask(df: pd.DataFrame) -> pd.Series:
-    if not isinstance(df, pd.DataFrame) or df.empty:
-        return pd.Series(False, index=getattr(df, "index", None), dtype=bool)
-    active = _text_series(df, "status", "active").str.lower() != "inactive"
-    successful = _text_series(df, "judge_status", "").str.lower() == "success"
-    included = _text_series(df, "review_status", "ai_final").str.lower() != "skipped"
-    live_mode = _text_series(df, "judge_mode", "live").str.lower() != "mock"
-    real_model = ~_text_series(df, "eval_model", "").apply(md.is_seed_model)
-    has_run = _text_series(df, "run_id", "") != ""
-    return active & successful & included & live_mode & real_model & has_run
+    return formal.formal_score_mask(df)
 
 
 def _text_series(df: pd.DataFrame, column: str, default: str) -> pd.Series:
@@ -270,23 +260,14 @@ def split_live_scores(live_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame
         return empty, empty
 
     df = live_df.copy()
-    if "status" in df.columns:
-        df = df[df["status"].astype(str).str.strip().str.lower() != "inactive"]
-    if "eval_model" in df.columns:
-        df = df[~df["eval_model"].apply(md.is_seed_model)]
+    base_mask = (
+        _text_series(df, "status", "active").str.lower() != "inactive"
+    ) & (~_text_series(df, "eval_model", "").apply(md.is_seed_model))
+    df = df[base_mask]
     if df.empty:
         return empty, empty
 
-    judge_status = df.get("judge_status", pd.Series(dtype=str)).astype(str).str.strip().str.lower()
-    if "review_status" in df.columns:
-        review_status = df["review_status"].astype(str).str.strip().str.lower()
-    else:
-        review_status = pd.Series(["ai_final"] * len(df), index=df.index)
-    if "judge_mode" in df.columns:
-        judge_mode = df["judge_mode"].astype(str).str.strip().str.lower()
-    else:
-        judge_mode = pd.Series(["live"] * len(df), index=df.index)
-    conclusion_mask = (judge_status == "success") & (review_status != "skipped") & (judge_mode != "mock")
+    conclusion_mask = formal.formal_score_mask(df)
     ai_scores = df[conclusion_mask].reset_index(drop=True)
     excluded = df[~conclusion_mask].reset_index(drop=True)
     return ai_scores, excluded

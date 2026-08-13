@@ -18,6 +18,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Collection, Mapping, Sequence
 
+import pandas as pd
+
 from app.models.base import (
     ERROR_EMPTY_RESPONSE,
     ERROR_INCOMPLETE_RESPONSE,
@@ -26,6 +28,7 @@ from app.models.base import (
     GenerationResult,
     ModelProvider,
 )
+from app.services import formal_records as formal
 
 # 被评测模型可见的任务字段（白名单）。Gold Answer 相关字段一律不在其中。
 _VISIBLE_TASK_FIELDS = ("scenario", "question", "context", "output_requirement")
@@ -712,7 +715,13 @@ def latest_run_queue(*, db_path: Path | None = None) -> list[dict[str, Any]]:
     """返回最近一次模型回答队列，供页面 session 丢失时恢复提示。"""
     try:
         store = _runtime_result_store(db_path)
-        return [] if store is None else store.latest_queue("live_run_queue")
+        if store is None:
+            return []
+        return [
+            row
+            for row in store.latest_queue("live_run_queue")
+            if _clean(row.get("provider")).lower() not in {"mock", "demo"}
+        ]
     except Exception:
         return []
 
@@ -764,8 +773,10 @@ def build_persisted_answer_run_summaries(
         if run_id:
             queue_by_run.setdefault(run_id, []).append(row)
 
+    response_frame = responses if isinstance(responses, pd.DataFrame) else pd.DataFrame(responses or [])
+    formal_responses = formal.filter_formal_responses(response_frame).to_dict("records")
     responses_by_run: dict[str, list[Mapping[str, Any]]] = {}
-    for row in responses or []:
+    for row in formal_responses:
         run_id = _clean(row.get("run_id"))
         if run_id and _clean(row.get("case_id")) and _clean(row.get("model_name")):
             responses_by_run.setdefault(run_id, []).append(row)
@@ -774,6 +785,8 @@ def build_persisted_answer_run_summaries(
     for run_id, answer_rows in responses_by_run.items():
         metadata = run_metadata.get(run_id, {})
         queued = queue_by_run.get(run_id, [])
+        if not _formal_persisted_run_metadata(metadata, queued):
+            continue
         models = {
             _clean(row.get("model_name"))
             for row in answer_rows
@@ -784,11 +797,7 @@ def build_persisted_answer_run_summaries(
             for row in answer_rows
             if _clean(row.get("case_id"))
         }
-        success_count = sum(
-            _clean(row.get("run_status")).lower() in {"success", STATUS_MOCK}
-            and bool(_clean(row.get("answer_text")))
-            for row in answer_rows
-        )
+        success_count = len(answer_rows)
         unfinished_count = sum(
             _clean(row.get("status")).lower() in {"queued", "running"}
             for row in queued
@@ -828,6 +837,15 @@ def build_persisted_answer_run_summaries(
         row.pop("_order_text", None)
         row.pop("_order_id", None)
     return summaries
+
+
+def _formal_persisted_run_metadata(
+    metadata: Mapping[str, Any],
+    queued: Sequence[Mapping[str, Any]],
+) -> bool:
+    providers = [_clean(metadata.get("provider"))]
+    providers.extend(_clean(row.get("provider")) for row in queued)
+    return not any(provider.lower() in {"mock", "demo"} for provider in providers if provider)
 
 
 def list_persisted_answer_runs(

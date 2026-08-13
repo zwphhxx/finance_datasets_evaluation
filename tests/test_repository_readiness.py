@@ -193,6 +193,20 @@ def test_demo_ai_score_export_contains_usable_demo_records() -> None:
     assert all(row["review_status"] == "ai_final" for row in records)
 
 
+def test_product_code_never_restores_demo_ai_scores() -> None:
+    terms = ("demo_ai_scores" + ".json", "import_demo_ai_scores")
+    paths = [
+        *sorted((ROOT / "app" / "services").glob("*.py")),
+        *sorted((ROOT / "src" / "ui").glob("*.py")),
+    ]
+    offenders = {
+        path.relative_to(ROOT).as_posix(): [term for term in terms if term in path.read_text(encoding="utf-8")]
+        for path in paths
+        if any(term in path.read_text(encoding="utf-8") for term in terms)
+    }
+    assert offenders == {}
+
+
 def test_committed_runtime_result_seed_files_are_header_only() -> None:
     for name in RESULT_SEED_FILES:
         rows = (ROOT / "data" / name).read_text(encoding="utf-8").splitlines()

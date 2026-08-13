@@ -596,6 +596,27 @@ class ScorePersistenceTests(unittest.TestCase):
         self.assertTrue(sc.persist_score_result(result, db_path=_DB_PATH))
         rows = sc.load_score_rows(result.score_run_id, db_path=_DB_PATH)
         self.assertEqual(2, len(rows))
+        self.assertEqual(
+            [],
+            [
+                row for row in sc.load_exportable_score_rows(db_path=_DB_PATH)
+                if row["score_run_id"] == result.score_run_id
+            ],
+        )
+        repo = Repository(_DB_PATH)
+        for outcome in compare.outcomes:
+            repo.insert(
+                "live_run_responses",
+                {
+                    "run_id": result.run_id,
+                    "case_id": outcome.case_id,
+                    "model_name": outcome.model_id,
+                    "provider": "vendor",
+                    "run_mode": "live",
+                    "run_status": "success",
+                    "answer_text": "正式回答",
+                },
+            )
         exported = [
             row for row in sc.load_exportable_score_rows(db_path=_DB_PATH)
             if row["score_run_id"] == result.score_run_id
@@ -649,6 +670,22 @@ class ScorePersistenceTests(unittest.TestCase):
         ]
         for row in rows:
             repo.insert("live_run_scores", row)
+        for case_id, model_name in [
+            ("CM-001", "vendor/model-confirmed"),
+            ("CM-002", "vendor/model-pending"),
+        ]:
+            repo.insert(
+                "live_run_responses",
+                {
+                    "run_id": "RUN-EXPORT-FILTER",
+                    "case_id": case_id,
+                    "model_name": model_name,
+                    "provider": "vendor",
+                    "run_mode": "live",
+                    "run_status": "success",
+                    "answer_text": "正式回答",
+                },
+            )
 
         exported = [
             row for row in sc.load_exportable_score_rows(db_path=_DB_PATH)
@@ -752,14 +789,6 @@ class ScorePersistenceTests(unittest.TestCase):
         )
         self.assertFalse(missing["ok"])
         self.assertTrue(any("缺少必要字段" in error for error in missing["errors"]))
-
-    def test_demo_score_export_file_can_be_loaded_or_reports_missing(self):
-        payload = sc.load_demo_score_export_payload()
-
-        self.assertEqual("ai_score_export", payload["export_type"])
-        self.assertEqual(1, payload["schema_version"])
-        self.assertIn("records", payload)
-
 
 class ServiceAndWiringTests(unittest.TestCase):
     def test_get_rubric_dimensions_returns_five(self):

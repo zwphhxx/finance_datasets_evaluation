@@ -25,15 +25,17 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Collection, Mapping, Sequence
 
+import pandas as pd
+
 from app.models.base import STATUS_FAILED, STATUS_MOCK, STATUS_SUCCESS, ModelProvider
 from app.services import model_display as md
+from app.services import formal_records as formal
 
 # Fixed judge model for scoring.
 DEFAULT_JUDGE_MODEL = "deepseek-ai/DeepSeek-V4-Pro"
 PROJECT_DISPLAY_NAME = "财务/法律/投行场景大模型对比评测"
 SCORE_EXPORT_TYPE = "ai_score_export"
 SCORE_EXPORT_SCHEMA_VERSION = 1
-DEMO_AI_SCORE_EXPORT_PATH = Path(__file__).resolve().parents[2] / "data" / "demo_exports" / "demo_ai_scores.json"
 DEFAULT_JUDGE_RETRY_DELAYS: tuple[float, float] = (3.0, 8.0)
 RETRYABLE_JUDGE_ERRORS = {
     "timeout",
@@ -743,16 +745,9 @@ def load_exportable_score_rows(
         store = _runtime_result_store(db_path)
         if store is None:
             return []
-        rows = store.list_rows("live_run_scores")
-        exportable = [
-            row
-            for row in rows
-            if str(row.get("judge_status") or "").strip().lower() == STATUS_SUCCESS
-            and str(row.get("status") or "").strip().lower() != "inactive"
-            and not md.is_seed_model(row.get("eval_model"))
-            and str(row.get("review_status") or "").strip().lower() != "skipped"
-        ]
-        return [_score_export_row(row) for row in exportable]
+        scores = pd.DataFrame(store.list_rows("live_run_scores"))
+        responses = pd.DataFrame(store.list_rows("live_run_responses"))
+        return [_score_export_row(row) for row in formal.filter_formal_score_rows(scores, responses)]
     except Exception:
         return []
 
@@ -924,36 +919,6 @@ def import_score_rows(
         return _import_result(imported, updated, skipped, errors)
     except Exception:
         return _import_result(0, 0, 0, ["导入失败：请检查 SQLite 数据层是否已初始化。"])
-
-
-def load_demo_score_export_payload(path: Path | None = None) -> dict[str, Any]:
-    """Load the committed demo score export payload, returning an empty valid payload if absent."""
-    source = path or DEMO_AI_SCORE_EXPORT_PATH
-    if not source.exists():
-        return build_score_export_payload([])
-    try:
-        payload = json.loads(source.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return build_score_export_payload([])
-    if not isinstance(payload, Mapping):
-        return build_score_export_payload([])
-    return dict(payload)
-
-
-def import_demo_ai_scores(
-    *,
-    path: Path | None = None,
-    duplicate_action: str = "skip",
-    db_path: Path | None = None,
-) -> dict[str, Any]:
-    """Restore the committed demo AI-score export into live_run_scores."""
-    payload = load_demo_score_export_payload(path)
-    if payload.get("export_type") != SCORE_EXPORT_TYPE:
-        return _import_result(0, 0, 0, ["演示评分文件不是项目导出的评分文件。"])
-    records = payload.get("records")
-    if not isinstance(records, list):
-        return _import_result(0, 0, 0, ["演示评分文件缺少 records。"])
-    return import_score_rows(records, duplicate_action=duplicate_action, db_path=db_path)
 
 
 # --------------------------------------------------------------------------- #
