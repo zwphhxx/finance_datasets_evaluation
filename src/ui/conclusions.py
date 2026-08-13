@@ -20,6 +20,7 @@ from src.ui import conclusions_data as cd
 from src.ui.components import (
     render_badge,
     render_empty_state,
+    render_executive_takeaway,
     render_html,
     render_inline_status,
     render_markdown_detail_panel,
@@ -50,8 +51,17 @@ def render_conclusions_page(data_bundle: dict) -> None:
         )
     _render_data_source_notice(live_scores, ai_scores, excluded_scores)
 
+    _render_executive_conclusion(model_summaries)
     _render_model_recommendations(model_summaries)
     _render_model_issue_details(model_summaries, answer_rows)
+
+
+def _render_executive_conclusion(model_summaries: list[dict]) -> None:
+    if not model_summaries:
+        return
+    item = model_summaries[0]
+    display = str(item.get("display_name") or item.get("model_name") or "未标注模型")
+    render_executive_takeaway(f"{display}：{_current_judgment(item)}")
 
 
 # --------------------------------------------------------------------------- #

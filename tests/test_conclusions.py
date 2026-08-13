@@ -485,6 +485,41 @@ class ModelIssueSummaryTests(unittest.TestCase):
 
 
 class RenderTests(unittest.TestCase):
+    def test_page_orders_conclusion_before_evidence_and_detail(self):
+        source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
+        page_source = source[
+            source.index("def render_conclusions_page"):
+            source.index("# --------------------------------------------------------------------------- #")
+        ]
+
+        self.assertLess(
+            page_source.index("_render_executive_conclusion"),
+            page_source.index("_render_model_recommendations"),
+        )
+        self.assertLess(
+            page_source.index("_render_model_recommendations"),
+            page_source.index("_render_model_issue_details"),
+        )
+
+    def test_executive_conclusion_reuses_existing_model_judgment(self):
+        from src.ui import conclusions as ui
+
+        captured = []
+        original = ui.render_executive_takeaway
+        try:
+            ui.render_executive_takeaway = captured.append
+            ui._render_executive_conclusion([
+                {
+                    "display_name": "模型甲",
+                    "sample_count": 2,
+                    "current_suggestion": "不应被改写",
+                }
+            ])
+        finally:
+            ui.render_executive_takeaway = original
+
+        self.assertEqual(["模型甲：样本不足，暂不形成判断"], captured)
+
     def test_page_renders_without_exception(self):
         from streamlit.testing.v1 import AppTest
 
