@@ -2,9 +2,9 @@ import os
 
 import streamlit as st
 
+from app.persistence import result_store_request_scope
 from app.services import dataset_service as ds
 from app.services.data_resolver import resolve_active_data
-from app.persistence import result_store_request_scope
 from src.data_service import DataLoadError
 from src.ui.components import apply_global_styles
 from src.ui.navigation import PAGES, render_sidebar_navigation

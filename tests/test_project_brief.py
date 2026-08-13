@@ -4,10 +4,10 @@ import unittest
 import warnings
 
 import src.ui.components as components
+from src.data_service import load_all_data
+from src.ui.case_study import build_home_facts
 from src.ui.navigation import _TOP_NAV_ITEMS, PAGES
 from src.ui.page_config import PAGE_CONFIG_BY_KEY
-from src.ui.case_study import build_home_facts
-from src.data_service import load_all_data
 
 
 class ComponentRenderTests(unittest.TestCase):
