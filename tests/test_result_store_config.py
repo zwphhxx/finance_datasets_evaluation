@@ -4,7 +4,12 @@ from pathlib import Path
 import pytest
 import streamlit as st
 
-from app.persistence import _store_for_url, get_result_store
+from app.persistence import (
+    ResultStoreUnavailableError,
+    _store_for_url,
+    get_result_store,
+    result_store_request_scope,
+)
 from app.persistence.config import (
     PersistenceConfigurationError,
     require_durable_live_store,
@@ -118,3 +123,40 @@ def test_mock_provider_can_use_sqlite_without_opt_in(tmp_path: Path):
     )
 
     require_durable_live_store("mock", settings, environ={})
+
+
+def test_store_failure_is_memoized_inside_request_scope(monkeypatch):
+    attempts = 0
+
+    def fail(_url):
+        nonlocal attempts
+        attempts += 1
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr("app.persistence._store_for_url", fail)
+
+    with result_store_request_scope():
+        with pytest.raises(ResultStoreUnavailableError):
+            get_result_store(secrets={"DATABASE_URL": "postgresql://u:p@db/x"})
+        with pytest.raises(ResultStoreUnavailableError):
+            get_result_store(secrets={"DATABASE_URL": "postgresql://u:p@db/x"})
+
+    assert attempts == 1
+
+
+def test_new_request_scope_retries_after_previous_store_failure(monkeypatch):
+    attempts = 0
+
+    def fail(_url):
+        nonlocal attempts
+        attempts += 1
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr("app.persistence._store_for_url", fail)
+
+    for _ in range(2):
+        with result_store_request_scope():
+            with pytest.raises(ResultStoreUnavailableError):
+                get_result_store(secrets={"DATABASE_URL": "postgresql://u:p@db/x"})
+
+    assert attempts == 2

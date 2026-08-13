@@ -69,6 +69,12 @@ class PagesDictTests(unittest.TestCase):
         for filename in legacy_files:
             self.assertFalse((ui_dir / filename).exists(), filename)
 
+    def test_app_wraps_each_rerun_in_result_store_request_scope(self):
+        source = Path("app.py").read_text(encoding="utf-8")
+
+        self.assertIn("result_store_request_scope", source)
+        self.assertIn("with result_store_request_scope():", source)
+
 
 class PageConfigTests(unittest.TestCase):
     def test_page_config_has_exactly_four_entries(self):
