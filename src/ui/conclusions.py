@@ -35,10 +35,23 @@ from src.ui.page_config import get_page_config
 def render_conclusions_page(data_bundle: dict) -> None:
     base = data_bundle.get("base") or data_bundle["data"]
     tasks = getattr(base, "tasks", None)
+    allowed_case_ids = tuple(
+        sorted(
+            {
+                str(case_id).strip()
+                for case_id in (
+                    tasks["case_id"].tolist()
+                    if isinstance(tasks, pd.DataFrame) and "case_id" in tasks.columns
+                    else []
+                )
+                if str(case_id).strip()
+            }
+        )
+    )
 
     with st.spinner("正在汇总 AI 评分结果…"):
-        live_scores = cd.load_current_cohort_scores()
-        live_responses = cd.load_live_responses()
+        live_scores = cd.load_current_cohort_scores(allowed_case_ids)
+        live_responses = cd.load_live_responses(allowed_case_ids)
     ai_scores, excluded_scores = cc.split_live_scores(live_scores)
     model_summaries = cc.build_model_issue_summaries(ai_scores, pd.DataFrame(), tasks)
     answer_rows = cc.build_answer_detail_rows(ai_scores, live_responses)

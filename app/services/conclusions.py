@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Mapping, Sequence
+from typing import Any, Collection, Mapping, Sequence
 
 import pandas as pd
 
@@ -79,16 +79,32 @@ def load_live_scores(db_path=None) -> pd.DataFrame:
     return _load_live_table("live_run_scores", db_path)
 
 
-def load_current_cohort_scores(db_path=None) -> pd.DataFrame:
+def load_current_cohort_scores(
+    db_path=None,
+    *,
+    allowed_case_ids: Collection[str] | None = None,
+) -> pd.DataFrame:
     """读取当前元数据兼容比较组的评分；无法验证兼容性时返回空表。"""
     runs = _load_live_table("live_evaluation_runs", db_path)
     scores = _load_live_table("live_run_scores", db_path)
-    return select_current_cohort_scores(runs, scores)
+    return select_current_cohort_scores(
+        runs,
+        scores,
+        allowed_case_ids=allowed_case_ids,
+    )
 
 
-def load_live_responses(db_path=None) -> pd.DataFrame:
+def load_live_responses(
+    db_path=None,
+    *,
+    allowed_case_ids: Collection[str] | None = None,
+) -> pd.DataFrame:
     """读取全部 live_run_responses 行（含模型回答），用于草稿区拼接回答。"""
-    return _load_live_table("live_run_responses", db_path)
+    rows = _load_live_table("live_run_responses", db_path)
+    if allowed_case_ids is None or rows.empty or "case_id" not in rows.columns:
+        return rows
+    allowed = {_text(case_id) for case_id in allowed_case_ids if _text(case_id)}
+    return rows[rows["case_id"].map(_text).isin(allowed)].copy()
 
 
 def _load_live_table(table: str, db_path) -> pd.DataFrame:
@@ -101,7 +117,12 @@ def _load_live_table(table: str, db_path) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def select_current_cohort_scores(runs_df: pd.DataFrame, scores_df: pd.DataFrame) -> pd.DataFrame:
+def select_current_cohort_scores(
+    runs_df: pd.DataFrame,
+    scores_df: pd.DataFrame,
+    *,
+    allowed_case_ids: Collection[str] | None = None,
+) -> pd.DataFrame:
     """选择最新正式运行的兼容批次，并保留每个样本模型的最新成功评分。"""
     if not isinstance(scores_df, pd.DataFrame):
         return pd.DataFrame()
@@ -116,6 +137,18 @@ def select_current_cohort_scores(runs_df: pd.DataFrame, scores_df: pd.DataFrame)
         return empty
 
     scores = scores_df.copy()
+    if allowed_case_ids is not None:
+        if "case_id" not in scores.columns:
+            return empty
+        allowed = {_text(case_id) for case_id in allowed_case_ids if _text(case_id)}
+        compatible_run_ids = {
+            _text(run_id)
+            for run_id, group in scores.groupby("run_id", dropna=False)
+            if (_text(run_id) and set(group["case_id"].map(_text)).issubset(allowed))
+        }
+        scores = scores[scores["run_id"].map(_text).isin(compatible_run_ids)].copy()
+        if scores.empty:
+            return empty
     success_mask = _successful_conclusion_score_mask(scores)
     successful_run_ids = set(scores.loc[success_mask, "run_id"].map(_text))
     successful_run_ids.discard("")

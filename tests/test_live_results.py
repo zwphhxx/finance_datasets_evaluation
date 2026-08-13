@@ -28,6 +28,7 @@ from app.models.base import (
 )
 from app.models.siliconflow import SiliconFlowProvider, _HttpResponse
 from app.services import eval_runner as er
+from app.services import scorer as sc
 
 _MESSAGES = [{"role": "user", "content": "请概述一笔收购的尽调要点"}]
 
@@ -603,6 +604,61 @@ class PersistedAnswerRunTests(unittest.TestCase):
             summaries = er.list_persisted_answer_runs()
 
         self.assertEqual(["RUN-A"], [row["run_id"] for row in summaries])
+
+    def test_loader_excludes_runs_outside_current_sample_ids(self):
+        tables = {
+            "live_evaluation_runs": [
+                {"run_id": "RUN-CURRENT", "status": "completed"},
+                {"run_id": "RUN-INCOMPATIBLE", "status": "completed"},
+            ],
+            "live_run_queue": [
+                {"run_id": "RUN-CURRENT", "case_id": "FD-001", "model_id": "m1"},
+                {"run_id": "RUN-INCOMPATIBLE", "case_id": "CM-001", "model_id": "m1"},
+            ],
+            "live_run_responses": [
+                {
+                    "id": 1,
+                    "run_id": "RUN-CURRENT",
+                    "case_id": "FD-001",
+                    "model_name": "m1",
+                    "run_status": "success",
+                    "answer_text": "当前回答",
+                },
+                {
+                    "id": 2,
+                    "run_id": "RUN-INCOMPATIBLE",
+                    "case_id": "CM-001",
+                    "model_name": "m1",
+                    "run_status": "success",
+                    "answer_text": "不兼容回答",
+                },
+            ],
+        }
+
+        class Store:
+            def list_rows(self, table):
+                return tables[table]
+
+        with mock.patch("app.persistence.get_result_store", return_value=Store()):
+            summaries = er.list_persisted_answer_runs(allowed_case_ids={"FD-001"})
+
+        self.assertEqual(["RUN-CURRENT"], [row["run_id"] for row in summaries])
+        self.assertEqual(["FD-001"], summaries[0]["case_ids"])
+
+
+class PersistedScoreCompatibilityTests(unittest.TestCase):
+    def test_latest_score_queue_rejects_incompatible_batch(self):
+        class Store:
+            def latest_queue(self, table):
+                self.table = table
+                return [
+                    {"score_run_id": "SCORE-OLD", "case_id": "CM-001", "status": "success"}
+                ]
+
+        with mock.patch("app.persistence.get_result_store", return_value=Store()):
+            rows = sc.latest_score_queue(allowed_case_ids={"FD-001"})
+
+        self.assertEqual([], rows)
 
 
 if __name__ == "__main__":

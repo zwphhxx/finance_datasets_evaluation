@@ -43,6 +43,7 @@ from src.ui.test_run import (
     resolve_eval_max_tokens,
     resolve_eval_temperature,
     resolve_persisted_answer_run_id,
+    result_case_ids_are_current,
     sample_checkbox_key,
     slow_model_notice,
 )
@@ -651,6 +652,13 @@ class TestRunFlowStructureTests(unittest.TestCase):
 
 
 class PersistedAnswerRecoveryTests(unittest.TestCase):
+    def test_result_case_ids_must_belong_to_current_samples(self):
+        self.assertTrue(
+            result_case_ids_are_current({"FD-001", "FD-002"}, {"FD-001", "FD-002", "FD-003"})
+        )
+        self.assertFalse(result_case_ids_are_current({"CM-001"}, {"FD-001", "FD-002"}))
+        self.assertFalse(result_case_ids_are_current(set(), {"FD-001"}))
+
     def test_run_selection_prefers_explicit_selection_then_current_then_latest(self):
         runs = [{"run_id": "RUN-NEW"}, {"run_id": "RUN-OLD"}]
 
@@ -686,7 +694,7 @@ class PersistedAnswerRecoveryTests(unittest.TestCase):
             source.index("def _recover_latest_score")
         ]
 
-        self.assertIn("er.list_persisted_answer_runs()", selector_source)
+        self.assertIn("er.list_persisted_answer_runs(allowed_case_ids=allowed_case_ids)", selector_source)
         self.assertIn('"查看历史批次"', selector_source)
         self.assertIn("er.restore_compare_result_from_db(run_id)", recovery_source)
         self.assertIn("resume_allowed", recovery_source)

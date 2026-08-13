@@ -316,6 +316,25 @@ class CompatibleCohortTests(unittest.TestCase):
 
         self.assertEqual(["model-a"], selected["eval_model"].tolist())
 
+    def test_current_cohort_excludes_runs_outside_current_sample_ids(self):
+        runs = pd.DataFrame([
+            _run_row("RUN-CURRENT", created_at="2026-07-17T10:00:00"),
+            _run_row("RUN-INCOMPATIBLE", created_at="2026-07-18T10:00:00"),
+        ])
+        scores = pd.DataFrame([
+            _cohort_score(1, "RUN-CURRENT", "FD-001", "model-a", updated_at="2026-07-17T11:00:00"),
+            _cohort_score(2, "RUN-INCOMPATIBLE", "CM-001", "model-a", updated_at="2026-07-18T11:00:00"),
+        ])
+
+        selected = cc.select_current_cohort_scores(
+            runs,
+            scores,
+            allowed_case_ids={"FD-001"},
+        )
+
+        self.assertEqual(["RUN-CURRENT"], selected["run_id"].tolist())
+        self.assertEqual(["FD-001"], selected["case_id"].tolist())
+
 
 class AnswerDetailJoinTests(unittest.TestCase):
     def test_answers_join_by_run_case_and_model_without_cross_run_leakage(self):
@@ -386,7 +405,7 @@ class AnswerDetailJoinTests(unittest.TestCase):
             source.index("def _render_model_issue_details"):
         ]
 
-        self.assertIn("cd.load_live_responses()", render_source)
+        self.assertIn("cd.load_live_responses(allowed_case_ids)", render_source)
         self.assertIn("cc.build_answer_detail_rows", render_source)
         self.assertIn("answer_rows", render_source)
         self.assertIn('"选择样本查看回答"', detail_source)

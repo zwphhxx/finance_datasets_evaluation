@@ -102,6 +102,38 @@ def _persistence_gate(result: bool) -> None:
         raise RuntimeError("runtime persistence required")
 
 
+def result_case_ids_are_current(
+    result_case_ids: set[str],
+    current_case_ids: set[str],
+) -> bool:
+    """Only reuse a result when every referenced sample is in the current library."""
+    normalized_result = {str(case_id or "").strip() for case_id in result_case_ids}
+    normalized_result.discard("")
+    normalized_current = {str(case_id or "").strip() for case_id in current_case_ids}
+    normalized_current.discard("")
+    return bool(normalized_result) and normalized_result.issubset(normalized_current)
+
+
+def _clear_incompatible_session_results(current_case_ids: set[str]) -> None:
+    result = eval_state.get_last_run()
+    result_case_ids = {
+        str(getattr(outcome, "case_id", "") or "").strip()
+        for outcome in (getattr(result, "outcomes", ()) or ())
+    }
+    state_case_ids = {
+        str(item.get("case_id") or "").strip()
+        for item in (_run_state().get("queue_items") or [])
+    }
+    session_case_ids = {case_id for case_id in (result_case_ids or state_case_ids) if case_id}
+    if (result is not None or _run_state()) and not result_case_ids_are_current(
+        session_case_ids,
+        current_case_ids,
+    ):
+        eval_state.clear()
+        _clear_run_state()
+        _clear_score_state()
+
+
 def _require_persistence_preflight(provider_name: str) -> None:
     from app.persistence import (
         ResultStoreSettings,
@@ -683,6 +715,12 @@ def render_test_run_page(data_bundle: dict) -> None:
         render_empty_state("当前样本库没有可用样本。")
         return
     task_records = tasks_df.to_dict("records")
+    current_case_ids = {
+        str(row.get("case_id") or "").strip()
+        for row in task_records
+        if str(row.get("case_id") or "").strip()
+    }
+    _clear_incompatible_session_results(current_case_ids)
     gold_map = getattr(base, "gold_answer_map", {}) or {}
     testable_dimensions = ds.get_testable_rubric_dimensions()
 
@@ -698,11 +736,13 @@ def render_test_run_page(data_bundle: dict) -> None:
         render_numbered_section("01", TEST_RUN_STEPS[0])
         _render_configuration_panel(sample_options, selected_tasks, model_ids, provider_name, run_plan, base, task_records)
 
-    answer_run_summaries = er.list_persisted_answer_runs()
+    answer_run_summaries = er.list_persisted_answer_runs(
+        allowed_case_ids=current_case_ids,
+    )
     persisted_answers = sum(int(item.get("success_count") or 0) for item in answer_run_summaries)
     scored_count = sum(
         1
-        for row in sc.latest_score_queue()
+        for row in sc.latest_score_queue(allowed_case_ids=current_case_ids)
         if str(row.get("status") or "").strip().lower() == "success"
     )
     if current_result_store_failure() is not None:
@@ -1387,9 +1427,14 @@ def _persisted_run_option_label(summary: dict) -> str:
     )
 
 
-def _render_persisted_answer_run_selector(result, summaries: list[dict] | None = None) -> str:
+def _render_persisted_answer_run_selector(
+    result,
+    summaries: list[dict] | None = None,
+    *,
+    allowed_case_ids: set[str] | None = None,
+) -> str:
     if summaries is None:
-        summaries = er.list_persisted_answer_runs()
+        summaries = er.list_persisted_answer_runs(allowed_case_ids=allowed_case_ids)
     if not summaries:
         return ""
     current_run_id = str(
@@ -1421,6 +1466,18 @@ def _render_persisted_answer_run_selector(result, summaries: list[dict] | None =
 
 def _recover_persisted_run(run_id: str, task_records: list[dict]) -> object | None:
     rows = er.load_run_queue(run_id)
+    allowed_case_ids = {
+        str(row.get("case_id") or "").strip()
+        for row in task_records or []
+        if str(row.get("case_id") or "").strip()
+    }
+    persisted_case_ids = {
+        str(row.get("case_id") or "").strip()
+        for row in rows
+        if str(row.get("case_id") or "").strip()
+    }
+    if not persisted_case_ids or not persisted_case_ids.issubset(allowed_case_ids):
+        return None
     result = er.restore_compare_result_from_db(run_id)
     if result is None:
         return None
@@ -1469,9 +1526,30 @@ def _recover_persisted_run(run_id: str, task_records: list[dict]) -> object | No
 
 
 def _recover_latest_run(task_records: list[dict]) -> object | None:
-    if _run_state() or eval_state.get_last_run() is not None:
-        return eval_state.get_last_run()
-    summaries = er.list_persisted_answer_runs()
+    allowed_case_ids = {
+        str(row.get("case_id") or "").strip()
+        for row in task_records or []
+        if str(row.get("case_id") or "").strip()
+    }
+    existing = eval_state.get_last_run()
+    existing_case_ids = {
+        str(getattr(outcome, "case_id", "") or "").strip()
+        for outcome in (getattr(existing, "outcomes", ()) or ())
+        if str(getattr(outcome, "case_id", "") or "").strip()
+    }
+    state_case_ids = {
+        str(item.get("case_id") or "").strip()
+        for item in (_run_state().get("queue_items") or [])
+        if str(item.get("case_id") or "").strip()
+    }
+    session_case_ids = existing_case_ids or state_case_ids
+    if existing is not None or _run_state():
+        if session_case_ids and session_case_ids.issubset(allowed_case_ids):
+            return existing
+        eval_state.clear()
+        _clear_run_state()
+        _clear_score_state()
+    summaries = er.list_persisted_answer_runs(allowed_case_ids=allowed_case_ids)
     if not summaries:
         return None
     run_id = str(summaries[0].get("run_id") or "")
@@ -1483,7 +1561,14 @@ def _recover_latest_run(task_records: list[dict]) -> object | None:
 def _recover_latest_score(compare_result) -> object | None:
     if _score_state() or eval_state.get_last_score() is not None:
         return eval_state.get_last_score()
-    rows = sc.latest_score_queue()
+    allowed_case_ids = {
+        str(getattr(outcome, "case_id", "") or "").strip()
+        for outcome in (getattr(compare_result, "outcomes", ()) or ())
+        if str(getattr(outcome, "case_id", "") or "").strip()
+    }
+    if not allowed_case_ids:
+        return None
+    rows = sc.latest_score_queue(allowed_case_ids=allowed_case_ids)
     if not rows:
         return None
     score_run_id = str(rows[0].get("score_run_id") or "")

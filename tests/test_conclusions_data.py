@@ -16,8 +16,8 @@ def test_conclusions_data_module_exposes_cached_loaders():
 def test_conclusions_page_uses_cached_loaders():
     source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
 
-    assert "cd.load_current_cohort_scores()" in source
-    assert "cd.load_live_responses()" in source
+    assert "cd.load_current_cohort_scores(allowed_case_ids)" in source
+    assert "cd.load_live_responses(allowed_case_ids)" in source
     assert source.count("cd.clear_conclusions_caches()") >= 2
 
 

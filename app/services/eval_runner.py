@@ -16,7 +16,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Callable, Collection, Mapping, Sequence
 
 from app.models.base import (
     ERROR_EMPTY_RESPONSE,
@@ -811,6 +811,7 @@ def build_persisted_answer_run_summaries(
                 "response_count": len(answer_rows),
                 "success_count": success_count,
                 "case_count": len(cases),
+                "case_ids": sorted(cases),
                 "model_count": len(models),
                 "queue_count": len(queued),
                 "unfinished_count": unfinished_count,
@@ -831,18 +832,28 @@ def build_persisted_answer_run_summaries(
 
 def list_persisted_answer_runs(
     *,
+    allowed_case_ids: Collection[str] | None = None,
     db_path: Path | None = None,
 ) -> list[dict[str, Any]]:
-    """读取全部可查看的持久化回答批次；数据库异常时返回空列表。"""
+    """读取可查看且与当前样本编号兼容的持久化回答批次。"""
     try:
         store = _runtime_result_store(db_path)
         if store is None:
             return []
-        return build_persisted_answer_run_summaries(
+        summaries = build_persisted_answer_run_summaries(
             store.list_rows("live_evaluation_runs"),
             store.list_rows("live_run_queue"),
             store.list_rows("live_run_responses"),
         )
+        if allowed_case_ids is None:
+            return summaries
+        allowed = {_clean(case_id) for case_id in allowed_case_ids if _clean(case_id)}
+        return [
+            summary
+            for summary in summaries
+            if summary.get("case_ids")
+            and set(summary["case_ids"]).issubset(allowed)
+        ]
     except Exception:
         return []
 

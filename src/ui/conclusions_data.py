@@ -14,13 +14,17 @@ from app.services import conclusions as cc
 
 
 @st.cache_data(show_spinner=False)
-def load_current_cohort_scores() -> pd.DataFrame:
-    return cc.load_current_cohort_scores()
+def load_current_cohort_scores(allowed_case_ids: tuple[str, ...] = ()) -> pd.DataFrame:
+    return cc.load_current_cohort_scores(
+        allowed_case_ids=allowed_case_ids or None,
+    )
 
 
 @st.cache_data(show_spinner=False)
-def load_live_responses() -> pd.DataFrame:
-    return cc.load_live_responses()
+def load_live_responses(allowed_case_ids: tuple[str, ...] = ()) -> pd.DataFrame:
+    return cc.load_live_responses(
+        allowed_case_ids=allowed_case_ids or None,
+    )
 
 
 def clear_conclusions_caches() -> None:

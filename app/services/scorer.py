@@ -23,7 +23,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Callable, Collection, Mapping, Sequence
 
 from app.models.base import STATUS_FAILED, STATUS_MOCK, STATUS_SUCCESS, ModelProvider
 from app.services import model_display as md
@@ -595,10 +595,19 @@ def queue_items_for_status(
     ]
 
 
-def latest_score_queue(*, db_path: Path | None = None) -> list[dict[str, Any]]:
+def latest_score_queue(
+    *,
+    allowed_case_ids: Collection[str] | None = None,
+    db_path: Path | None = None,
+) -> list[dict[str, Any]]:
     try:
         store = _runtime_result_store(db_path)
-        return [] if store is None else store.latest_queue("live_score_queue")
+        rows = [] if store is None else store.latest_queue("live_score_queue")
+        if allowed_case_ids is None:
+            return rows
+        allowed = {_clean(case_id) for case_id in allowed_case_ids if _clean(case_id)}
+        row_case_ids = {_clean(row.get("case_id")) for row in rows if _clean(row.get("case_id"))}
+        return rows if row_case_ids and row_case_ids.issubset(allowed) else []
     except Exception:
         return []
 
