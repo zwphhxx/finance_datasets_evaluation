@@ -152,6 +152,8 @@ class EvaluationWorkflow:
         for item in config.queue_items:
             try:
                 self._execute_item(ref, config, item, judge_model)
+            except ValueError:
+                raise
             except WorkflowStopped:
                 raise
             except Exception as exc:
@@ -228,10 +230,14 @@ class EvaluationWorkflow:
         )
         if self._has_formal_score(score_rows, answer_rows):
             return
+        response = self._formal_response(answer_rows)
+        if score_queue["status"] == "success" or (
+            answer_queue["status"] == "success" and response is None
+        ):
+            raise ValueError("evaluation checkpoint is inconsistent")
         if answer_queue["status"] == "failed" or score_queue["status"] in {"failed", "skipped"}:
             return
 
-        response = self._formal_response(answer_rows)
         if response is None:
             self.store.mark_run_item_running(ref.run_id, case_id, model_id, combined=True)
             outcome = er.run_single(

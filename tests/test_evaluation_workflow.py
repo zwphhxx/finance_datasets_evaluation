@@ -1,9 +1,11 @@
 from pathlib import Path
 
 import pytest
+from sqlalchemy import update
 
 from app.models.base import GenerationResult, ModelListResult, ModelProvider, STATUS_FAILED, STATUS_SUCCESS
 from app.persistence.result_store import ResultStore, ResultStoreError
+from app.persistence.schema import live_run_queue, live_score_queue
 from app.services import scorer as sc
 from app.services.run_checkpoint import build_run_metadata
 
@@ -209,6 +211,24 @@ def _prepopulate_successful_answer(store, run_id, score_run_id, pair):
     )
 
 
+def _initialize_checkpoint(store, run_id, score_run_id, pair):
+    metadata = build_run_metadata(
+        run_id=run_id,
+        provider="test-live",
+        model_ids=(pair["model_id"],),
+        queue_items=(pair,),
+        generation_parameters={"temperature": 0.2, "max_tokens": 128},
+        judge_parameters={"judge_model": "judge-1", "temperature": 0.0, "max_tokens": 128},
+        dataset_version="v1",
+        prompt_payload=("system", "hint"),
+    )
+    store.initialize_evaluation(
+        metadata,
+        [{"run_id": run_id, "case_id": pair["case_id"], "model_id": pair["model_id"], "status": "queued"}],
+        [{"score_run_id": score_run_id, "run_id": run_id, "case_id": pair["case_id"], "eval_model": pair["model_id"], "status": "queued"}],
+    )
+
+
 def test_persisted_successful_answer_only_calls_judge(tmp_path, monkeypatch):
     store = sqlite_store(tmp_path)
     pair = item("C1", "m1")
@@ -239,6 +259,48 @@ def test_successful_answer_and_score_skip_all_model_calls(tmp_path, monkeypatch)
     workflow(store, RecordingProvider(responses=[], events=events), RecordingProvider(events=events)).start_evaluation(config(pair))
 
     assert events == []
+
+
+def test_success_score_queue_without_formal_results_is_rejected_without_calls(tmp_path, monkeypatch):
+    store = sqlite_store(tmp_path)
+    pair = item("C1", "m1")
+    _initialize_checkpoint(store, "RUN-FIXED", "SCORE-FIXED", pair)
+    with store.engine.begin() as connection:
+        connection.execute(
+            update(live_score_queue)
+            .where(live_score_queue.c.score_run_id == "SCORE-FIXED")
+            .values(status="success")
+        )
+    events = []
+    monkeypatch.setattr("app.services.evaluation_workflow.er.generate_run_id", lambda: "RUN-FIXED")
+    monkeypatch.setattr("app.services.evaluation_workflow.sc.generate_score_run_id", lambda: "SCORE-FIXED")
+
+    with pytest.raises(ValueError, match="evaluation checkpoint is inconsistent"):
+        workflow(store, RecordingProvider(responses=[], events=events), RecordingProvider(events=events)).start_evaluation(config(pair))
+
+    assert events == []
+    assert store.list_rows("live_score_queue", score_run_id="SCORE-FIXED")[0]["status"] == "success"
+
+
+def test_success_answer_queue_without_response_is_rejected_without_calls(tmp_path, monkeypatch):
+    store = sqlite_store(tmp_path)
+    pair = item("C1", "m1")
+    _initialize_checkpoint(store, "RUN-FIXED", "SCORE-FIXED", pair)
+    with store.engine.begin() as connection:
+        connection.execute(
+            update(live_run_queue)
+            .where(live_run_queue.c.run_id == "RUN-FIXED")
+            .values(status="success")
+        )
+    events = []
+    monkeypatch.setattr("app.services.evaluation_workflow.er.generate_run_id", lambda: "RUN-FIXED")
+    monkeypatch.setattr("app.services.evaluation_workflow.sc.generate_score_run_id", lambda: "SCORE-FIXED")
+
+    with pytest.raises(ValueError, match="evaluation checkpoint is inconsistent"):
+        workflow(store, RecordingProvider(responses=[], events=events), RecordingProvider(events=events)).start_evaluation(config(pair))
+
+    assert events == []
+    assert store.list_rows("live_run_queue", run_id="RUN-FIXED")[0]["status"] == "success"
 
 
 @pytest.mark.parametrize("provider_name,judge_name", [("mock", "test-live"), ("test-live", "demo")])
