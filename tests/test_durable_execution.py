@@ -1,5 +1,6 @@
 import pytest
 
+from app.persistence import ResultStoreUnavailableError
 from app.services import conclusions, scorer
 from src.ui import test_run
 
@@ -22,6 +23,49 @@ def test_persistence_gate_stops_before_provider_call():
         events.append("provider")
 
     assert events == ["initialize"]
+
+
+def test_unavailable_persistence_stops_before_provider_construction(monkeypatch):
+    provider_calls = []
+    status_messages = []
+
+    def unavailable(_provider_name):
+        raise ResultStoreUnavailableError("database unavailable")
+
+    monkeypatch.setattr(test_run, "_require_persistence_preflight", unavailable)
+    monkeypatch.setattr(
+        test_run,
+        "get_text_provider",
+        lambda **kwargs: provider_calls.append(kwargs),
+    )
+    monkeypatch.setattr(
+        test_run,
+        "render_persistence_status",
+        lambda message: status_messages.append(message),
+        raising=False,
+    )
+
+    test_run._execute_run_queue(
+        "siliconflow",
+        queue_items=[],
+        model_ids=[],
+        temperature=0.1,
+        max_tokens=128,
+    )
+
+    assert provider_calls == []
+    assert status_messages == ["评测结果数据库暂不可用，当前不会调用模型服务。"]
+
+
+def test_test_run_page_displays_persistence_outage():
+    source = open("src/ui/test_run.py", encoding="utf-8").read()
+    render_source = source[
+        source.index("def render_test_run_page"):
+        source.index("def _default_provider_name")
+    ]
+
+    assert "current_result_store_failure()" in render_source
+    assert "render_persistence_status" in render_source
 
 
 def test_checkpoint_rejects_changed_sample_or_prompt():

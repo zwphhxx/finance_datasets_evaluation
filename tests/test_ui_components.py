@@ -30,6 +30,21 @@ class UIComponentsTests(unittest.TestCase):
             self.assertTrue(hasattr(components, name), name)
             self.assertTrue(callable(getattr(components, name)), name)
 
+    def test_persistence_status_escapes_message_and_sets_status_role(self):
+        import src.ui.components as components
+
+        captured = []
+        original = components.render_html
+        try:
+            components.render_html = lambda html, container=None: captured.append(str(html))
+            components.render_persistence_status("数据库 <暂停>")
+        finally:
+            components.render_html = original
+
+        self.assertEqual(1, len(captured))
+        self.assertIn('role="status"', captured[0])
+        self.assertIn("数据库 &lt;暂停&gt;", captured[0])
+
     def test_components_do_not_export_legacy_card_api(self):
         import src.ui.components as components
 

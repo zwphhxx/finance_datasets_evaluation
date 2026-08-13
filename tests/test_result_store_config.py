@@ -7,6 +7,7 @@ import streamlit as st
 from app.persistence import (
     ResultStoreUnavailableError,
     _store_for_url,
+    current_result_store_failure,
     get_result_store,
     result_store_request_scope,
 )
@@ -160,3 +161,23 @@ def test_new_request_scope_retries_after_previous_store_failure(monkeypatch):
                 get_result_store(secrets={"DATABASE_URL": "postgresql://u:p@db/x"})
 
     assert attempts == 2
+
+
+def test_request_scope_exposes_current_failure_without_retrying(monkeypatch):
+    attempts = 0
+
+    def fail(_url):
+        nonlocal attempts
+        attempts += 1
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr("app.persistence._store_for_url", fail)
+
+    with result_store_request_scope():
+        with pytest.raises(ResultStoreUnavailableError):
+            get_result_store(secrets={"DATABASE_URL": "postgresql://u:p@db/x"})
+
+        failure = current_result_store_failure()
+
+    assert isinstance(failure, ResultStoreUnavailableError)
+    assert attempts == 1

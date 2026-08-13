@@ -36,6 +36,13 @@ def result_store_request_scope() -> Iterator[None]:
         _request_store_failure.reset(token)
 
 
+def current_result_store_failure() -> ResultStoreUnavailableError | None:
+    """Return the memoized persistence failure for the active rerun, if any."""
+
+    failure = _request_store_failure.get()
+    return failure if isinstance(failure, ResultStoreUnavailableError) else None
+
+
 @lru_cache(maxsize=8)
 def _store_for_url(url: str) -> ResultStore:
     store = ResultStore(url)
@@ -80,6 +87,7 @@ __all__ = [
     "ResultStoreError",
     "ResultStoreSettings",
     "ResultStoreUnavailableError",
+    "current_result_store_failure",
     "get_result_store",
     "require_durable_live_store",
     "resolve_result_store_settings",

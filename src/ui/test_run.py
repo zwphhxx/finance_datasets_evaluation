@@ -18,6 +18,11 @@ import streamlit as st
 
 from app.models import siliconflow as sf
 from app.models.registry import get_text_provider
+from app.persistence import (
+    PersistenceConfigurationError,
+    ResultStoreUnavailableError,
+    current_result_store_failure,
+)
 from app.services import dataset_service as ds
 from app.services import eval_runner as er
 from app.services import eval_state
@@ -31,6 +36,7 @@ from src.ui.components import (
     render_markdown_detail_panel,
     render_numbered_section,
     render_page_heading,
+    render_persistence_status,
 )
 from src.ui.labels import TASK_TYPE_LABELS, display_label, summarize_text
 from src.ui.page_config import get_page_config
@@ -107,6 +113,19 @@ def _require_persistence_preflight(provider_name: str) -> None:
     settings = ResultStoreSettings(url="", is_postgresql=store.is_postgresql)
     require_durable_live_store(provider_name, settings)
     _persistence_gate(store.ping())
+
+
+def _persistence_ready_for_model_calls(provider_name: str) -> bool:
+    try:
+        _require_persistence_preflight(provider_name)
+    except (
+        PersistenceConfigurationError,
+        ResultStoreUnavailableError,
+        RuntimeError,
+    ):
+        render_persistence_status("评测结果数据库暂不可用，当前不会调用模型服务。")
+        return False
+    return True
 
 
 def _run_checkpoint_metadata(
@@ -685,6 +704,10 @@ def render_test_run_page(data_bundle: dict) -> None:
         for row in sc.latest_score_queue()
         if str(row.get("status") or "").strip().lower() == "success"
     )
+    if current_result_store_failure() is not None:
+        render_persistence_status(
+            "评测结果数据库暂不可用。可继续查看项目与样本，数据库恢复后再发起评测。"
+        )
 
     answer_badge = (
         (f"已有 {persisted_answers} 条回答", "success")
@@ -1577,6 +1600,8 @@ def _execute_run_queue(
     score_base=None,
     task_records: list[dict] | None = None,
 ) -> None:
+    if not _persistence_ready_for_model_calls(provider_name):
+        return
     provider = get_text_provider(prefer=provider_name)
     existing_outcomes = list(existing_outcomes or [])
     all_queue = list((base_state or {}).get("queue_items") or queue_items)
@@ -1596,7 +1621,6 @@ def _execute_run_queue(
     }
     interruption_message = "本次运行出现单条失败。已完成结果会保留，未完成项可稍后继续。"
     try:
-        _require_persistence_preflight(state_provider)
         metadata = _run_checkpoint_metadata(
             run_id,
             state_provider,
@@ -1781,6 +1805,8 @@ def _execute_retry_score_queue(
     retry_items = build_failed_score_retry_items(score_result, compare_result)
     if not retry_items:
         return
+    if not _persistence_ready_for_model_calls(provider_name):
+        return
     provider = get_text_provider(prefer=provider_name)
     judge_model = str(getattr(score_result, "judge_model", "") or sc.DEFAULT_JUDGE_MODEL)
     score_run_id = str(getattr(score_result, "score_run_id", "") or sc.generate_score_run_id())
@@ -1802,7 +1828,6 @@ def _execute_retry_score_queue(
     interruption_message = "本次评分未完成。已生成的 AI 评分已保留，未完成项可重新评分。"
     interrupted = False
     try:
-        _require_persistence_preflight(judge_provider)
         _persistence_gate(
             sc.initialize_score_queue(
                 score_run_id,
@@ -1933,6 +1958,8 @@ def _execute_score_queue(
     if not queue_items:
         return
 
+    if not _persistence_ready_for_model_calls(provider_name):
+        return
     provider = get_text_provider(prefer=provider_name)
     judge_model = sc.DEFAULT_JUDGE_MODEL
     score_run_id = str((base_state or {}).get("score_run_id") or sc.generate_score_run_id())
@@ -1954,7 +1981,6 @@ def _execute_score_queue(
     }
     interruption_message = "本次评分未完成。已生成的 AI 评分已保留，未完成项可重新评分。"
     try:
-        _require_persistence_preflight(judge_provider)
         _persistence_gate(
             sc.initialize_score_queue(
                 score_run_id,

@@ -292,6 +292,17 @@ header,
     line-height: 1.6;
     margin: 0.5rem 0 1rem 0;
 }
+.persistence-status {
+    margin: 0.4rem 0 1rem;
+    padding: 0.72rem 0.85rem;
+    border: 1px solid var(--fde-line-strong);
+    border-left: 3px solid var(--fde-accent);
+    border-radius: 4px;
+    background: var(--fde-surface);
+    color: var(--fde-ink);
+    font-size: 0.91rem;
+    line-height: 1.55;
+}
 .table-selection-echo {
     color: var(--fde-muted);
     font-size: 0.86rem;
@@ -989,6 +1000,14 @@ def render_selection_echo(
 
 def render_empty_state(message: str) -> None:
     render_html(f'<div class="empty-state">{escape(str(message))}</div>')
+
+
+def render_persistence_status(message: str) -> None:
+    render_html(
+        '<div class="persistence-status" role="status">'
+        f"{escape(str(message))}"
+        "</div>"
+    )
 
 
 def render_inline_status(items: list[tuple[str, ...]]) -> None:

@@ -11,6 +11,7 @@ from html import escape
 import pandas as pd
 import streamlit as st
 
+from app.persistence import current_result_store_failure
 from app.services import conclusions as cc
 from app.services import dataset_service as ds
 from app.services import scorer as sc
@@ -24,6 +25,7 @@ from src.ui.components import (
     render_markdown_detail_panel,
     render_numbered_section,
     render_page_heading,
+    render_persistence_status,
     render_selection_echo,
 )
 from src.ui.page_config import get_page_config
@@ -42,6 +44,10 @@ def render_conclusions_page(data_bundle: dict) -> None:
 
     config = get_page_config("conclusions")
     render_page_heading(config.title, config.question)
+    if current_result_store_failure() is not None:
+        render_persistence_status(
+            "评测结果数据库暂不可用。当前无法读取已持久化的回答与评分。"
+        )
     _render_data_source_notice(live_scores, ai_scores, excluded_scores)
 
     _render_model_recommendations(model_summaries)

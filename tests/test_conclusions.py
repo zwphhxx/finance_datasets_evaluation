@@ -393,6 +393,16 @@ class AnswerDetailJoinTests(unittest.TestCase):
         self.assertIn("render_markdown_detail_panel", detail_source)
         self.assertIn('row.get("answer_text")', detail_source)
 
+    def test_conclusion_page_displays_persistence_outage(self):
+        source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
+        render_source = source[
+            source.index("def render_conclusions_page"):
+            source.index("# --------------------------------------------------------------------------- #")
+        ]
+
+        self.assertIn("current_result_store_failure()", render_source)
+        self.assertIn("render_persistence_status", render_source)
+
 
 class AiFinalPageTests(unittest.TestCase):
     def test_conclusion_page_no_longer_uses_session_draft_fallback(self):
