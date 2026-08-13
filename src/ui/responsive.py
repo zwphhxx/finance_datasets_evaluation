@@ -474,6 +474,10 @@ MOBILE_RESPONSIVE_CSS = r"""
         padding-left: 0.2rem;
         padding-right: 0.2rem;
     }
+    [data-testid="stHorizontalBlock"]:has(.top-nav-brand) .st-key-top_nav_operation_region .stButton > button {
+        font-size: 0.78rem;
+        font-weight: 500;
+    }
     [data-testid="stMarkdownContainer"] .brief-title {
         font-size: 1.6rem;
     }

@@ -21,6 +21,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 _RUN_BROWSER_REGRESSION = os.getenv("FINDUEVAL_RUN_BROWSER_REGRESSION") == "1"
 _PLAYWRIGHT_CLI = "/Users/zhuwenpeng/.codex/skills/playwright/scripts/playwright_cli.sh"
+_BROWSER_SESSION = f"fde-navigation-regression-{os.getpid()}"
 _VIEWPORTS = ((1710, 1009), (768, 1009), (390, 844), (320, 844))
 
 pytestmark = pytest.mark.browser
@@ -40,7 +41,7 @@ def _free_port() -> int:
 
 def _run_browser(*args: str) -> str:
     completed = subprocess.run(
-        ["bash", _PLAYWRIGHT_CLI, "--session", "fde-navigation-regression", *args],
+        ["bash", _PLAYWRIGHT_CLI, "--session", _BROWSER_SESSION, *args],
         cwd=ROOT,
         check=True,
         capture_output=True,
@@ -53,6 +54,19 @@ def _run_browser(*args: str) -> str:
 def _browser_result(output: str) -> object:
     result = output.split("### Result\n", 1)[1].splitlines()[0]
     return json.loads(result)
+
+
+def _open_browser(url: str) -> None:
+    last_error: subprocess.CalledProcessError | None = None
+    for _attempt in range(3):
+        try:
+            _run_browser("open", url)
+            _run_browser("snapshot")
+            return
+        except subprocess.CalledProcessError as exc:
+            last_error = exc
+            time.sleep(0.5)
+    raise AssertionError("Playwright CLI did not retain the browser session") from last_error
 
 
 def _wait_for_app(url: str, log_path: Path) -> None:
@@ -101,7 +115,10 @@ def local_navigation_app(tmp_path_factory: pytest.TempPathFactory):
         _wait_for_app(url, log_path)
         yield url, absent_db
     finally:
-        _run_browser("close")
+        try:
+            _run_browser("close")
+        except subprocess.CalledProcessError:
+            pass
         process.terminate()
         process.wait(timeout=10)
 
@@ -117,10 +134,16 @@ def _layout_snapshot() -> dict[str, object]:
             const value = element.getBoundingClientRect();
             return { top: value.top, bottom: value.bottom, left: value.left, right: value.right };
         };
+        const style = (element) => {
+            const value = getComputedStyle(element);
+            return { fontSize: value.fontSize, fontWeight: value.fontWeight, color: value.color };
+        };
         return {
             brand: brand ? rect(brand) : null,
             operation: operation ? rect(operation) : null,
             primary: primary.map(rect),
+            operationStyle: operation ? style(operation) : null,
+            primaryStyles: primary.map(style),
             overflow: document.documentElement.scrollWidth - window.innerWidth,
             width: window.innerWidth,
         };
@@ -132,7 +155,7 @@ def _layout_snapshot() -> dict[str, object]:
 
 def test_navigation_layout_in_four_real_viewports(local_navigation_app):
     url, absent_db = local_navigation_app
-    _run_browser("open", url)
+    _open_browser(url)
 
     for width, height in _VIEWPORTS:
         _run_browser("resize", str(width), str(height))
@@ -141,6 +164,7 @@ def test_navigation_layout_in_four_real_viewports(local_navigation_app):
         layout = _layout_snapshot()
         primary = layout["primary"]
 
+        assert layout["width"] == width
         assert len(primary) == 3
         assert max(item["top"] for item in primary) - min(item["top"] for item in primary) <= 1
         assert layout["overflow"] <= 0
@@ -149,6 +173,12 @@ def test_navigation_layout_in_four_real_viewports(local_navigation_app):
             assert layout["brand"]["bottom"] <= min(item["top"] for item in primary)
             assert layout["operation"]["top"] >= max(item["bottom"] for item in primary)
             assert layout["operation"]["right"] >= max(item["right"] for item in primary) - 1
+            primary_style = layout["primaryStyles"][0]
+            operation_style = layout["operationStyle"]
+            assert float(operation_style["fontSize"].removesuffix("px")) <= float(
+                primary_style["fontSize"].removesuffix("px")
+            )
+            assert int(operation_style["fontWeight"]) <= int(primary_style["fontWeight"])
         else:
             assert abs(layout["operation"]["top"] - primary[0]["top"]) <= 1
 
