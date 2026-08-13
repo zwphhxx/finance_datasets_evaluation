@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Mapping
 
 import pandas as pd
@@ -103,6 +104,76 @@ def score_queue_row(
     }
 
 
+def derive_status(
+    run: Mapping[str, Any],
+    answers: list[Mapping[str, Any]],
+    scores: list[Mapping[str, Any]],
+    stale: bool,
+    stopped_here: bool = False,
+    *,
+    owned: bool = False,
+) -> EvaluationRunStatus:
+    """Derive a safe combined state from one persisted answer/score checkpoint."""
+    run_id = _required_checkpoint_text(run.get("run_id"))
+    if not answers or not scores:
+        raise WorkflowCheckpointError("evaluation checkpoint is incomplete")
+    answer_pairs: dict[tuple[str, str], Mapping[str, Any]] = {}
+    for row in answers:
+        if _required_checkpoint_text(row.get("run_id")) != run_id:
+            raise WorkflowCheckpointError("evaluation checkpoint is inconsistent")
+        pair = (_required_checkpoint_text(row.get("case_id")), _required_checkpoint_text(row.get("model_id")))
+        if pair in answer_pairs:
+            raise WorkflowCheckpointError("evaluation checkpoint is inconsistent")
+        answer_pairs[pair] = row
+    score_pairs: dict[tuple[str, str], Mapping[str, Any]] = {}
+    score_run_ids: set[str] = set()
+    for row in scores:
+        if _required_checkpoint_text(row.get("run_id")) != run_id:
+            raise WorkflowCheckpointError("evaluation checkpoint is inconsistent")
+        pair = (_required_checkpoint_text(row.get("case_id")), _required_checkpoint_text(row.get("eval_model")))
+        if pair in score_pairs:
+            raise WorkflowCheckpointError("evaluation checkpoint is inconsistent")
+        score_pairs[pair] = row
+        score_run_ids.add(_required_checkpoint_text(row.get("score_run_id")))
+    if set(answer_pairs) != set(score_pairs) or len(score_run_ids) != 1:
+        raise WorkflowCheckpointError("evaluation checkpoint is inconsistent")
+
+    succeeded = failed = pending = 0
+    for pair, answer in answer_pairs.items():
+        answer_status = _queue_status(answer)
+        score_status = _queue_status(score_pairs[pair])
+        if answer_status == "success" and score_status == "success":
+            succeeded += 1
+        elif answer_status == "failed" or score_status in {"failed", "skipped"}:
+            failed += 1
+        else:
+            pending += 1
+    if stopped_here:
+        state = STOPPED
+    elif pending and owned and not stale and str(run.get("status") or "").lower() == RUNNING:
+        state = RUNNING
+    elif pending:
+        state = INTERRUPTED
+    elif succeeded and failed:
+        state = PARTIAL
+    elif succeeded:
+        state = COMPLETED
+    else:
+        state = FAILED
+    return EvaluationRunStatus(
+        run_id=run_id,
+        score_run_id=next(iter(score_run_ids)),
+        state=state,
+        total=len(answer_pairs),
+        succeeded=succeeded,
+        failed=failed,
+        pending=pending,
+        resumable=state == INTERRUPTED,
+        message=str(run.get("last_persistence_error") or ""),
+        persistence_failed_in_session=stopped_here,
+    )
+
+
 class EvaluationWorkflow:
     """Run each answer and its judge score as one durable queue pair."""
 
@@ -118,6 +189,7 @@ class EvaluationWorkflow:
         self.judge_provider = judge_provider
         self.now = now
         self._session_stopped_run_ids: set[str] = set()
+        self._owned_run_ids: set[str] = set()
 
     def start_evaluation(self, config: EvaluationConfig) -> EvaluationRunRef:
         judge_model = self._validate_config(config)
@@ -151,7 +223,46 @@ class EvaluationWorkflow:
             )
         except Exception as exc:
             self._stop(run_id, "could not initialize evaluation queues", exc)
+        self._owned_run_ids.add(run_id)
+        self._execute_items(ref, config, judge_model)
+        return ref
 
+    def load_evaluation_status(self, run_id: str) -> EvaluationRunStatus:
+        run, answers, scores = self._checkpoint_rows(run_id)
+        return derive_status(
+            run,
+            answers,
+            scores,
+            self._run_is_stale(run),
+            stopped_here=run_id in self._session_stopped_run_ids,
+            owned=run_id in self._owned_run_ids,
+        )
+
+    def continue_evaluation(self, run_id: str, config: EvaluationConfig) -> EvaluationRunStatus:
+        """Claim a compatible persisted run and execute only its unfinished pairs."""
+        judge_model = self._validate_config(config)
+        run, answers, scores = self._checkpoint_rows(run_id)
+        self._assert_checkpoint_matches(run, config)
+        self._assert_config_pairs_match(config, answers)
+        stale_before = _naive_utc(self.now()) - timedelta(seconds=inactivity_threshold(config))
+        try:
+            claimed = self.store.claim_run(run_id, stale_before)
+        except Exception as exc:
+            self._stop(run_id, "could not claim evaluation run", exc)
+        if not claimed:
+            return self.load_evaluation_status(run_id)
+        self._owned_run_ids.add(run_id)
+        self._session_stopped_run_ids.discard(run_id)
+        ref = EvaluationRunRef(run_id, derive_status(run, answers, scores, self._run_is_stale(run)).score_run_id)
+        self._execute_items(ref, config, judge_model)
+        return self.load_evaluation_status(run_id)
+
+    def _execute_items(
+        self,
+        ref: EvaluationRunRef,
+        config: EvaluationConfig,
+        judge_model: str,
+    ) -> None:
         for item in config.queue_items:
             try:
                 self._execute_item(ref, config, item, judge_model)
@@ -160,53 +271,56 @@ class EvaluationWorkflow:
             except WorkflowStopped:
                 raise
             except Exception as exc:
-                self._stop(run_id, "could not persist evaluation outcome", exc)
-        return ref
+                self._stop(ref.run_id, "could not persist evaluation outcome", exc)
 
-    def load_evaluation_status(self, run_id: str) -> EvaluationRunStatus:
+    def _checkpoint_rows(
+        self, run_id: str
+    ) -> tuple[Mapping[str, Any], list[Mapping[str, Any]], list[Mapping[str, Any]]]:
         run_rows = self.store.list_rows("live_evaluation_runs", run_id=run_id)
-        if not run_rows:
-            raise WorkflowStopped("evaluation run does not exist")
-        run = run_rows[0]
-        answer_rows = self.store.list_rows("live_run_queue", run_id=run_id)
-        score_rows = self.store.list_rows("live_score_queue", run_id=run_id)
-        score_run_id = str(score_rows[0].get("score_run_id") or "") if score_rows else ""
-        score_by_pair = {
-            (str(row.get("case_id") or ""), str(row.get("eval_model") or "")): str(row.get("status") or "")
-            for row in score_rows
-        }
-        succeeded = failed = pending = 0
-        for row in answer_rows:
-            pair = (str(row.get("case_id") or ""), str(row.get("model_id") or ""))
-            answer_state = str(row.get("status") or "")
-            score_state = score_by_pair.get(pair, "")
-            if answer_state == "success" and score_state == "success":
-                succeeded += 1
-            elif answer_state == "failed" or score_state in {"failed", "skipped"}:
-                failed += 1
-            else:
-                pending += 1
-        if pending:
-            stored = str(run.get("status") or RUNNING)
-            state = stored if stored in {INTERRUPTED, STOPPED} else RUNNING
-        elif succeeded and failed:
-            state = PARTIAL
-        elif succeeded:
-            state = COMPLETED
-        else:
-            state = FAILED
-        return EvaluationRunStatus(
-            run_id=run_id,
-            score_run_id=score_run_id,
-            state=state,
-            total=len(answer_rows),
-            succeeded=succeeded,
-            failed=failed,
-            pending=pending,
-            resumable=state in {INTERRUPTED, STOPPED},
-            message=str(run.get("last_persistence_error") or ""),
-            persistence_failed_in_session=run_id in self._session_stopped_run_ids,
+        answers = self.store.list_rows("live_run_queue", run_id=run_id)
+        scores = self.store.list_rows("live_score_queue", run_id=run_id)
+        if len(run_rows) != 1:
+            raise WorkflowCheckpointError("evaluation checkpoint is missing")
+        # Validation is deliberately done by the pure state derivation before any write.
+        derive_status(run_rows[0], answers, scores, stale=False)
+        return run_rows[0], answers, scores
+
+    def _run_is_stale(self, run: Mapping[str, Any]) -> bool:
+        threshold = max(
+            900.0,
+            max(
+                _positive_number(_checkpoint_parameters(run, "generation_parameters_json").get("timeout_seconds")),
+                _positive_number(_checkpoint_parameters(run, "judge_parameters_json").get("timeout_seconds")),
+            )
+            + 120.0,
         )
+        updated_at = _checkpoint_datetime(run.get("updated_at"))
+        return updated_at <= _naive_utc(self.now()) - timedelta(seconds=threshold)
+
+    def _assert_checkpoint_matches(self, run: Mapping[str, Any], config: EvaluationConfig) -> None:
+        current = build_run_metadata(
+            run_id=_required_checkpoint_text(run.get("run_id")),
+            provider=config.provider_name,
+            model_ids=config.model_ids,
+            queue_items=config.queue_items,
+            generation_parameters=config.generation_parameters,
+            judge_parameters=config.judge_parameters,
+            dataset_version=config.dataset_version,
+            prompt_payload=config.prompt_payload,
+        )
+        scalar_keys = ("dataset_version", "dataset_hash", "prompt_hash")
+        json_keys = ("model_ids_json", "generation_parameters_json", "judge_parameters_json")
+        if any(str(run.get(key) or "") != str(current.get(key) or "") for key in scalar_keys):
+            raise WorkflowCheckpointError("evaluation checkpoint does not match current configuration")
+        if any(_canonical_json(run.get(key), [] if key == "model_ids_json" else {}) != _canonical_json(current[key], [] if key == "model_ids_json" else {}) for key in json_keys):
+            raise WorkflowCheckpointError("evaluation checkpoint does not match current configuration")
+
+    @staticmethod
+    def _assert_config_pairs_match(config: EvaluationConfig, answers: list[Mapping[str, Any]]) -> None:
+        configured = [(str(item["case_id"]), str(item["model_id"])) for item in config.queue_items]
+        persisted = [(str(row["case_id"]), str(row["model_id"])) for row in answers]
+        if len(configured) != len(set(configured)) or set(configured) != set(persisted):
+            raise WorkflowCheckpointError("evaluation checkpoint does not match current queue")
 
     def _execute_item(
         self,
@@ -367,3 +481,59 @@ def _number(value: Any, default: float) -> float:
 
 def _integer(value: Any, default: int) -> int:
     return int(_number(value, float(default)))
+
+
+def _required_checkpoint_text(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        raise WorkflowCheckpointError("evaluation checkpoint is incomplete")
+    return text
+
+
+def _queue_status(row: Mapping[str, Any]) -> str:
+    status = str(row.get("status") or "").strip().lower()
+    if status not in {"queued", "running", "success", "failed", "skipped"}:
+        raise WorkflowCheckpointError("evaluation checkpoint is inconsistent")
+    return status
+
+
+def _canonical_json(value: Any, default: Any) -> str:
+    if value in (None, ""):
+        parsed = default
+    elif isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except (TypeError, ValueError) as exc:
+            raise WorkflowCheckpointError("evaluation checkpoint has invalid metadata") from exc
+    else:
+        parsed = value
+    try:
+        return json.dumps(parsed, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError) as exc:
+        raise WorkflowCheckpointError("evaluation checkpoint has invalid metadata") from exc
+
+
+def _checkpoint_parameters(run: Mapping[str, Any], name: str) -> Mapping[str, Any]:
+    default: dict[str, Any] = {}
+    canonical = _canonical_json(run.get(name), default)
+    parsed = json.loads(canonical)
+    if not isinstance(parsed, Mapping):
+        raise WorkflowCheckpointError("evaluation checkpoint has invalid metadata")
+    return parsed
+
+
+def _checkpoint_datetime(value: Any) -> datetime:
+    if isinstance(value, datetime):
+        return _naive_utc(value)
+    if isinstance(value, str):
+        try:
+            return _naive_utc(datetime.fromisoformat(value.replace("Z", "+00:00")))
+        except ValueError as exc:
+            raise WorkflowCheckpointError("evaluation checkpoint has invalid timestamp") from exc
+    raise WorkflowCheckpointError("evaluation checkpoint has invalid timestamp")
+
+
+def _naive_utc(value: datetime) -> datetime:
+    if value.tzinfo is not None:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value

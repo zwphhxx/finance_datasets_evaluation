@@ -119,11 +119,25 @@ def test_score_export_reader_uses_result_store(monkeypatch):
                     "case_id": "FD-001",
                     "eval_model": "vendor/model",
                     "judge_status": "success",
+                    "judge_mode": "live",
+                    "judge_provider": "test-live",
                     "review_status": "ai_final",
                     "status": "active",
                     "total_score": 88,
                 }
-            ]
+            ],
+            "live_run_responses": [
+                {
+                    "run_id": "RUN-1",
+                    "case_id": "FD-001",
+                    "model_name": "vendor/model",
+                    "provider": "test-live",
+                    "run_mode": "live",
+                    "run_status": "success",
+                    "answer_text": "saved answer",
+                    "status": "active",
+                }
+            ],
         }
     )
     monkeypatch.setattr("app.persistence.get_result_store", lambda db_path=None: store)
@@ -131,4 +145,4 @@ def test_score_export_reader_uses_result_store(monkeypatch):
     rows = scorer.load_exportable_score_rows()
 
     assert rows[0]["total_score"] == 88
-    assert store.reads == [("live_run_scores", {})]
+    assert store.reads == [("live_run_scores", {}), ("live_run_responses", {})]
