@@ -6,6 +6,8 @@ import warnings
 import src.ui.components as components
 from src.ui.navigation import _TOP_NAV_ITEMS, PAGES
 from src.ui.page_config import PAGE_CONFIG_BY_KEY
+from src.ui.case_study import build_home_facts
+from src.data_service import load_all_data
 
 
 class ComponentRenderTests(unittest.TestCase):
@@ -41,6 +43,13 @@ class ComponentRenderTests(unittest.TestCase):
         html = "".join(self._captured)
         self.assertIn("detail-panel", html)
         self.assertIn("inline-status", html)
+
+    def test_home_facts_are_derived_from_dataset_and_rubric(self):
+        facts = build_home_facts(load_all_data())
+
+        self.assertEqual(("当前样本", "13"), facts[0])
+        self.assertEqual(("覆盖领域", "3"), facts[1])
+        self.assertEqual(("评分总分", "100"), facts[2])
 
 
 class WorkflowNavTests(unittest.TestCase):

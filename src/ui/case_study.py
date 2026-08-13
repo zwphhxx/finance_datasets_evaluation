@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.services import dataset_service as ds
 from src.ui.components import (
     PROJECT_DISPLAY_NAME,
     render_brief_intro,
@@ -9,6 +10,27 @@ from src.ui.components import (
 )
 
 PROCESS_STEPS = ["人工录入样本库", "发起模型评测", "生成 AI 评分", "进入评测结论"]
+
+
+def build_home_facts(base) -> list[tuple[str, str]]:
+    """Build cover facts from the active dataset and scoring dimensions."""
+
+    tasks = getattr(base, "tasks", None)
+    sample_count = 0 if tasks is None else len(tasks)
+    domain_count = (
+        0
+        if tasks is None or "domain" not in getattr(tasks, "columns", [])
+        else int(tasks["domain"].dropna().nunique())
+    )
+    score_total = sum(
+        int(dimension.get("full_mark") or 0)
+        for dimension in ds.get_rubric_dimensions()
+    )
+    return [
+        ("当前样本", str(sample_count)),
+        ("覆盖领域", str(domain_count)),
+        ("评分总分", str(score_total)),
+    ]
 
 
 def scored_case_count(scores_df) -> int:
@@ -54,6 +76,7 @@ def render_case_study_page(data_bundle: dict) -> None:
             "本项目评估大模型在财务、法律、投行等专业任务中的回答质量，"
             "并在当前样本范围内识别模型的主要问题和使用边界。"
         ),
+        facts=build_home_facts(base),
     )
 
     render_home_section(

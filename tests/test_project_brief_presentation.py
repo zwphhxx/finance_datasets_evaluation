@@ -19,14 +19,14 @@ class CaseStudyPresentationTests(unittest.TestCase):
             self.assertIn(section, source)
         self.assertNotIn("04\", \"进入操作", source)
 
-    def test_case_study_intro_restores_title_without_subtitle_or_stats(self):
+    def test_case_study_intro_keeps_title_and_adds_derived_facts(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         self.assertIn("render_brief_intro(", source)
         self.assertIn("PROJECT_DISPLAY_NAME", source)
         self.assertIn("专业任务中的回答质量", source)
         self.assertIn("识别模型的主要问题和使用边界", source)
         self.assertNotIn("subtitle=", source)
-        self.assertNotIn("stats=", source)
+        self.assertIn("facts=build_home_facts(base)", source)
         self.assertNotIn("_build_home_stats", source)
         self.assertNotIn("当前样本 13 个", source)
         self.assertNotIn("覆盖专业场景", source)
@@ -74,13 +74,14 @@ class CaseStudyPresentationTests(unittest.TestCase):
         self.assertIn('title="评测流程"', source)
         self.assertLess(source.index('title="评测流程"'), source.index("process_steps=PROCESS_STEPS"))
 
-    def test_brief_and_section_title_styles_are_stronger(self):
+    def test_brief_and_section_title_styles_follow_report_system(self):
         css = Path("src/ui/components.py").read_text(encoding="utf-8")
         for snippet in [
             "letter-spacing: 0;",
             ".brief-title",
-            "font-size: 2.35rem;",
-            "border-left: 2px solid var(--fde-accent);",
+            "font-size: clamp(2.6rem, 5vw, 4.65rem);",
+            "border-left: 2px solid var(--fde-gold);",
+            ".brief-facts",
             ".home-section-first",
             "border-top: 0;",
             ".section-heading {",
@@ -98,7 +99,7 @@ class CaseStudyPresentationTests(unittest.TestCase):
         self.assertNotIn(".brief-subtitle", css)
         self.assertNotIn(".brief-meta", css)
 
-    def test_brief_intro_outputs_title_and_note_without_subtitle_or_stats(self):
+    def test_brief_intro_outputs_title_note_and_facts(self):
         import src.ui.components as components
 
         captured = []
@@ -110,7 +111,8 @@ class CaseStudyPresentationTests(unittest.TestCase):
                 note=(
                     "本项目评估大模型在财务、法律、投行等专业任务中的回答质量，"
                     "并在当前样本范围内识别模型的主要问题和使用边界。"
-                )
+                ),
+                facts=[("当前样本", "13"), ("评分总分", "100")],
             )
         finally:
             components.render_html = original
@@ -120,6 +122,8 @@ class CaseStudyPresentationTests(unittest.TestCase):
         self.assertIn("<h1", html)
         self.assertIn(components.PROJECT_DISPLAY_NAME, html)
         self.assertIn("brief-note", html)
+        self.assertIn("brief-facts", html)
+        self.assertIn("当前样本", html)
         self.assertNotIn("brief-subtitle", html)
         self.assertNotIn("brief-meta", html)
 
