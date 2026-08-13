@@ -18,6 +18,8 @@ from unittest.mock import patch
 import pandas as pd
 
 from app.services import conclusions as cc
+from app.services.conclusion_read_model import build_conclusion_report
+from app.persistence.result_store import ResultStoreError
 from src.data_service import load_all_data
 from src.ui.navigation import PAGES
 from src.ui.page_config import PAGE_CONFIG_BY_KEY
@@ -107,6 +109,42 @@ class DisplayNameTests(unittest.TestCase):
 
 
 class FormalConclusionTests(unittest.TestCase):
+    def test_report_uses_one_formal_cohort_for_scope_summaries_and_evidence(self):
+        tasks = pd.DataFrame([
+            {"case_id": "C1", "title": "Current task"},
+            {"case_id": "C2", "title": "Current task two"},
+        ])
+        scores = pd.DataFrame([
+            _cohort_score(1, "RUN-LIVE", "C1", "vendor/live", updated_at="2026-07-17T11:00:00"),
+            _cohort_score(2, "RUN-DEMO", "C2", "vendor/demo", updated_at="2026-07-17T11:01:00", judge_mode="demo"),
+            _cohort_score(3, "RUN-MOCK", "C2", "vendor/mock", updated_at="2026-07-17T11:02:00", judge_provider="mock"),
+            _cohort_score(4, "RUN-ORPHAN", "C1", "vendor/orphan", updated_at="2026-07-17T11:03:00"),
+            _cohort_score(5, "RUN-OUT", "C3", "vendor/out", updated_at="2026-07-17T11:04:00"),
+        ])
+        responses = pd.DataFrame([
+            {"run_id": "RUN-LIVE", "case_id": "C1", "model_name": "vendor/live", "run_status": "success", "run_mode": "live", "provider": "vendor", "answer_text": "formal answer"},
+            {"run_id": "RUN-DEMO", "case_id": "C2", "model_name": "vendor/demo", "run_status": "success", "run_mode": "demo", "provider": "vendor", "answer_text": "demo answer"},
+        ])
+        scores_before = scores.copy(deep=True)
+        responses_before = responses.copy(deep=True)
+        tasks_before = tasks.copy(deep=True)
+
+        report = build_conclusion_report(
+            scores_df=scores,
+            responses_df=responses,
+            tasks_df=tasks,
+            gold_map={"C1": {"gold": "answer"}},
+            dimensions=({"field": "accuracy_score", "full_mark": 25},),
+        )
+
+        self.assertEqual((1, 1, 1), (report.scope.sample_count, report.scope.model_count, report.scope.formal_score_count))
+        self.assertEqual(["vendor/live"], [row["model_name"] for row in report.model_summaries])
+        self.assertEqual({"vendor/live"}, set(report.evidence_by_model))
+        self.assertEqual("formal answer", report.evidence_by_model["vendor/live"][0].answer_text)
+        pd.testing.assert_frame_equal(scores, scores_before)
+        pd.testing.assert_frame_equal(responses, responses_before)
+        pd.testing.assert_frame_equal(tasks, tasks_before)
+
     def test_seed_conclusions_do_not_enter_formal(self):
         seed = _seed_scores()
         conclusions = cc.build_formal_conclusions(seed, pd.DataFrame())
@@ -226,6 +264,17 @@ class FormalConclusionTests(unittest.TestCase):
 
 
 class CompatibleCohortTests(unittest.TestCase):
+    def test_partial_run_keeps_formal_success_and_removes_failed_rows(self):
+        runs = pd.DataFrame([_run_row("RUN-PARTIAL", created_at="2026-07-17T10:00:00", status="partial")])
+        scores = pd.DataFrame([
+            _cohort_score(1, "RUN-PARTIAL", "C1", "model-a", updated_at="2026-07-17T11:00:00"),
+            _cohort_score(2, "RUN-PARTIAL", "C2", "model-a", updated_at="2026-07-17T11:01:00", judge_status="failed"),
+        ])
+
+        selected = cc.select_current_cohort_scores(runs, scores)
+
+        self.assertEqual([1], selected["id"].tolist())
+
     def test_compatible_runs_merge_even_when_json_key_order_differs(self):
         runs = pd.DataFrame([
             _run_row("RUN-OLD", created_at="2026-07-16T10:00:00"),
@@ -285,7 +334,7 @@ class CompatibleCohortTests(unittest.TestCase):
         ai_scores, excluded = cc.split_live_scores(selected)
 
         self.assertEqual([11], ai_scores["id"].tolist())
-        self.assertEqual([12], excluded["id"].tolist())
+        self.assertTrue(excluded.empty)
 
     def test_database_id_breaks_ties_between_equally_timed_successes(self):
         runs = pd.DataFrame([
@@ -486,6 +535,11 @@ class RobustnessTests(unittest.TestCase):
         missing = Path(tempfile.gettempdir()) / "definitely_missing_findueval.db"
         self.assertTrue(cc.load_live_scores(missing).empty)
         self.assertTrue(cc.load_live_responses(missing).empty)
+
+    def test_strict_loader_wraps_storage_errors_without_exposing_details(self):
+        with patch("app.persistence.get_result_store", side_effect=RuntimeError("secret connection detail")):
+            with self.assertRaisesRegex(ResultStoreError, "could not read conclusion data"):
+                cc.load_live_scores(suppress_errors=False)
 
 
 class FrequentIssuesTests(unittest.TestCase):
