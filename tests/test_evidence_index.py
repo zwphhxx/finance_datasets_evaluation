@@ -127,6 +127,28 @@ def test_duplicate_score_row_selects_latest_and_exact_run_answer_join_prevents_l
     assert by_id[0].total_score == 8.0
 
 
+def test_duplicate_rows_use_per_row_recency_fallback_then_stable_input_order():
+    newer_created = build_evidence_index(
+        pd.DataFrame([
+            _score("C1", total=10, updated_at="2025-01-01T00:00:00Z", created_at="2025-01-01T00:00:00Z"),
+            _score("C1", total=20, updated_at=None, created_at="2025-02-01T00:00:00Z"),
+        ]),
+        pd.DataFrame(), _tasks("C1"), {}, DIMENSIONS, "model/full",
+    )
+    higher_id = build_evidence_index(
+        pd.DataFrame([_score("C2", total=1, id=1), _score("C2", total=2, id=2)]),
+        pd.DataFrame(), _tasks("C2"), {}, DIMENSIONS, "model/full",
+    )
+    stable_last = build_evidence_index(
+        pd.DataFrame([_score("C3", total=1), _score("C3", total=2)]),
+        pd.DataFrame(), _tasks("C3"), {}, DIMENSIONS, "model/full",
+    )
+
+    assert newer_created[0].total_score == 20.0
+    assert higher_id[0].total_score == 2.0
+    assert stable_last[0].total_score == 2.0
+
+
 def test_rationale_title_fallbacks_and_input_objects_remain_unchanged():
     scores = pd.DataFrame([
         _score("C1", total=1, rationale='{"mapped": true}'),

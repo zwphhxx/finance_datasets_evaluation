@@ -101,15 +101,10 @@ def _latest_score_rows(scores: pd.DataFrame, model_name: str) -> list[dict[str, 
     ]
     if not candidates:
         return []
-    timestamp_columns = tuple(column for column in ("updated_at", "created_at") if column in scores.columns)
-    has_id = "id" in scores.columns
-    latest: dict[tuple[str, str, str], tuple[tuple[object, ...], dict[str, Any]]] = {}
+    latest: dict[tuple[str, str, str], tuple[tuple[int, float, int], dict[str, Any]]] = {}
     for position, row in enumerate(candidates):
         key = (_text(row.get("run_id")), _text(row.get("case_id")), _text(row.get("eval_model")))
-        rank = tuple(_timestamp_number(row.get(column)) for column in timestamp_columns)
-        if has_id:
-            rank += (_id_rank(row.get("id")),)
-        rank += (float(position),)
+        rank = _recency_rank(row, position)
         current = latest.get(key)
         if current is None or rank >= current[0]:
             latest[key] = (rank, row)
@@ -251,16 +246,23 @@ def _number(value: object) -> float | None:
     return number if math.isfinite(number) else None
 
 
-def _timestamp_number(value: object) -> float:
+def _recency_rank(row: Mapping[str, Any], position: int) -> tuple[int, float, int]:
+    updated_at = _timestamp_number(row.get("updated_at"))
+    created_at = _timestamp_number(row.get("created_at"))
+    timestamp = updated_at if updated_at is not None else created_at
+    if timestamp is not None:
+        return (2, timestamp, position)
+    identifier = _number(row.get("id"))
+    if identifier is not None:
+        return (1, identifier, position)
+    return (0, float(position), position)
+
+
+def _timestamp_number(value: object) -> float | None:
     if value is None:
-        return float("-inf")
+        return None
     try:
         timestamp = pd.Timestamp(value)
-        return timestamp.timestamp() if not pd.isna(timestamp) else float("-inf")
+        return timestamp.timestamp() if not pd.isna(timestamp) else None
     except (TypeError, ValueError, OverflowError):
-        return float("-inf")
-
-
-def _id_rank(value: object) -> tuple[int, float | str]:
-    number = _number(value)
-    return (1, number) if number is not None else (0, _text(value))
+        return None
