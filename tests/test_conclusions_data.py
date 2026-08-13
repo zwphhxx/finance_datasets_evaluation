@@ -79,6 +79,34 @@ def test_conclusion_source_only_catches_expected_database_failures(monkeypatch):
     cd.load_conclusion_source.clear()
 
 
+def test_transient_unavailable_conclusion_source_is_not_cached(monkeypatch):
+    from src.ui import conclusions_data as cd
+
+    calls = {"runs": 0}
+
+    def load_runs(*, suppress_errors=True):
+        calls["runs"] += 1
+        if calls["runs"] == 1:
+            raise ResultStoreError("temporary outage")
+        return pd.DataFrame()
+
+    monkeypatch.setattr(cd.cc, "load_evaluation_runs", load_runs)
+    monkeypatch.setattr(cd.cc, "load_live_scores", lambda *, suppress_errors=True: pd.DataFrame())
+    monkeypatch.setattr(cd.cc, "load_live_responses", lambda *, allowed_case_ids=None, suppress_errors=True: pd.DataFrame())
+    monkeypatch.setattr(cd.cc, "select_current_cohort_scores", lambda runs, scores, *, allowed_case_ids=None: scores)
+    cd.load_conclusion_source.clear()
+
+    first = cd.load_conclusion_source(("C1",), ({"case_id": "C1"},), (), ())
+    second = cd.load_conclusion_source(("C1",), ({"case_id": "C1"},), (), ())
+    third = cd.load_conclusion_source(("C1",), ({"case_id": "C1"},), (), ())
+
+    assert first.available is False
+    assert second.available is True
+    assert third.available is True
+    assert calls["runs"] == 2
+    cd.load_conclusion_source.clear()
+
+
 def test_conclusion_source_rebuilds_tuple_gold_records_for_evidence(monkeypatch):
     from src.ui import conclusions_data as cd
 
