@@ -103,4 +103,3 @@ def test_legacy_live_records_without_provider_columns_remain_eligible():
 
     assert fr.formal_response_mask(responses).tolist() == [True]
     assert fr.formal_score_mask(scores, responses=responses).tolist() == [True]
-

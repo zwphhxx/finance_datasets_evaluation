@@ -50,18 +50,6 @@ from src.ui.test_run import (
 
 
 class TestRunFlowStructureTests(unittest.TestCase):
-    def test_nonformal_partial_runs_do_not_render_recovery_actions(self):
-        source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
-        results_source = source[
-            source.index("def _render_results"):
-            source.index("def _render_unfinished_run_without_result")
-        ]
-
-        self.assertIn(
-            'if run_status in {"running", "interrupted", "failed"} and _recovery_state_eligible(result, state):',
-            results_source,
-        )
-
     def test_main_steps_are_execution_flow(self):
         from src.ui.test_run import TEST_RUN_STEPS
 
@@ -667,22 +655,24 @@ class PersistedAnswerRecoveryTests(unittest.TestCase):
     def test_nonformal_unfinished_run_is_not_a_recovery_candidate(self):
         from src.ui import test_run as page
 
-        result = er.CompareRunResult(
-            run_id="RUN-MOCK",
-            provider="mock",
-            model_ids=("mock/chat",),
-            mode="mock",
-            created_at="2026-08-13T10:00:00",
-            outcomes=(),
-        )
-        state = {
-            "status": "interrupted",
-            "provider": "mock",
-            "mode": "mock",
-            "queue_items": [{"case_id": "FD-001", "model_id": "mock/chat", "provider": "mock"}],
-        }
+        for provider, mode in (("mock", "mock"), ("demo", "demo")):
+            with self.subTest(provider=provider, mode=mode):
+                result = er.CompareRunResult(
+                    run_id=f"RUN-{mode.upper()}",
+                    provider=provider,
+                    model_ids=(f"{provider}/chat",),
+                    mode=mode,
+                    created_at="2026-08-13T10:00:00",
+                    outcomes=(),
+                )
+                state = {
+                    "status": "interrupted",
+                    "provider": provider,
+                    "mode": mode,
+                    "queue_items": [{"case_id": "FD-001", "model_id": f"{provider}/chat", "provider": provider}],
+                }
 
-        self.assertIsNone(page._recoverable_evaluation_run(result, state))
+                self.assertIsNone(page._recoverable_evaluation_run(result, state))
 
     def test_live_unfinished_run_remains_a_recovery_candidate(self):
         from src.ui import test_run as page
