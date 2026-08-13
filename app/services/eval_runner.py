@@ -632,11 +632,16 @@ def mark_run_queue_item_running(
     model_id: str,
     *,
     db_path: Path | None = None,
+    combined: bool = False,
 ) -> bool:
     """将一条模型回答队列项标记为运行中，并增加尝试次数。"""
     try:
         store = _runtime_result_store(db_path)
-        return bool(store and store.mark_run_item_running(run_id, case_id, model_id))
+        if store is None:
+            return False
+        if combined:
+            return bool(store.mark_run_item_running(run_id, case_id, model_id, combined=True))
+        return bool(store.mark_run_item_running(run_id, case_id, model_id))
     except Exception:
         return False
 
@@ -647,15 +652,18 @@ def persist_run_outcome(
     outcome: RunOutcome,
     *,
     db_path: Path | None = None,
+    combined: bool = False,
 ) -> bool:
     """逐条写入模型回答，并同步 live_run_queue 状态。"""
     try:
         store = _runtime_result_store(db_path)
         if store is None:
             return False
+        kwargs = {"combined": True} if combined else {}
         return store.save_run_outcome(
-            _run_outcome_row(run_id, mode, outcome),
+            serialize_run_outcome(run_id, mode, outcome),
             queue_status="success" if outcome.success else "failed",
+            **kwargs,
         )
     except Exception:
         return False
@@ -999,6 +1007,11 @@ def _build_fallback_run_metadata(
         dataset_version="",
         prompt_payload={"system": _SYSTEM_PROMPT, "output_hint": _OUTPUT_HINT},
     )
+
+
+def serialize_run_outcome(run_id: str, mode: str, outcome: RunOutcome) -> dict[str, Any]:
+    """Serialize one answer outcome at the persistence boundary."""
+    return _run_outcome_row(run_id, mode, outcome)
 
 
 def _run_outcome_row(run_id: str, mode: str, outcome: RunOutcome) -> dict[str, Any]:

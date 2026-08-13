@@ -481,7 +481,7 @@ def persist_score_outcome(
                 ]
             )
         return store.save_score_outcome(
-            _score_outcome_row(
+            serialize_score_outcome(
                 score_run_id,
                 run_id,
                 judge_provider,
@@ -677,6 +677,25 @@ def _score_outcome_row(
     for field_name, value in outcome.scores.items():
         row[field_name] = value
     return row
+
+
+def serialize_score_outcome(
+    score_run_id: str,
+    run_id: str,
+    judge_provider: str,
+    judge_model: str,
+    mode: str,
+    outcome: ScoreOutcome,
+) -> dict[str, Any]:
+    """Serialize one score outcome at the persistence boundary."""
+    return _score_outcome_row(
+        score_run_id,
+        run_id,
+        judge_provider,
+        judge_model,
+        mode,
+        outcome,
+    )
 
 
 def _score_queue_row(
