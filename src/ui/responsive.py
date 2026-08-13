@@ -6,6 +6,10 @@ MOBILE_RESPONSIVE_CSS = r"""
     gap: 1rem;
     grid-template-columns: 1fr 1fr 1.2fr;
 }
+.st-key-samples_mobile_index,
+.st-key-conclusion_mobile_judgment {
+    display: none;
+}
 
 @media (min-width: 761px) and (max-width: 860px) {
     .block-container {
@@ -38,7 +42,7 @@ MOBILE_RESPONSIVE_CSS = r"""
     }
     .brief-facts {
         gap: 0.85rem 1rem;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         margin-top: 1.35rem;
     }
     .executive-takeaway {
@@ -70,7 +74,7 @@ MOBILE_RESPONSIVE_CSS = r"""
     .st-key-samples_title_bar [data-testid="stHorizontalBlock"] {
         display: grid;
         gap: 0.55rem;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: 1fr;
         width: 100%;
     }
     .st-key-samples_title_bar [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
@@ -79,7 +83,6 @@ MOBILE_RESPONSIVE_CSS = r"""
         width: auto !important;
     }
     .st-key-samples_title_bar [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:first-child {
-        grid-column: 1 / -1;
         width: 100% !important;
     }
     .st-key-samples_title_bar .stButton > button {
@@ -111,29 +114,32 @@ MOBILE_RESPONSIVE_CSS = r"""
         gap: 0.55rem;
         grid-template-columns: 1fr;
     }
+    .block-container [data-testid="stLayoutWrapper"]:has(> [data-testid="stHorizontalBlock"] .top-nav-brand) {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+    }
     .block-container [data-testid="stHorizontalBlock"]:has(.top-nav-brand) {
         align-items: center;
-        background: color-mix(in srgb, var(--fde-bg) 92%, transparent);
+        background: var(--fde-bg);
         border-bottom: 1px solid var(--fde-line);
         box-sizing: border-box;
         display: grid;
         gap: 0.4rem;
-        grid-template-columns: repeat(4, max-content);
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         margin: 0 -0.875rem;
         max-width: none;
-        overflow-x: auto;
         padding: 0.45rem 0.875rem 0.55rem;
-        position: sticky;
-        scrollbar-width: thin;
+        position: static;
         top: 0;
         width: 100vw;
-        z-index: 50;
+        z-index: auto;
     }
     .block-container [data-testid="stHorizontalBlock"]:has(.top-nav-brand)
         > [data-testid="stColumn"] {
         flex: 0 0 auto !important;
-        min-width: max-content;
-        width: auto !important;
+        min-width: 0;
+        width: 100% !important;
     }
     .block-container [data-testid="stHorizontalBlock"]:has(.top-nav-brand)
         > [data-testid="stColumn"]:first-child {
@@ -142,18 +148,29 @@ MOBILE_RESPONSIVE_CSS = r"""
         width: 100% !important;
     }
     [data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton {
-        justify-content: flex-start;
+        justify-content: center;
+        width: 100%;
     }
     [data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton > button {
-        justify-content: flex-start;
+        justify-content: center;
         min-height: 44px;
         padding-left: 0.65rem;
         padding-right: 0.65rem;
+        width: 100%;
     }
-    [data-testid="stColumn"]:has(.top-nav-current-marker) .stButton > button::after {
+    [data-testid="stHorizontalBlock"]:has(.top-nav-brand)
+        .stButton > button[kind="secondary"]::after {
         bottom: 0.1rem;
         left: 0.65rem;
         right: 0.65rem;
+    }
+    .st-key-samples_mobile_index,
+    .st-key-conclusion_mobile_judgment {
+        display: block;
+    }
+    .st-key-samples_desktop_index,
+    .st-key-conclusion_desktop_judgment {
+        display: none;
     }
     [data-testid="stMarkdownContainer"] .page-title-heading {
         font-size: 1.3rem;
@@ -307,6 +324,11 @@ MOBILE_RESPONSIVE_CSS = r"""
     .stFormSubmitButton > button {
         min-height: 44px;
     }
+    .st-key-test_run_score_action,
+    .st-key-test_run_score_action .stButton,
+    .st-key-test_run_score_action .stButton > button {
+        width: 100%;
+    }
 }
 
 @media (max-width: 480px) {
@@ -322,6 +344,11 @@ MOBILE_RESPONSIVE_CSS = r"""
     }
     .top-nav-brand {
         font-size: 0.86rem;
+    }
+    [data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton > button {
+        font-size: 0.82rem;
+        padding-left: 0.2rem;
+        padding-right: 0.2rem;
     }
     [data-testid="stMarkdownContainer"] .brief-title {
         font-size: 1.6rem;

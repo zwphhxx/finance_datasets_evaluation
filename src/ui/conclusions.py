@@ -15,7 +15,6 @@ from app.persistence import current_result_store_failure
 from app.services import conclusions as cc
 from app.services import dataset_service as ds
 from app.services import scorer as sc
-from src.charts import themed_bar_chart
 from src.ui import conclusions_data as cd
 from src.ui.components import (
     render_badge,
@@ -30,6 +29,7 @@ from src.ui.components import (
     render_selection_echo,
 )
 from src.ui.page_config import get_page_config
+from src.ui.scroll import request_scroll
 
 
 def render_conclusions_page(data_bundle: dict) -> None:
@@ -97,12 +97,10 @@ def _render_data_source_notice(
         "仅代表当前样本范围内的自动评测结果。"
     )
     with st.container(key="conclusion_data_notice"):
-        col_text, col_action = st.columns([4.6, 1.0], gap="small")
-        with col_text:
-            st.caption(source_line)
-        with col_action:
-            if st.button("数据维护", type="tertiary", key="conclusion_data_maintenance", use_container_width=True):
-                _render_score_data_maintenance_dialog()
+        st.caption(source_line)
+    with st.container(key="conclusion_maintenance_entry"):
+        with st.popover("数据维护", type="tertiary", width="stretch"):
+            _render_score_data_maintenance_controls()
     if not ds.database_ready():
         st.caption("评分数据暂不可用。请先在发起评测页运行评测，或通过数据维护导入评分文件。")
 
@@ -117,8 +115,7 @@ def _render_data_source_notice(
             st.info(str(message["text"]))
 
 
-@st.dialog("数据维护", width="large")
-def _render_score_data_maintenance_dialog() -> None:
+def _render_score_data_maintenance_controls() -> None:
     st.markdown("**导出**")
     st.caption("导出当前已生成的 AI 评分结果；失败评分和演示数据不会进入结论。")
     payload = sc.export_score_payload(include_pending=False)
@@ -207,39 +204,67 @@ def _render_model_recommendations(model_summaries: list[dict]) -> None:
         return
 
     rows = [_recommendation_row(item) for item in model_summaries]
-    st.caption("点击表格任意行选择模型，在下方 02 区查看该模型的使用边界与回答。")
-    event = st.dataframe(
-        pd.DataFrame(rows),
-        hide_index=True,
-        use_container_width=True,
-        on_select="rerun",
-        selection_mode="single-row",
-        key="conclusion_model_judgment_table",
-        column_config={
-            "模型": st.column_config.TextColumn("模型", width="medium"),
-            "AI 评分样本数": st.column_config.NumberColumn("AI 评分样本数", width="small"),
-            "平均分": st.column_config.NumberColumn("平均分", format="%.1f", width="small"),
-            "当前判断": st.column_config.TextColumn("当前判断", width="medium"),
-            "主要依据": st.column_config.TextColumn("主要依据", width="large"),
-        },
-    )
-    selected_rows = getattr(getattr(event, "selection", None), "rows", None) or []
-    if selected_rows and 0 <= selected_rows[0] < len(model_summaries):
-        chosen = model_summaries[selected_rows[0]]
-        st.session_state["conclusion_selected_model"] = str(
-            chosen.get("display_name") or chosen.get("model_name") or ""
+    st.caption("选择模型，在下方 02 区查看该模型的使用边界与回答。")
+    with st.container(key="conclusion_desktop_judgment"):
+        event = st.dataframe(
+            pd.DataFrame(rows),
+            hide_index=True,
+            use_container_width=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="conclusion_model_judgment_table",
+            column_config={
+                "模型": st.column_config.TextColumn("模型", width="medium"),
+                "AI 评分样本数": st.column_config.NumberColumn("AI 评分样本数", width="small"),
+                "平均分": st.column_config.NumberColumn("平均分", format="%.1f", width="small"),
+                "当前判断": st.column_config.TextColumn("当前判断", width="medium"),
+                "主要依据": st.column_config.TextColumn("主要依据", width="large"),
+            },
         )
+        selected_rows = getattr(getattr(event, "selection", None), "rows", None) or []
+        if selected_rows and 0 <= selected_rows[0] < len(model_summaries):
+            chosen = model_summaries[selected_rows[0]]
+            chosen_name = str(chosen.get("display_name") or chosen.get("model_name") or "")
+            if st.session_state.get("conclusion_selected_model") != chosen_name:
+                st.session_state["conclusion_selected_model"] = chosen_name
+                request_scroll("#fde-model-details")
+    with st.container(key="conclusion_mobile_judgment"):
+        _render_mobile_model_cards(model_summaries)
     current_choice = st.session_state.get("conclusion_selected_model")
     if current_choice:
         render_selection_echo(f"已选 {current_choice}", "#fde-model-details", "详情见下方 02 ↓")
-    render_html('<div class="mobile-scroll-hint">表格可左右滑动查看完整内容</div>')
-    chart_rows = pd.DataFrame(
-        {
-            "模型": [str(item.get("display_name") or item.get("model_name") or "未标注模型") for item in model_summaries],
-            "平均分": [float(item.get("avg_total") or 0) for item in model_summaries],
-        }
-    )
-    themed_bar_chart(chart_rows, x="模型", y="平均分", x_title="模型", y_title="平均分", y_format=".1f")
+
+
+def _render_mobile_model_cards(model_summaries: list[dict]) -> None:
+    """Render model judgment rows as tap-friendly cards on narrow screens."""
+    current = str(st.session_state.get("conclusion_selected_model") or "")
+    for item in model_summaries:
+        row = _recommendation_row(item)
+        display = str(row["模型"])
+        active_class = " mobile-select-card-active" if display == current else ""
+        with st.container(border=True, key=f"conclusion_mobile_card_{_safe_key(display)}"):
+            render_html(
+                '<div class="mobile-select-card' + active_class + '">'
+                '<div class="mobile-select-card-head">'
+                f'<strong>{escape(display)}</strong>'
+                f'<span>{float(row["平均分"]):.1f} 分</span>'
+                "</div>"
+                f'<div class="mobile-select-card-title">{escape(str(row["当前判断"]))}</div>'
+                '<div class="mobile-select-card-meta">'
+                f'<span>{int(row["AI 评分样本数"])} 个样本</span>'
+                f'<span>{escape(str(row["主要依据"]))}</span>'
+                "</div>"
+                "</div>"
+            )
+            if st.button(
+                "查看回答",
+                key=f"conclusion_mobile_select_{_safe_key(display)}",
+                type="tertiary",
+                use_container_width=True,
+            ):
+                st.session_state["conclusion_selected_model"] = display
+                request_scroll("#fde-model-details")
+                st.rerun()
 
 
 def _recommendation_row(item: dict) -> dict[str, object]:

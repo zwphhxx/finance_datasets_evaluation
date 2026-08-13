@@ -200,7 +200,7 @@ class NavigationTests(unittest.TestCase):
     def test_top_nav_items_are_core_workflow(self):
         """主导航条目对应核心评测流程。"""
         labels = [label for label, _ in _TOP_NAV_ITEMS]
-        expected = ["项目说明", "样本库", "发起评测", "评测结论"]
+        expected = ["项目说明", "评测结论", "样本库", "发起评测"]
         self.assertEqual(labels, expected)
 
 

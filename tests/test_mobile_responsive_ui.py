@@ -62,16 +62,15 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             ".st-key-test_run_stage_configuration",
         ]:
             self.assertIn(selector, mobile_css)
-        self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", mobile_css)
+        self.assertIn("grid-template-columns: repeat(3, minmax(0, 1fr))", mobile_css)
 
-    def test_top_navigation_is_sticky_and_horizontally_scrollable(self):
+    def test_top_navigation_is_sticky_and_uses_equal_width_items(self):
         css = self._responsive_css()
 
         for contract in [
             '[data-testid="stHorizontalBlock"]:has(.top-nav-brand)',
             "position: sticky",
-            "overflow-x: auto",
-            "grid-template-columns: repeat(4, max-content)",
+            "grid-template-columns: repeat(4, minmax(0, 1fr))",
         ]:
             self.assertIn(contract, css)
 
@@ -192,8 +191,8 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             '.st-key-samples_title_bar [data-testid="stHorizontalBlock"]',
         )
         self.assertTrue(
-            any(re.search(r"grid-template-columns\s*:\s*1fr 1fr", rule) for rule in scoped_rules),
-            "the sample title actions stay side-by-side and compact on mobile",
+            any(re.search(r"grid-template-columns\s*:\s*1fr\s*;", rule) for rule in scoped_rules),
+            "the sample title and maintenance entry stack without squeezing the heading",
         )
 
     def test_sample_detail_tables_own_mobile_scroll_container(self):

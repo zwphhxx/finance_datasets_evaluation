@@ -179,22 +179,23 @@ class FormalConclusionTests(unittest.TestCase):
         self.assertEqual(1, summary["models"])
         self.assertEqual(2, summary["cases"])
 
-    def test_conclusion_page_uses_data_maintenance_dialog(self):
+    def test_conclusion_page_uses_data_maintenance_popover(self):
         source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
         notice_source = source[
             source.index("def _render_data_source_notice"):
-            source.index("@st.dialog(\"数据维护\"")
+            source.index("def _render_score_data_maintenance_controls")
         ]
-        dialog_source = source[source.index("@st.dialog(\"数据维护\""):]
+        maintenance_source = source[source.index("def _render_score_data_maintenance_controls"):]
 
         self.assertIn("当前结论来源：", notice_source)
         self.assertIn("data_source", notice_source)
         self.assertIn('"数据维护"', notice_source)
         self.assertNotIn("st.download_button", notice_source)
         self.assertNotIn("file_uploader", notice_source)
-        self.assertIn("导出 AI 评测结果", dialog_source)
-        self.assertIn("导入评分文件", dialog_source)
-        self.assertIn("从演示结果文件恢复", dialog_source)
+        self.assertIn('st.popover("数据维护"', notice_source)
+        self.assertIn("导出 AI 评测结果", maintenance_source)
+        self.assertIn("导入评分文件", maintenance_source)
+        self.assertIn("从演示结果文件恢复", maintenance_source)
 
 
 class CompatibleCohortTests(unittest.TestCase):

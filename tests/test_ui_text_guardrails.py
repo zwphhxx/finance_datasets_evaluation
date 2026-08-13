@@ -15,7 +15,8 @@ from src.ui.page_config import PAGE_CONFIG_BY_KEY, PAGE_CONFIGS
 
 PROJECT_NAME = "财务/法律/投行场景大模型对比评测"
 MAIN_PAGE_KEYS = ["case_study", "samples", "test_run", "conclusions"]
-MAIN_NAV_LABELS = ["项目说明", "样本库", "发起评测", "评测结论"]
+MAIN_NAV_PAGE_KEYS = ["case_study", "conclusions", "samples", "test_run"]
+MAIN_NAV_LABELS = ["项目说明", "评测结论", "样本库", "发起评测"]
 VISIBLE_UI_FILES = [
     Path("src/ui/case_study.py"),
     Path("src/ui/samples.py"),
@@ -83,7 +84,7 @@ class ReadmeCurrentFlowTests(unittest.TestCase):
 class NavigationAndPageConfigGuardrailTests(unittest.TestCase):
     def test_navigation_only_exposes_current_four_pages(self):
         self.assertEqual(MAIN_PAGE_KEYS, list(PAGES.keys()))
-        self.assertEqual(list(zip(MAIN_NAV_LABELS, MAIN_PAGE_KEYS)), _TOP_NAV_ITEMS)
+        self.assertEqual(list(zip(MAIN_NAV_LABELS, MAIN_NAV_PAGE_KEYS)), _TOP_NAV_ITEMS)
 
     def test_page_config_only_contains_current_four_pages(self):
         self.assertEqual(MAIN_PAGE_KEYS, [config.page_key for config in PAGE_CONFIGS])

@@ -8,6 +8,7 @@ from app.services.data_resolver import resolve_active_data
 from src.data_service import DataLoadError
 from src.ui.components import apply_global_styles
 from src.ui.navigation import PAGES, render_sidebar_navigation
+from src.ui.scroll import render_pending_scroll
 
 AUTO_INIT_DB_ENV = "FINDUEVAL_AUTO_INIT_DB"
 _DISABLED_AUTO_INIT_VALUES = {"0", "false", "no", "off"}
@@ -56,6 +57,7 @@ def _render_app() -> None:
 
     page = render_sidebar_navigation()
     PAGES[page](data_bundle)
+    render_pending_scroll()
 
 
 st.set_page_config(page_title="模型评测及数据优化", layout="wide")

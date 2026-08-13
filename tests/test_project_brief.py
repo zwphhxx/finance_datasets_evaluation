@@ -61,7 +61,7 @@ class WorkflowNavTests(unittest.TestCase):
     def test_current_pages_are_registered(self):
         self.assertEqual(["case_study", "samples", "test_run", "conclusions"], list(PAGES.keys()))
         self.assertEqual(
-            ["case_study", "samples", "test_run", "conclusions"],
+            ["case_study", "conclusions", "samples", "test_run"],
             [page_key for _, page_key in _TOP_NAV_ITEMS],
         )
         self.assertEqual("样本库", PAGE_CONFIG_BY_KEY["samples"].title)
@@ -71,7 +71,7 @@ class WorkflowNavTests(unittest.TestCase):
     def test_top_nav_has_four_items(self):
         self.assertEqual(4, len(_TOP_NAV_ITEMS))
         labels = [label for label, _ in _TOP_NAV_ITEMS]
-        self.assertEqual(["项目说明", "样本库", "发起评测", "评测结论"], labels)
+        self.assertEqual(["项目说明", "评测结论", "样本库", "发起评测"], labels)
 
 
 class PageRenderSmokeTests(unittest.TestCase):

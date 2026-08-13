@@ -45,10 +45,12 @@ class UIComponentsTests(unittest.TestCase):
 
         self.assertIn("facts", inspect.signature(components.render_brief_intro).parameters)
 
-    def test_top_navigation_exposes_a_current_page_marker(self):
+    def test_top_navigation_styles_current_button_without_a_layout_marker(self):
         source = Path("src/ui/navigation.py").read_text(encoding="utf-8")
+        css = Path("src/ui/components.py").read_text(encoding="utf-8")
 
-        self.assertIn("top-nav-current-marker", source)
+        self.assertNotIn("top-nav-current-marker", source)
+        self.assertIn('button[kind="secondary"]::after', css)
 
     def test_persistence_status_escapes_message_and_sets_status_role(self):
         import src.ui.components as components

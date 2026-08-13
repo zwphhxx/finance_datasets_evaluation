@@ -36,6 +36,7 @@ from src.ui.labels import (
     display_label,
 )
 from src.ui.page_config import get_page_config
+from src.ui.scroll import request_scroll
 
 _TEST_STATUS_OPTIONS = ["全部", "可测试", "待补充", "不可测试", "已移出测试"]
 _COMPLETENESS_OPTIONS = ["全部", "通过", "待补充", "已移出测试"]
@@ -931,19 +932,22 @@ def _formal_sync_feedback_suffix() -> tuple[str, str]:
 # --------------------------------------------------------------------------- #
 def _render_samples_title_bar(config) -> None:
     with st.container(key="samples_title_bar"):
-        col1, col2, col3 = st.columns(
-            [4.0, 1.0, 1.0],
+        col1, col2 = st.columns(
+            [5.0, 1.0],
             gap="small",
             vertical_alignment="bottom",
         )
         with col1:
             render_page_heading(config.title, config.question)
         with col2:
-            if st.button("新增样本", key="samples_create_open", type="secondary", use_container_width=True):
-                _open_create_dialog()
-        with col3:
-            if st.button("导入 CSV", key="samples_import_csv_open", type="secondary", use_container_width=True):
-                _open_import_csv_dialog()
+            with st.popover("样本维护", type="tertiary", width="stretch"):
+                st.caption("新增样本或批量导入样本数据。")
+                if st.button("新增样本", key="samples_create_open", type="secondary", use_container_width=True):
+                    _open_create_dialog()
+                    st.rerun()
+                if st.button("导入 CSV", key="samples_import_csv_open", type="tertiary", use_container_width=True):
+                    _open_import_csv_dialog()
+                    st.rerun()
     _render_sample_operation_message()
     _render_sample_source_status()
 
@@ -981,9 +985,11 @@ def render_samples_page(data_bundle: dict) -> None:
         if not filtered:
             render_empty_state("没有符合当前条件的样本。")
         else:
-            st.caption("点击表格任意行选择样本，在下方 03 区查看评测资产结构。")
-            _render_samples_table(filtered, readiness_map, task_records)
-            render_html('<div class="mobile-scroll-hint">表格可左右滑动查看完整内容</div>')
+            st.caption("选择样本，在下方 03 区查看评测资产结构。")
+            with st.container(key="samples_desktop_index"):
+                _render_samples_table(filtered, readiness_map, task_records)
+            with st.container(key="samples_mobile_index"):
+                _render_mobile_sample_cards(filtered, readiness_map, task_records)
             selected = _ensure_selected_sample(filtered)
             if selected is not None:
                 render_selection_echo(
@@ -1054,6 +1060,42 @@ def _render_samples_table(
             column_config=_sample_table_column_config(),
         )
         st.caption("当前环境不支持表格行选择，默认展示查询结果中的第一条样本。")
+
+
+def _render_mobile_sample_cards(
+    samples: list[sr.Sample],
+    readiness_map: dict[str, ds.SampleReadiness],
+    task_records: list[dict],
+) -> None:
+    """Render the same sample index as tap-friendly mobile cards."""
+    selected = _ensure_selected_sample(samples)
+    selected_id = selected.sample_id if selected is not None else ""
+    rows = build_sample_table_rows(samples, readiness_map, task_records)
+    for sample, row in zip(samples, rows):
+        active_class = " mobile-select-card-active" if sample.sample_id == selected_id else ""
+        with st.container(border=True, key=f"samples_mobile_card_{sample.sample_id}"):
+            render_html(
+                '<div class="mobile-select-card' + active_class + '">'
+                '<div class="mobile-select-card-head">'
+                f'<strong>{escape(str(row["样本编号"]))}</strong>'
+                f'<span>{escape(str(row["测试状态"]))}</span>'
+                "</div>"
+                f'<div class="mobile-select-card-title">{escape(str(row["任务标题"]))}</div>'
+                '<div class="mobile-select-card-meta">'
+                f'<span>{escape(str(row["专业场景"]))}</span>'
+                f'<span>完整度：{escape(str(row["完整度"]))}</span>'
+                "</div>"
+                "</div>"
+            )
+            if st.button(
+                "查看详情",
+                key=f"samples_mobile_select_{sample.sample_id}",
+                type="tertiary",
+                use_container_width=True,
+            ):
+                _select_sample(sample.sample_id)
+                request_scroll("#fde-current-sample")
+                st.rerun()
 
 
 def _sample_table_height(row_count: int) -> int:
@@ -1159,7 +1201,7 @@ def _render_sample_detail_toolbar(sample: sr.Sample, readiness: ds.SampleReadine
         f"更新：{_format_date(sample.updated_at)}",
     ])
     is_archived = sample.status == sr.REMOVED_FROM_TEST_STATUS
-    col_title, col_edit, col_remove = st.columns([5.0, 0.9, 0.9], gap="small")
+    col_title, col_actions = st.columns([5.0, 1.25], gap="small")
     with col_title:
         render_html(
             f"""
@@ -1169,18 +1211,25 @@ def _render_sample_detail_toolbar(sample: sr.Sample, readiness: ds.SampleReadine
             </div>
             """
         )
-    with col_edit:
-        if st.button("编辑样本", key=f"samples_toolbar_edit_{sample.sample_id}", type="secondary", use_container_width=True):
-            _open_edit_dialog(sample.sample_id)
-    with col_remove:
-        if st.button(
-            "移出测试",
-            key=f"samples_toolbar_remove_{sample.sample_id}",
-            type="tertiary",
-            disabled=is_archived,
-            use_container_width=True,
-        ):
-            _open_archive_dialog(sample.sample_id)
+    with col_actions:
+        with st.popover("维护当前样本", type="tertiary", width="stretch"):
+            if st.button(
+                "编辑样本",
+                key=f"samples_toolbar_edit_{sample.sample_id}",
+                type="secondary",
+                use_container_width=True,
+            ):
+                _open_edit_dialog(sample.sample_id)
+                st.rerun()
+            if st.button(
+                "移出测试",
+                key=f"samples_toolbar_remove_{sample.sample_id}",
+                type="tertiary",
+                disabled=is_archived,
+                use_container_width=True,
+            ):
+                _open_archive_dialog(sample.sample_id)
+                st.rerun()
 
 
 def render_sample_detail_panel(

@@ -7,6 +7,7 @@ from src.ui.components import render_html
 from src.ui.conclusions import render_conclusions_page
 from src.ui.page_config import DEFAULT_PAGE_KEY, PAGE_CONFIG_BY_KEY
 from src.ui.samples import render_samples_page
+from src.ui.scroll import request_scroll
 from src.ui.test_run import render_test_run_page
 
 PROJECT_DISPLAY_NAME = "财务/法律/投行场景大模型对比评测"
@@ -24,9 +25,9 @@ PAGES = {
 # Maps display label -> page_key for the top nav bar.
 _TOP_NAV_ITEMS = [
     ("项目说明", "case_study"),
+    ("评测结论", "conclusions"),
     ("样本库", "samples"),
     ("发起评测", "test_run"),
-    ("评测结论", "conclusions"),
 ]
 
 
@@ -38,8 +39,6 @@ def render_top_navigation() -> None:
         render_html(f'<div class="top-nav-brand">{PROJECT_DISPLAY_NAME}</div>')
     for col, (label, page_key) in zip(cols[1:], _TOP_NAV_ITEMS):
         with col:
-            if current == page_key:
-                render_html('<span class="top-nav-current-marker" aria-hidden="true"></span>')
             if st.button(
                 label,
                 key=f"top_nav_{page_key}",
@@ -47,6 +46,7 @@ def render_top_navigation() -> None:
                 use_container_width=False,
             ):
                 st.session_state.current_page = page_key
+                request_scroll("top")
                 st.rerun()
 
 

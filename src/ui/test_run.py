@@ -32,6 +32,7 @@ from app.services import scorer as sc
 from src.ui import conclusions_data as cd
 from src.ui.components import (
     render_empty_state,
+    render_html,
     render_inline_status,
     render_markdown_detail_panel,
     render_numbered_section,
@@ -80,7 +81,7 @@ _EVAL_TEMPERATURE_ENV = "FINDUEVAL_EVAL_TEMPERATURE"
 _EVAL_TEMPERATURE_KEY = "test_run_temperature"
 _MODEL_DIALOG_TEMPERATURE_KEY = "test_run_model_dialog_temperature"
 _MODEL_OPTION_LIMIT = 30
-_ANSWER_PREVIEW_LIMIT = 1500
+_ANSWER_PREVIEW_LIMIT = 900
 _SLOW_MODEL_KEYWORDS = ("longcat", "r1", "reasoning", "thinking")
 _RUN_STATE_KEY = "test_run_run_state"
 _ANSWER_RUN_ID_KEY = "test_run_answer_run_id"
@@ -715,6 +716,7 @@ def render_test_run_page(data_bundle: dict) -> None:
 
     config = get_page_config("test_run")
     render_page_heading(config.title, config.question)
+    _render_stage_navigation()
 
     tasks_df = base.tasks
     if tasks_df is None or tasks_df.empty:
@@ -738,6 +740,7 @@ def render_test_run_page(data_bundle: dict) -> None:
     run_plan = build_run_plan_summary(model_ids, selected_tasks)
 
     with st.container(key="test_run_stage_configuration"):
+        render_html('<a id="fde-test-run-configuration"></a>')
         render_numbered_section("01", TEST_RUN_STEPS[0])
         _render_configuration_panel(sample_options, selected_tasks, model_ids, provider_name, run_plan, base, task_records)
 
@@ -774,6 +777,7 @@ def render_test_run_page(data_bundle: dict) -> None:
         else ("待运行", "neutral")
     )
     with st.container(key="test_run_stage_answers"):
+        render_html('<a id="fde-test-run-answers"></a>')
         render_numbered_section("02", TEST_RUN_STEPS[1], badge=answer_badge)
         _render_results(
             provider_name,
@@ -789,10 +793,21 @@ def render_test_run_page(data_bundle: dict) -> None:
         else ("待评分", "neutral")
     )
     with st.container(key="test_run_stage_scores"):
+        render_html('<a id="fde-test-run-scores"></a>')
         render_numbered_section("03", TEST_RUN_STEPS[2], badge=score_badge)
         _render_scoring(base, provider_name, task_records)
         _render_score_results(base, provider_name, task_records)
     _render_pending_dialogs(sample_options)
+
+
+def _render_stage_navigation() -> None:
+    render_html(
+        '<nav class="stage-jump-nav" aria-label="评测步骤">'
+        '<a href="#fde-test-run-configuration">评测配置</a>'
+        '<a href="#fde-test-run-answers">模型回答</a>'
+        '<a href="#fde-test-run-scores">AI 评分</a>'
+        "</nav>"
+    )
 
 
 def _default_provider_name() -> str:
@@ -887,7 +902,8 @@ def _render_configuration_panel(
     render_inline_status(rows)
     if mode == "unconfigured":
         st.caption("当前未配置模型服务密钥，暂不能发起真实调用。")
-    st.caption("运行中请勿刷新或关闭页面；已完成结果会保留，未完成项可继续运行。")
+    if _run_is_active():
+        st.caption("运行中请勿刷新或关闭页面；已完成结果会保留，未完成项可继续运行。")
     slow_notice = slow_model_notice(model_ids)
     if slow_notice:
         st.caption(slow_notice)
@@ -939,6 +955,14 @@ def _open_sample_dialog(sample_options: list[dict]) -> None:
     st.session_state.pop("test_run_sample_scenario", None)
     st.session_state.pop("test_run_sample_difficulty", None)
     _clear_session_state_prefix(SAMPLE_CHECKBOX_KEY_PREFIX)
+
+
+def _run_is_active() -> bool:
+    run_status = str((_run_state() or {}).get("status") or "").strip().lower()
+    score_status = str((_score_state() or {}).get("status") or "").strip().lower()
+    return run_status == "running" or score_status == "running" or bool(
+        st.session_state.get(_SCORE_RETRY_RUNNING_KEY)
+    )
 
 
 def _open_model_dialog(provider_name: str) -> None:
@@ -2232,11 +2256,8 @@ def _render_run_button(
         use_container_width=True,
     )
 
-    if disabled:
-        if not service_ready:
-            st.caption("当前未配置模型服务密钥，暂不能发起真实调用。")
-        else:
-            st.caption("请先选择至少一个模型与至少一道任务，再运行评测。")
+    if disabled and service_ready:
+        st.caption("请先选择至少一个模型与至少一道任务，再运行评测。")
     return bool(clicked and not disabled)
 
 
@@ -2612,7 +2633,7 @@ def _render_selected_outcome_detail(outcome: er.RunOutcome, task_lookup: dict[st
         preview=True,
         action_label="查看技术明细",
         action_key=f"test_run_technical_details::{_safe_key(outcome.model_id)}::{_safe_key(outcome.case_id)}",
-        action_type="secondary",
+        action_type="tertiary",
     )
     if outcome.success:
         answer = outcome.answer_text or "—"
@@ -2720,9 +2741,15 @@ def _render_scoring(base, provider_name: str, task_records: list[dict]) -> None:
         return
 
     button_label = "仅对已完成回答生成 AI 评分" if partial_run else "生成 AI 评分"
-    if st.button(
-        button_label, type="secondary", disabled=no_success, key="test_run_score_run"
-    ):
+    with st.container(key="test_run_score_action"):
+        score_clicked = st.button(
+            button_label,
+            type="secondary",
+            disabled=no_success,
+            key="test_run_score_run",
+            use_container_width=True,
+        )
+    if score_clicked:
         dimensions = ds.get_rubric_dimensions()
         st.session_state["test_run_score_dims"] = dimensions
         _execute_score_queue(
