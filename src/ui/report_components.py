@@ -79,14 +79,10 @@ def render_scope_ledger(items: Iterable[tuple[object, object]]) -> None:
 
 
 def _evidence_item_html(item: EvidenceItem) -> str:
-    dimensions = "".join(
-        f"<li>{_escaped(field)}：{_escaped(score)}</li>"
-        for field, score in item.dimension_scores.items()
-    )
     details = (
         _detail_html("总分", item.total_score)
         + _detail_html("最弱维度", item.weakest_dimension)
-        + _detail_html("维度得分", dimensions, trusted=True)
+        + _dimension_detail_html(item.dimension_scores)
         + _detail_html("评分理由", item.rationale)
         + _detail_html("审阅备注", item.review_note)
         + _detail_html("模型回答", item.answer_text)
@@ -108,9 +104,24 @@ def _evidence_item_html(item: EvidenceItem) -> str:
     )
 
 
-def _detail_html(label: object, value: object, *, trusted: bool = False) -> str:
-    display = str(value) if trusted else _escaped(value)
-    return f"<div><dt>{_escaped(label)}</dt><dd>{display}</dd></div>"
+def _detail_html(label: object, value: object) -> str:
+    return f"<div><dt>{_escaped(label)}</dt><dd>{_escaped(value)}</dd></div>"
+
+
+def _dimension_detail_html(scores: Mapping[object, object]) -> str:
+    return (
+        f"<div><dt>{_escaped('维度得分')}</dt><dd>"
+        f"{_escaped_dimension_list_html(scores)}"
+        "</dd></div>"
+    )
+
+
+def _escaped_dimension_list_html(scores: Mapping[object, object]) -> str:
+    rows = "".join(
+        f"<li>{_escaped(field)}：{_escaped(score)}</li>"
+        for field, score in scores.items()
+    )
+    return f'<ul class="evidence-index-dimensions">{rows}</ul>'
 
 
 def _escaped(value: object) -> str:

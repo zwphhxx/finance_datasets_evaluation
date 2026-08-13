@@ -1,6 +1,8 @@
 """Behavioral contracts for the review-first report entry and navigation."""
 
 from contextlib import nullcontext
+from html import escape
+from inspect import signature
 from pathlib import Path
 from unittest.mock import patch
 
@@ -52,6 +54,72 @@ def test_report_primitives_escape_every_dynamic_value_except_trusted_body_html()
         assert escaped in html
         assert unsafe not in html
     assert "<strong>可信正文</strong>" in section
+
+
+def test_evidence_index_escapes_each_displayed_field_and_omits_technical_run_id():
+    markers = {
+        "case_id": '<case-id data-test="unsafe">',
+        "model_name": '<model-name data-test="unsafe">',
+        "title": '<title data-test="unsafe">',
+        "selection_reason": '<selection-reason data-test="unsafe">',
+        "weakest_dimension": '<weakest-dimension data-test="unsafe">',
+        "dimension_field": '<dimension-field data-test="unsafe">',
+        "rationale_key": "<rationale-key>",
+        "rationale_value": "<rationale-value>",
+        "review_note": '<review-note data-test="unsafe">',
+        "answer_text": '<answer-text data-test="unsafe">',
+        "gold_key": "<gold-key>",
+        "gold_value": "<gold-value>",
+    }
+    technical_run_id = "RUN-ID-MUST-NOT-RENDER"
+    html = rc.evidence_index_html([
+        EvidenceItem(
+            run_id=technical_run_id,
+            case_id=markers["case_id"],
+            model_name=markers["model_name"],
+            title=markers["title"],
+            total_score=7.25,
+            selection_reason=markers["selection_reason"],
+            weakest_dimension=markers["weakest_dimension"],
+            dimension_scores={markers["dimension_field"]: 3.5},
+            rationale={markers["rationale_key"]: markers["rationale_value"]},
+            review_note=markers["review_note"],
+            answer_text=markers["answer_text"],
+            gold_answer={markers["gold_key"]: markers["gold_value"]},
+        )
+    ])
+
+    for marker in markers.values():
+        assert marker not in html
+        assert escape(marker, quote=True) in html
+    assert "7.25" in html
+    assert "3.5" in html
+    assert technical_run_id not in html
+
+
+def test_evidence_dimension_scores_are_a_valid_styled_list_without_raw_html_flag():
+    html = rc.evidence_index_html([
+        EvidenceItem(
+            run_id="R1",
+            case_id="C1",
+            model_name="M1",
+            title="标题",
+            total_score=7.0,
+            selection_reason="最低总分",
+            weakest_dimension="准确性",
+            dimension_scores={"准确性": 3.0, "覆盖度": 4.0},
+            rationale={},
+            review_note="",
+            answer_text="回答",
+            gold_answer={},
+        )
+    ])
+
+    assert '<ul class="evidence-index-dimensions">' in html
+    assert "<li>准确性：3.0</li>" in html
+    assert "<li>覆盖度：4.0</li>" in html
+    assert "</li></ul>" in html
+    assert "trusted" not in signature(rc._detail_html).parameters
 
 
 def test_report_primitives_keep_one_semantic_dom_for_report_rows():
