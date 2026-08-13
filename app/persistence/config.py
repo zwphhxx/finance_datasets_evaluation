@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+DATABASE_CONNECT_TIMEOUT_ENV = "FINDUEVAL_DATABASE_CONNECT_TIMEOUT_SECONDS"
+
 
 class PersistenceConfigurationError(RuntimeError):
     """Raised when a live model call has no durable result store."""
@@ -19,6 +21,21 @@ class ResultStoreSettings:
 
     url: str
     is_postgresql: bool
+
+
+def resolve_database_connect_timeout(
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> int:
+    """Return a short bounded wait for the runtime PostgreSQL connection."""
+
+    env = os.environ if environ is None else environ
+    raw = str(env.get(DATABASE_CONNECT_TIMEOUT_ENV) or "").strip()
+    try:
+        value = int(raw) if raw else 4
+    except ValueError:
+        value = 4
+    return max(3, min(value, 5))
 
 
 def _secret_url(secrets: Mapping[str, Any] | None) -> str:

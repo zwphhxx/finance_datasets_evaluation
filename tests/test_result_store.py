@@ -11,6 +11,36 @@ def sqlite_store(tmp_path: Path) -> ResultStore:
     return store
 
 
+def test_postgresql_engine_receives_bounded_connect_timeout(monkeypatch):
+    captured = {}
+
+    def fake_create_engine(url, **kwargs):
+        captured.update(url=url, kwargs=kwargs)
+        return object()
+
+    monkeypatch.setattr("app.persistence.result_store.create_engine", fake_create_engine)
+    monkeypatch.setenv("FINDUEVAL_DATABASE_CONNECT_TIMEOUT_SECONDS", "5")
+
+    ResultStore("postgresql://user:pass@db.example.com/postgres")
+
+    assert captured["url"].startswith("postgresql+psycopg://")
+    assert captured["kwargs"]["connect_args"] == {"connect_timeout": 5}
+
+
+def test_sqlite_engine_does_not_receive_postgresql_connect_timeout(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_create_engine(url, **kwargs):
+        captured.update(url=url, kwargs=kwargs)
+        return object()
+
+    monkeypatch.setattr("app.persistence.result_store.create_engine", fake_create_engine)
+
+    ResultStore(f"sqlite:///{tmp_path / 'runtime.db'}")
+
+    assert "connect_args" not in captured["kwargs"]
+
+
 def run_metadata(run_id: str = "RUN-1") -> dict:
     return {
         "run_id": run_id,

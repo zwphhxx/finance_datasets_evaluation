@@ -11,6 +11,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import SQLAlchemyError
 
+from .config import resolve_database_connect_timeout
 from .schema import (
     RUNTIME_TABLES,
     live_evaluation_runs,
@@ -40,8 +41,13 @@ class ResultStore:
 
     def __init__(self, url: str):
         normalized = self._normalize_url(str(url or "").strip())
+        engine_kwargs: dict[str, Any] = {"pool_pre_ping": True, "future": True}
+        if normalized.startswith("postgresql+psycopg://"):
+            engine_kwargs["connect_args"] = {
+                "connect_timeout": resolve_database_connect_timeout()
+            }
         try:
-            self.engine: Engine = create_engine(normalized, pool_pre_ping=True, future=True)
+            self.engine: Engine = create_engine(normalized, **engine_kwargs)
         except SQLAlchemyError as exc:
             raise ResultStoreError("could not configure runtime result storage") from exc
 

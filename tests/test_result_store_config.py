@@ -8,6 +8,7 @@ from app.persistence import _store_for_url, get_result_store
 from app.persistence.config import (
     PersistenceConfigurationError,
     require_durable_live_store,
+    resolve_database_connect_timeout,
     resolve_result_store_settings,
 )
 
@@ -21,6 +22,16 @@ def test_database_url_wins_and_uses_psycopg():
 
     assert settings.url.startswith("postgresql+psycopg://")
     assert settings.is_postgresql is True
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [(None, 4), ("", 4), ("3", 3), ("5", 5), ("1", 3), ("12", 5), ("bad", 4)],
+)
+def test_database_connect_timeout_is_bounded(raw, expected):
+    environ = {} if raw is None else {"FINDUEVAL_DATABASE_CONNECT_TIMEOUT_SECONDS": raw}
+
+    assert resolve_database_connect_timeout(environ=environ) == expected
 
 
 def test_store_factory_does_not_read_secrets_when_database_url_is_set(
