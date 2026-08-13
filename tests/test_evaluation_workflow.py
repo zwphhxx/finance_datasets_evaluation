@@ -262,6 +262,8 @@ def test_successful_answer_and_score_skip_all_model_calls(tmp_path, monkeypatch)
 
 
 def test_success_score_queue_without_formal_results_is_rejected_without_calls(tmp_path, monkeypatch):
+    from app.services.evaluation_workflow import WorkflowCheckpointError
+
     store = sqlite_store(tmp_path)
     pair = item("C1", "m1")
     _initialize_checkpoint(store, "RUN-FIXED", "SCORE-FIXED", pair)
@@ -275,7 +277,7 @@ def test_success_score_queue_without_formal_results_is_rejected_without_calls(tm
     monkeypatch.setattr("app.services.evaluation_workflow.er.generate_run_id", lambda: "RUN-FIXED")
     monkeypatch.setattr("app.services.evaluation_workflow.sc.generate_score_run_id", lambda: "SCORE-FIXED")
 
-    with pytest.raises(ValueError, match="evaluation checkpoint is inconsistent"):
+    with pytest.raises(WorkflowCheckpointError, match="evaluation checkpoint is inconsistent"):
         workflow(store, RecordingProvider(responses=[], events=events), RecordingProvider(events=events)).start_evaluation(config(pair))
 
     assert events == []
@@ -283,6 +285,8 @@ def test_success_score_queue_without_formal_results_is_rejected_without_calls(tm
 
 
 def test_success_answer_queue_without_response_is_rejected_without_calls(tmp_path, monkeypatch):
+    from app.services.evaluation_workflow import WorkflowCheckpointError
+
     store = sqlite_store(tmp_path)
     pair = item("C1", "m1")
     _initialize_checkpoint(store, "RUN-FIXED", "SCORE-FIXED", pair)
@@ -296,7 +300,7 @@ def test_success_answer_queue_without_response_is_rejected_without_calls(tmp_pat
     monkeypatch.setattr("app.services.evaluation_workflow.er.generate_run_id", lambda: "RUN-FIXED")
     monkeypatch.setattr("app.services.evaluation_workflow.sc.generate_score_run_id", lambda: "SCORE-FIXED")
 
-    with pytest.raises(ValueError, match="evaluation checkpoint is inconsistent"):
+    with pytest.raises(WorkflowCheckpointError, match="evaluation checkpoint is inconsistent"):
         workflow(store, RecordingProvider(responses=[], events=events), RecordingProvider(events=events)).start_evaluation(config(pair))
 
     assert events == []
@@ -305,11 +309,9 @@ def test_success_answer_queue_without_response_is_rejected_without_calls(tmp_pat
 
 @pytest.mark.parametrize("provider_name,judge_name", [("mock", "test-live"), ("test-live", "demo")])
 def test_mock_or_demo_provider_is_rejected_before_queue_or_model_calls(tmp_path, provider_name, judge_name):
-    from app.services.evaluation_workflow import WorkflowStopped
-
     store = sqlite_store(tmp_path)
     events = []
-    with pytest.raises(WorkflowStopped):
+    with pytest.raises(ValueError, match="mock and demo providers"):
         workflow(
             store,
             RecordingProvider(provider_name, [(STATUS_SUCCESS, "answer")], events),
@@ -351,3 +353,30 @@ def test_initialization_failure_stops_before_any_provider_call(tmp_path, monkeyp
         ).start_evaluation(config(item("C1", "m1")))
 
     assert events == []
+
+
+def test_unexpected_answer_value_error_stops_run_and_prevents_later_calls(tmp_path, monkeypatch):
+    from app.services.evaluation_workflow import WorkflowStopped
+
+    store = sqlite_store(tmp_path)
+    events = []
+
+    def invalid_answer(*args, **kwargs):
+        events.append("answer_value_error")
+        raise ValueError("invalid provider response")
+
+    monkeypatch.setattr("app.services.evaluation_workflow.er.generate_run_id", lambda: "RUN-FIXED")
+    monkeypatch.setattr("app.services.evaluation_workflow.sc.generate_score_run_id", lambda: "SCORE-FIXED")
+    monkeypatch.setattr("app.services.evaluation_workflow.er.run_single", invalid_answer)
+
+    with pytest.raises(WorkflowStopped, match="could not persist evaluation outcome"):
+        workflow(
+            store,
+            RecordingProvider(responses=[], events=events),
+            RecordingProvider(events=events),
+        ).start_evaluation(config(item("C1", "m1"), item("C2", "m2")))
+
+    run = store.list_rows("live_evaluation_runs", run_id="RUN-FIXED")[0]
+    assert events == ["answer_value_error"]
+    assert run["status"] == "stopped"
+    assert run["last_persistence_error"] == "could not persist evaluation outcome"

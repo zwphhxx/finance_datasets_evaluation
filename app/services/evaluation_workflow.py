@@ -25,6 +25,10 @@ class WorkflowStopped(RuntimeError):
     """Raised when a durable workflow cannot safely continue."""
 
 
+class WorkflowCheckpointError(ValueError):
+    """Raised when persisted queue state cannot represent a safe checkpoint."""
+
+
 @dataclass(frozen=True)
 class EvaluationConfig:
     provider_name: str
@@ -116,11 +120,10 @@ class EvaluationWorkflow:
         self._session_stopped_run_ids: set[str] = set()
 
     def start_evaluation(self, config: EvaluationConfig) -> EvaluationRunRef:
-        self._validate_providers(config)
+        judge_model = self._validate_config(config)
         run_id = er.generate_run_id()
         score_run_id = sc.generate_score_run_id()
         ref = EvaluationRunRef(run_id, score_run_id)
-        judge_model = _required_text(config.judge_parameters.get("judge_model"), "judge model")
         metadata = build_run_metadata(
             run_id=run_id,
             provider=config.provider_name,
@@ -152,7 +155,7 @@ class EvaluationWorkflow:
         for item in config.queue_items:
             try:
                 self._execute_item(ref, config, item, judge_model)
-            except ValueError:
+            except WorkflowCheckpointError:
                 raise
             except WorkflowStopped:
                 raise
@@ -234,7 +237,7 @@ class EvaluationWorkflow:
         if score_queue["status"] == "success" or (
             answer_queue["status"] == "success" and response is None
         ):
-            raise ValueError("evaluation checkpoint is inconsistent")
+            raise WorkflowCheckpointError("evaluation checkpoint is inconsistent")
         if answer_queue["status"] == "failed" or score_queue["status"] in {"failed", "skipped"}:
             return
 
@@ -287,7 +290,7 @@ class EvaluationWorkflow:
     def _queue_row(self, table: str, **filters: str) -> Mapping[str, Any]:
         rows = self.store.list_rows(table, **filters)
         if len(rows) != 1:
-            raise WorkflowStopped("evaluation queue row is missing")
+            raise WorkflowCheckpointError("evaluation checkpoint is inconsistent")
         return rows[0]
 
     @staticmethod
@@ -308,11 +311,25 @@ class EvaluationWorkflow:
             pd.DataFrame(score_rows), pd.DataFrame(response_rows)
         ).empty
 
+    def _validate_config(self, config: EvaluationConfig) -> str:
+        self._validate_providers(config)
+        _required_text(config.provider_name, "provider name")
+        _required_text(getattr(self.judge_provider, "name", ""), "judge provider")
+        if not config.queue_items:
+            raise ValueError("evaluation configuration requires queue items")
+        for item in config.queue_items:
+            if not isinstance(item, Mapping):
+                raise ValueError("evaluation queue item must be a mapping")
+            _required_text(item.get("case_id"), "case id")
+            _required_text(item.get("model_id"), "model id")
+            _task(item)
+        return _required_text(config.judge_parameters.get("judge_model"), "judge model")
+
     def _validate_providers(self, config: EvaluationConfig) -> None:
         for configured, provider in ((config.provider_name, self.answer_provider), ("", self.judge_provider)):
             names = {str(configured or "").strip().lower(), str(getattr(provider, "name", "")).strip().lower()}
             if names.intersection({"mock", "demo"}):
-                raise WorkflowStopped("mock and demo providers cannot start a formal evaluation")
+                raise ValueError("mock and demo providers cannot start a formal evaluation")
 
     def _stop(self, run_id: str, message: str, cause: Exception) -> None:
         self._session_stopped_run_ids.add(run_id)
@@ -326,14 +343,14 @@ class EvaluationWorkflow:
 def _task(item: Mapping[str, Any]) -> Mapping[str, Any]:
     task = item.get("task")
     if not isinstance(task, Mapping):
-        raise WorkflowStopped("evaluation queue item has no task")
+        raise ValueError("evaluation queue item has no task")
     return task
 
 
 def _required_text(value: Any, name: str) -> str:
     text = str(value or "").strip()
     if not text:
-        raise WorkflowStopped(f"evaluation configuration is missing {name}")
+        raise ValueError(f"evaluation configuration is missing {name}")
     return text
 
 
