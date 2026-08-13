@@ -6,6 +6,7 @@ from src.ui.navigation import PAGES
 from src.ui.page_config import PAGE_CONFIGS
 
 EXPECTED_PAGE_ORDER = ["case_study", "samples", "test_run", "conclusions"]
+EXPECTED_PAGE_CONFIG_ORDER = ["conclusions", "case_study", "samples", "test_run"]
 
 BANNED_PHRASES = ["AI赋能", "智能洞察", "一键优化", "专家级", "秒级"]
 
@@ -39,6 +40,18 @@ class UIComponentsTests(unittest.TestCase):
         self.assertIn("executive-takeaway", components.STYLE_CSS)
         self.assertIn("transition", components.STYLE_CSS)
         self.assertIn("prefers-reduced-motion", components.STYLE_CSS)
+
+    def test_report_style_css_is_composed_once_inside_the_global_style_tag(self):
+        import src.ui.components as components
+        from src.ui.report_styles import REPORT_STYLE_CSS
+
+        self.assertEqual(1, components.STYLE_CSS.count("<style>"))
+        self.assertEqual(1, components.STYLE_CSS.count("</style>"))
+        self.assertIn(REPORT_STYLE_CSS, components.STYLE_CSS)
+        self.assertLess(
+            components.STYLE_CSS.index(REPORT_STYLE_CSS),
+            components.STYLE_CSS.index("</style>"),
+        )
 
     def test_brief_intro_supports_derived_facts(self):
         import src.ui.components as components
@@ -103,7 +116,7 @@ class UIComponentsTests(unittest.TestCase):
             self.assertNotIn(selector, components.STYLE_CSS)
 
     def test_navigation_uses_button_items_in_current_order(self):
-        self.assertEqual(EXPECTED_PAGE_ORDER, [config.page_key for config in PAGE_CONFIGS])
+        self.assertEqual(EXPECTED_PAGE_CONFIG_ORDER, [config.page_key for config in PAGE_CONFIGS])
         self.assertEqual(EXPECTED_PAGE_ORDER, list(PAGES.keys()))
         for config in PAGE_CONFIGS:
             self.assertTrue(config.title.strip())

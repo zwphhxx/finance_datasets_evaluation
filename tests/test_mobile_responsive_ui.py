@@ -48,6 +48,30 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         ]:
             self.assertIn(contract, css)
 
+    def test_report_primitives_reflow_without_a_second_mobile_data_structure(self):
+        from src.ui.report_styles import REPORT_STYLE_CSS
+
+        mobile_css = REPORT_STYLE_CSS.split("@media (max-width: 760px)", 1)[1]
+        for selector in [
+            ".report-ledger",
+            ".report-section-heading",
+            ".report-index-row--header",
+            ".report-index-row",
+            ".evidence-index-item",
+        ]:
+            self.assertIn(selector, mobile_css)
+        self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", mobile_css)
+        self.assertIn("display: none", mobile_css)
+        self.assertIn("overflow-wrap: anywhere", mobile_css)
+        self.assertIn("min-width: 0", mobile_css)
+        self.assertIn("min-height: 44px", mobile_css)
+        self.assertIn("max(5.5rem, env(safe-area-inset-bottom))", mobile_css)
+        self.assertIn(
+            "max-height: calc(100dvh - 5.5rem - env(safe-area-inset-bottom))",
+            mobile_css,
+        )
+        self.assertIn("overflow-y: auto", mobile_css)
+
     def test_consulting_report_regions_adapt_on_mobile(self):
         css = self._responsive_css()
         mobile_css = css.split(

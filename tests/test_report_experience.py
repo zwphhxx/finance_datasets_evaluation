@@ -4,8 +4,64 @@ from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import patch
 
+from app.services.evidence_index import EvidenceItem
 from src.ui import navigation
+from src.ui import report_components as rc
 from src.ui.page_config import DEFAULT_PAGE_KEY
+from src.ui.report_styles import REPORT_STYLE_CSS
+
+
+def test_report_styles_are_flat_and_editorial():
+    for required in [
+        ".report-masthead",
+        ".report-ledger",
+        ".report-index-row",
+        ".evidence-index",
+    ]:
+        assert required in REPORT_STYLE_CSS
+    for banned in ["linear-gradient", "box-shadow:", "border-radius: 12px", ".kpi-card"]:
+        assert banned not in REPORT_STYLE_CSS
+
+
+def test_report_primitives_escape_every_dynamic_value_except_trusted_body_html():
+    unsafe = '<script data-test="unsafe">x</script>'
+
+    masthead = rc.report_masthead_html(unsafe, unsafe, unsafe)
+    ledger = rc.scope_ledger_html([(unsafe, unsafe)])
+    section = rc.report_section_html(unsafe, unsafe, unsafe, "<strong>可信正文</strong>")
+    index_row = rc.report_index_row_html([unsafe], active=True)
+    evidence = rc.evidence_index_html([
+        EvidenceItem(
+            run_id=unsafe,
+            case_id=unsafe,
+            model_name=unsafe,
+            title=unsafe,
+            total_score=1.0,
+            selection_reason=unsafe,
+            weakest_dimension=unsafe,
+            dimension_scores={unsafe: 1.0},
+            rationale={unsafe: unsafe},
+            review_note=unsafe,
+            answer_text=unsafe,
+            gold_answer={unsafe: unsafe},
+        )
+    ])
+
+    escaped = "&lt;script data-test=&quot;unsafe&quot;&gt;x&lt;/script&gt;"
+    for html in [masthead, ledger, section, index_row, evidence]:
+        assert escaped in html
+        assert unsafe not in html
+    assert "<strong>可信正文</strong>" in section
+
+
+def test_report_primitives_keep_one_semantic_dom_for_report_rows():
+    assert 'class="report-masthead"' in rc.report_masthead_html("标题", "说明")
+    assert 'class="report-ledger"' in rc.scope_ledger_html([("范围", "13")])
+    assert 'class="report-section"' in rc.report_section_html("01", "范围", "标题", "")
+    assert 'class="report-index-row report-index-row--active"' in rc.report_index_row_html(
+        ["模型", "判断"], active=True
+    )
+    assert 'class="evidence-index"' in rc.evidence_index_html([])
 
 
 class _SessionState(dict):

@@ -6,6 +6,7 @@ from textwrap import dedent
 
 import streamlit as st
 
+from src.ui.report_styles import REPORT_STYLE_CSS
 from src.ui.responsive import MOBILE_RESPONSIVE_CSS
 
 PROJECT_DISPLAY_NAME = "财务/法律/投行场景大模型对比评测"
@@ -1014,7 +1015,7 @@ div[data-testid="stDialog"] {
 }
 """
 
-STYLE_CSS = f"{STYLE_CSS}{MOBILE_RESPONSIVE_CSS}\n</style>\n"
+STYLE_CSS = f"{STYLE_CSS}{REPORT_STYLE_CSS}{MOBILE_RESPONSIVE_CSS}\n</style>\n"
 
 def _clean_html(html: str) -> str:
     text = dedent(str(html or "")).strip()
