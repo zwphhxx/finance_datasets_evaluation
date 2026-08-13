@@ -114,7 +114,10 @@ def result_case_ids_are_current(
     return bool(normalized_result) and normalized_result.issubset(normalized_current)
 
 
-def _clear_incompatible_session_results(current_case_ids: set[str]) -> None:
+def _clear_incompatible_session_results(
+    current_case_ids: set[str],
+    compatible_run_ids: set[str],
+) -> None:
     result = eval_state.get_last_run()
     result_case_ids = {
         str(getattr(outcome, "case_id", "") or "").strip()
@@ -125,9 +128,12 @@ def _clear_incompatible_session_results(current_case_ids: set[str]) -> None:
         for item in (_run_state().get("queue_items") or [])
     }
     session_case_ids = {case_id for case_id in (result_case_ids or state_case_ids) if case_id}
-    if (result is not None or _run_state()) and not result_case_ids_are_current(
-        session_case_ids,
-        current_case_ids,
+    run_id = str(getattr(result, "run_id", "") or _run_state().get("run_id") or "").strip()
+    status = str(_run_state().get("status") or "").strip().lower()
+    incompatible_samples = not result_case_ids_are_current(session_case_ids, current_case_ids)
+    unverifiable_completed_run = bool(run_id) and status == "completed" and run_id not in compatible_run_ids
+    if (result is not None or _run_state()) and (
+        incompatible_samples or unverifiable_completed_run
     ):
         eval_state.clear()
         _clear_run_state()
@@ -720,7 +726,6 @@ def render_test_run_page(data_bundle: dict) -> None:
         for row in task_records
         if str(row.get("case_id") or "").strip()
     }
-    _clear_incompatible_session_results(current_case_ids)
     gold_map = getattr(base, "gold_answer_map", {}) or {}
     testable_dimensions = ds.get_testable_rubric_dimensions()
 
@@ -736,13 +741,26 @@ def render_test_run_page(data_bundle: dict) -> None:
         render_numbered_section("01", TEST_RUN_STEPS[0])
         _render_configuration_panel(sample_options, selected_tasks, model_ids, provider_name, run_plan, base, task_records)
 
+    dataset_versions = ds.list_dataset_versions()
+    current_dataset_version = dataset_versions[0] if dataset_versions else ""
     answer_run_summaries = er.list_persisted_answer_runs(
         allowed_case_ids=current_case_ids,
+        current_tasks=task_records,
+        dataset_version=current_dataset_version,
     )
+    compatible_run_ids = {
+        str(summary.get("run_id") or "").strip()
+        for summary in answer_run_summaries
+        if str(summary.get("run_id") or "").strip()
+    }
+    _clear_incompatible_session_results(current_case_ids, compatible_run_ids)
     persisted_answers = sum(int(item.get("success_count") or 0) for item in answer_run_summaries)
     scored_count = sum(
         1
-        for row in sc.latest_score_queue(allowed_case_ids=current_case_ids)
+        for row in sc.latest_score_queue(
+            allowed_case_ids=current_case_ids,
+            allowed_run_ids=compatible_run_ids,
+        )
         if str(row.get("status") or "").strip().lower() == "success"
     )
     if current_result_store_failure() is not None:
@@ -1531,6 +1549,17 @@ def _recover_latest_run(task_records: list[dict]) -> object | None:
         for row in task_records or []
         if str(row.get("case_id") or "").strip()
     }
+    dataset_versions = ds.list_dataset_versions()
+    summaries = er.list_persisted_answer_runs(
+        allowed_case_ids=allowed_case_ids,
+        current_tasks=task_records,
+        dataset_version=dataset_versions[0] if dataset_versions else "",
+    )
+    compatible_run_ids = {
+        str(summary.get("run_id") or "").strip()
+        for summary in summaries
+        if str(summary.get("run_id") or "").strip()
+    }
     existing = eval_state.get_last_run()
     existing_case_ids = {
         str(getattr(outcome, "case_id", "") or "").strip()
@@ -1544,12 +1573,18 @@ def _recover_latest_run(task_records: list[dict]) -> object | None:
     }
     session_case_ids = existing_case_ids or state_case_ids
     if existing is not None or _run_state():
-        if session_case_ids and session_case_ids.issubset(allowed_case_ids):
+        run_id = str(getattr(existing, "run_id", "") or _run_state().get("run_id") or "").strip()
+        status = str(_run_state().get("status") or "").strip().lower()
+        verified_or_running = status != "completed" or run_id in compatible_run_ids
+        if (
+            session_case_ids
+            and session_case_ids.issubset(allowed_case_ids)
+            and verified_or_running
+        ):
             return existing
         eval_state.clear()
         _clear_run_state()
         _clear_score_state()
-    summaries = er.list_persisted_answer_runs(allowed_case_ids=allowed_case_ids)
     if not summaries:
         return None
     run_id = str(summaries[0].get("run_id") or "")
@@ -1568,7 +1603,10 @@ def _recover_latest_score(compare_result) -> object | None:
     }
     if not allowed_case_ids:
         return None
-    rows = sc.latest_score_queue(allowed_case_ids=allowed_case_ids)
+    rows = sc.latest_score_queue(
+        allowed_case_ids=allowed_case_ids,
+        allowed_run_ids={str(getattr(compare_result, "run_id", "") or "").strip()},
+    )
     if not rows:
         return None
     score_run_id = str(rows[0].get("score_run_id") or "")

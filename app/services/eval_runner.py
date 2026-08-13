@@ -833,6 +833,8 @@ def build_persisted_answer_run_summaries(
 def list_persisted_answer_runs(
     *,
     allowed_case_ids: Collection[str] | None = None,
+    current_tasks: Sequence[Mapping[str, Any]] | None = None,
+    dataset_version: str = "",
     db_path: Path | None = None,
 ) -> list[dict[str, Any]]:
     """读取可查看且与当前样本编号兼容的持久化回答批次。"""
@@ -840,22 +842,108 @@ def list_persisted_answer_runs(
         store = _runtime_result_store(db_path)
         if store is None:
             return []
+        run_rows = store.list_rows("live_evaluation_runs")
+        queue_rows = store.list_rows("live_run_queue")
+        response_rows = store.list_rows("live_run_responses")
         summaries = build_persisted_answer_run_summaries(
-            store.list_rows("live_evaluation_runs"),
-            store.list_rows("live_run_queue"),
-            store.list_rows("live_run_responses"),
+            run_rows,
+            queue_rows,
+            response_rows,
         )
-        if allowed_case_ids is None:
-            return summaries
-        allowed = {_clean(case_id) for case_id in allowed_case_ids if _clean(case_id)}
-        return [
-            summary
-            for summary in summaries
-            if summary.get("case_ids")
-            and set(summary["case_ids"]).issubset(allowed)
-        ]
+        if allowed_case_ids is not None:
+            allowed = {_clean(case_id) for case_id in allowed_case_ids if _clean(case_id)}
+            summaries = [
+                summary
+                for summary in summaries
+                if summary.get("case_ids")
+                and set(summary["case_ids"]).issubset(allowed)
+            ]
+        if current_tasks is not None:
+            summaries = _filter_summaries_by_current_tasks(
+                summaries,
+                run_rows,
+                queue_rows,
+                current_tasks,
+                dataset_version,
+            )
+        return summaries
     except Exception:
         return []
+
+
+def _filter_summaries_by_current_tasks(
+    summaries: Sequence[Mapping[str, Any]],
+    run_rows: Sequence[Mapping[str, Any]],
+    queue_rows: Sequence[Mapping[str, Any]],
+    current_tasks: Sequence[Mapping[str, Any]],
+    dataset_version: str,
+) -> list[dict[str, Any]]:
+    from app.services.run_checkpoint import build_run_metadata
+
+    metadata_by_run = {
+        _clean(row.get("run_id")): row
+        for row in run_rows
+        if _clean(row.get("run_id"))
+    }
+    queue_by_run: dict[str, list[Mapping[str, Any]]] = {}
+    for row in queue_rows:
+        run_id = _clean(row.get("run_id"))
+        if run_id:
+            queue_by_run.setdefault(run_id, []).append(row)
+    tasks_by_case = {
+        _clean(task.get("case_id")): dict(task)
+        for task in current_tasks
+        if _clean(task.get("case_id"))
+    }
+
+    compatible: list[dict[str, Any]] = []
+    for summary in summaries:
+        run_id = _clean(summary.get("run_id"))
+        saved = metadata_by_run.get(run_id)
+        queued = queue_by_run.get(run_id, [])
+        if not saved or not queued:
+            continue
+        items: list[dict[str, Any]] = []
+        missing_task = False
+        for row in queued:
+            case_id = _clean(row.get("case_id"))
+            task = tasks_by_case.get(case_id)
+            if not case_id or task is None:
+                missing_task = True
+                break
+            items.append(
+                {
+                    "model_id": _clean(row.get("model_id")),
+                    "case_id": case_id,
+                    "task": task,
+                }
+            )
+        if missing_task or not items:
+            continue
+        model_ids = _dedupe_preserve_order([item["model_id"] for item in items])
+        prompt_payload = [
+            {
+                "case_id": item["case_id"],
+                "messages": build_messages(item["task"]),
+            }
+            for item in items
+        ]
+        current = build_run_metadata(
+            run_id=run_id,
+            provider=_clean(saved.get("provider")),
+            model_ids=model_ids,
+            queue_items=items,
+            generation_parameters={},
+            judge_parameters={},
+            dataset_version=_clean(dataset_version),
+            prompt_payload=prompt_payload,
+        )
+        if all(
+            _clean(saved.get(field)) == _clean(current.get(field))
+            for field in ("dataset_version", "dataset_hash", "prompt_hash")
+        ):
+            compatible.append(dict(summary))
+    return compatible
 
 
 def is_mock_result(result) -> bool:

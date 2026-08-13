@@ -29,6 +29,7 @@ from app.models.base import (
 from app.models.siliconflow import SiliconFlowProvider, _HttpResponse
 from app.services import eval_runner as er
 from app.services import scorer as sc
+from app.services.run_checkpoint import build_run_metadata
 
 _MESSAGES = [{"role": "user", "content": "请概述一笔收购的尽调要点"}]
 
@@ -645,6 +646,64 @@ class PersistedAnswerRunTests(unittest.TestCase):
         self.assertEqual(["RUN-CURRENT"], [row["run_id"] for row in summaries])
         self.assertEqual(["FD-001"], summaries[0]["case_ids"])
 
+    def test_loader_requires_current_dataset_and_prompt_hashes_when_tasks_are_supplied(self):
+        task = {
+            "case_id": "FD-001",
+            "scenario": "财务场景",
+            "question": "当前题目",
+            "context": "当前背景",
+            "output_requirement": "当前输出要求",
+        }
+        queue_item = {"case_id": "FD-001", "model_id": "m1", "task": task}
+        prompt_payload = [
+            {"case_id": "FD-001", "messages": er.build_messages(task)}
+        ]
+        metadata = build_run_metadata(
+            run_id="RUN-A",
+            provider="siliconflow",
+            model_ids=["m1"],
+            queue_items=[queue_item],
+            generation_parameters={},
+            judge_parameters={},
+            dataset_version="v-current",
+            prompt_payload=prompt_payload,
+        )
+        metadata.update({"status": "completed"})
+        tables = {
+            "live_evaluation_runs": [metadata],
+            "live_run_queue": [
+                {"run_id": "RUN-A", "case_id": "FD-001", "model_id": "m1"}
+            ],
+            "live_run_responses": [
+                {
+                    "run_id": "RUN-A",
+                    "case_id": "FD-001",
+                    "model_name": "m1",
+                    "run_status": "success",
+                    "answer_text": "已保存回答",
+                }
+            ],
+        }
+
+        class Store:
+            def list_rows(self, table):
+                return tables[table]
+
+        with mock.patch("app.persistence.get_result_store", return_value=Store()):
+            compatible = er.list_persisted_answer_runs(
+                allowed_case_ids={"FD-001"},
+                current_tasks=[task],
+                dataset_version="v-current",
+            )
+            incompatible = er.list_persisted_answer_runs(
+                allowed_case_ids={"FD-001"},
+                current_tasks=[{**task, "question": "题目已变更"}],
+                dataset_version="v-current",
+            )
+
+        self.assertEqual(["RUN-A"], [row["run_id"] for row in compatible])
+        self.assertEqual([], incompatible)
+
 
 class PersistedScoreCompatibilityTests(unittest.TestCase):
     def test_latest_score_queue_rejects_incompatible_batch(self):
@@ -657,6 +716,21 @@ class PersistedScoreCompatibilityTests(unittest.TestCase):
 
         with mock.patch("app.persistence.get_result_store", return_value=Store()):
             rows = sc.latest_score_queue(allowed_case_ids={"FD-001"})
+
+        self.assertEqual([], rows)
+
+    def test_latest_score_queue_requires_compatible_answer_run(self):
+        class Store:
+            def latest_queue(self, table):
+                return [
+                    {"run_id": "RUN-OLD", "case_id": "FD-001", "status": "success"}
+                ]
+
+        with mock.patch("app.persistence.get_result_store", return_value=Store()):
+            rows = sc.latest_score_queue(
+                allowed_case_ids={"FD-001"},
+                allowed_run_ids={"RUN-NEW"},
+            )
 
         self.assertEqual([], rows)
 

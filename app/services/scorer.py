@@ -598,11 +598,17 @@ def queue_items_for_status(
 def latest_score_queue(
     *,
     allowed_case_ids: Collection[str] | None = None,
+    allowed_run_ids: Collection[str] | None = None,
     db_path: Path | None = None,
 ) -> list[dict[str, Any]]:
     try:
         store = _runtime_result_store(db_path)
         rows = [] if store is None else store.latest_queue("live_score_queue")
+        if allowed_run_ids is not None:
+            allowed_runs = {_clean(run_id) for run_id in allowed_run_ids if _clean(run_id)}
+            row_run_ids = {_clean(row.get("run_id")) for row in rows if _clean(row.get("run_id"))}
+            if not row_run_ids or not row_run_ids.issubset(allowed_runs):
+                return []
         if allowed_case_ids is None:
             return rows
         allowed = {_clean(case_id) for case_id in allowed_case_ids if _clean(case_id)}
