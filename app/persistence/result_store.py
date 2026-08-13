@@ -275,6 +275,7 @@ class ResultStore:
                 if result.rowcount != 1:
                     raise ResultStoreError("score queue item does not exist")
                 self._heartbeat_run(connection, run_id)
+                self._refresh_evaluation_counts(connection, run_id)
             return True
         except SQLAlchemyError as exc:
             raise ResultStoreError("could not mark score queue item") from exc

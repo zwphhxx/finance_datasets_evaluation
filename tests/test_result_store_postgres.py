@@ -19,7 +19,7 @@ from app.persistence.schema import (
 def utcnow() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
-pytestmark = pytest.mark.skipif(
+requires_postgres = pytest.mark.skipif(
     not os.getenv("TEST_DATABASE_URL"),
     reason="TEST_DATABASE_URL is not configured",
 )
@@ -62,6 +62,7 @@ def store():
         )
 
 
+@requires_postgres
 def test_postgres_schema_contains_all_runtime_tables(store):
     assert set(store.table_names()) == {
         "live_evaluation_runs",
@@ -72,6 +73,7 @@ def test_postgres_schema_contains_all_runtime_tables(store):
     }
 
 
+@requires_postgres
 def test_postgres_answer_transition_is_idempotent_and_atomic(store):
     run_id = f"PYTEST-{uuid.uuid4().hex}"
     metadata = {
@@ -104,6 +106,7 @@ def test_postgres_answer_transition_is_idempotent_and_atomic(store):
     assert store.list_rows("live_run_queue", run_id=run_id)[0]["status"] == "success"
 
 
+@requires_postgres
 def test_postgres_failed_answer_transition_rolls_back(store):
     run_id = f"PYTEST-{uuid.uuid4().hex}"
     store.initialize_run(
@@ -138,6 +141,7 @@ def test_postgres_failed_answer_transition_rolls_back(store):
     assert store.list_rows("live_run_queue", run_id=run_id)[0]["status"] == "queued"
 
 
+@requires_postgres
 def test_postgres_score_transition_is_idempotent_and_atomic(store):
     score_run_id = f"PYTEST-SCORE-{uuid.uuid4().hex}"
     queue = {
@@ -168,6 +172,7 @@ def test_postgres_score_transition_is_idempotent_and_atomic(store):
     assert store.list_rows("live_score_queue", score_run_id=score_run_id)[0]["status"] == "success"
 
 
+@requires_postgres
 def test_postgres_new_store_instance_reads_committed_answer(store):
     run_id = f"PYTEST-{uuid.uuid4().hex}"
     store.initialize_run(
@@ -203,7 +208,8 @@ def test_postgres_new_store_instance_reads_committed_answer(store):
     assert rows[0]["answer_text"] == "survives restart"
 
 
-def test_postgres_claim_uses_one_conditional_update_without_sqlite_syntax(store):
+def test_postgres_claim_uses_one_conditional_update_without_sqlite_syntax():
+    store = ResultStore("sqlite:///:memory:")
     statement = store._claim_run_statement(
         "PYTEST-CLAIM", utcnow() - timedelta(minutes=1)
     )
@@ -216,6 +222,7 @@ def test_postgres_claim_uses_one_conditional_update_without_sqlite_syntax(store)
     assert "?" not in sql
 
 
+@requires_postgres
 def test_postgres_claim_is_atomic_for_stale_and_fresh_runs(store):
     run_id = f"PYTEST-{uuid.uuid4().hex}"
     store.initialize_run(

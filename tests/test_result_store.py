@@ -366,6 +366,27 @@ def test_mark_score_item_skipped_updates_combined_counts(tmp_path):
     assert (run["status"], run["failed_count"], run["pending_count"]) == ("failed", 1, 0)
 
 
+def test_marking_score_running_refreshes_combined_pending_state(tmp_path):
+    store = sqlite_store(tmp_path)
+    store.initialize_evaluation(run_metadata(), [run_queue_row()], [score_queue_row()])
+    store.save_run_outcome(response_row(), queue_status="success", combined=True)
+    store.mark_run_stopped("RUN-1", "interrupted before judging")
+    old = utcnow() - timedelta(days=1)
+    with store.engine.begin() as connection:
+        connection.execute(
+            update(live_evaluation_runs)
+            .where(live_evaluation_runs.c.run_id == "RUN-1")
+            .values(updated_at=old)
+        )
+
+    assert store.mark_score_item_running("SCORE-1", "FD-001", "m1") is True
+
+    run = store.list_rows("live_evaluation_runs", run_id="RUN-1")[0]
+    score = store.list_rows("live_score_queue", score_run_id="SCORE-1")[0]
+    assert (run["status"], run["pending_count"], run["updated_at"] > old) == ("running", 1, True)
+    assert (score["status"], score["attempt_count"]) == ("running", 1)
+
+
 def test_claim_run_claims_stale_running_once_and_rejects_fresh_running(tmp_path):
     store = sqlite_store(tmp_path)
     store.initialize_run(run_metadata(), [run_queue_row()])
