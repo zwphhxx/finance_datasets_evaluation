@@ -126,6 +126,19 @@ class UIComponentsTests(unittest.TestCase):
             for phrase in BANNED_PHRASES:
                 self.assertNotIn(phrase, source, file_path)
 
+    def test_sample_and_evaluation_pages_expose_report_regions(self):
+        samples_source = Path("src/ui/samples.py").read_text(encoding="utf-8")
+        test_run_source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+
+        for key in ["samples_filter_region", "samples_list_region", "samples_detail_region"]:
+            self.assertIn(f'with st.container(key="{key}"):', samples_source)
+        for key in [
+            "test_run_stage_configuration",
+            "test_run_stage_answers",
+            "test_run_stage_scores",
+        ]:
+            self.assertIn(f'with st.container(key="{key}"):', test_run_source)
+
     def test_component_signatures_match_current_contract(self):
         import src.ui.components as components
 

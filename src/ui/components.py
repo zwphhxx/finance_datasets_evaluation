@@ -319,6 +319,21 @@ header,
     line-height: 1.72;
     margin: 0 0 0.72rem 0;
 }
+.st-key-samples_filter_region,
+.st-key-samples_list_region,
+.st-key-samples_detail_region,
+.st-key-test_run_stage_configuration,
+.st-key-test_run_stage_answers,
+.st-key-test_run_stage_scores {
+    scroll-margin-top: 5rem;
+}
+.st-key-samples_filter_region,
+.st-key-samples_list_region,
+.st-key-test_run_stage_configuration,
+.st-key-test_run_stage_answers {
+    border-bottom: 1px solid var(--fde-line);
+    padding-bottom: 1.25rem;
+}
 .inline-status {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));

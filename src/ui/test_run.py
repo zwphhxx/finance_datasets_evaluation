@@ -694,8 +694,9 @@ def render_test_run_page(data_bundle: dict) -> None:
     model_ids = _selected_model_ids_from_state()
     run_plan = build_run_plan_summary(model_ids, selected_tasks)
 
-    render_numbered_section("01", TEST_RUN_STEPS[0])
-    _render_configuration_panel(sample_options, selected_tasks, model_ids, provider_name, run_plan, base, task_records)
+    with st.container(key="test_run_stage_configuration"):
+        render_numbered_section("01", TEST_RUN_STEPS[0])
+        _render_configuration_panel(sample_options, selected_tasks, model_ids, provider_name, run_plan, base, task_records)
 
     answer_run_summaries = er.list_persisted_answer_runs()
     persisted_answers = sum(int(item.get("success_count") or 0) for item in answer_run_summaries)
@@ -714,23 +715,25 @@ def render_test_run_page(data_bundle: dict) -> None:
         if persisted_answers
         else ("待运行", "neutral")
     )
-    render_numbered_section("02", TEST_RUN_STEPS[1], badge=answer_badge)
-    _render_results(
-        provider_name,
-        _current_eval_temperature(),
-        _EVAL_MAX_TOKENS,
-        task_records,
-        answer_run_summaries=answer_run_summaries,
-    )
+    with st.container(key="test_run_stage_answers"):
+        render_numbered_section("02", TEST_RUN_STEPS[1], badge=answer_badge)
+        _render_results(
+            provider_name,
+            _current_eval_temperature(),
+            _EVAL_MAX_TOKENS,
+            task_records,
+            answer_run_summaries=answer_run_summaries,
+        )
 
     score_badge = (
         (f"已有 {scored_count} 条评分", "success")
         if scored_count
         else ("待评分", "neutral")
     )
-    render_numbered_section("03", TEST_RUN_STEPS[2], badge=score_badge)
-    _render_scoring(base, provider_name, task_records)
-    _render_score_results(base, provider_name, task_records)
+    with st.container(key="test_run_stage_scores"):
+        render_numbered_section("03", TEST_RUN_STEPS[2], badge=score_badge)
+        _render_scoring(base, provider_name, task_records)
+        _render_score_results(base, provider_name, task_records)
     _render_pending_dialogs(sample_options)
 
 

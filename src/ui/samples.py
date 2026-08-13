@@ -963,37 +963,40 @@ def render_samples_page(data_bundle: dict) -> None:
     task_records, gold_map, rubric_dimensions = _page_readiness_inputs(data, samples)
     readiness_map = build_sample_readiness_map(samples, task_records, gold_map, rubric_dimensions)
 
-    render_numbered_section("01", "查询与筛选")
-    keyword, domain, test_status, completeness = _render_filters(samples, task_records, readiness_map)
-    filtered = _filter_samples_for_index(
-        samples,
-        readiness_map,
-        task_records,
-        keyword=keyword,
-        domain=domain,
-        test_status=test_status,
-        completeness=completeness,
-    )
+    with st.container(key="samples_filter_region"):
+        render_numbered_section("01", "查询与筛选")
+        keyword, domain, test_status, completeness = _render_filters(samples, task_records, readiness_map)
+        filtered = _filter_samples_for_index(
+            samples,
+            readiness_map,
+            task_records,
+            keyword=keyword,
+            domain=domain,
+            test_status=test_status,
+            completeness=completeness,
+        )
 
-    render_numbered_section("02", "样本列表")
-    if not filtered:
-        render_empty_state("没有符合当前条件的样本。")
-    else:
-        st.caption("点击表格任意行选择样本，在下方 03 区查看评测资产结构。")
-        _render_samples_table(filtered, readiness_map, task_records)
-        render_html('<div class="mobile-scroll-hint">表格可左右滑动查看完整内容</div>')
-        selected = _ensure_selected_sample(filtered)
-        if selected is not None:
-            render_selection_echo(
-                f"已选 {selected.sample_id}",
-                "#fde-current-sample",
-                "查看下方 03 当前样本 ↓",
-            )
+    with st.container(key="samples_list_region"):
+        render_numbered_section("02", "样本列表")
+        if not filtered:
+            render_empty_state("没有符合当前条件的样本。")
+        else:
+            st.caption("点击表格任意行选择样本，在下方 03 区查看评测资产结构。")
+            _render_samples_table(filtered, readiness_map, task_records)
+            render_html('<div class="mobile-scroll-hint">表格可左右滑动查看完整内容</div>')
+            selected = _ensure_selected_sample(filtered)
+            if selected is not None:
+                render_selection_echo(
+                    f"已选 {selected.sample_id}",
+                    "#fde-current-sample",
+                    "查看下方 03 当前样本 ↓",
+                )
 
-    render_html('<a id="fde-current-sample"></a>')
-    render_numbered_section("03", "当前样本")
-    _render_sample_detail(filtered, readiness_map, task_records, gold_map, rubric_dimensions)
-    _render_test_run_availability_note(samples, readiness_map)
+    with st.container(key="samples_detail_region"):
+        render_html('<a id="fde-current-sample"></a>')
+        render_numbered_section("03", "当前样本")
+        _render_sample_detail(filtered, readiness_map, task_records, gold_map, rubric_dimensions)
+        _render_test_run_availability_note(samples, readiness_map)
 
     _render_pending_dialogs(rubric_dimensions)
 
