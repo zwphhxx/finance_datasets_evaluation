@@ -90,6 +90,11 @@ MOBILE_RESPONSIVE_CSS = r"""
         padding-bottom: 0.25rem;
         padding-top: 0.25rem;
     }
+    .st-key-samples_title_bar [data-testid="stPopover"] button,
+    .st-key-conclusion_maintenance_entry [data-testid="stPopover"] button,
+    .st-key-samples_detail_region [data-testid="stPopover"] button {
+        min-height: 44px !important;
+    }
     .st-key-conclusion_data_notice [data-testid="stHorizontalBlock"] {
         align-items: center;
         display: grid;
@@ -188,6 +193,25 @@ MOBILE_RESPONSIVE_CSS = r"""
         margin: 0.85rem 0 0.65rem;
         padding-top: 0.65rem;
     }
+    [id^="fde-"] {
+        scroll-margin-top: 5.75rem;
+    }
+    .mobile-select-card-meta-model {
+        align-items: start;
+        display: grid;
+        grid-template-columns: max-content minmax(0, 1fr);
+    }
+    .mobile-select-card-count {
+        white-space: nowrap;
+    }
+    .mobile-select-card-basis {
+        display: -webkit-box;
+        min-width: 0;
+        overflow: hidden;
+        text-align: left !important;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+    }
     .home-section {
         margin-top: 1.75rem;
         padding-top: 1.2rem;
@@ -229,10 +253,11 @@ MOBILE_RESPONSIVE_CSS = r"""
     }
     [data-testid="stDialog"] [role="dialog"] {
         box-sizing: border-box;
-        max-height: calc(100dvh - 24px);
+        max-height: calc(100dvh - 5.5rem - env(safe-area-inset-bottom));
         max-width: calc(100vw - 24px);
         overflow-x: hidden;
         overflow-y: auto;
+        padding-bottom: calc(5.25rem + env(safe-area-inset-bottom));
         width: calc(100vw - 24px);
     }
     [data-testid="stDialog"] [role="dialog"] [data-testid="stHorizontalBlock"] {
@@ -249,21 +274,92 @@ MOBILE_RESPONSIVE_CSS = r"""
     }
     .st-key-test_run_sample_table {
         max-width: 100%;
-        overflow-x: auto;
-        overscroll-behavior-inline: contain;
+        overflow-x: hidden;
     }
-    .st-key-test_run_sample_table > div,
-    .st-key-test_run_sample_table [data-testid="stHorizontalBlock"] {
-        min-width: 44rem;
+    .st-key-test_run_sample_table_header {
+        display: none;
     }
-    .st-key-test_run_sample_table [data-testid="stHorizontalBlock"] {
-        display: grid;
-        grid-template-columns: 3rem 6rem minmax(15rem, 2.6fr) 6rem 4.5rem 5.5rem;
+    [class*="st-key-test_run_sample_row_"] {
+        border-bottom: 1px solid var(--fde-line);
+        padding: 0.55rem 0;
     }
-    .st-key-test_run_sample_table
+    [class*="st-key-test_run_sample_row_"]:last-child {
+        border-bottom: 0;
+    }
+    [class*="st-key-test_run_sample_row_"] [data-testid="stHorizontalBlock"] {
+        align-items: start;
+        display: grid !important;
+        gap: 0.12rem 0.55rem;
+        grid-template-columns: 2.5rem minmax(0, 1fr) minmax(0, 1fr);
+        min-width: 0;
+    }
+    [class*="st-key-test_run_sample_row_"]
         [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        flex: none !important;
         min-width: 0;
         width: auto !important;
+    }
+    [class*="st-key-test_run_sample_row_"]
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-child(1) {
+        grid-column: 1;
+        grid-row: 1 / 4;
+    }
+    [class*="st-key-test_run_sample_row_"]
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-child(2) {
+        grid-column: 2;
+        grid-row: 1;
+    }
+    [class*="st-key-test_run_sample_row_"]
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-child(3) {
+        grid-column: 2 / 4;
+        grid-row: 2;
+    }
+    [class*="st-key-test_run_sample_row_"]
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-child(4) {
+        grid-column: 2;
+        grid-row: 3;
+    }
+    [class*="st-key-test_run_sample_row_"]
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-child(5) {
+        grid-column: 3;
+        grid-row: 3;
+    }
+    [class*="st-key-test_run_sample_row_"]
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-child(6) {
+        grid-column: 3;
+        grid-row: 1;
+    }
+    [data-testid="stDialog"] .st-key-test_run_sample_dialog_actions,
+    [data-testid="stDialog"] .st-key-test_run_model_dialog_actions,
+    [data-testid="stDialog"] .st-key-test_run_prompt_dialog_actions {
+        background: var(--fde-surface);
+        bottom: calc(1.25rem + env(safe-area-inset-bottom));
+        box-sizing: border-box;
+        left: 2.25rem;
+        margin-top: 0.5rem;
+        padding: 0.6rem 0 0.25rem;
+        position: fixed;
+        right: 2.25rem;
+        width: auto !important;
+        z-index: 1002;
+    }
+    [data-testid="stDialog"] .st-key-test_run_sample_dialog_actions [data-testid="stHorizontalBlock"],
+    [data-testid="stDialog"] .st-key-test_run_model_dialog_actions [data-testid="stHorizontalBlock"] {
+        display: grid !important;
+        flex-direction: row;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    [data-testid="stDialog"] .st-key-test_run_sample_dialog_actions [data-testid="stHorizontalBlock"] > [data-testid="stColumn"],
+    [data-testid="stDialog"] .st-key-test_run_model_dialog_actions [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        flex: none !important;
+        min-width: 0;
+        width: auto !important;
+    }
+    [data-testid="stDialog"] .st-key-test_run_sample_dialog_actions .stButton > button,
+    [data-testid="stDialog"] .st-key-test_run_model_dialog_actions .stButton > button,
+    [data-testid="stDialog"] .st-key-test_run_prompt_dialog_actions .stButton > button {
+        min-height: 44px;
+        width: 100%;
     }
     .st-key-test_run_answer_viewer {
         gap: 0.7rem;

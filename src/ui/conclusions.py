@@ -250,9 +250,9 @@ def _render_mobile_model_cards(model_summaries: list[dict]) -> None:
                 f'<span>{float(row["平均分"]):.1f} 分</span>'
                 "</div>"
                 f'<div class="mobile-select-card-title">{escape(str(row["当前判断"]))}</div>'
-                '<div class="mobile-select-card-meta">'
-                f'<span>{int(row["AI 评分样本数"])} 个样本</span>'
-                f'<span>{escape(str(row["主要依据"]))}</span>'
+                '<div class="mobile-select-card-meta mobile-select-card-meta-model">'
+                f'<span class="mobile-select-card-count">{int(row["AI 评分样本数"])} 个样本</span>'
+                f'<span class="mobile-select-card-basis">{escape(str(row["主要依据"]))}</span>'
                 "</div>"
                 "</div>"
             )

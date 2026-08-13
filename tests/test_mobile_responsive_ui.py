@@ -171,6 +171,117 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         ]:
             self.assertIn(contract, css)
 
+    def test_mobile_sample_selector_uses_card_grid_without_forced_width(self):
+        css = self._responsive_css()
+        mobile_css = css.split(
+            "@media (max-width: 760px)",
+            1,
+        )[1].split("@media (max-width: 480px)", 1)[0]
+        source = TEST_RUN_PATH.read_text(encoding="utf-8")
+
+        self.assertNotIn("min-width: 44rem", mobile_css)
+        self.assertIn("test_run_sample_table_header", source)
+        self.assertIn("test_run_sample_row_", source)
+        self.assertIn('.st-key-test_run_sample_table_header', mobile_css)
+        self.assertIn('[class*="st-key-test_run_sample_row_"]', mobile_css)
+        self.assertIn("grid-template-columns: 2.5rem minmax(0, 1fr) minmax(0, 1fr)", mobile_css)
+
+    def test_mobile_dialogs_reserve_navigation_and_safe_area_with_pinned_actions(self):
+        css = self._responsive_css()
+        mobile_css = css.split(
+            "@media (max-width: 760px)",
+            1,
+        )[1].split("@media (max-width: 480px)", 1)[0]
+        source = TEST_RUN_PATH.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "max-height: calc(100dvh - 5.5rem - env(safe-area-inset-bottom))",
+            mobile_css,
+        )
+        for key in [
+            "test_run_sample_dialog_actions",
+            "test_run_model_dialog_actions",
+            "test_run_prompt_dialog_actions",
+        ]:
+            self.assertIn(key, source)
+            self.assertIn(
+                f'[data-testid="stDialog"] .st-key-{key}',
+                mobile_css,
+            )
+        action_rules = _declarations_for_selector(
+            mobile_css,
+            '[data-testid="stDialog"] .st-key-test_run_sample_dialog_actions',
+        )
+        self.assertTrue(
+            any(re.search(r"position\s*:\s*fixed\s*;", rule) for rule in action_rules),
+            "the dialog scroll container cannot reveal a naturally offscreen sticky footer",
+        )
+        self.assertTrue(
+            any(re.search(r"bottom\s*:\s*calc\(", rule) for rule in action_rules)
+        )
+        self.assertIn(
+            '[data-testid="stDialog"] .st-key-test_run_sample_dialog_actions [data-testid="stHorizontalBlock"]',
+            mobile_css,
+            "keep descendant combinators on one line so Streamlit CSS minification preserves them",
+        )
+        self.assertTrue(
+            any(re.search(r"box-sizing\s*:\s*border-box\s*;", rule) for rule in action_rules)
+        )
+        self.assertTrue(
+            any(re.search(r"width\s*:\s*auto\s*!important\s*;", rule) for rule in action_rules),
+            "Streamlit gives vertical blocks width:100%; fixed left/right require an auto width",
+        )
+        dialog_rules = _declarations_for_selector(
+            mobile_css,
+            '[data-testid="stDialog"] [role="dialog"]',
+        )
+        self.assertTrue(
+            any(re.search(r"padding-bottom\s*:\s*calc\(", rule) for rule in dialog_rules)
+        )
+        self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", mobile_css)
+
+    def test_mobile_model_metadata_is_two_columns_and_clamps_basis(self):
+        css = self._responsive_css()
+        source = (PROJECT_ROOT / "src" / "ui" / "conclusions.py").read_text(encoding="utf-8")
+
+        self.assertIn("mobile-select-card-meta-model", source)
+        self.assertIn("mobile-select-card-count", source)
+        self.assertIn("mobile-select-card-basis", source)
+        self.assertIn(".mobile-select-card-meta-model", css)
+        self.assertIn("white-space: nowrap", css)
+        self.assertIn("-webkit-line-clamp: 2", css)
+
+    def test_mobile_popover_triggers_are_real_44px_touch_targets(self):
+        css = self._responsive_css()
+        mobile_css = css.split(
+            "@media (max-width: 760px)",
+            1,
+        )[1].split("@media (max-width: 480px)", 1)[0]
+
+        for container in [
+            ".st-key-samples_title_bar",
+            ".st-key-conclusion_maintenance_entry",
+            ".st-key-samples_detail_region",
+        ]:
+            self.assertIn(container, mobile_css)
+        self.assertIn('[data-testid="stPopover"] button', mobile_css)
+        self.assertRegex(mobile_css, r"min-height\s*:\s*44px\s*!important")
+
+    def test_mobile_native_anchors_clear_sticky_navigation(self):
+        mobile_css = self._responsive_css().split(
+            "@media (max-width: 760px)",
+            1,
+        )[1].split("@media (max-width: 480px)", 1)[0]
+
+        self.assertIn('[id^="fde-"]', mobile_css)
+        self.assertIn("scroll-margin-top: 5.75rem", mobile_css)
+
+    def test_blocking_dialog_preparation_has_explicit_loading_feedback(self):
+        source = TEST_RUN_PATH.read_text(encoding="utf-8")
+
+        self.assertIn('st.spinner("正在获取模型列表…")', source)
+        self.assertIn('st.spinner("正在准备提示词…")', source)
+
     def test_mobile_column_stacking_is_scoped_to_named_layouts(self):
         css = self._responsive_css()
         mobile_css = css.split(
@@ -240,7 +351,7 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         for rule in _declarations_for_selector(mobile_css, ".sample-detail-table"):
             self.assertNotRegex(rule, r"display\s*:")
 
-    def test_run_action_is_the_only_fixed_element_and_yields_to_overlays(self):
+    def test_fixed_actions_are_limited_to_run_and_dialog_controls(self):
         css = self._responsive_css()
         mobile_css = css.split(
             "@media (max-width: 760px)",
@@ -252,10 +363,36 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             if re.search(r"position\s*:\s*fixed\b", declarations)
         ]
 
-        self.assertEqual(1, len(fixed_rules))
-        fixed_selectors, fixed_declarations = fixed_rules[0]
-        self.assertIn(".st-key-test_run_run", fixed_selectors)
-        self.assertRegex(fixed_declarations, r"position\s*:\s*fixed\b")
+        self.assertEqual(2, len(fixed_rules))
+        run_rule = next(item for item in fixed_rules if ".st-key-test_run_run" in item[0])
+        self.assertRegex(run_rule[1], r"position\s*:\s*fixed\b")
+        dialog_rule = next(
+            item
+            for item in fixed_rules
+            if any(
+                ".st-key-test_run_sample_dialog_actions" in selector
+                for selector in item[0]
+            )
+        )
+        for selector in [
+            ".st-key-test_run_sample_dialog_actions",
+            ".st-key-test_run_model_dialog_actions",
+            ".st-key-test_run_prompt_dialog_actions",
+        ]:
+            matching_selectors = [
+                item for item in dialog_rule[0] if selector in item
+            ]
+            self.assertEqual(1, len(matching_selectors))
+            self.assertIn('[data-testid="stDialog"]', matching_selectors[0])
+
+        self.assertEqual(
+            [],
+            _declarations_for_selector(
+                mobile_css,
+                ".st-key-test_run_sample_dialog_actions",
+            ),
+            "dialog action styles must not leak onto Streamlit's transient rerun DOM",
+        )
 
         dialog_selector = (
             'body:has([data-testid="stDialog"]) .st-key-test_run_run'
@@ -362,7 +499,7 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             ),
         )
 
-    def test_sample_table_has_a_stable_key_and_mobile_minimum_width(self):
+    def test_sample_table_has_stable_keys_without_mobile_minimum_width(self):
         test_run_source = TEST_RUN_PATH.read_text(encoding="utf-8")
 
         self.assertTrue(
@@ -371,7 +508,9 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         )
         css = self._responsive_css()
         self.assertIn(".st-key-test_run_sample_table", css)
-        self.assertIn("min-width: 44rem", css)
+        self.assertIn("test_run_sample_table_header", test_run_source)
+        self.assertIn("test_run_sample_row_", test_run_source)
+        self.assertNotIn("min-width: 44rem", css)
 
     def test_run_action_is_rendered_outside_streamlit_columns(self):
         import inspect

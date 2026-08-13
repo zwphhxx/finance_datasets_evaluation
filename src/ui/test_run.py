@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+from dataclasses import dataclass
 from datetime import datetime
 from html import escape
 
@@ -91,11 +92,113 @@ _SCORE_STATE_KEY = "test_run_score_state"
 _PARTIAL_SCORE_OUTCOMES_KEY = "test_run_partial_score_outcomes"
 _LAST_SCORE_STATUS_KEY = "test_run_last_score_status"
 _SCORE_RETRY_RUNNING_KEY = "test_run_score_retry_running"
+_PERSISTED_SCORE_RUN_ID_KEY = "test_run_persisted_score_run_id"
 _JUDGE_TEMPERATURE = 0.0
 _JUDGE_MAX_TOKENS = 2048
 _EVAL_MAX_TOKENS_DEFAULT = 4096
 _EVAL_MAX_TOKENS_LIMIT = 8192
 _EVAL_MAX_TOKENS_ENV = "FINDUEVAL_EVAL_MAX_TOKENS"
+
+
+@dataclass(frozen=True)
+class ScoreResultStatus:
+    """Mutually exclusive display state for one scoring batch."""
+
+    kind: str
+    badge: str
+    badge_tone: str
+    summary: str
+    persistence_note: str
+
+
+def build_score_result_status(
+    score_result,
+    state: dict | None = None,
+    persisted_score_run_id: str = "",
+) -> ScoreResultStatus | None:
+    """Describe one score batch without leaking persistence from another batch."""
+    state = state if isinstance(state, dict) else {}
+    outcomes = list(getattr(score_result, "outcomes", ()) or ())
+    score_run_id = str(
+        getattr(score_result, "score_run_id", "")
+        or state.get("score_run_id")
+        or ""
+    )
+    if score_result is None and not state:
+        return None
+
+    mode = str(getattr(score_result, "mode", "") or state.get("mode") or "live")
+    is_demo = mode == "mock" or bool(score_result is not None and sc.is_mock_score(score_result))
+    total = max(len(outcomes), len(list(state.get("queue_items") or [])))
+    completed = len(outcomes)
+    succeeded = sum(1 for outcome in outcomes if bool(getattr(outcome, "ok", False)))
+    failed = sum(
+        1
+        for outcome in outcomes
+        if not bool(getattr(outcome, "ok", False))
+        and not _is_mock_score_outcome(outcome)
+    )
+    skipped = int(state.get("skipped_count") or 0)
+    persisted = bool(score_run_id and str(persisted_score_run_id or "") == score_run_id)
+
+    if is_demo:
+        return ScoreResultStatus(
+            kind="demo",
+            badge="演示记录",
+            badge_tone="neutral",
+            summary=f"演示记录 {len(outcomes)} 条 · 未产生真实评分，不进入评测结论。",
+            persistence_note=(
+                "演示记录已保存，用于链路调试。"
+                if persisted
+                else "当前演示记录仅在会话内展示。"
+            ),
+        )
+
+    raw_status = str(state.get("status") or ("completed" if score_result is not None else "")).lower()
+    if raw_status == "running":
+        kind = "running"
+    elif raw_status == "interrupted":
+        kind = "interrupted"
+    elif raw_status == "failed" or (raw_status == "completed" and failed and not succeeded):
+        kind = "failed"
+    else:
+        kind = "completed"
+
+    if kind == "running":
+        badge, badge_tone = "评分中", "neutral"
+        summary = (
+            f"AI 评分进行中：已完成 {completed}/{total} 条 · 成功 {succeeded} 条 · "
+            f"失败 {failed} 条 · 跳过失败回答 {skipped} 条。"
+        )
+    elif kind == "interrupted":
+        badge, badge_tone = "待继续", "neutral"
+        summary = (
+            f"AI 评分未完成：已完成 {completed}/{total} 条 · 未评分 {max(0, total - completed)} 条 · "
+            f"失败 {failed} 条 · 跳过失败回答 {skipped} 条；已生成评分会保留，可稍后继续。"
+        )
+    elif kind == "failed":
+        badge, badge_tone = "评分失败", "danger"
+        summary = (
+            f"AI 评分失败：已完成 {completed}/{total} 条 · 成功 {succeeded} 条 · "
+            f"失败 {failed} 条 · 跳过失败回答 {skipped} 条；可重试失败评分或重新开始。"
+        )
+    else:
+        badge, badge_tone = f"已有 {succeeded} 条评分", "success"
+        summary = (
+            f"AI 评分已完成：成功评分 {succeeded}/{len(outcomes)} 条 · "
+            f"评分失败 {failed} 条 · 跳过失败回答 {skipped} 条 · "
+            f"裁判模式：{_mode_label(mode)}。"
+        )
+
+    if persisted:
+        persistence_note = (
+            "AI 评分已写入数据库，可在评测结论页查看。"
+            if kind == "completed"
+            else "已生成的评分记录已写入数据库；未完成项仍可继续。"
+        )
+    else:
+        persistence_note = "当前评分仅在会话内展示；初始化运行期数据层后可写入评测结论。"
+    return ScoreResultStatus(kind, badge, badge_tone, summary, persistence_note)
 
 
 def _persistence_gate(result: bool) -> None:
@@ -711,6 +814,25 @@ def prompt_preview_task_for_case(
     return (by_case.get(current) or {}).get("task") or {}
 
 
+def _score_status_for_stage(task_records: list[dict]) -> ScoreResultStatus | None:
+    """Resolve the same current score batch used by the result section header."""
+    compare_result = eval_state.get_last_run()
+    if compare_result is None:
+        compare_result = _recover_latest_run(task_records)
+    state = _score_state()
+    score_result = eval_state.get_last_score()
+    if score_result is None and compare_result is not None and not state:
+        score_result = _recover_latest_score(compare_result)
+        state = _score_state()
+    if score_result is None and state and _partial_score_outcomes():
+        score_result = _score_result_from_state(state, _partial_score_outcomes())
+    return build_score_result_status(
+        score_result,
+        state,
+        str(st.session_state.get(_PERSISTED_SCORE_RUN_ID_KEY) or ""),
+    )
+
+
 def render_test_run_page(data_bundle: dict) -> None:
     base = data_bundle["base"]
 
@@ -787,11 +909,13 @@ def render_test_run_page(data_bundle: dict) -> None:
             answer_run_summaries=answer_run_summaries,
         )
 
-    score_badge = (
-        (f"已有 {scored_count} 条评分", "success")
-        if scored_count
-        else ("待评分", "neutral")
-    )
+    score_display_status = _score_status_for_stage(task_records)
+    if score_display_status is not None:
+        score_badge = (score_display_status.badge, score_display_status.badge_tone)
+    elif scored_count:
+        score_badge = (f"已有 {scored_count} 条评分", "success")
+    else:
+        score_badge = ("待评分", "neutral")
     with st.container(key="test_run_stage_scores"):
         render_html('<a id="fde-test-run-scores"></a>')
         render_numbered_section("03", TEST_RUN_STEPS[2], badge=score_badge)
@@ -1007,9 +1131,15 @@ def _render_prompt_preview_dialog(sample_options: list[dict]) -> None:
     preview_ids = selected_ids or list(by_case)
     if not preview_ids:
         st.caption("当前没有可预览的样本。")
-        if st.button("关闭", key="test_run_prompt_preview_close_empty", type="tertiary"):
-            _clear_dialog_state()
-            st.rerun()
+        with st.container(key="test_run_prompt_dialog_actions"):
+            if st.button(
+                "关闭",
+                key="test_run_prompt_preview_close_empty",
+                type="tertiary",
+                use_container_width=True,
+            ):
+                _clear_dialog_state()
+                st.rerun()
         return
 
     current = str(st.session_state.get("test_run_prompt_preview_case") or "")
@@ -1025,8 +1155,9 @@ def _render_prompt_preview_dialog(sample_options: list[dict]) -> None:
         )
     st.session_state["test_run_prompt_preview_case"] = current
 
-    task = prompt_preview_task_for_case(sample_options, selected_ids, current)
-    messages = er.build_messages(task)
+    with st.spinner("正在准备提示词…"):
+        task = prompt_preview_task_for_case(sample_options, selected_ids, current)
+        messages = er.build_messages(task)
     st.caption("以下为被测模型实际收到的全部内容，不包含专业标准答案、必须覆盖点、不可接受错误或评分标准。")
     for message in messages:
         role = str(message.get("role") or "")
@@ -1039,9 +1170,15 @@ def _render_prompt_preview_dialog(sample_options: list[dict]) -> None:
             disabled=True,
             key=f"test_run_prompt_preview_{role}",
         )
-    if st.button("关闭", key="test_run_prompt_preview_close", type="tertiary"):
-        _clear_dialog_state()
-        st.rerun()
+    with st.container(key="test_run_prompt_dialog_actions"):
+        if st.button(
+            "关闭",
+            key="test_run_prompt_preview_close",
+            type="tertiary",
+            use_container_width=True,
+        ):
+            _clear_dialog_state()
+            st.rerun()
 
 
 def _prompt_preview_case_label(item: dict) -> str:
@@ -1054,9 +1191,15 @@ def _prompt_preview_case_label(item: dict) -> str:
 def _render_sample_selection_dialog(sample_options: list[dict]) -> None:
     if not sample_options:
         st.warning(NO_TESTABLE_SAMPLE_MESSAGE)
-        if st.button("关闭", key="test_run_sample_dialog_close", type="tertiary"):
-            _clear_dialog_state()
-            st.rerun()
+        with st.container(key="test_run_sample_dialog_actions"):
+            if st.button(
+                "关闭",
+                key="test_run_sample_dialog_close",
+                type="tertiary",
+                use_container_width=True,
+            ):
+                _clear_dialog_state()
+                st.rerun()
         return
 
     by_case = {item["case_id"]: item for item in sample_options}
@@ -1133,22 +1276,23 @@ def _render_sample_selection_dialog(sample_options: list[dict]) -> None:
         f"已选样本：{len(selected_cases)} 个。仅展示已入库且通过完整度校验的样本；"
         "被测模型不会看到专业标准答案或评分标准。"
     )
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button(
-            "确认选择",
-            key="test_run_sample_dialog_confirm",
-            type="primary",
-            disabled=not selected_cases,
-            use_container_width=True,
-        ):
-            st.session_state["test_run_selected_cases"] = selected_cases
-            _clear_dialog_state()
-            st.rerun()
-    with col2:
-        if st.button("取消", key="test_run_sample_dialog_cancel", type="tertiary", use_container_width=True):
-            _clear_dialog_state()
-            st.rerun()
+    with st.container(key="test_run_sample_dialog_actions"):
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button(
+                "确认选择",
+                key="test_run_sample_dialog_confirm",
+                type="primary",
+                disabled=not selected_cases,
+                use_container_width=True,
+            ):
+                st.session_state["test_run_selected_cases"] = selected_cases
+                _clear_dialog_state()
+                st.rerun()
+        with col2:
+            if st.button("取消", key="test_run_sample_dialog_cancel", type="tertiary", use_container_width=True):
+                _clear_dialog_state()
+                st.rerun()
 
 
 def _render_sample_checkbox_table(sample_options: list[dict], selected_cases: list[str]) -> dict[str, bool]:
@@ -1161,43 +1305,40 @@ def _render_sample_checkbox_table(sample_options: list[dict], selected_cases: li
         border=True,
         key="test_run_sample_table",
     ):
-        header_cols = st.columns(SAMPLE_TABLE_COLUMN_WIDTHS, gap="small")
-        for col, header in zip(header_cols, SAMPLE_TABLE_HEADERS, strict=True):
-            with col:
-                st.markdown(f"**{header}**")
-        st.markdown(
-            "<div style='border-top: 1px solid #E5E7EB; margin: 0.12rem 0 0.2rem 0;'></div>",
-            unsafe_allow_html=True,
-        )
+        with st.container(key="test_run_sample_table_header"):
+            header_cols = st.columns(SAMPLE_TABLE_COLUMN_WIDTHS, gap="small")
+            for col, header in zip(header_cols, SAMPLE_TABLE_HEADERS, strict=True):
+                with col:
+                    st.markdown(f"**{header}**")
+            st.markdown(
+                "<div style='border-top: 1px solid #E5E7EB; margin: 0.12rem 0 0.2rem 0;'></div>",
+                unsafe_allow_html=True,
+            )
 
-        for index, row in enumerate(rows):
+        for row in rows:
             case_id = str(row["样本编号"])
             key = sample_checkbox_key(case_id)
             if key not in st.session_state:
                 st.session_state[key] = case_id in selected_set
 
-            cols = st.columns(SAMPLE_TABLE_COLUMN_WIDTHS, gap="small")
-            with cols[0]:
-                checkbox_values[case_id] = bool(st.checkbox(
-                    "选择",
-                    key=key,
-                    label_visibility="collapsed",
-                ))
-            with cols[1]:
-                _render_sample_table_cell(case_id)
-            with cols[2]:
-                _render_sample_table_cell(str(row["任务标题"]))
-            with cols[3]:
-                _render_sample_table_cell(str(row["场景"]))
-            with cols[4]:
-                _render_sample_table_cell(str(row["难度"]))
-            with cols[5]:
-                _render_sample_table_cell(str(row["测试状态"]))
-            if index < len(rows) - 1:
-                st.markdown(
-                    "<div style='border-top: 1px solid #F0F2F5; margin: 0.06rem 0 0.1rem 0;'></div>",
-                    unsafe_allow_html=True,
-                )
+            with st.container(key=f"test_run_sample_row_{_safe_key(case_id)}"):
+                cols = st.columns(SAMPLE_TABLE_COLUMN_WIDTHS, gap="small")
+                with cols[0]:
+                    checkbox_values[case_id] = bool(st.checkbox(
+                        "选择",
+                        key=key,
+                        label_visibility="collapsed",
+                    ))
+                with cols[1]:
+                    _render_sample_table_cell(case_id)
+                with cols[2]:
+                    _render_sample_table_cell(str(row["任务标题"]))
+                with cols[3]:
+                    _render_sample_table_cell(str(row["场景"]))
+                with cols[4]:
+                    _render_sample_table_cell(str(row["难度"]))
+                with cols[5]:
+                    _render_sample_table_cell(str(row["测试状态"]))
 
     return checkbox_values
 
@@ -1232,7 +1373,8 @@ def _render_model_selection_dialog() -> None:
     )
     st.caption("所有被测模型使用相同回答随机性，便于横向比较。")
 
-    result = provider.list_models()
+    with st.spinner("正在获取模型列表…"):
+        result = provider.list_models()
     available_models = list(result.models) if result.ok else []
     model_options = [str(model.id) for model in available_models if str(model.id).strip()]
     st.markdown("**可用模型**")
@@ -1289,26 +1431,27 @@ def _render_model_selection_dialog() -> None:
                     ]
                     st.rerun()
     st.caption(f"已选模型：{len(chosen_models)} 个")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button(
-            "确认选择",
-            key="test_run_model_dialog_confirm",
-            type="primary",
-            disabled=not chosen_models,
-            use_container_width=True,
-        ):
-            st.session_state["test_run_provider"] = sf.PROVIDER_NAME
-            st.session_state["test_run_selected_models"] = chosen_models
-            st.session_state[_EVAL_TEMPERATURE_KEY] = _normalize_eval_temperature(
-                st.session_state.get(_MODEL_DIALOG_TEMPERATURE_KEY)
-            )
-            _clear_dialog_state()
-            st.rerun()
-    with col2:
-        if st.button("取消", key="test_run_model_dialog_cancel", type="tertiary", use_container_width=True):
-            _clear_dialog_state()
-            st.rerun()
+    with st.container(key="test_run_model_dialog_actions"):
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button(
+                "确认选择",
+                key="test_run_model_dialog_confirm",
+                type="primary",
+                disabled=not chosen_models,
+                use_container_width=True,
+            ):
+                st.session_state["test_run_provider"] = sf.PROVIDER_NAME
+                st.session_state["test_run_selected_models"] = chosen_models
+                st.session_state[_EVAL_TEMPERATURE_KEY] = _normalize_eval_temperature(
+                    st.session_state.get(_MODEL_DIALOG_TEMPERATURE_KEY)
+                )
+                _clear_dialog_state()
+                st.rerun()
+        with col2:
+            if st.button("取消", key="test_run_model_dialog_cancel", type="tertiary", use_container_width=True):
+                _clear_dialog_state()
+                st.rerun()
 
 
 def _siliconflow_balance_text(provider: sf.SiliconFlowProvider) -> str | None:
@@ -1390,6 +1533,22 @@ def _partial_score_outcomes() -> list[sc.ScoreOutcome]:
     return list(st.session_state.get(_PARTIAL_SCORE_OUTCOMES_KEY, []) or [])
 
 
+def _prepare_score_run_persistence(score_run_id: str, *, continuing: bool) -> None:
+    """Prevent a new score batch from inheriting another batch's saved state."""
+    current = str(st.session_state.get(_PERSISTED_SCORE_RUN_ID_KEY) or "")
+    if not (continuing and current == str(score_run_id or "")):
+        st.session_state.pop(_PERSISTED_SCORE_RUN_ID_KEY, None)
+
+
+def _record_score_run_persistence(score_run_id: str, *, persisted: bool) -> None:
+    """Record successful incremental/final persistence for the exact score batch."""
+    normalized_run_id = str(score_run_id or "")
+    if persisted and normalized_run_id:
+        st.session_state[_PERSISTED_SCORE_RUN_ID_KEY] = normalized_run_id
+    elif str(st.session_state.get(_PERSISTED_SCORE_RUN_ID_KEY) or "") == normalized_run_id:
+        st.session_state.pop(_PERSISTED_SCORE_RUN_ID_KEY, None)
+
+
 def _set_score_state(
     *,
     status: str,
@@ -1424,6 +1583,8 @@ def _clear_score_state() -> None:
     st.session_state.pop(_SCORE_STATE_KEY, None)
     st.session_state.pop(_PARTIAL_SCORE_OUTCOMES_KEY, None)
     st.session_state.pop(_LAST_SCORE_STATUS_KEY, None)
+    st.session_state.pop(_PERSISTED_SCORE_RUN_ID_KEY, None)
+    # Stop reading the legacy boolean; remove it only if an older session still carries it.
     st.session_state.pop("test_run_score_persisted", None)
     st.session_state.pop(_SCORE_RETRY_RUNNING_KEY, None)
 
@@ -1653,9 +1814,13 @@ def _recover_latest_score(compare_result) -> object | None:
         queue_items=queue_items,
         outcomes=list(getattr(score_result, "outcomes", []) or []),
         skipped_count=0,
-            message="检测到已生成 AI 评分。已生成评分会保留，未完成项可稍后继续。",
+        message="检测到已生成 AI 评分。已生成评分会保留，未完成项可稍后继续。",
     )
-    st.session_state["test_run_score_persisted"] = bool(score_result is not None and getattr(score_result, "outcomes", None))
+    _prepare_score_run_persistence(score_run_id, continuing=False)
+    _record_score_run_persistence(
+        score_run_id,
+        persisted=bool(score_result is not None and getattr(score_result, "outcomes", None)),
+    )
     return score_result
 
 
@@ -1920,7 +2085,7 @@ def _finalize_score_result(status: str, state: dict, outcomes: list[sc.ScoreOutc
         persisted = sc.persist_score_result(score_result)
         eval_state.set_last_score(score_result)
         st.session_state["test_run_score_dims"] = list(st.session_state.get("test_run_score_dims") or [])
-        st.session_state["test_run_score_persisted"] = persisted
+        _record_score_run_persistence(score_result.score_run_id, persisted=persisted)
         cd.clear_conclusions_caches()
 
 
@@ -1970,6 +2135,7 @@ def _execute_retry_score_queue(
     skipped_count = int(state.get("skipped_count") or build_score_plan_summary(compare_result)["skipped"])
     created_at = str(getattr(score_result, "created_at", "") or datetime.now().isoformat(timespec="seconds"))
     updated_outcomes = list(getattr(score_result, "outcomes", []) or [])
+    _prepare_score_run_persistence(score_run_id, continuing=True)
     retried_outcomes: list[sc.ScoreOutcome] = []
     queue_slot = st.empty()
     st.session_state[_SCORE_RETRY_RUNNING_KEY] = True
@@ -2039,11 +2205,7 @@ def _execute_retry_score_queue(
             _persistence_gate(persisted)
         except RuntimeError:
             interrupted = True
-        st.session_state["test_run_score_persisted"] = (
-            bool(st.session_state.get("test_run_score_persisted") or persisted)
-            if persisted
-            else False
-        )
+        _record_score_run_persistence(score_run_id, persisted=persisted)
         _set_score_state(
             status="running",
             score_run_id=score_run_id,
@@ -2113,6 +2275,11 @@ def _execute_score_queue(
     provider = get_text_provider(prefer=provider_name)
     judge_model = sc.DEFAULT_JUDGE_MODEL
     score_run_id = str((base_state or {}).get("score_run_id") or sc.generate_score_run_id())
+    continuing_score_run = bool(
+        base_state
+        and str((base_state or {}).get("score_run_id") or "") == score_run_id
+    )
+    _prepare_score_run_persistence(score_run_id, continuing=continuing_score_run)
     created_at = str((base_state or {}).get("created_at") or datetime.now().isoformat(timespec="seconds"))
     mode = "mock" if getattr(provider, "name", "") == "mock" else "live"
     judge_provider = str(getattr(provider, "name", ""))
@@ -2212,11 +2379,7 @@ def _execute_score_queue(
         except RuntimeError:
             interrupted = True
             message = interruption_message
-        st.session_state["test_run_score_persisted"] = (
-            bool(st.session_state.get("test_run_score_persisted") or persisted)
-            if persisted
-            else False
-        )
+        _record_score_run_persistence(score_run_id, persisted=persisted)
         _set_score_state(
             status="running",
             score_run_id=score_run_id,
@@ -2779,36 +2942,21 @@ def _render_score_results(base, provider_name: str, task_records: list[dict]) ->
             _render_unfinished_score_notice(state, base, provider_name, compare_result, task_records)
         return
     dimensions = st.session_state.get("test_run_score_dims") or ds.get_rubric_dimensions()
-    state_skipped = int((state or {}).get("skipped_count") or 0)
-    mock_scores = sum(1 for outcome in score_result.outcomes if _is_mock_score_outcome(outcome))
-    failed_scores = sum(
-        1 for outcome in score_result.outcomes
-        if not outcome.ok and not _is_mock_score_outcome(outcome)
+    display_status = build_score_result_status(
+        score_result,
+        state,
+        str(st.session_state.get(_PERSISTED_SCORE_RUN_ID_KEY) or ""),
     )
-    generated = sum(1 for outcome in score_result.outcomes if outcome.ok)
-    persisted = bool(st.session_state.get("test_run_score_persisted"))
-
-    st.markdown(
-        f"AI 评分已生成：成功评分 {score_result.scored_count}/{len(score_result.outcomes)} · "
-        f"已生成结论 {generated} 条 · 跳过失败回答 {state_skipped} 条 · "
-        f"模拟评分 {mock_scores} 条 · 评分失败 {failed_scores} 条 · "
-        f"裁判模式：{_mode_label(score_result.mode)}"
-    )
-    if persisted:
-        st.caption("AI 评分已写入数据库，可在评测结论页查看。")
-    else:
-        st.caption("当前评分仅在会话内展示；初始化运行期数据层后可写入评测结论。")
-    if state and state.get("status") in {"running", "interrupted", "failed"}:
+    if display_status is not None:
+        st.markdown(display_status.summary)
+        st.caption(display_status.persistence_note)
+    if display_status is not None and display_status.kind in {"running", "interrupted", "failed"}:
         _render_partial_score_notice(score_result, state, base, provider_name, compare_result, task_records, dimensions)
-    elif state and state.get("message"):
-        st.caption(str(state.get("message")))
-    if sc.is_mock_score(score_result):
-        st.caption("本次为演示模式：未产生真实评分，各维度留空。")
 
     _render_score_result_list(score_result, dimensions)
     if _render_score_detail_viewer(score_result, dimensions):
         _render_score_compare_dialog(score_result, dimensions)
-    if not (state and state.get("status") in {"running", "interrupted", "failed"}):
+    if display_status is not None and display_status.kind == "completed":
         _render_retry_failed_scores_action(base, provider_name, score_result, compare_result, task_records, dimensions)
 
     has_ai_scores = has_confirmable_score_drafts(score_result)
@@ -2851,27 +2999,18 @@ def _render_retry_failed_scores_action(
 
 
 def _render_unfinished_score_notice(state: dict, base=None, provider_name: str = "", compare_result=None, task_records: list[dict] | None = None) -> None:
-    queue_items = list(state.get("queue_items") or [])
-    skipped = int(state.get("skipped_count") or 0)
-    st.markdown("**本次评分未完成**")
-    st.caption(
-        f"已评分 0 条 · 未评分 {len(queue_items)} 条 · 失败 0 条 · "
-        f"跳过失败回答 {skipped} 条。已生成评分会保留，未完成项可稍后继续。"
+    display_status = build_score_result_status(
+        None,
+        state,
+        str(st.session_state.get(_PERSISTED_SCORE_RUN_ID_KEY) or ""),
     )
+    if display_status is not None:
+        st.markdown(display_status.summary)
+        st.caption(display_status.persistence_note)
     _render_score_recovery_actions(state, [], base, provider_name, compare_result, task_records or [])
 
 
 def _render_partial_score_notice(score_result, state: dict, base=None, provider_name: str = "", compare_result=None, task_records: list[dict] | None = None, dimensions=None) -> None:
-    queue_items = list(state.get("queue_items") or [])
-    remaining = max(0, len(queue_items) - len(score_result.outcomes))
-    failed = sum(1 for outcome in score_result.outcomes if not outcome.ok)
-    st.markdown("**本次评分未完成**")
-    st.caption(
-        f"已评分 {len(score_result.outcomes)} 条 · 未评分 {remaining} 条 · 失败 {failed} 条。"
-        "已生成的 AI 评分已保留，未完成项可重新评分。"
-    )
-    if state.get("message"):
-        st.caption(str(state.get("message")))
     _render_score_recovery_actions(state, list(score_result.outcomes), base, provider_name, compare_result, task_records or [], dimensions)
 
 

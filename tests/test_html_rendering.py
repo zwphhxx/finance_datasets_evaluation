@@ -21,6 +21,7 @@ def _capture_render(call):
     finally:
         if previous is not None:
             sys.modules["streamlit"] = previous
+            importlib.reload(components)
         else:
             sys.modules.pop("streamlit", None)
     return captured
