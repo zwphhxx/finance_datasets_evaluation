@@ -31,6 +31,42 @@ MOBILE_RESPONSIVE_CSS = r"""
         padding-right: 0.875rem;
         padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
     }
+    .brief-intro {
+        margin-bottom: 1.35rem;
+        padding-bottom: 1.2rem;
+        padding-top: 0.65rem;
+    }
+    .brief-facts {
+        gap: 0.85rem 1rem;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        margin-top: 1.35rem;
+    }
+    .executive-takeaway {
+        font-size: 1.05rem;
+        margin-bottom: 1rem;
+        padding-left: 0.75rem;
+        width: 100%;
+    }
+    .st-key-samples_filter_region,
+    .st-key-samples_list_region,
+    .st-key-samples_detail_region,
+    .st-key-test_run_stage_configuration,
+    .st-key-test_run_stage_answers,
+    .st-key-test_run_stage_scores {
+        box-sizing: border-box;
+        min-width: 0;
+        width: 100%;
+    }
+    .st-key-samples_filter_region [data-testid="stHorizontalBlock"] {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 0.55rem;
+    }
+    .st-key-samples_filter_region [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        flex: 1 1 100% !important;
+        min-width: 0;
+        width: 100% !important;
+    }
     .st-key-samples_title_bar [data-testid="stHorizontalBlock"] {
         display: grid;
         gap: 0.55rem;
@@ -109,6 +145,11 @@ MOBILE_RESPONSIVE_CSS = r"""
         min-height: 44px;
         padding-left: 0.65rem;
         padding-right: 0.65rem;
+    }
+    [data-testid="stColumn"]:has(.top-nav-current-marker) .stButton > button::after {
+        bottom: 0.1rem;
+        left: 0.65rem;
+        right: 0.65rem;
     }
     [data-testid="stMarkdownContainer"] .page-title-heading {
         font-size: 1.3rem;

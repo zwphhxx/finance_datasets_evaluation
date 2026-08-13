@@ -48,6 +48,22 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         ]:
             self.assertIn(contract, css)
 
+    def test_consulting_report_regions_adapt_on_mobile(self):
+        css = self._responsive_css()
+        mobile_css = css.split(
+            "@media (max-width: 760px)",
+            1,
+        )[1].split("@media (max-width: 480px)", 1)[0]
+
+        for selector in [
+            ".brief-facts",
+            ".executive-takeaway",
+            ".st-key-samples_filter_region",
+            ".st-key-test_run_stage_configuration",
+        ]:
+            self.assertIn(selector, mobile_css)
+        self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", mobile_css)
+
     def test_top_navigation_is_sticky_and_horizontally_scrollable(self):
         css = self._responsive_css()
 
