@@ -50,6 +50,18 @@ from src.ui.test_run import (
 
 
 class TestRunFlowStructureTests(unittest.TestCase):
+    def test_nonformal_partial_runs_do_not_render_recovery_actions(self):
+        source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+        results_source = source[
+            source.index("def _render_results"):
+            source.index("def _render_unfinished_run_without_result")
+        ]
+
+        self.assertIn(
+            'if run_status in {"running", "interrupted", "failed"} and _recovery_state_eligible(result, state):',
+            results_source,
+        )
+
     def test_main_steps_are_execution_flow(self):
         from src.ui.test_run import TEST_RUN_STEPS
 
@@ -652,6 +664,46 @@ class TestRunFlowStructureTests(unittest.TestCase):
 
 
 class PersistedAnswerRecoveryTests(unittest.TestCase):
+    def test_nonformal_unfinished_run_is_not_a_recovery_candidate(self):
+        from src.ui import test_run as page
+
+        result = er.CompareRunResult(
+            run_id="RUN-MOCK",
+            provider="mock",
+            model_ids=("mock/chat",),
+            mode="mock",
+            created_at="2026-08-13T10:00:00",
+            outcomes=(),
+        )
+        state = {
+            "status": "interrupted",
+            "provider": "mock",
+            "mode": "mock",
+            "queue_items": [{"case_id": "FD-001", "model_id": "mock/chat", "provider": "mock"}],
+        }
+
+        self.assertIsNone(page._recoverable_evaluation_run(result, state))
+
+    def test_live_unfinished_run_remains_a_recovery_candidate(self):
+        from src.ui import test_run as page
+
+        result = er.CompareRunResult(
+            run_id="RUN-LIVE",
+            provider="vendor",
+            model_ids=("vendor/live",),
+            mode="live",
+            created_at="2026-08-13T10:00:00",
+            outcomes=(),
+        )
+        state = {
+            "status": "interrupted",
+            "provider": "vendor",
+            "mode": "live",
+            "queue_items": [{"case_id": "FD-001", "model_id": "vendor/live", "provider": "vendor"}],
+        }
+
+        self.assertIs(result, page._recoverable_evaluation_run(result, state))
+
     def test_result_case_ids_must_belong_to_current_samples(self):
         self.assertTrue(
             result_case_ids_are_current({"FD-001", "FD-002"}, {"FD-001", "FD-002", "FD-003"})

@@ -720,7 +720,7 @@ def latest_run_queue(*, db_path: Path | None = None) -> list[dict[str, Any]]:
         return [
             row
             for row in store.latest_queue("live_run_queue")
-            if _clean(row.get("provider")).lower() not in {"mock", "demo"}
+            if formal.formal_recovery_run_eligible(row, [row])
         ]
     except Exception:
         return []
@@ -785,7 +785,7 @@ def build_persisted_answer_run_summaries(
     for run_id, answer_rows in responses_by_run.items():
         metadata = run_metadata.get(run_id, {})
         queued = queue_by_run.get(run_id, [])
-        if not _formal_persisted_run_metadata(metadata, queued):
+        if not formal.formal_recovery_run_eligible(metadata, queued):
             continue
         models = {
             _clean(row.get("model_name"))
@@ -837,15 +837,6 @@ def build_persisted_answer_run_summaries(
         row.pop("_order_text", None)
         row.pop("_order_id", None)
     return summaries
-
-
-def _formal_persisted_run_metadata(
-    metadata: Mapping[str, Any],
-    queued: Sequence[Mapping[str, Any]],
-) -> bool:
-    providers = [_clean(metadata.get("provider"))]
-    providers.extend(_clean(row.get("provider")) for row in queued)
-    return not any(provider.lower() in {"mock", "demo"} for provider in providers if provider)
 
 
 def list_persisted_answer_runs(

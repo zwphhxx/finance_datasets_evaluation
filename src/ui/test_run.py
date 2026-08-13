@@ -27,6 +27,7 @@ from app.persistence import (
 from app.services import dataset_service as ds
 from app.services import eval_runner as er
 from app.services import eval_state
+from app.services import formal_records as formal
 from app.services import model_display as md
 from app.services import sample_repository as sr
 from app.services import scorer as sc
@@ -1620,6 +1621,20 @@ def _compare_result_from_state(state: dict | None = None, outcomes: list[er.RunO
     )
 
 
+def _recovery_state_eligible(result, state: dict | None) -> bool:
+    state = state or {}
+    return formal.formal_recovery_run_eligible(
+        state,
+        state.get("queue_items") or [],
+        result,
+    )
+
+
+def _recoverable_evaluation_run(result, state: dict | None):
+    """Return a result only when its session/persisted metadata is formal."""
+    return result if result is not None and _recovery_state_eligible(result, state) else None
+
+
 def _persisted_run_option_label(summary: dict) -> str:
     created_at = str(summary.get("created_at") or "")[:19].replace("T", " ")
     return (
@@ -1681,7 +1696,13 @@ def _recover_persisted_run(run_id: str, task_records: list[dict]) -> object | No
     }
     if not persisted_case_ids or not persisted_case_ids.issubset(allowed_case_ids):
         return None
+    if not formal.formal_recovery_run_eligible(er.load_run_metadata(run_id), rows):
+        return None
     result = er.restore_compare_result_from_db(run_id)
+    result = _recoverable_evaluation_run(
+        result,
+        {"queue_items": rows, "provider": rows[0].get("provider") if rows else ""},
+    )
     if result is None:
         return None
     queue_items = _run_queue_items_from_rows(rows, task_records)
@@ -1761,12 +1782,14 @@ def _recover_latest_run(task_records: list[dict]) -> object | None:
         run_id = str(getattr(existing, "run_id", "") or _run_state().get("run_id") or "").strip()
         status = str(_run_state().get("status") or "").strip().lower()
         verified_or_running = status != "completed" or run_id in compatible_run_ids
+        candidate = _recoverable_evaluation_run(existing, _run_state())
         if (
             session_case_ids
             and session_case_ids.issubset(allowed_case_ids)
             and verified_or_running
+            and candidate is not None
         ):
-            return existing
+            return candidate
         eval_state.clear()
         _clear_run_state()
         _clear_score_state()
@@ -2518,10 +2541,14 @@ def _render_results(
     if result is None and not state:
         result = _recover_latest_run(task_records)
         state = _run_state()
-    if result is None and state and _partial_outcomes():
+    if result is None and state and _partial_outcomes() and _recovery_state_eligible(None, state):
         result = _compare_result_from_state(state, _partial_outcomes())
     if result is None:
-        if state and state.get("status") in {"running", "interrupted", "failed"}:
+        if (
+            state
+            and state.get("status") in {"running", "interrupted", "failed"}
+            and _recovery_state_eligible(None, state)
+        ):
             _render_unfinished_run_without_result(state, provider_name, temperature, max_tokens)
             return
         render_empty_state("尚未运行评测。配置样本与模型后点击「运行评测」。")
@@ -2540,9 +2567,9 @@ def _render_results(
         f"模型 {len(result.model_ids)} 个 · "
         f"运行模式：{_mode_label(result.mode)}"
     )
-    if run_status in {"running", "interrupted", "failed"}:
+    if run_status in {"running", "interrupted", "failed"} and _recovery_state_eligible(result, state):
         _render_partial_run_notice(result, provider_name, temperature, max_tokens)
-    elif failed:
+    elif failed and _recovery_state_eligible(result, state):
         _render_retry_failed_run_action(result, provider_name, temperature, max_tokens)
     if summary.total and summary.success == 0:
         st.caption("本次运行没有成功回答，默认展示第一条失败原因。")
@@ -2557,7 +2584,7 @@ def _render_results(
 
 def _render_unfinished_run_without_result(state: dict, provider_name: str, temperature, max_tokens) -> None:
     queue_items = list(state.get("queue_items") or [])
-    resume_allowed = bool(state.get("resume_allowed", True))
+    resume_allowed = bool(state.get("resume_allowed", True)) and _recovery_state_eligible(None, state)
     st.markdown("**本次运行未完成**")
     st.caption(f"已完成 0 条 · 未完成 {len(queue_items)} 条 · 失败 0 条。未完成项可继续运行。")
     if not resume_allowed:
@@ -2591,7 +2618,7 @@ def _render_unfinished_run_without_result(state: dict, provider_name: str, tempe
 
 def _render_partial_run_notice(result, provider_name: str, temperature, max_tokens) -> None:
     state = _run_state()
-    resume_allowed = bool(state.get("resume_allowed", True))
+    resume_allowed = bool(state.get("resume_allowed", True)) and _recovery_state_eligible(result, state)
     queue_items = list(state.get("queue_items") or [])
     outcomes = list(result.outcomes)
     remaining = build_remaining_queue_items(queue_items, outcomes)
@@ -2658,7 +2685,7 @@ def _render_partial_run_notice(result, provider_name: str, temperature, max_toke
 
 def _render_retry_failed_run_action(result, provider_name: str, temperature, max_tokens) -> None:
     state = _run_state()
-    resume_allowed = bool(state.get("resume_allowed", True))
+    resume_allowed = bool(state.get("resume_allowed", True)) and _recovery_state_eligible(result, state)
     queue_items = list(state.get("queue_items") or [])
     outcomes = list(getattr(result, "outcomes", []) or [])
     failed_items = build_failed_run_queue_items(queue_items, outcomes)

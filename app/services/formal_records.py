@@ -83,6 +83,26 @@ def filter_formal_score_rows(
     return filter_formal_scores(scores, responses, allowed_case_ids).to_dict("records")
 
 
+def formal_recovery_run_eligible(
+    metadata: Any = None,
+    queue_rows: Collection[Any] | None = None,
+    result: Any = None,
+) -> bool:
+    """Whether a batch may be offered for recovery or continuation."""
+    records = [metadata, result, *(queue_rows or [])]
+    providers = [_record_value(record, "provider") for record in records]
+    modes = [
+        _record_value(record, field_name)
+        for record in records
+        for field_name in ("run_mode", "mode")
+    ]
+    return not any(
+        value.lower() in _NON_FORMAL_MODES
+        for value in (*providers, *modes)
+        if value
+    )
+
+
 def _matching_formal_response_mask(
     scores: pd.DataFrame,
     responses: pd.DataFrame,
@@ -127,6 +147,12 @@ def _model_value(row: dict[str, Any], columns: tuple[str, ...]) -> str:
         if column in row:
             return _text(row.get(column))
     return ""
+
+
+def _record_value(record: Any, field_name: str) -> str:
+    if isinstance(record, dict):
+        return _text(record.get(field_name))
+    return _text(getattr(record, field_name, None))
 
 
 def _text_series(frame: pd.DataFrame, column: str, default: str) -> pd.Series:
