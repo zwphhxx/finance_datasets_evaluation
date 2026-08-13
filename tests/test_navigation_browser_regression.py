@@ -10,17 +10,18 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import socket
 import subprocess
 import time
 import urllib.request
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 _RUN_BROWSER_REGRESSION = os.getenv("FINDUEVAL_RUN_BROWSER_REGRESSION") == "1"
-_PLAYWRIGHT_CLI = "/Users/zhuwenpeng/.codex/skills/playwright/scripts/playwright_cli.sh"
 _BROWSER_SESSION = f"fde-navigation-regression-{os.getpid()}"
 _VIEWPORTS = ((1710, 1009), (768, 1009), (390, 844), (320, 844))
 
@@ -33,6 +34,26 @@ if not _RUN_BROWSER_REGRESSION:
     )
 
 
+def _resolve_playwright_cli(environ: dict[str, str] | None = None) -> str:
+    env = os.environ if environ is None else environ
+    configured = str(env.get("FINDUEVAL_PLAYWRIGHT_CLI") or "").strip()
+    if configured:
+        candidate = Path(configured).expanduser()
+        if not candidate.is_absolute() or not candidate.is_file() or not os.access(candidate, os.X_OK):
+            raise RuntimeError("FINDUEVAL_PLAYWRIGHT_CLI must be an executable absolute path")
+        return str(candidate)
+
+    command = shutil.which("playwright-cli")
+    if command:
+        return command
+    npx = shutil.which("npx")
+    if npx:
+        return npx
+    raise RuntimeError(
+        "browser regression requires FINDUEVAL_PLAYWRIGHT_CLI, playwright-cli, or npx on PATH"
+    )
+
+
 def _free_port() -> int:
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
@@ -40,8 +61,12 @@ def _free_port() -> int:
 
 
 def _run_browser(*args: str) -> str:
+    executable = _resolve_playwright_cli()
+    command = [executable]
+    if Path(executable).name == "npx":
+        command.extend(["--yes", "--package", "@playwright/cli", "playwright-cli"])
     completed = subprocess.run(
-        ["bash", _PLAYWRIGHT_CLI, "--session", _BROWSER_SESSION, *args],
+        [*command, "--session", _BROWSER_SESSION, *args],
         cwd=ROOT,
         check=True,
         capture_output=True,
@@ -82,6 +107,17 @@ def _wait_for_app(url: str, log_path: Path) -> None:
     raise AssertionError(f"local Streamlit navigation regression app did not start\n{details}")
 
 
+def _stop_streamlit(process: subprocess.Popen[str]) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=10)
+
+
 @pytest.fixture(scope="module")
 def local_navigation_app(tmp_path_factory: pytest.TempPathFactory):
     port = _free_port()
@@ -119,8 +155,7 @@ def local_navigation_app(tmp_path_factory: pytest.TempPathFactory):
             _run_browser("close")
         except subprocess.CalledProcessError:
             pass
-        process.terminate()
-        process.wait(timeout=10)
+        _stop_streamlit(process)
 
 
 def _layout_snapshot() -> dict[str, object]:
@@ -183,3 +218,42 @@ def test_navigation_layout_in_four_real_viewports(local_navigation_app):
             assert abs(layout["operation"]["top"] - primary[0]["top"]) <= 1
 
     assert not absent_db.exists()
+
+
+def test_playwright_cli_resolution_requires_valid_explicit_path(tmp_path):
+    executable = tmp_path / "playwright-cli"
+    executable.write_text("#!/bin/sh\n", encoding="utf-8")
+    executable.chmod(0o755)
+
+    assert _resolve_playwright_cli({"FINDUEVAL_PLAYWRIGHT_CLI": str(executable)}) == str(executable)
+    with pytest.raises(RuntimeError, match="executable absolute path"):
+        _resolve_playwright_cli({"FINDUEVAL_PLAYWRIGHT_CLI": "relative-cli"})
+
+
+def test_playwright_cli_resolution_fails_clearly_without_explicit_path(monkeypatch):
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+
+    with pytest.raises(RuntimeError, match="requires FINDUEVAL_PLAYWRIGHT_CLI"):
+        _resolve_playwright_cli({})
+
+
+def test_playwright_cli_resolution_uses_path_npx_fallback(monkeypatch):
+    monkeypatch.setattr(
+        shutil,
+        "which",
+        lambda name: "/usr/bin/npx" if name == "npx" else None,
+    )
+
+    assert _resolve_playwright_cli({}) == "/usr/bin/npx"
+
+
+def test_stop_streamlit_kills_after_terminate_timeout():
+    process = MagicMock()
+    process.poll.return_value = None
+    process.wait.side_effect = [subprocess.TimeoutExpired("streamlit", 10), None]
+
+    _stop_streamlit(process)
+
+    process.terminate.assert_called_once_with()
+    process.kill.assert_called_once_with()
+    assert process.wait.call_count == 2
