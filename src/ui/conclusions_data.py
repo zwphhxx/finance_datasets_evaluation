@@ -48,7 +48,7 @@ def load_live_responses(allowed_case_ids: tuple[str, ...] = ()) -> pd.DataFrame:
 def load_conclusion_source(
     allowed_case_ids: tuple[str, ...],
     _tasks_records: Sequence[Mapping[str, Any]],
-    _gold_records: Mapping[str, object],
+    _gold_records: Sequence[tuple[str, Mapping[str, object]]] | Mapping[str, object],
     _dimensions: Sequence[Mapping[str, Any]],
 ) -> ConclusionSource:
     """Read one current cohort and project it into a formal conclusion report."""
@@ -68,7 +68,7 @@ def load_conclusion_source(
             scores_df=cohort,
             responses_df=responses,
             tasks_df=pd.DataFrame(_tasks_records),
-            gold_map=_gold_records,
+            gold_map=dict(_gold_records),
             dimensions=_dimensions,
         )
         return ConclusionSource(available=True, report=report)

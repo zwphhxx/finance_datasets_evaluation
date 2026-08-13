@@ -482,7 +482,8 @@ class AnswerDetailJoinTests(unittest.TestCase):
             source.index("def _render_model_issue_details"):
         ]
 
-        self.assertIn("cd.load_live_responses(allowed_case_ids)", render_source)
+        self.assertIn("cd.load_conclusion_source(", render_source)
+        self.assertIn("formal_responses", render_source)
         self.assertIn("cc.build_answer_detail_rows", render_source)
         self.assertIn("answer_rows", render_source)
         self.assertIn('"选择样本查看回答"', detail_source)
@@ -496,7 +497,8 @@ class AnswerDetailJoinTests(unittest.TestCase):
             source.index("# --------------------------------------------------------------------------- #")
         ]
 
-        self.assertIn("current_result_store_failure()", render_source)
+        self.assertIn("if not source.available:", render_source)
+        self.assertIn("source.message", render_source)
         self.assertIn("render_persistence_status", render_source)
         self.assertIn('st.spinner("正在汇总 AI 评分结果…")', render_source)
         self.assertNotIn("首次加载可能需要半分钟", render_source)

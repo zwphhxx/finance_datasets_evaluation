@@ -24,8 +24,11 @@ def test_conclusions_data_module_exposes_cached_loaders():
 def test_conclusions_page_uses_cached_loaders():
     source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
 
-    assert "cd.load_current_cohort_scores(allowed_case_ids)" in source
-    assert "cd.load_live_responses(allowed_case_ids)" in source
+    assert "cd.load_conclusion_source(" in source
+    assert "cd.load_current_cohort_scores(allowed_case_ids)" not in source
+    assert "cd.load_live_responses(allowed_case_ids)" not in source
+    assert "cc.split_live_scores(" not in source
+    assert "cc.build_model_issue_summaries(" not in source
     assert source.count("cd.clear_conclusions_caches()") >= 1
 
 
@@ -73,6 +76,36 @@ def test_conclusion_source_only_catches_expected_database_failures(monkeypatch):
     monkeypatch.setattr(cd, "build_conclusion_report", lambda **kwargs: (_ for _ in ()).throw(ValueError("programming error")))
     with pytest.raises(ValueError, match="programming error"):
         cd.load_conclusion_source((), [], {}, ())
+    cd.load_conclusion_source.clear()
+
+
+def test_conclusion_source_rebuilds_tuple_gold_records_for_evidence(monkeypatch):
+    from src.ui import conclusions_data as cd
+
+    scores = pd.DataFrame([{
+        "run_id": "RUN-1", "case_id": "C1", "eval_model": "vendor/live",
+        "judge_status": "success", "judge_mode": "live", "review_status": "ai_final",
+        "status": "active", "total_score": 80,
+    }])
+    responses = pd.DataFrame([{
+        "run_id": "RUN-1", "case_id": "C1", "model_name": "vendor/live",
+        "run_status": "success", "run_mode": "live", "provider": "vendor",
+        "status": "active", "answer_text": "formal answer",
+    }])
+    monkeypatch.setattr(cd.cc, "load_evaluation_runs", lambda *, suppress_errors=True: pd.DataFrame())
+    monkeypatch.setattr(cd.cc, "load_live_scores", lambda *, suppress_errors=True: scores)
+    monkeypatch.setattr(cd.cc, "load_live_responses", lambda *, allowed_case_ids=None, suppress_errors=True: responses)
+    monkeypatch.setattr(cd.cc, "select_current_cohort_scores", lambda runs, scores, *, allowed_case_ids=None: scores)
+    tasks_records = ({"case_id": "C1", "question": "Q"},)
+    gold_records = (("C1", {"gold": "retained"}),)
+    dimensions = ({"field": "accuracy_score", "full_mark": 25},)
+    cd.load_conclusion_source.clear()
+
+    source = cd.load_conclusion_source(("C1",), tasks_records, gold_records, dimensions)
+
+    assert source.report is not None
+    assert source.report.evidence_by_model["vendor/live"][0].gold_answer == {"gold": "retained"}
+    assert gold_records == (("C1", {"gold": "retained"}),)
     cd.load_conclusion_source.clear()
 
 

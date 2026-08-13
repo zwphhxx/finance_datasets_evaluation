@@ -50,7 +50,7 @@ def build_conclusion_report(
             formal_scores,
             formal_responses,
             tasks,
-            gold_map if isinstance(gold_map, Mapping) else {},
+            _gold_mapping(gold_map),
             dimensions,
             str(summary.get("model_name")),
         ))
@@ -84,6 +84,15 @@ def _distinct_count(frame: pd.DataFrame, column: str) -> int:
     if frame.empty or column not in frame.columns:
         return 0
     return len({_text(value) for value in frame[column].tolist() if _text(value)})
+
+
+def _gold_mapping(value: object) -> Mapping[str, object]:
+    if isinstance(value, Mapping):
+        return dict(value)
+    try:
+        return dict(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return {}
 
 
 def _text(value: Any) -> str:

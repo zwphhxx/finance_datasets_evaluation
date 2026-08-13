@@ -5,13 +5,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from html import escape
 
 import pandas as pd
 import streamlit as st
 
-from app.persistence import current_result_store_failure
 from app.services import conclusions as cc
 from app.services import dataset_service as ds
 from app.services import scorer as sc
@@ -48,21 +48,34 @@ def render_conclusions_page(data_bundle: dict) -> None:
             }
         )
     )
+    task_records = tuple(tasks.to_dict("records")) if isinstance(tasks, pd.DataFrame) else ()
+    gold_map = getattr(base, "gold_answer_map", {})
+    gold_records = tuple(sorted(
+        ((str(case_id), record) for case_id, record in gold_map.items()),
+        key=lambda item: item[0],
+    )) if isinstance(gold_map, Mapping) else ()
+    dimensions = tuple(ds.get_rubric_dimensions())
 
     with st.spinner("正在汇总 AI 评分结果…"):
-        live_scores = cd.load_current_cohort_scores(allowed_case_ids)
-        live_responses = cd.load_live_responses(allowed_case_ids)
-    ai_scores, excluded_scores = cc.split_live_scores(live_scores)
-    model_summaries = cc.build_model_issue_summaries(ai_scores, pd.DataFrame(), tasks)
-    answer_rows = cc.build_answer_detail_rows(ai_scores, live_responses)
+        source = cd.load_conclusion_source(
+            allowed_case_ids,
+            task_records,
+            gold_records,
+            dimensions,
+        )
+    report = source.report
+    formal_scores = report.formal_scores if report is not None else pd.DataFrame()
+    formal_responses = report.formal_responses if report is not None else pd.DataFrame()
+    model_summaries = report.model_summaries if report is not None else ()
+    evidence_by_model = report.evidence_by_model if report is not None else {}
+    scope = report.scope if report is not None else None
+    answer_rows = cc.build_answer_detail_rows(formal_scores, formal_responses)
 
     config = get_page_config("conclusions")
     render_page_heading(config.title, config.question)
-    if current_result_store_failure() is not None:
-        render_persistence_status(
-            "评测结果数据库暂不可用。当前无法读取已持久化的回答与评分。"
-        )
-    _render_data_source_notice(live_scores, ai_scores, excluded_scores)
+    if not source.available:
+        render_persistence_status(source.message)
+    _render_data_source_notice(formal_scores, scope)
 
     _render_executive_conclusion(model_summaries)
     _render_model_recommendations(model_summaries)
@@ -80,20 +93,15 @@ def _render_executive_conclusion(model_summaries: list[dict]) -> None:
 # --------------------------------------------------------------------------- #
 # 数据源与导入导出
 # --------------------------------------------------------------------------- #
-def _render_data_source_notice(
-    live_scores: pd.DataFrame,
-    ai_scores: pd.DataFrame,
-    excluded_scores: pd.DataFrame,
-) -> None:
-    summary = cc.summarize_runtime_scores(live_scores)
-    counts = cc.summarize_formal(pd.DataFrame(), ai_scores)
-    models = int(counts["model_count"])
-    cases = int(counts.get("case_count", 0))
-    coverage = f"（{models} 个模型 × {cases} 个样本）" if len(ai_scores) else ""
+def _render_data_source_notice(formal_scores: pd.DataFrame, scope) -> None:
+    models = int(scope.model_count) if scope is not None else 0
+    cases = int(scope.sample_count) if scope is not None else 0
+    formal_count = int(scope.formal_score_count) if scope is not None else 0
+    coverage = f"（{models} 个模型 × {cases} 个样本）" if formal_count else ""
     source_line = (
-        f"当前结论来源：{summary['data_source']}｜"
-        f"AI 评分 {len(ai_scores)} 条{coverage}｜"
-        f"排除项 {len(excluded_scores)} 条 · "
+        "当前结论来源：评测运行数据｜"
+        f"AI 评分 {formal_count} 条{coverage}｜"
+        "排除项 0 条 · "
         "仅代表当前样本范围内的自动评测结果。"
     )
     with st.container(key="conclusion_data_notice"):
