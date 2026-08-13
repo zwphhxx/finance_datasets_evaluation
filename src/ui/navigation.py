@@ -38,6 +38,8 @@ def render_top_navigation() -> None:
         render_html(f'<div class="top-nav-brand">{PROJECT_DISPLAY_NAME}</div>')
     for col, (label, page_key) in zip(cols[1:], _TOP_NAV_ITEMS):
         with col:
+            if current == page_key:
+                render_html('<span class="top-nav-current-marker" aria-hidden="true"></span>')
             if st.button(
                 label,
                 key=f"top_nav_{page_key}",

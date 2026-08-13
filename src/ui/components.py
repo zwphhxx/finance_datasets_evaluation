@@ -14,28 +14,33 @@ PROJECT_DISPLAY_NAME = "财务/法律/投行场景大模型对比评测"
 STYLE_CSS = """
 <style>
 :root {
-    --fde-bg: #f6f7f9;
-    --fde-surface: #ffffff;
-    --fde-surface-subtle: #fafbfc;
-    --fde-line: #e1e5ec;
-    --fde-line-strong: #cfd6e1;
-    --fde-ink: #263241;
-    --fde-text: #1f2733;
-    --fde-muted: #6a7686;
-    --fde-accent: #33465f;
-    --fde-accent-soft: #eef2f6;
+    --fde-paper: #F7F5F0;
+    --fde-surface: #FFFFFF;
+    --fde-surface-subtle: #F1EEE7;
+    --fde-ink: #252621;
+    --fde-text: #252621;
+    --fde-muted: #6F6B62;
+    --fde-line: #D9D4C9;
+    --fde-line-strong: #C6BFAF;
+    --fde-gold: #9A7435;
+    --fde-accent: var(--fde-gold);
+    --fde-accent-soft: #EEE8DC;
+    --fde-bg: var(--fde-paper);
+    --fde-serif: ui-serif, "Songti SC", "STSong", "Noto Serif CJK SC", serif;
+    --fde-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
     --fde-success-bg: var(--fde-accent-soft);
     --fde-success-text: var(--fde-accent);
     --fde-warning-bg: var(--fde-surface);
     --fde-warning-text: var(--fde-ink);
     --fde-danger-bg: var(--fde-accent-soft);
     --fde-danger-text: var(--fde-ink);
-    --fde-radius: 10px;
-    --fde-max-width: 1120px;
+    --fde-radius: 5px;
+    --fde-max-width: 1080px;
 }
 .stApp {
     background: var(--fde-bg);
     color: var(--fde-text);
+    font-family: var(--fde-sans);
 }
 #MainMenu,
 footer,
@@ -60,15 +65,16 @@ header,
 [data-testid="stHorizontalBlock"]:has(.top-nav-brand) {
     min-height: 56px;
     align-items: center;
-    padding: 0.58rem 1.5rem 0.62rem 1.5rem;
-    margin: 0.2rem 0 1.45rem 0;
+    padding: 0.72rem 0 0.68rem;
+    margin: 0 0 2rem;
     border-bottom: 1px solid var(--fde-line);
     background: transparent;
 }
 .top-nav-brand {
     color: var(--fde-ink);
     font-size: 1.02rem;
-    font-weight: 720;
+    font-family: var(--fde-serif);
+    font-weight: 650;
     line-height: 1.35;
     letter-spacing: 0;
 }
@@ -77,8 +83,8 @@ header,
     justify-content: center;
 }
 [data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton > button {
-    min-height: 1.9rem;
-    padding: 0.18rem 0.38rem;
+    min-height: 2.25rem;
+    padding: 0.3rem 0.35rem;
     border: 0;
     border: 0 !important;
     border-radius: 3px;
@@ -86,12 +92,25 @@ header,
     box-shadow: none !important;
     color: var(--fde-muted);
     font-size: 0.94rem;
-    font-weight: 590;
+    font-weight: 520;
+    position: relative;
     white-space: nowrap;
 }
 [data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton > button[kind="secondary"] {
     color: var(--fde-ink);
-    font-weight: 720;
+    font-weight: 650;
+}
+.top-nav-current-marker {
+    display: none;
+}
+[data-testid="stColumn"]:has(.top-nav-current-marker) .stButton > button::after {
+    background: var(--fde-gold);
+    bottom: -0.7rem;
+    content: "";
+    height: 2px;
+    left: 0.35rem;
+    position: absolute;
+    right: 0.35rem;
 }
 [data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton > button:hover {
     color: var(--fde-ink);
@@ -123,8 +142,9 @@ header,
 .page-title-heading,
 [data-testid="stMarkdownContainer"] .page-title-heading {
     color: var(--fde-ink);
-    font-size: 1.45rem;
-    font-weight: 760;
+    font-family: var(--fde-serif);
+    font-size: 1.72rem;
+    font-weight: 650;
     line-height: 1.24;
     margin: 0;
     padding: 0;
@@ -143,16 +163,18 @@ header,
     flex-shrink: 0;
 }
 .brief-intro {
-    margin: 0.35rem 0 1.45rem 0;
-    padding-bottom: 0;
+    margin: 0.65rem 0 2rem;
+    padding: 2.45rem 0 1.75rem;
+    border-bottom: 1px solid var(--fde-line);
 }
 .brief-title,
 [data-testid="stMarkdownContainer"] .brief-title {
     color: var(--fde-ink);
-    font-size: 2.35rem;
-    font-weight: 820;
-    line-height: 1.12;
-    letter-spacing: 0;
+    font-family: var(--fde-serif);
+    font-size: clamp(2.6rem, 5vw, 4.65rem);
+    font-weight: 650;
+    line-height: 1.08;
+    letter-spacing: -0.035em;
     margin: 0;
     max-width: 58rem;
     padding: 0;
@@ -174,13 +196,48 @@ header,
     flex: 0 0 auto;
 }
 .brief-note {
-    border-left: 2px solid var(--fde-accent);
+    border-left: 2px solid var(--fde-gold);
     color: var(--fde-ink);
     font-size: 1rem;
     line-height: 1.65;
-    margin: 0.75rem 0 0 0;
+    margin: 1.25rem 0 0;
     max-width: 50rem;
     padding-left: 0.85rem;
+}
+.brief-facts {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1.25rem;
+    margin-top: 2rem;
+    max-width: 48rem;
+}
+.brief-fact {
+    border-top: 1px solid var(--fde-line-strong);
+    padding-top: 0.7rem;
+}
+.brief-fact-label {
+    color: var(--fde-muted);
+    display: block;
+    font-size: 0.76rem;
+    letter-spacing: 0.08em;
+}
+.brief-fact-value {
+    color: var(--fde-ink);
+    display: block;
+    font-family: var(--fde-serif);
+    font-size: 1.55rem;
+    line-height: 1.3;
+    margin-top: 0.18rem;
+}
+.executive-takeaway {
+    border-left: 2px solid var(--fde-gold);
+    color: var(--fde-ink);
+    font-family: var(--fde-serif);
+    font-size: 1.22rem;
+    line-height: 1.65;
+    margin: 0.75rem 0 1.35rem;
+    max-width: 54rem;
+    padding: 0.25rem 0 0.25rem 1rem;
 }
 .home-section {
     margin: 2.25rem 0 0 0;
@@ -198,15 +255,17 @@ header,
     align-items: baseline;
 }
 .section-heading-number {
-    color: var(--fde-accent);
-    font-weight: 820;
+    color: var(--fde-gold);
+    font-family: var(--fde-serif);
+    font-weight: 600;
     line-height: 1;
     letter-spacing: 0;
 }
 .section-heading-title,
 [data-testid="stMarkdownContainer"] .section-heading-title {
     color: var(--fde-ink);
-    font-weight: 820;
+    font-family: var(--fde-serif);
+    font-weight: 650;
     line-height: 1.16;
     margin: 0;
     padding: 0;
@@ -762,10 +821,11 @@ header,
     border-radius: 6px !important;
     box-shadow: none !important;
     font-weight: 650 !important;
+    transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
 }
 .stButton > button[kind="primary"] {
-    background: var(--fde-accent) !important;
-    border: 1px solid var(--fde-accent) !important;
+    background: var(--fde-ink) !important;
+    border: 1px solid var(--fde-ink) !important;
     color: #ffffff !important;
 }
 .stButton > button[kind="secondary"] {
@@ -803,6 +863,12 @@ div[data-testid="stAlert"] {
 }
 div[data-testid="stDialog"] {
     color: var(--fde-text);
+}
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+    }
 }
 @media (max-width: 760px) {
     .page-title-row {
@@ -879,15 +945,40 @@ def render_page_heading(title: str, description: str | None = None) -> None:
     )
 
 
-def render_brief_intro(title: str, note: str) -> None:
+def render_brief_intro(
+    title: str,
+    note: str,
+    facts: list[tuple[str, str]] | None = None,
+) -> None:
+    facts_html = _fact_strip_html(facts or [])
     render_html(
         f"""
         <div class="brief-intro">
             <h1 class="brief-title">{escape(str(title))}</h1>
             <p class="brief-note">{escape(str(note))}</p>
+            {facts_html}
         </div>
         """
     )
+
+
+def _fact_strip_html(facts: list[tuple[str, str]]) -> str:
+    items = "".join(
+        '<div class="brief-fact">'
+        f'<span class="brief-fact-label">{escape(str(label))}</span>'
+        f'<strong class="brief-fact-value">{escape(str(value))}</strong>'
+        "</div>"
+        for label, value in facts
+    )
+    return f'<div class="brief-facts">{items}</div>' if items else ""
+
+
+def render_fact_strip(facts: list[tuple[str, str]]) -> None:
+    render_html(_fact_strip_html(facts))
+
+
+def render_executive_takeaway(text: str) -> None:
+    render_html(f'<div class="executive-takeaway">{escape(str(text))}</div>')
 
 
 def render_home_section(

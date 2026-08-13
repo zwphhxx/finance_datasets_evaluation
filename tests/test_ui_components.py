@@ -30,6 +30,26 @@ class UIComponentsTests(unittest.TestCase):
             self.assertTrue(hasattr(components, name), name)
             self.assertTrue(callable(getattr(components, name)), name)
 
+    def test_consulting_report_tokens_and_typography_are_centralized(self):
+        import src.ui.components as components
+
+        for token in ["#F7F5F0", "#252621", "#6F6B62", "#D9D4C9", "#9A7435"]:
+            self.assertIn(token, components.STYLE_CSS)
+        self.assertIn('ui-serif, "Songti SC"', components.STYLE_CSS)
+        self.assertIn("executive-takeaway", components.STYLE_CSS)
+        self.assertIn("transition", components.STYLE_CSS)
+        self.assertIn("prefers-reduced-motion", components.STYLE_CSS)
+
+    def test_brief_intro_supports_derived_facts(self):
+        import src.ui.components as components
+
+        self.assertIn("facts", inspect.signature(components.render_brief_intro).parameters)
+
+    def test_top_navigation_exposes_a_current_page_marker(self):
+        source = Path("src/ui/navigation.py").read_text(encoding="utf-8")
+
+        self.assertIn("top-nav-current-marker", source)
+
     def test_persistence_status_escapes_message_and_sets_status_role(self):
         import src.ui.components as components
 
