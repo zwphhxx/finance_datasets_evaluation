@@ -10,14 +10,14 @@ def _source(relative: str) -> str:
 
 
 def test_primary_navigation_prioritizes_conclusions_without_marker_spacer():
-    from src.ui.navigation import _TOP_NAV_ITEMS
+    from src.ui.navigation import OPERATION_NAV_ITEM, PRIMARY_NAV_ITEMS
 
-    assert [page_key for _, page_key in _TOP_NAV_ITEMS] == [
-        "case_study",
+    assert [page_key for _, page_key in PRIMARY_NAV_ITEMS] == [
         "conclusions",
+        "case_study",
         "samples",
-        "test_run",
     ]
+    assert OPERATION_NAV_ITEM == ("评测操作", "test_run")
     navigation = _source("src/ui/navigation.py")
     components = _source("src/ui/components.py")
     assert "top-nav-current-marker" not in navigation
@@ -44,7 +44,7 @@ def test_mobile_navigation_and_home_facts_use_equal_columns():
     responsive = _source("src/ui/responsive.py")
     mobile = responsive.split("@media (max-width: 760px)", 1)[1]
 
-    assert "grid-template-columns: repeat(4, minmax(0, 1fr))" in mobile
+    assert "grid-template-columns: repeat(3, minmax(0, 1fr))" in mobile
     assert "grid-template-columns: repeat(3, minmax(0, 1fr))" in mobile
     assert "grid-template-columns: repeat(4, max-content)" not in mobile
 

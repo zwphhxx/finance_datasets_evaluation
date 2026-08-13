@@ -8,7 +8,7 @@ import pandas as pd
 
 from src.data_service import load_all_data
 from src.ui.case_study import _build_sample_scope_text, scored_case_count
-from src.ui.navigation import _TOP_NAV_ITEMS, PAGES
+from src.ui.navigation import PAGES, PRIMARY_NAV_ITEMS
 from src.ui.page_config import DEFAULT_PAGE_KEY, PAGE_CONFIG_BY_KEY
 
 BANNED_PHRASES = ["AI赋能", "智能洞察", "一键优化", "专家级", "秒级"]
@@ -20,11 +20,11 @@ class RegistrationTests(unittest.TestCase):
         self.assertEqual("case_study", list(PAGES.keys())[0])
         self.assertIn("case_study", PAGE_CONFIG_BY_KEY)
 
-    def test_methodology_is_default_landing_page(self):
-        self.assertEqual("case_study", DEFAULT_PAGE_KEY)
+    def test_conclusions_are_default_landing_page(self):
+        self.assertEqual("conclusions", DEFAULT_PAGE_KEY)
 
-    def test_first_nav_item_is_methodology(self):
-        self.assertEqual("case_study", _TOP_NAV_ITEMS[0][1])
+    def test_first_nav_item_is_conclusions(self):
+        self.assertEqual("conclusions", PRIMARY_NAV_ITEMS[0][1])
 
     def test_page_context_is_complete_and_clean(self):
         config = PAGE_CONFIG_BY_KEY["case_study"]

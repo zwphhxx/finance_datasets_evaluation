@@ -113,6 +113,14 @@ header,
     color: var(--fde-ink);
     background: transparent !important;
 }
+[data-testid="stHorizontalBlock"]:has(.top-nav-brand) .st-key-top_nav_operation_region .stButton {
+    justify-content: flex-end;
+}
+[data-testid="stHorizontalBlock"]:has(.top-nav-brand) .st-key-top_nav_operation_region .stButton > button {
+    color: var(--fde-muted);
+    font-size: 0.86rem;
+    font-weight: 500;
+}
 @media (max-width: 860px) {
     [data-testid="stHorizontalBlock"]:has(.top-nav-brand) {
         flex-wrap: wrap;

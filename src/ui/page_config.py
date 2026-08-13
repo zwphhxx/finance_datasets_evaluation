@@ -12,6 +12,11 @@ class PageConfig:
 
 PAGE_CONFIGS = [
     PageConfig(
+        page_key="conclusions",
+        title="评测结论",
+        question="基于当前样本、模型回答和 AI 评分生成评测结论。",
+    ),
+    PageConfig(
         page_key="case_study",
         title="项目说明",
         question="评估模型在财务、法律、投行等专业场景中的回答质量、主要问题和使用边界。",
@@ -26,15 +31,10 @@ PAGE_CONFIGS = [
         title="发起评测",
         question="选择样本和模型，运行评测并生成 AI 评分。",
     ),
-    PageConfig(
-        page_key="conclusions",
-        title="评测结论",
-        question="基于当前样本、模型回答和 AI 评分生成评测结论。",
-    ),
 ]
 
 PAGE_CONFIG_BY_KEY = {config.page_key: config for config in PAGE_CONFIGS}
-DEFAULT_PAGE_KEY = "case_study"
+DEFAULT_PAGE_KEY = "conclusions"
 
 
 def get_page_config(page_key: str) -> PageConfig:

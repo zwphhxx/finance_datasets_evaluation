@@ -9,14 +9,15 @@ import pandas as pd
 from app.services import conclusions as cc
 from src.ui import samples
 from src.ui.components import PROJECT_DISPLAY_NAME as COMPONENT_PROJECT_NAME
-from src.ui.navigation import _TOP_NAV_ITEMS, PAGES
+from src.ui.navigation import OPERATION_NAV_ITEM, PAGES, PRIMARY_NAV_ITEMS
 from src.ui.navigation import PROJECT_DISPLAY_NAME as NAV_PROJECT_NAME
 from src.ui.page_config import PAGE_CONFIG_BY_KEY, PAGE_CONFIGS
 
 PROJECT_NAME = "财务/法律/投行场景大模型对比评测"
 MAIN_PAGE_KEYS = ["case_study", "samples", "test_run", "conclusions"]
-MAIN_NAV_PAGE_KEYS = ["case_study", "conclusions", "samples", "test_run"]
-MAIN_NAV_LABELS = ["项目说明", "评测结论", "样本库", "发起评测"]
+PAGE_CONFIG_KEYS = ["conclusions", "case_study", "samples", "test_run"]
+MAIN_NAV_PAGE_KEYS = ["conclusions", "case_study", "samples"]
+MAIN_NAV_LABELS = ["评测结论", "项目说明", "样本库"]
 VISIBLE_UI_FILES = [
     Path("src/ui/case_study.py"),
     Path("src/ui/samples.py"),
@@ -84,10 +85,11 @@ class ReadmeCurrentFlowTests(unittest.TestCase):
 class NavigationAndPageConfigGuardrailTests(unittest.TestCase):
     def test_navigation_only_exposes_current_four_pages(self):
         self.assertEqual(MAIN_PAGE_KEYS, list(PAGES.keys()))
-        self.assertEqual(list(zip(MAIN_NAV_LABELS, MAIN_NAV_PAGE_KEYS)), _TOP_NAV_ITEMS)
+        self.assertEqual(list(zip(MAIN_NAV_LABELS, MAIN_NAV_PAGE_KEYS)), PRIMARY_NAV_ITEMS)
+        self.assertEqual(("评测操作", "test_run"), OPERATION_NAV_ITEM)
 
     def test_page_config_only_contains_current_four_pages(self):
-        self.assertEqual(MAIN_PAGE_KEYS, [config.page_key for config in PAGE_CONFIGS])
+        self.assertEqual(PAGE_CONFIG_KEYS, [config.page_key for config in PAGE_CONFIGS])
         self.assertEqual(set(MAIN_PAGE_KEYS), set(PAGE_CONFIG_BY_KEY.keys()))
 
     def test_visible_project_name_is_current_chinese_name(self):

@@ -70,7 +70,7 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         for contract in [
             '[data-testid="stHorizontalBlock"]:has(.top-nav-brand)',
             "position: sticky",
-            "grid-template-columns: repeat(4, minmax(0, 1fr))",
+            "grid-template-columns: repeat(3, minmax(0, 1fr))",
         ]:
             self.assertIn(contract, css)
 

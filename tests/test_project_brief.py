@@ -6,7 +6,7 @@ import warnings
 import src.ui.components as components
 from src.data_service import load_all_data
 from src.ui.case_study import build_home_facts
-from src.ui.navigation import _TOP_NAV_ITEMS, PAGES
+from src.ui.navigation import OPERATION_NAV_ITEM, PAGES, PRIMARY_NAV_ITEMS
 from src.ui.page_config import PAGE_CONFIG_BY_KEY
 
 
@@ -54,24 +54,24 @@ class ComponentRenderTests(unittest.TestCase):
 
 class WorkflowNavTests(unittest.TestCase):
     def test_nav_items_cover_every_page(self):
-        nav_keys = [page_key for _, page_key in _TOP_NAV_ITEMS]
+        nav_keys = [page_key for _, page_key in [*PRIMARY_NAV_ITEMS, OPERATION_NAV_ITEM]]
         self.assertEqual(sorted(nav_keys), sorted(PAGES.keys()))
         self.assertEqual(len(nav_keys), len(set(nav_keys)))
 
     def test_current_pages_are_registered(self):
         self.assertEqual(["case_study", "samples", "test_run", "conclusions"], list(PAGES.keys()))
         self.assertEqual(
-            ["case_study", "conclusions", "samples", "test_run"],
-            [page_key for _, page_key in _TOP_NAV_ITEMS],
+            ["conclusions", "case_study", "samples", "test_run"],
+            [page_key for _, page_key in [*PRIMARY_NAV_ITEMS, OPERATION_NAV_ITEM]],
         )
         self.assertEqual("样本库", PAGE_CONFIG_BY_KEY["samples"].title)
         self.assertEqual("发起评测", PAGE_CONFIG_BY_KEY["test_run"].title)
         self.assertEqual("评测结论", PAGE_CONFIG_BY_KEY["conclusions"].title)
 
-    def test_top_nav_has_four_items(self):
-        self.assertEqual(4, len(_TOP_NAV_ITEMS))
-        labels = [label for label, _ in _TOP_NAV_ITEMS]
-        self.assertEqual(["项目说明", "评测结论", "样本库", "发起评测"], labels)
+    def test_navigation_groups_three_review_items_and_one_operation(self):
+        self.assertEqual(3, len(PRIMARY_NAV_ITEMS))
+        labels = [label for label, _ in [*PRIMARY_NAV_ITEMS, OPERATION_NAV_ITEM]]
+        self.assertEqual(["评测结论", "项目说明", "样本库", "评测操作"], labels)
 
 
 class PageRenderSmokeTests(unittest.TestCase):

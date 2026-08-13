@@ -131,7 +131,7 @@ MOBILE_RESPONSIVE_CSS = r"""
         box-sizing: border-box;
         display: grid;
         gap: 0.4rem;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         margin: 0 -0.875rem;
         max-width: none;
         padding: 0.45rem 0.875rem 0.55rem;
@@ -151,6 +151,34 @@ MOBILE_RESPONSIVE_CSS = r"""
         grid-column: 1 / -1;
         min-width: 0;
         width: 100% !important;
+    }
+    .block-container [data-testid="stHorizontalBlock"]:has(.top-nav-brand)
+        > [data-testid="stColumn"]:nth-child(2) {
+        grid-column: 1 / -1;
+        width: 100% !important;
+    }
+    .block-container [data-testid="stHorizontalBlock"]:has(.top-nav-brand)
+        > [data-testid="stColumn"]:nth-child(3) {
+        grid-column: 3;
+        justify-self: end;
+        width: auto !important;
+    }
+    .st-key-top_nav_review_region [data-testid="stHorizontalBlock"] {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        width: 100%;
+    }
+    .st-key-top_nav_review_region [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        flex: 0 0 auto !important;
+        min-width: 0;
+        width: 100% !important;
+    }
+    .st-key-top_nav_operation_region .stButton {
+        justify-content: flex-end !important;
+    }
+    .st-key-top_nav_operation_region .stButton > button {
+        min-height: 44px;
+        width: auto !important;
     }
     [data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton {
         justify-content: center;
