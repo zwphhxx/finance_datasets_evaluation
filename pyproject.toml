@@ -1,6 +1,9 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "browser: launches a local read-only Streamlit browser regression (Task 13)",
+]
 
 [tool.ruff]
 target-version = "py311"
