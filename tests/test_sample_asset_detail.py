@@ -2,6 +2,7 @@
 
 import json
 import unittest
+import unittest.mock
 
 from app.services import dataset_service as ds
 from app.services import sample_repository as sr
@@ -12,6 +13,7 @@ from src.ui.samples import (
     build_sample_asset_sections,
     build_sample_table_rows,
     parse_gold_answer_for_display,
+    render_sample_detail_panel,
 )
 
 
@@ -57,6 +59,21 @@ class SampleListSummaryTests(unittest.TestCase):
         self.assertNotIn("gold_answer", rows[0])
         self.assertNotIn("rubric", rows[0])
         self.assertNotIn("error_tags", rows[0])
+
+    def test_sample_index_keeps_the_complete_title(self):
+        title = "需要在专业样本索引中完整展示的长标题" * 3
+        sample = sr.Sample(
+            sample_id="CASE-LONG",
+            title=title,
+            scenario="场景",
+            task_prompt="任务题",
+            status="已入库",
+        )
+        readiness = ds.assess_sample_readiness(None, None, [])
+
+        rows = build_sample_table_rows([sample], {sample.sample_id: readiness})
+
+        self.assertEqual(title, rows[0]["任务标题"])
 
     def test_sample_table_rows_merge_readiness_states(self):
         sample = sr.Sample(
@@ -133,6 +150,15 @@ class GoldAnswerDisplayTests(unittest.TestCase):
         self.assertIn('class="document-field-title"', html)
         self.assertIn("<p>任务题第一段</p>", html)
         self.assertIn("<p>任务题第二段</p>", html)
+
+    def test_task_detail_escapes_dynamic_html_without_truncating_text(self):
+        unsafe = '<script data-long="' + ("甲" * 1200) + '">x</script>'
+
+        html = _task_detail_html(unsafe, unsafe, unsafe)
+
+        self.assertNotIn("<script", html)
+        self.assertIn("&lt;script", html)
+        self.assertIn("甲" * 1200, html)
 
 
 class ScoringStandardDisplayTests(unittest.TestCase):
@@ -223,6 +249,110 @@ class AssetSectionTests(unittest.TestCase):
         )
         self.assertIn("被测模型只看到任务题、业务背景和输出要求", sections[1]["caption"])
         self.assertIn("裁判评分链路", sections[2]["caption"])
+
+    def test_all_four_archive_tabs_render_in_the_same_pass(self):
+        sample = sr.Sample(
+            sample_id="CASE-TABS",
+            title="样本标题",
+            scenario="模拟数据全文",
+            task_prompt="任务题全文",
+            business_context="业务背景全文",
+            status="已入库",
+        )
+        readiness = ds.assess_sample_readiness(None, None, [])
+        gold = parse_gold_answer_for_display({
+            "core_conclusion": "专业结论全文",
+            "must_have_points": ["必须覆盖点全文"],
+            "unacceptable_errors": ["不可接受错误全文"],
+            "manual_review_notes": "评审提示全文",
+        })
+        tab_labels: list[str] = []
+        html_blocks: list[str] = []
+
+        class Tab:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        with unittest.mock.patch(
+            "src.ui.samples.st.tabs",
+            side_effect=lambda labels: tab_labels.extend(labels) or [Tab() for _ in labels],
+        ), unittest.mock.patch(
+            "src.ui.samples.render_html", side_effect=lambda html: html_blocks.append(str(html))
+        ):
+            render_sample_detail_panel(sample, readiness, {}, gold, [])
+
+        self.assertEqual(
+            ["任务与模拟数据", "专业标准答案", "质量要求", "评审重点"],
+            tab_labels,
+        )
+        rendered = "".join(html_blocks)
+        for text in [
+            "任务题全文",
+            "业务背景全文",
+            "模拟数据全文",
+            "专业结论全文",
+            "必须覆盖点全文",
+            "不可接受错误全文",
+            "评审提示全文",
+        ]:
+            self.assertIn(text, rendered)
+
+    def test_single_index_builds_rows_once_and_scrolls_the_selected_raw_case_id(self):
+        from src.ui import samples as sample_ui
+
+        sample = sr.Sample(
+            sample_id="LEGAL/01 <raw>",
+            title="<script>完整标题</script>",
+            scenario="场景",
+            task_prompt="任务题",
+            status="已入库",
+        )
+        row = {
+            "样本编号": sample.sample_id,
+            "任务标题": sample.title,
+            "专业场景": "法律场景",
+            "测试状态": "可测试",
+            "完整度": "通过",
+        }
+        rendered: list[str] = []
+
+        class Region:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        with unittest.mock.patch(
+            "src.ui.samples.build_sample_table_rows", return_value=[row]
+        ) as build_rows, unittest.mock.patch(
+            "src.ui.samples._ensure_selected_sample", return_value=sample
+        ), unittest.mock.patch(
+            "src.ui.samples.st.container", side_effect=lambda *args, **kwargs: Region()
+        ), unittest.mock.patch(
+            "src.ui.samples.st.columns", return_value=(Region(), Region())
+        ), unittest.mock.patch(
+            "src.ui.samples.st.button", return_value=True
+        ), unittest.mock.patch(
+            "src.ui.samples.st.rerun"
+        ), unittest.mock.patch(
+            "src.ui.samples.render_html", side_effect=lambda html: rendered.append(str(html))
+        ), unittest.mock.patch(
+            "src.ui.samples._select_sample"
+        ) as select_sample, unittest.mock.patch(
+            "src.ui.samples.request_scroll"
+        ) as scroll:
+            sample_ui._render_sample_index([sample], {}, [])
+
+        build_rows.assert_called_once_with([sample], {}, [])
+        select_sample.assert_called_once_with(sample.sample_id)
+        scroll.assert_called_once_with("#fde-current-sample")
+        html = "".join(rendered)
+        self.assertNotIn("<script>", html)
+        self.assertIn("&lt;script&gt;完整标题&lt;/script&gt;", html)
 
 
 if __name__ == "__main__":

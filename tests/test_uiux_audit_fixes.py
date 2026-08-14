@@ -175,23 +175,28 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn("_build_sample_scope_text", source)
         self.assertIn("不包含真实公司、真实交易或敏感数据", source)
 
-    def test_sample_index_table_is_compact(self):
+    def test_sample_index_is_compact_and_uses_one_responsive_structure(self):
         samples_source = Path("src/ui/samples.py").read_text(encoding="utf-8")
-        components_source = Path("src/ui/components.py").read_text(encoding="utf-8")
+        report_css = Path("src/ui/report_styles.py").read_text(encoding="utf-8")
 
-        self.assertIn("st.dataframe", samples_source)
         self.assertIn('"测试状态"', samples_source)
         self.assertNotIn('"缺失项摘要"', samples_source)
         self.assertNotIn("sample-index-grid", samples_source)
         self.assertNotIn("samples_view_", samples_source)
-        self.assertIn("def _render_mobile_sample_cards", samples_source)
+        self.assertIn("def _render_sample_index", samples_source)
+        self.assertNotIn("def _render_mobile_sample_cards", samples_source)
         self.assertIn("for sample, row in zip", samples_source)
-        self.assertIn("selection_mode=\"single-row\"", samples_source)
-        self.assertIn("on_select=\"rerun\"", samples_source)
+        self.assertIn("report_index_row_html", samples_source)
+        self.assertEqual(
+            1,
+            samples_source[
+                samples_source.index("def _render_sample_index"):
+                samples_source.index("def _ensure_selected_sample")
+            ].count("build_sample_table_rows("),
+        )
         self.assertNotIn('"查看样本"', samples_source)
         self.assertNotIn("samples_index_dataframe", samples_source)
-        self.assertIn("[data-testid=\"stDataFrame\"]", components_source)
-        self.assertNotIn(".sample-operation-selected", components_source)
+        self.assertIn(".sample-report-index .report-index-row", report_css)
 
     def test_sample_library_uses_dialogs_and_selected_actions(self):
         samples_source = Path("src/ui/samples.py").read_text(encoding="utf-8")
@@ -238,13 +243,13 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertNotIn("选择一个样本，查看评测资产结构。", samples_source)
         self.assertIn("render_sample_detail_panel", samples_source)
         self.assertIn("render_badge", components_source)
-        self.assertIn("render_selection_echo", components_source)
-        self.assertIn("render_detail_panel(body)", samples_source)
+        self.assertNotIn("render_selection_echo", samples_source)
+        self.assertIn("sample-archive-panel", samples_source)
         self.assertIn("sample-detail-toolbar-title", components_source)
         self.assertIn(".sample-detail-panel", components_source)
         self.assertIn("sample-detail-section-title", components_source)
-        self.assertIn("_detail_section_html(\"任务内容\"", samples_source)
-        self.assertIn('st.expander("专业标准答案", expanded=False)', samples_source)
+        self.assertIn('"任务与模拟数据"', samples_source)
+        self.assertIn("task_tab, gold_tab, quality_tab, review_tab = st.tabs", samples_source)
         self.assertIn("_detail_section_html(\"\", _gold_detail_html(gold_display))", samples_source)
         self.assertIn("评分标准", samples_source)
         self.assertIn("评分维度配置", samples_source)

@@ -21,12 +21,12 @@ class CaseStudyPresentationTests(unittest.TestCase):
 
     def test_case_study_intro_keeps_title_and_adds_derived_facts(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
-        self.assertIn("render_brief_intro(", source)
+        self.assertIn("render_report_masthead(", source)
         self.assertIn("PROJECT_DISPLAY_NAME", source)
         self.assertIn("专业任务中的回答质量", source)
         self.assertIn("识别模型的主要问题和使用边界", source)
         self.assertNotIn("subtitle=", source)
-        self.assertIn("facts=build_home_facts(base)", source)
+        self.assertIn("render_scope_ledger(build_home_facts(base))", source)
         self.assertNotIn("_build_home_stats", source)
         self.assertNotIn("当前样本 13 个", source)
         self.assertNotIn("覆盖专业场景", source)
@@ -49,55 +49,41 @@ class CaseStudyPresentationTests(unittest.TestCase):
 
     def test_case_study_sections_have_number_title_lead_and_body(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
-        self.assertIn("render_home_section", source)
+        self.assertIn("CASE_STUDY_SECTIONS", source)
+        self.assertIn("report_section_html", source)
         for number, title, lead in [
             ("01", "项目定位", "评估模型在财务、法律、投行场景中的回答质量。"),
             ("02", "评测流程", "从专业样本到 AI 评分后的评测结论。"),
             ("03", "数据边界", "结论只代表当前样本范围，不做脱离样本的泛化排名。"),
         ]:
-            self.assertIn(f'number="{number}"', source)
-            self.assertIn(f'title="{title}"', source)
-            self.assertIn(f'lead="{lead}"', source)
+            self.assertIn(f'"number": "{number}"', source)
+            self.assertIn(f'"title": "{title}"', source)
+            self.assertIn(f'"lead": "{lead}"', source)
         self.assertNotIn("render_numbered_section", source)
-        self.assertIn("first=True", source)
+        self.assertIn("render_report_contents", source)
 
     def test_case_study_keeps_process_line_only_in_flow_section(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         self.assertNotIn("PROCESS_TEXT", source)
         self.assertNotIn("process_text=", source)
         self.assertNotIn("render_process_line(PROCESS_STEPS)", source)
-        self.assertEqual(1, source.count("process_steps=PROCESS_STEPS"))
+        self.assertEqual(1, source.count("_process_steps_html(PROCESS_STEPS)"))
         self.assertIn(
-            'PROCESS_STEPS = ["人工录入样本库", "发起模型评测", "自动完成评分", "进入评测结论"]',
+            'PROCESS_STEPS = ["人工录入样本库", "开始评测", "模型回答与 AI 评分", "进入评测结论"]',
             source,
         )
-        self.assertIn('title="评测流程"', source)
-        self.assertLess(source.index('title="评测流程"'), source.index("process_steps=PROCESS_STEPS"))
+        self.assertIn('"title": "评测流程"', source)
 
     def test_brief_and_section_title_styles_follow_report_system(self):
-        css = Path("src/ui/components.py").read_text(encoding="utf-8")
+        css = Path("src/ui/report_styles.py").read_text(encoding="utf-8")
         for snippet in [
-            "letter-spacing: 0;",
-            ".brief-title",
-            "font-size: clamp(2.6rem, 5vw, 4.65rem);",
-            "border-left: 2px solid var(--fde-gold);",
-            ".brief-facts",
-            ".home-section-first",
-            "border-top: 0;",
-            ".section-heading {",
-            ".section-heading-home",
-            ".section-heading-page",
-            "grid-template-columns: 4.8rem minmax(0, 1fr);",
-            "align-items: baseline;",
-            "margin-left: 0;",
-            "font-size: 2.05rem;",
-            "font-size: 1.62rem;",
-            "grid-template-columns: 3.4rem minmax(0, 1fr);",
-            "font-size: 1.28rem;",
+            ".report-masthead",
+            ".report-ledger",
+            ".report-contents",
+            ".report-section",
+            ".report-method-copy",
         ]:
             self.assertIn(snippet, css)
-        self.assertNotIn(".brief-subtitle", css)
-        self.assertNotIn(".brief-meta", css)
 
     def test_brief_intro_outputs_title_note_and_facts(self):
         import src.ui.components as components

@@ -20,14 +20,12 @@ from app.services import sample_repository as sr
 from src.gold_quality import field_list, field_text, field_value
 from src.ui.components import (
     document_section_html,
-    render_detail_panel,
     render_empty_state,
     render_field_section,
     render_html,
     render_long_text_section,
     render_numbered_section,
     render_page_heading,
-    render_selection_echo,
 )
 from src.ui.labels import (
     DIFFICULTY_LABELS,
@@ -36,6 +34,7 @@ from src.ui.labels import (
     display_label,
 )
 from src.ui.page_config import get_page_config
+from src.ui.report_components import report_index_row_html
 from src.ui.scroll import request_scroll
 
 _TEST_STATUS_OPTIONS = ["全部", "可测试", "待补充", "不可测试", "已移出测试"]
@@ -324,7 +323,7 @@ def build_sample_table_rows(
         task_record = task_by_case.get(sample.sample_id) or {}
         rows.append({
             "样本编号": sample.sample_id or "待补充",
-            "任务标题": _truncate(sample.title, 44),
+            "任务标题": _clean_text(sample.title, fallback="未命名样本"),
             "专业场景": _professional_scene_label(task_record, sample),
             "测试状态": test_status,
             "完整度": _completeness_label(sample, readiness),
@@ -986,17 +985,7 @@ def render_samples_page(data_bundle: dict) -> None:
             render_empty_state("没有符合当前条件的样本。")
         else:
             st.caption("选择样本，在下方 03 区查看评测资产结构。")
-            with st.container(key="samples_desktop_index"):
-                _render_samples_table(filtered, readiness_map, task_records)
-            with st.container(key="samples_mobile_index"):
-                _render_mobile_sample_cards(filtered, readiness_map, task_records)
-            selected = _ensure_selected_sample(filtered)
-            if selected is not None:
-                render_selection_echo(
-                    f"已选 {selected.sample_id}",
-                    "#fde-current-sample",
-                    "查看下方 03 当前样本 ↓",
-                )
+            _render_sample_index(filtered, readiness_map, task_records)
 
     with st.container(key="samples_detail_region"):
         render_html('<a id="fde-current-sample"></a>')
@@ -1028,105 +1017,51 @@ def _render_filters(
     return keyword, domain, test_status, completeness
 
 
-def _render_samples_table(
+def _render_sample_index(
     samples: list[sr.Sample],
     readiness_map: dict[str, ds.SampleReadiness],
     task_records: list[dict],
 ) -> None:
-    _ensure_selected_sample(samples)
-    rows = build_sample_table_rows(samples, readiness_map, task_records)
-    frame = pd.DataFrame(rows, columns=_SAMPLE_TABLE_COLUMNS)
-    try:
-        event = st.dataframe(
-            frame,
-            hide_index=True,
-            width="stretch",
-            height=_sample_table_height(len(rows)),
-            row_height=34,
-            column_config=_sample_table_column_config(),
-            key="samples_index_table",
-            on_select="rerun",
-            selection_mode="single-row",
-        )
-        selected_index = _selected_dataframe_row_index(event)
-        if selected_index is not None and 0 <= selected_index < len(samples):
-            _select_sample(samples[selected_index].sample_id)
-    except TypeError:
-        st.dataframe(
-            frame,
-            hide_index=True,
-            width="stretch",
-            height=_sample_table_height(len(rows)),
-            column_config=_sample_table_column_config(),
-        )
-        st.caption("当前环境不支持表格行选择，默认展示查询结果中的第一条样本。")
-
-
-def _render_mobile_sample_cards(
-    samples: list[sr.Sample],
-    readiness_map: dict[str, ds.SampleReadiness],
-    task_records: list[dict],
-) -> None:
-    """Render the same sample index as tap-friendly mobile cards."""
+    """渲染单一专业样本索引，由 CSS 在桌面和手机端重排同一行结构。"""
     selected = _ensure_selected_sample(samples)
     selected_id = selected.sample_id if selected is not None else ""
     rows = build_sample_table_rows(samples, readiness_map, task_records)
-    for sample, row in zip(samples, rows):
-        active_class = " mobile-select-card-active" if sample.sample_id == selected_id else ""
-        with st.container(border=True, key=f"samples_mobile_card_{sample.sample_id}"):
-            render_html(
-                '<div class="mobile-select-card' + active_class + '">'
-                '<div class="mobile-select-card-head">'
-                f'<strong>{escape(str(row["样本编号"]))}</strong>'
-                f'<span>{escape(str(row["测试状态"]))}</span>'
-                "</div>"
-                f'<div class="mobile-select-card-title">{escape(str(row["任务标题"]))}</div>'
-                '<div class="mobile-select-card-meta">'
-                f'<span>{escape(str(row["专业场景"]))}</span>'
-                f'<span>完整度：{escape(str(row["完整度"]))}</span>'
-                "</div>"
-                "</div>"
-            )
-            if st.button(
-                "查看详情",
-                key=f"samples_mobile_select_{sample.sample_id}",
-                type="tertiary",
-                use_container_width=True,
-            ):
-                _select_sample(sample.sample_id)
-                request_scroll("#fde-current-sample")
-                st.rerun()
-
-
-def _sample_table_height(row_count: int) -> int:
-    return min(420, max(118, 42 + row_count * 35))
-
-
-def _sample_table_column_config() -> dict:
-    return {
-        "样本编号": st.column_config.TextColumn("样本编号", width="small"),
-        "任务标题": st.column_config.TextColumn("任务标题", width="medium"),
-        "专业场景": st.column_config.TextColumn("专业场景", width="small"),
-        "测试状态": st.column_config.TextColumn("测试状态", width="small"),
-        "完整度": st.column_config.TextColumn("完整度", width="small"),
-    }
-
-
-def _selected_dataframe_row_index(event) -> int | None:
-    selection = getattr(event, "selection", None)
-    if selection is None and isinstance(event, dict):
-        selection = event.get("selection")
-    if selection is None:
-        return None
-    rows = getattr(selection, "rows", None)
-    if rows is None and isinstance(selection, dict):
-        rows = selection.get("rows")
-    if not rows:
-        return None
-    try:
-        return int(rows[0])
-    except (TypeError, ValueError, IndexError):
-        return None
+    labels = tuple(_SAMPLE_TABLE_COLUMNS)
+    with st.container(key="samples_index"):
+        render_html(
+            '<div class="sample-report-index">'
+            + report_index_row_html(labels, header=True)
+            + "</div>"
+        )
+        for sample, row in zip(samples, rows):
+            values = tuple(row[column] for column in _SAMPLE_TABLE_COLUMNS)
+            with st.container(key=f"samples_index_row_{sample.sample_id}"):
+                row_col, action_col = st.columns([6.0, 1.0], gap="small", vertical_alignment="center")
+                with row_col:
+                    render_html(
+                        '<div class="sample-report-index">'
+                        + report_index_row_html(
+                            values,
+                            labels=labels,
+                            accessible_label=(
+                                f"样本编号：{sample.sample_id}；"
+                                f"任务标题：{row['任务标题']}；"
+                                f"专业场景：{row['专业场景']}"
+                            ),
+                            active=sample.sample_id == selected_id,
+                        )
+                        + "</div>"
+                    )
+                with action_col:
+                    if st.button(
+                        "查看详情",
+                        key=f"samples_index_select_{sample.sample_id}",
+                        type="tertiary",
+                        use_container_width=True,
+                    ):
+                        _select_sample(sample.sample_id)
+                        request_scroll("#fde-current-sample")
+                        st.rerun()
 
 
 def _ensure_selected_sample(samples: list[sr.Sample]) -> sr.Sample | None:
@@ -1241,20 +1176,45 @@ def render_sample_detail_panel(
 ) -> None:
     task_prompt, business_context, output_requirement = _task_markdown_values(sample, task_record)
     scoring_title = "评分标准" if _rubric_rows_are_complete(rubric_rows) else "评分维度配置"
-    body_sections = [
+    task_sections = [
         _detail_section_html("基本信息", _basic_info_html(sample, task_record)),
-        _detail_section_html("任务内容", _task_detail_html(task_prompt, business_context, output_requirement)),
+        _detail_section_html(
+            "任务与模拟数据",
+            _scenario_detail_html(sample, task_record)
+            + _task_detail_html(task_prompt, business_context, output_requirement),
+        ),
     ]
     if _readiness_needs_attention(sample, readiness):
-        body_sections.append(_detail_section_html("准入状态", _readiness_detail_html(sample, readiness)))
-    body = "".join(body_sections)
-    render_detail_panel(body)
-    with st.expander("专业标准答案", expanded=False):
-        render_html(_detail_section_html("", _gold_detail_html(gold_display)))
-    with st.expander(scoring_title, expanded=False):
-        render_html(_detail_section_html("", _rubric_detail_html(rubric_rows)))
-    with st.expander("历史运行与优化", expanded=False):
-        render_html(_detail_section_html("", _error_optimization_detail_html(sample)))
+        task_sections.append(_detail_section_html("准入状态", _readiness_detail_html(sample, readiness)))
+
+    task_tab, gold_tab, quality_tab, review_tab = st.tabs([
+        "任务与模拟数据",
+        "专业标准答案",
+        "质量要求",
+        "评审重点",
+    ])
+    with task_tab:
+        render_html('<div class="sample-archive-panel">' + "".join(task_sections) + "</div>")
+    with gold_tab:
+        render_html(
+            '<div class="sample-archive-panel">'
+            + _detail_section_html("", _gold_detail_html(gold_display))
+            + "</div>"
+        )
+    with quality_tab:
+        render_html(
+            '<div class="sample-archive-panel">'
+            + _detail_section_html("必须覆盖点与不可接受错误", _quality_requirements_html(gold_display))
+            + _detail_section_html(scoring_title, _rubric_detail_html(rubric_rows))
+            + "</div>"
+        )
+    with review_tab:
+        render_html(
+            '<div class="sample-archive-panel">'
+            + _detail_section_html("评审重点与边界", _review_focus_html(gold_display))
+            + _detail_section_html("历史运行与优化", _error_optimization_detail_html(sample))
+            + "</div>"
+        )
 
 
 def _readiness_needs_attention(sample: sr.Sample, readiness: ds.SampleReadiness) -> bool:
@@ -1307,6 +1267,32 @@ def _gold_detail_html(gold_display: dict) -> str:
         parts.append(_field_block_html("本题评分关注点", scoring_focus))
     if fallback:
         parts.append(_field_block_html("标准答案原文", fallback))
+    return "".join(parts)
+
+
+def _quality_requirements_html(gold_display: dict) -> str:
+    """将质量准入要求作为独立档案页签展示。"""
+    lists = gold_display.get("lists", {})
+    return "".join([
+        _list_block_html("必须覆盖点", lists.get("必须覆盖点", [])),
+        _list_block_html(
+            "不可接受错误",
+            lists.get("不可接受错误", []),
+            tone="risk",
+        ),
+    ])
+
+
+def _review_focus_html(gold_display: dict) -> str:
+    """展示现有评审提示、边界与本题关注点，不改写原文。"""
+    fields = gold_display.get("fields", {})
+    parts = [
+        _field_block_html("边界与需核查事项", fields.get("边界与需核查事项", "待补充")),
+        _field_block_html("评审提示", fields.get("评审提示", "待补充")),
+    ]
+    scoring_focus = _empty_if_pending(fields.get("本题评分关注点", ""))
+    if scoring_focus:
+        parts.append(_field_block_html("本题评分关注点", scoring_focus))
     return "".join(parts)
 
 

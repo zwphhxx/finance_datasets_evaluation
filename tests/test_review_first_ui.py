@@ -58,16 +58,17 @@ def test_mobile_sticky_navigation_is_applied_to_streamlit_layout_wrapper():
     assert "background: color-mix(in srgb, var(--fde-bg) 92%, transparent)" not in mobile
 
 
-def test_samples_offer_desktop_table_mobile_cards_and_one_maintenance_entry():
+def test_samples_offer_one_responsive_index_and_one_maintenance_entry():
     source = _source("src/ui/samples.py")
     title_bar = source[source.index("def _render_samples_title_bar"): source.index("def render_samples_page")]
 
     assert 'st.popover("样本维护"' in title_bar
     assert "samples_create_open" in title_bar
     assert "samples_import_csv_open" in title_bar
-    assert 'key="samples_desktop_index"' in source
-    assert 'key="samples_mobile_index"' in source
-    assert "def _render_mobile_sample_cards(" in source
+    assert 'key="samples_index"' in source
+    assert "def _render_sample_index(" in source
+    assert 'report_index_row_html(' in source
+    assert "def _render_mobile_sample_cards(" not in source
     assert 'request_scroll("#fde-current-sample")' in source
     assert "mobile-scroll-hint" not in source
 
@@ -97,17 +98,17 @@ def test_test_run_uses_single_durable_evaluation_entry():
     assert "当前未配置模型服务密钥，暂不能发起真实调用。" in source
 
 
-def test_responsive_css_hides_alternate_views_and_styles_disabled_primary():
+def test_responsive_css_reflows_shared_views_and_styles_disabled_primary():
     responsive = _source("src/ui/responsive.py")
     components = _source("src/ui/components.py")
 
     for selector in [
-        ".st-key-samples_mobile_index",
         ".st-key-conclusion_mobile_judgment",
-        ".st-key-samples_desktop_index",
         ".st-key-conclusion_desktop_judgment",
     ]:
         assert selector in responsive
+    assert ".st-key-samples_mobile_index" not in responsive
+    assert ".st-key-samples_desktop_index" not in responsive
     assert "button[kind=\"primary\"]:disabled" in components
     assert ".st-key-test_run_primary_action" in responsive
     assert ".st-key-test_run_score_action" not in responsive

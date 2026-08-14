@@ -6,7 +6,6 @@ MOBILE_RESPONSIVE_CSS = r"""
     gap: 1rem;
     grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-.st-key-samples_mobile_index,
 .st-key-conclusion_mobile_judgment {
     display: none;
 }
@@ -197,11 +196,9 @@ MOBILE_RESPONSIVE_CSS = r"""
         left: 0.65rem;
         right: 0.65rem;
     }
-    .st-key-samples_mobile_index,
     .st-key-conclusion_mobile_judgment {
         display: block;
     }
-    .st-key-samples_desktop_index,
     .st-key-conclusion_desktop_judgment {
         display: none;
     }

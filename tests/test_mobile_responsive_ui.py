@@ -293,6 +293,25 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", mobile_css)
         self.assertNotIn("min-width: 44rem", mobile_css)
 
+    def test_mobile_sample_index_reflows_the_same_semantic_rows(self):
+        from src.ui.report_styles import REPORT_STYLE_CSS
+
+        source = SAMPLES_PATH.read_text(encoding="utf-8")
+        mobile_css = REPORT_STYLE_CSS.split("@media (max-width: 760px)", 1)[1]
+
+        self.assertIn("def _render_sample_index", source)
+        self.assertIn("report_index_row_html", source)
+        self.assertNotIn("_render_mobile_sample_cards", source)
+        self.assertIn(".sample-report-index .report-index-row", mobile_css)
+        self.assertIn('.st-key-samples_index [class*="st-key-samples_index_row_"]', mobile_css)
+        self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", mobile_css)
+        for cell in range(1, 6):
+            self.assertIn(
+                f".sample-report-index .report-index-cell:nth-child({cell})",
+                mobile_css,
+            )
+        self.assertIn("min-height: 44px", mobile_css)
+
     def test_mobile_model_evidence_actions_are_full_width_touch_targets(self):
         from src.ui.report_styles import REPORT_STYLE_CSS
 

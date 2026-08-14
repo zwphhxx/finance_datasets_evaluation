@@ -35,10 +35,18 @@ def scope_ledger_html(items: Iterable[tuple[object, object]]) -> str:
     return f'<dl class="report-ledger">{rows}</dl>'
 
 
-def report_section_html(index: str, label: str, title: str, body_html: str) -> str:
+def report_section_html(
+    index: str,
+    label: str,
+    title: str,
+    body_html: str,
+    *,
+    anchor_id: str = "",
+) -> str:
     """Return one report section; only ``body_html`` is an already-trusted slot."""
+    anchor = f' id="{_escaped(anchor_id)}"' if str(anchor_id).strip() else ""
     return (
-        '<section class="report-section">'
+        f'<section class="report-section"{anchor}>'
         '<header class="report-section-heading">'
         f'<div class="report-section-index">{_escaped(index)}</div>'
         "<div>"
@@ -48,6 +56,23 @@ def report_section_html(index: str, label: str, title: str, body_html: str) -> s
         "</header>"
         f'<div class="report-section-body">{body_html}</div>'
         "</section>"
+    )
+
+
+def report_contents_html(items: Iterable[tuple[object, object, object]]) -> str:
+    """Return an escaped in-page contents list for report appendices."""
+    links = "".join(
+        '<li class="report-contents-item">'
+        f'<a href="#{_escaped(anchor_id)}">'
+        f'<span>{_escaped(index)}</span>{_escaped(title)}'
+        "</a></li>"
+        for anchor_id, index, title in items
+    )
+    return (
+        '<nav class="report-contents" aria-label="本页目录">'
+        '<p class="report-contents-label">本页目录</p>'
+        f'<ol class="report-contents-list">{links}</ol>'
+        "</nav>"
     )
 
 
@@ -114,6 +139,10 @@ def render_report_masthead(title: str, description: str, eyebrow: str = "") -> N
 
 def render_scope_ledger(items: Iterable[tuple[object, object]]) -> None:
     render_html(scope_ledger_html(items))
+
+
+def render_report_contents(items: Iterable[tuple[object, object, object]]) -> None:
+    render_html(report_contents_html(items))
 
 
 def _evidence_item_html(

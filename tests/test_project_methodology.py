@@ -35,9 +35,11 @@ class RegistrationTests(unittest.TestCase):
 
     def test_source_uses_current_shared_components_only(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
-        self.assertIn("render_brief_intro", source)
-        self.assertIn("render_home_section", source)
-        self.assertIn("process_steps=PROCESS_STEPS", source)
+        self.assertIn("render_report_masthead", source)
+        self.assertIn("render_scope_ledger", source)
+        self.assertIn("render_report_contents", source)
+        self.assertIn("report_section_html", source)
+        self.assertIn("_process_steps_html(PROCESS_STEPS)", source)
         for legacy_name in (
             "render_mockup_stack",
             "render_story_section",

@@ -17,6 +17,29 @@ from src.ui.page_config import DEFAULT_PAGE_KEY
 from src.ui.report_styles import REPORT_STYLE_CSS
 
 
+def test_project_method_copy_is_preserved_verbatim():
+    from inspect import getsource
+
+    from src.ui.case_study import professional_copy_snapshot
+
+    baseline = Path("tests/fixtures/project_method_copy.txt").read_text(encoding="utf-8")
+
+    assert professional_copy_snapshot() == baseline
+    assert "PROCESS_STEPS" not in getsource(professional_copy_snapshot)
+
+
+def test_samples_use_one_index_renderer_and_archive_tabs():
+    source = Path("src/ui/samples.py").read_text(encoding="utf-8")
+
+    assert "def _render_sample_index" in source
+    assert "_render_mobile_sample_cards" not in source
+    assert source[source.index("def _render_sample_index"):].count(
+        "build_sample_table_rows("
+    ) == 1
+    for label in ["任务与模拟数据", "专业标准答案", "质量要求", "评审重点"]:
+        assert label in source
+
+
 def test_report_styles_are_flat_and_editorial():
     for required in [
         ".report-masthead",
@@ -74,7 +97,14 @@ def test_report_primitives_escape_every_dynamic_value_except_trusted_body_html()
 
     masthead = rc.report_masthead_html(unsafe, unsafe, unsafe)
     ledger = rc.scope_ledger_html([(unsafe, unsafe)])
-    section = rc.report_section_html(unsafe, unsafe, unsafe, "<strong>可信正文</strong>")
+    contents = rc.report_contents_html([(unsafe, unsafe, unsafe)])
+    section = rc.report_section_html(
+        unsafe,
+        unsafe,
+        unsafe,
+        "<strong>可信正文</strong>",
+        anchor_id=unsafe,
+    )
     index_row = rc.report_index_row_html([unsafe], labels=[unsafe], active=True)
     evidence = rc.evidence_index_html([
         EvidenceItem(
@@ -94,7 +124,7 @@ def test_report_primitives_escape_every_dynamic_value_except_trusted_body_html()
     ])
 
     escaped = "&lt;script data-test=&quot;unsafe&quot;&gt;x&lt;/script&gt;"
-    for html in [masthead, ledger, section, index_row, evidence]:
+    for html in [masthead, ledger, contents, section, index_row, evidence]:
         assert escaped in html
         assert unsafe not in html
     assert "<strong>可信正文</strong>" in section
