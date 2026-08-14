@@ -125,6 +125,7 @@ def _render(
     click_key="",
     workflow=None,
     checkpoint_valid=True,
+    checkpoint_error: Exception | None = None,
     latest_error: Exception | None = None,
     status_error: Exception | None = None,
     preflight=None,
@@ -152,6 +153,11 @@ def _render(
         lambda *args, **kwargs: [{"case_id": "C1", "task": _bundle()["base"].tasks.iloc[0].to_dict()}],
     )
     monkeypatch.setattr(tr.sf, "is_configured", lambda: api_ready)
+    def model_provider_factory(*args, **kwargs):
+        events.append("model_provider")
+        raise AssertionError("model provider must not be constructed during page rendering")
+
+    monkeypatch.setattr(tr.sf, "SiliconFlowProvider", model_provider_factory)
     monkeypatch.setattr(tr.cd, "clear_conclusions_caches", lambda: events.append("clear"))
 
     def status_loader(_store, run_id):
@@ -162,6 +168,8 @@ def _render(
 
     def checkpoint_builder(*args, **kwargs):
         events.append("checkpoint")
+        if checkpoint_error is not None:
+            raise checkpoint_error
         if not checkpoint_valid:
             from app.services.evaluation_workflow import WorkflowCheckpointError
 
@@ -242,6 +250,31 @@ def test_no_api_key_disables_start_without_preflight_or_workflow(monkeypatch):
     assert start["disabled"] is True
     assert "preflight" not in events
     assert "workflow" not in events
+
+
+@pytest.mark.parametrize(
+    "checkpoint_error",
+    [ResultStoreError("checkpoint offline"), ResultStoreUnavailableError("checkpoint offline")],
+)
+def test_checkpoint_storage_failure_disables_continue_without_reporting_config_change(
+    monkeypatch, checkpoint_error
+):
+    ui, _store, events = _render(
+        monkeypatch,
+        INTERRUPTED,
+        checkpoint_error=checkpoint_error,
+        click_key="test_run_continue_evaluation",
+    )
+
+    continue_button = next(
+        button for button in ui.buttons if button["key"] == "test_run_continue_evaluation"
+    )
+    assert continue_button["disabled"] is True
+    assert any("数据库" in message and "不可用" in message for message in ui.messages)
+    assert not any("样本或参数已变化" in message for message in ui.messages)
+    assert "workflow" not in events
+    assert "model_provider" not in events
+    assert not any(event.startswith("continue:") for event in events)
 
 
 @pytest.mark.parametrize("failure_point", ["latest", "status"])

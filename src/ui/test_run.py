@@ -218,6 +218,11 @@ def render_test_run_page(
         checkpoint_config = None
         try:
             checkpoint_config = rebuild_checkpoint(status.run_id, base, store=result_store)
+        except (ResultStoreError, ResultStoreUnavailableError):
+            store_available = False
+            render_persistence_status(
+                "评测结果数据库暂不可用，已禁用继续评测。请在数据库恢复后重试。"
+            )
         except WorkflowCheckpointError:
             st.caption("当前样本或参数已变化，不能继续旧批次。")
         with st.container(key="test_run_primary_action"):
