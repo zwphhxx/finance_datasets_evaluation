@@ -16,6 +16,7 @@ from app.services.evaluation_workflow import (
     RUNNING,
     STOPPED,
     EvaluationRunStatus,
+    WorkflowCheckpointError,
     WorkflowStopped,
 )
 from src.ui import evaluation_config as ec
@@ -520,6 +521,7 @@ def test_workflow_stop_replaces_current_status_with_one_stopped_state(monkeypatc
     [
         WorkflowStopped("partial results were persisted"),
         ResultStoreError("persistence failed after a partial write"),
+        WorkflowCheckpointError("checkpoint failed after a partial write"),
     ],
 )
 def test_workflow_failure_paths_invalidate_conclusion_cache(

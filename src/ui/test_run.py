@@ -218,6 +218,7 @@ def render_test_run_page(
                     str(exc) or "评测已停止，未继续调用模型服务。"
                 )
             except WorkflowCheckpointError as exc:
+                cd.clear_conclusions_caches()
                 render_persistence_status(str(exc) or "评测配置无法通过一致性校验。")
             else:
                 cd.clear_conclusions_caches()
@@ -261,6 +262,7 @@ def render_test_run_page(
                     str(exc) or "评测已停止，未继续调用模型服务。"
                 )
             except WorkflowCheckpointError as exc:
+                cd.clear_conclusions_caches()
                 render_persistence_status(str(exc) or "评测配置无法通过一致性校验。")
             else:
                 cd.clear_conclusions_caches()
