@@ -250,7 +250,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn("sample-detail-section-title", components_source)
         self.assertIn('"任务与模拟数据"', samples_source)
         self.assertIn("task_tab, gold_tab, quality_tab, review_tab = st.tabs", samples_source)
-        self.assertIn("_detail_section_html(\"\", _gold_detail_html(gold_display))", samples_source)
+        self.assertIn("_detail_section_html(\"\", _gold_answer_html(gold_display))", samples_source)
         self.assertIn("评分标准", samples_source)
         self.assertIn("评分维度配置", samples_source)
         self.assertIn("_detail_section_html(\"准入状态\"", samples_source)

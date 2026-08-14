@@ -522,6 +522,7 @@ REPORT_STYLE_CSS = r"""
     }
     .st-key-samples_index [class*="st-key-samples_index_row_"] .stButton > button {
         min-height: 44px;
+        overflow-wrap: anywhere;
         width: 100%;
     }
     .st-key-conclusion_model_index [class*="st-key-conclusion_model_action_"] .stButton > button {

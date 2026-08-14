@@ -198,6 +198,17 @@ class ScoringStandardDisplayTests(unittest.TestCase):
 
 
 class AssetSectionTests(unittest.TestCase):
+    def test_sample_detail_action_labels_are_unique_and_keep_raw_case_ids(self):
+        from src.ui import samples as sample_ui
+
+        labels = [
+            sample_ui._sample_detail_action_label("CM-001"),
+            sample_ui._sample_detail_action_label("LEGAL/01 raw"),
+        ]
+
+        self.assertEqual(["查看详情：CM-001", "查看详情：LEGAL/01 raw"], labels)
+        self.assertEqual(len(labels), len(set(labels)))
+
     def test_asset_sections_have_required_order_and_prompt_boundary(self):
         sample = sr.Sample(
             sample_id="CASE-2",
@@ -258,14 +269,24 @@ class AssetSectionTests(unittest.TestCase):
             task_prompt="任务题全文",
             business_context="业务背景全文",
             status="已入库",
+            model_answers=["历史运行唯一标记"],
         )
         readiness = ds.assess_sample_readiness(None, None, [])
-        gold = parse_gold_answer_for_display({
-            "core_conclusion": "专业结论全文",
-            "must_have_points": ["必须覆盖点全文"],
-            "unacceptable_errors": ["不可接受错误全文"],
-            "manual_review_notes": "评审提示全文",
-        })
+        gold = {
+            "parsed": False,
+            "fields": {
+                "标准结论": "专业结论唯一标记",
+                "关键依据": "关键依据唯一标记",
+                "边界与需核查事项": "边界唯一标记",
+                "评审提示": "评审提示唯一标记",
+                "本题评分关注点": "评分关注点唯一标记",
+            },
+            "lists": {
+                "必须覆盖点": ["必须覆盖点唯一标记"],
+                "不可接受错误": ["不可接受错误唯一标记"],
+            },
+            "fallback_text": "标准答案原文唯一标记",
+        }
         tab_labels: list[str] = []
         html_blocks: list[str] = []
 
@@ -282,23 +303,53 @@ class AssetSectionTests(unittest.TestCase):
         ), unittest.mock.patch(
             "src.ui.samples.render_html", side_effect=lambda html: html_blocks.append(str(html))
         ):
-            render_sample_detail_panel(sample, readiness, {}, gold, [])
+            render_sample_detail_panel(
+                sample,
+                readiness,
+                {},
+                gold,
+                [{
+                    "评分维度": "准确性",
+                    "满分": "30",
+                    "满分标准": "评分标准唯一标记",
+                    "扣分规则": "扣分规则唯一标记",
+                }],
+            )
 
         self.assertEqual(
             ["任务与模拟数据", "专业标准答案", "质量要求", "评审重点"],
             tab_labels,
         )
+        self.assertEqual(4, len(html_blocks))
+        task_html, gold_html, quality_html, review_html = html_blocks
+        self.assertIn("任务题全文", task_html)
+        self.assertIn("模拟数据全文", task_html)
+        for text in ["专业结论唯一标记", "关键依据唯一标记", "标准答案原文唯一标记"]:
+            self.assertIn(text, gold_html)
+        for text in ["必须覆盖点唯一标记", "不可接受错误唯一标记", "评分标准唯一标记", "扣分规则唯一标记"]:
+            self.assertIn(text, quality_html)
+        for text in ["边界唯一标记", "评审提示唯一标记", "评分关注点唯一标记", "历史运行唯一标记"]:
+            self.assertIn(text, review_html)
+
         rendered = "".join(html_blocks)
-        for text in [
+        unique_markers = [
             "任务题全文",
             "业务背景全文",
             "模拟数据全文",
-            "专业结论全文",
-            "必须覆盖点全文",
-            "不可接受错误全文",
-            "评审提示全文",
-        ]:
-            self.assertIn(text, rendered)
+            "专业结论唯一标记",
+            "关键依据唯一标记",
+            "标准答案原文唯一标记",
+            "必须覆盖点唯一标记",
+            "不可接受错误唯一标记",
+            "评分标准唯一标记",
+            "扣分规则唯一标记",
+            "边界唯一标记",
+            "评审提示唯一标记",
+            "评分关注点唯一标记",
+            "历史运行唯一标记",
+        ]
+        for text in unique_markers:
+            self.assertEqual(1, rendered.count(text), text)
 
     def test_single_index_builds_rows_once_and_scrolls_the_selected_raw_case_id(self):
         from src.ui import samples as sample_ui
@@ -336,7 +387,7 @@ class AssetSectionTests(unittest.TestCase):
             "src.ui.samples.st.columns", return_value=(Region(), Region())
         ), unittest.mock.patch(
             "src.ui.samples.st.button", return_value=True
-        ), unittest.mock.patch(
+        ) as button, unittest.mock.patch(
             "src.ui.samples.st.rerun"
         ), unittest.mock.patch(
             "src.ui.samples.render_html", side_effect=lambda html: rendered.append(str(html))
@@ -348,6 +399,7 @@ class AssetSectionTests(unittest.TestCase):
             sample_ui._render_sample_index([sample], {}, [])
 
         build_rows.assert_called_once_with([sample], {}, [])
+        self.assertEqual("查看详情：LEGAL/01 <raw>", button.call_args.args[0])
         select_sample.assert_called_once_with(sample.sample_id)
         scroll.assert_called_once_with("#fde-current-sample")
         html = "".join(rendered)

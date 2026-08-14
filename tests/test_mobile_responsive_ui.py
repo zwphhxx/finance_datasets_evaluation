@@ -310,7 +310,13 @@ class MobileResponsiveUIContracts(unittest.TestCase):
                 f".sample-report-index .report-index-cell:nth-child({cell})",
                 mobile_css,
             )
-        self.assertIn("min-height: 44px", mobile_css)
+        action_selector = (
+            '.st-key-samples_index [class*="st-key-samples_index_row_"] '
+            ".stButton > button"
+        )
+        action_rule = mobile_css.split(action_selector + " {", 1)[1].split("}", 1)[0]
+        self.assertIn("min-height: 44px", action_rule)
+        self.assertIn("overflow-wrap: anywhere", action_rule)
 
     def test_mobile_model_evidence_actions_are_full_width_touch_targets(self):
         from src.ui.report_styles import REPORT_STYLE_CSS

@@ -866,6 +866,11 @@ def _select_sample(sample_id: str) -> None:
     st.session_state["samples_selected_id"] = sample_id
 
 
+def _sample_detail_action_label(sample_id: str) -> str:
+    """返回可唯一识别的样本详情动作名。"""
+    return f"查看详情：{str(sample_id)}"
+
+
 def _format_source_status_caption(status: dict) -> str:
     if not _should_render_sample_source_status(status):
         return ""
@@ -1054,7 +1059,7 @@ def _render_sample_index(
                     )
                 with action_col:
                     if st.button(
-                        "查看详情",
+                        _sample_detail_action_label(sample.sample_id),
                         key=f"samples_index_select_{sample.sample_id}",
                         type="tertiary",
                         use_container_width=True,
@@ -1198,7 +1203,7 @@ def render_sample_detail_panel(
     with gold_tab:
         render_html(
             '<div class="sample-archive-panel">'
-            + _detail_section_html("", _gold_detail_html(gold_display))
+            + _detail_section_html("", _gold_answer_html(gold_display))
             + "</div>"
         )
     with quality_tab:
@@ -1251,20 +1256,22 @@ def _task_detail_html(task_prompt: str, business_context: str, output_requiremen
 
 
 def _gold_detail_html(gold_display: dict) -> str:
+    """返回完整 Gold 详情，供旧的非分页调用保持兼容。"""
+    return "".join([
+        _gold_answer_html(gold_display),
+        _quality_requirements_html(gold_display),
+        _review_focus_html(gold_display),
+    ])
+
+
+def _gold_answer_html(gold_display: dict) -> str:
+    """只渲染专业标准答案本体，不混入质量要求或评审信息。"""
     fields = gold_display.get("fields", {})
-    lists = gold_display.get("lists", {})
     fallback = str(gold_display.get("fallback_text") or "").strip()
     parts = [
         _field_block_html("标准结论", fields.get("标准结论", "待补充")),
         _field_block_html("关键依据", fields.get("关键依据", "待补充")),
-        _list_block_html("必须覆盖点", lists.get("必须覆盖点", [])),
-        _list_block_html("不可接受错误", lists.get("不可接受错误", []), tone="risk"),
-        _field_block_html("边界与需核查事项", fields.get("边界与需核查事项", "待补充")),
-        _field_block_html("评审提示", fields.get("评审提示", "待补充")),
     ]
-    scoring_focus = _empty_if_pending(fields.get("本题评分关注点", ""))
-    if scoring_focus:
-        parts.append(_field_block_html("本题评分关注点", scoring_focus))
     if fallback:
         parts.append(_field_block_html("标准答案原文", fallback))
     return "".join(parts)
