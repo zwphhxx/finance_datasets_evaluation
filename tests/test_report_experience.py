@@ -132,6 +132,27 @@ def test_report_primitives_keep_one_semantic_dom_for_report_rows():
     assert 'class="evidence-index"' in rc.evidence_index_html([])
 
 
+def test_evaluation_page_has_one_product_pipeline_and_no_demo_or_score_action():
+    source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+
+    assert 'key="test_run_start_evaluation"' in source
+    assert 'key="test_run_continue_evaluation"' in source
+    assert 'key="test_run_score_run"' not in source
+    assert "生成 AI 评分" not in source
+    assert "演示模式" not in source
+    assert "从演示结果文件恢复" not in source
+
+
+def test_evaluation_page_uses_workflow_and_checkpoint_for_run_state():
+    source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+
+    assert "EvaluationWorkflow" in source
+    assert "_PARTIAL_OUTCOMES_KEY" not in source
+    assert "_PARTIAL_SCORE_OUTCOMES_KEY" not in source
+    assert "build_evaluation_config_from_checkpoint" in source
+    assert "workflow.continue_evaluation(status.run_id, checkpoint_config)" in source
+
+
 class _SessionState(dict):
     def __getattr__(self, name: str) -> object:
         return self[name]

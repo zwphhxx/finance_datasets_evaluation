@@ -10,5 +10,7 @@ def test_conclusion_page_uses_only_the_current_compatible_cohort():
         source.index("# --------------------------------------------------------------------------- #")
     ]
 
-    assert "cd.load_current_cohort_scores(allowed_case_ids)" in render_body
+    assert "cd.load_conclusion_source(" in render_body
+    assert "report.formal_scores" in render_body
+    assert "report.formal_responses" in render_body
     assert "cc.load_live_scores()" not in render_body

@@ -76,7 +76,9 @@ class ConclusionSourceDisplayTests(unittest.TestCase):
         source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
 
         self.assertIn("当前结论", source)
-        self.assertIn("cc.build_model_issue_summaries(ai_scores", source)
+        self.assertIn("cd.load_conclusion_source(", source)
+        self.assertIn("formal_scores = report.formal_scores", source)
+        self.assertIn("model_summaries = report.model_summaries", source)
         self.assertNotIn("Model_A_baseline", source)
 
 

@@ -67,7 +67,6 @@ def render_conclusions_page(data_bundle: dict) -> None:
     formal_scores = report.formal_scores if report is not None else pd.DataFrame()
     formal_responses = report.formal_responses if report is not None else pd.DataFrame()
     model_summaries = report.model_summaries if report is not None else ()
-    evidence_by_model = report.evidence_by_model if report is not None else {}
     scope = report.scope if report is not None else None
     answer_rows = cc.build_answer_detail_rows(formal_scores, formal_responses)
 
@@ -291,7 +290,7 @@ def _render_model_issue_details(
     )
 
     if not model_summaries:
-        st.caption("暂无模型详情。请先生成 AI 评分。")
+        st.caption("暂无模型详情。请先完成评测。")
         return
 
     selected = model_summaries[0]

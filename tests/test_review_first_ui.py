@@ -84,17 +84,15 @@ def test_conclusions_use_responsive_selection_without_duplicate_chart():
     assert 'st.popover("数据维护"' in source
 
 
-def test_test_run_uses_compact_preview_stage_links_and_contextual_notice():
+def test_test_run_uses_single_durable_evaluation_entry():
     source = _source("src/ui/test_run.py")
 
-    assert "_ANSWER_PREVIEW_LIMIT = 900" in source
-    assert "def _render_stage_navigation(" in source
-    for anchor in ["#fde-test-run-configuration", "#fde-test-run-answers", "#fde-test-run-scores"]:
-        assert anchor in source
-    assert 'action_type="tertiary"' in source
-    assert "_run_is_active()" in source
-    run_button = source[source.index("def _render_run_button"): source.index("def _render_live_run_queue")]
-    assert "当前未配置模型服务密钥，暂不能发起真实调用。" not in run_button
+    assert 'key="test_run_start_evaluation"' in source
+    assert 'key="test_run_continue_evaluation"' in source
+    assert 'key="test_run_primary_action"' in source
+    assert "def _render_stage_navigation(" not in source
+    assert "生成 AI 评分" not in source
+    assert "当前未配置模型服务密钥，暂不能发起真实调用。" in source
 
 
 def test_responsive_css_hides_alternate_views_and_styles_disabled_primary():
@@ -109,4 +107,5 @@ def test_responsive_css_hides_alternate_views_and_styles_disabled_primary():
     ]:
         assert selector in responsive
     assert "button[kind=\"primary\"]:disabled" in components
-    assert ".st-key-test_run_score_action" in responsive
+    assert ".st-key-test_run_primary_action" in responsive
+    assert ".st-key-test_run_score_action" not in responsive

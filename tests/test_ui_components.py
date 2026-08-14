@@ -147,12 +147,9 @@ class UIComponentsTests(unittest.TestCase):
 
         for key in ["samples_filter_region", "samples_list_region", "samples_detail_region"]:
             self.assertIn(f'with st.container(key="{key}"):', samples_source)
-        for key in [
-            "test_run_stage_configuration",
-            "test_run_stage_answers",
-            "test_run_stage_scores",
-        ]:
+        for key in ["test_run_scope_actions", "test_run_primary_action"]:
             self.assertIn(f'with st.container(key="{key}"):', test_run_source)
+        self.assertNotIn("test_run_stage_scores", test_run_source)
 
     def test_component_signatures_match_current_contract(self):
         import src.ui.components as components

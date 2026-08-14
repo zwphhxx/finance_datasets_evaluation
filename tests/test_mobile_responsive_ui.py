@@ -375,7 +375,7 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         for rule in _declarations_for_selector(mobile_css, ".sample-detail-table"):
             self.assertNotRegex(rule, r"display\s*:")
 
-    def test_fixed_actions_are_limited_to_run_and_dialog_controls(self):
+    def test_fixed_actions_are_limited_to_dialog_controls(self):
         css = self._responsive_css()
         mobile_css = css.split(
             "@media (max-width: 760px)",
@@ -387,9 +387,7 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             if re.search(r"position\s*:\s*fixed\b", declarations)
         ]
 
-        self.assertEqual(2, len(fixed_rules))
-        run_rule = next(item for item in fixed_rules if ".st-key-test_run_run" in item[0])
-        self.assertRegex(run_rule[1], r"position\s*:\s*fixed\b")
+        self.assertEqual(1, len(fixed_rules))
         dialog_rule = next(
             item
             for item in fixed_rules
@@ -417,73 +415,8 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             ),
             "dialog action styles must not leak onto Streamlit's transient rerun DOM",
         )
-
-        dialog_selector = (
-            'body:has([data-testid="stDialog"]) .st-key-test_run_run'
-        )
-        self.assertTrue(
-            any(
-                re.search(r"visibility\s*:\s*hidden\b", declarations)
-                for declarations in _declarations_for_selector(
-                    mobile_css,
-                    dialog_selector,
-                )
-            )
-        )
-        old_dialog_selector = (
-            '.stApp:has([data-testid="stDialog"]) .st-key-test_run_run'
-        )
-        self.assertEqual(
-            [],
-            _declarations_for_selector(css, old_dialog_selector),
-        )
-
-        for focus_selector in [
-            ".stApp:has(input:focus) .st-key-test_run_run",
-            ".stApp:has(textarea:focus) .st-key-test_run_run",
-        ]:
-            self.assertTrue(
-                any(
-                    re.search(r"position\s*:\s*static\b", declarations)
-                    for declarations in _declarations_for_selector(
-                        mobile_css,
-                        focus_selector,
-                    )
-                ),
-                focus_selector,
-            )
-
-        disabled_selector = ".st-key-test_run_run:has(button:disabled)"
-        self.assertTrue(
-            any(
-                all(
-                    re.search(contract, rule)
-                    for contract in [
-                        r"position\s*:\s*static\b",
-                        r"width\s*:\s*100%\s*;",
-                    ]
-                )
-                for rule in _declarations_for_selector(
-                    mobile_css,
-                    disabled_selector,
-                )
-            )
-        )
-
-        answer_viewer_selector = (
-            ".stApp:has(.st-key-test_run_answer_viewer) .st-key-test_run_run"
-        )
-        self.assertTrue(
-            any(
-                re.search(r"position\s*:\s*static\b", declarations)
-                for declarations in _declarations_for_selector(
-                    mobile_css,
-                    answer_viewer_selector,
-                )
-            )
-        )
-
-        run_button_wrapper = ".st-key-test_run_run .stButton"
+        self.assertNotIn(".st-key-test_run_run", css)
+        run_button_wrapper = ".st-key-test_run_primary_action .stButton"
         self.assertTrue(
             any(
                 re.search(r"width\s*:\s*100%\s*;", declarations)
@@ -497,11 +430,8 @@ class MobileResponsiveUIContracts(unittest.TestCase):
     def test_answer_viewer_and_detail_toolbar_have_stable_mobile_spacing(self):
         from src.ui.components import STYLE_CSS
 
-        test_run_source = TEST_RUN_PATH.read_text(encoding="utf-8")
-        self.assertIn(
-            'with st.container(key="test_run_answer_viewer"):',
-            test_run_source,
-        )
+        results_source = Path("src/ui/evaluation_results.py").read_text(encoding="utf-8")
+        self.assertIn("render_markdown_detail_panel(", results_source)
 
         normalized_css = re.sub(r"\s+", " ", STYLE_CSS)
         self.assertRegex(
@@ -539,13 +469,12 @@ class MobileResponsiveUIContracts(unittest.TestCase):
     def test_run_action_is_rendered_outside_streamlit_columns(self):
         import inspect
 
-        from src.ui.test_run import _render_configuration_panel
+        from src.ui.test_run import _render_evaluation_scope
 
-        source = inspect.getsource(_render_configuration_panel)
-        self.assertIn('with st.container(key="test_run_actions"):', source)
-        self.assertIn('with st.container(key="test_run_action_samples"):', source)
-        self.assertIn('with st.container(key="test_run_action_models"):', source)
-        self.assertIn('with st.container(key="test_run_action_primary"):', source)
+        source = inspect.getsource(_render_evaluation_scope)
+        self.assertIn('with st.container(key="test_run_scope_actions"):', source)
+        self.assertIn('key="test_run_open_samples"', source)
+        self.assertIn('key="test_run_open_models"', source)
         self.assertNotIn("st.columns(", source)
 
     def test_run_action_group_uses_desktop_grid_and_mobile_stack(self):
@@ -556,14 +485,14 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         self.assertRegex(
             desktop_css,
             (
-                r"\.st-key-test_run_actions\s*\{[^}]*"
+                r"\.st-key-test_run_scope_actions\s*\{[^}]*"
                 r"display\s*:\s*grid\s*;[^}]*"
-                r"grid-template-columns\s*:\s*1fr\s+1fr\s+1\.2fr\s*;"
+                r"grid-template-columns\s*:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)\s*;"
             ),
         )
         mobile_rules = _declarations_for_selector(
             mobile_css,
-            ".st-key-test_run_actions",
+            ".st-key-test_run_scope_actions",
         )
         self.assertTrue(
             any(

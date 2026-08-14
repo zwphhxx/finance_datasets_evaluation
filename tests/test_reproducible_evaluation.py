@@ -58,21 +58,31 @@ class PageFramingTests(unittest.TestCase):
         self.assertIn("评测", config.question)
 
     def test_boundary_mentions_prompt_separation(self):
-        self.assertIn("不看到专业标准答案", _PAGE_SOURCE)
+        self.assertIn("不会看到专业标准答案", _PAGE_SOURCE)
 
-    def test_page_keeps_live_run_boundary_and_auxiliary_details(self):
-        self.assertIn("RUN_BOUNDARY_NOTE", _PAGE_SOURCE)
-        self.assertIn("直接用于评测结论", _PAGE_SOURCE)
-        self.assertIn("查看评分对比表", _PAGE_SOURCE)
-        self.assertIn('@st.dialog("评分对比表"', _PAGE_SOURCE)
-        self.assertNotIn('st.expander("评分对比表"', _PAGE_SOURCE)
+    def test_page_uses_one_durable_answer_and_score_pipeline(self):
+        self.assertIn("EvaluationWorkflow", _PAGE_SOURCE)
+        self.assertIn('key="test_run_start_evaluation"', _PAGE_SOURCE)
+        self.assertIn('key="test_run_continue_evaluation"', _PAGE_SOURCE)
+        self.assertNotIn("生成 AI 评分", _PAGE_SOURCE)
+        self.assertNotIn("查看评分对比表", _PAGE_SOURCE)
 
 
 class ResultsTableColumnsTests(unittest.TestCase):
-    def test_results_table_shows_required_call_metadata(self):
-        # 结果主表必须展示状态、HTTP 状态、耗时、回答长度、错误码、错误信息、trace_id。
-        for column in ("状态", "HTTP状态", "耗时(ms)", "回答长度", "错误码", "错误信息", "trace_id"):
-            self.assertIn(column, _PAGE_SOURCE)
+    def test_persisted_record_renderer_keeps_technical_fields_available(self):
+        from src.ui.evaluation_results import build_technical_detail_rows
+
+        row = {"http_status": 200, "elapsed_ms": 42, "trace_id": "trace-1"}
+        detail = build_technical_detail_rows(row)
+
+        self.assertEqual(
+            [
+                {"字段": "http_status", "值": "200"},
+                {"字段": "elapsed_ms", "值": "42"},
+                {"字段": "trace_id", "值": "trace-1"},
+            ],
+            detail,
+        )
 
 
 class FormalSampleEligibilityTests(unittest.TestCase):

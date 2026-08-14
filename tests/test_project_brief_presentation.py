@@ -68,7 +68,7 @@ class CaseStudyPresentationTests(unittest.TestCase):
         self.assertNotIn("render_process_line(PROCESS_STEPS)", source)
         self.assertEqual(1, source.count("process_steps=PROCESS_STEPS"))
         self.assertIn(
-            'PROCESS_STEPS = ["人工录入样本库", "发起模型评测", "生成 AI 评分", "进入评测结论"]',
+            'PROCESS_STEPS = ["人工录入样本库", "发起模型评测", "自动完成评分", "进入评测结论"]',
             source,
         )
         self.assertIn('title="评测流程"', source)

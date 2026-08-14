@@ -1,10 +1,10 @@
 """Shared responsive styles for the Streamlit user interface."""
 
 MOBILE_RESPONSIVE_CSS = r"""
-.st-key-test_run_actions {
+.st-key-test_run_scope_actions {
     display: grid;
     gap: 1rem;
-    grid-template-columns: 1fr 1fr 1.2fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .st-key-samples_mobile_index,
 .st-key-conclusion_mobile_judgment {
@@ -115,7 +115,7 @@ MOBILE_RESPONSIVE_CSS = r"""
         min-height: 44px;
         min-width: 44px;
     }
-    .st-key-test_run_actions {
+    .st-key-test_run_scope_actions {
         gap: 0.55rem;
         grid-template-columns: 1fr;
     }
@@ -389,69 +389,18 @@ MOBILE_RESPONSIVE_CSS = r"""
         min-height: 44px;
         width: 100%;
     }
-    .st-key-test_run_answer_viewer {
-        gap: 0.7rem;
-    }
-    .st-key-test_run_run {
-        background: var(--fde-bg);
-        border-top: 1px solid var(--fde-line);
-        bottom: 0;
-        box-shadow: 0 -8px 20px color-mix(in srgb, var(--fde-ink) 12%, transparent);
-        box-sizing: border-box;
-        left: 0;
-        padding: 0.65rem 0.875rem calc(0.65rem + env(safe-area-inset-bottom));
-        position: fixed;
-        right: 0;
-        width: 100vw;
-        z-index: 45;
-    }
-    .st-key-test_run_run .stButton > button {
+    .st-key-test_run_primary_action .stButton > button {
         min-height: 44px;
         width: 100%;
     }
-    .st-key-test_run_run .stButton {
-        width: 100%;
-    }
-    .st-key-test_run_run:has(button:disabled),
-    .stApp:has(.st-key-test_run_answer_viewer) .st-key-test_run_run {
-        background: transparent;
-        border-top: 0;
-        box-shadow: none;
-        left: auto;
-        padding: 0;
-        position: static;
-        right: auto;
-        width: 100%;
-    }
-    .stApp:has(.st-key-test_run_run:not(:has(button:disabled))) .block-container {
-        padding-bottom: calc(6.75rem + env(safe-area-inset-bottom));
-    }
-    .stApp:has(.st-key-test_run_answer_viewer) .block-container {
-        padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
-    }
-    body:has([data-testid="stDialog"]) .st-key-test_run_run {
-        visibility: hidden;
-    }
-    .stApp:has(input:focus) .st-key-test_run_run,
-    .stApp:has(textarea:focus) .st-key-test_run_run {
-        background: transparent;
-        border-top: 0;
-        box-shadow: none;
-        left: auto;
-        padding: 0;
-        position: static;
-        right: auto;
+    .st-key-test_run_primary_action .stButton,
+    .st-key-test_run_primary_action {
         width: 100%;
     }
     .stButton > button,
     .stDownloadButton > button,
     .stFormSubmitButton > button {
         min-height: 44px;
-    }
-    .st-key-test_run_score_action,
-    .st-key-test_run_score_action .stButton,
-    .st-key-test_run_score_action .stButton > button {
-        width: 100%;
     }
 }
 

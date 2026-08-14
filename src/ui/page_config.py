@@ -29,7 +29,7 @@ PAGE_CONFIGS = [
     PageConfig(
         page_key="test_run",
         title="发起评测",
-        question="选择样本和模型，运行评测并生成 AI 评分。",
+        question="选择样本和模型，运行评测并自动完成评分。",
     ),
 ]
 
