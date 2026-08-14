@@ -177,21 +177,33 @@ def test_report_primitives_keep_one_semantic_dom_for_report_rows():
     assert 'class="evidence-index"' in rc.evidence_index_html([])
 
 
-def test_report_index_rows_expose_table_semantics_and_selected_state():
+def test_report_index_rows_expose_independent_review_group_semantics():
     header = rc.report_index_row_html(["模型", "判断"], header=True)
-    inactive = rc.report_index_row_html(["provider/model-a", "谨慎"], active=False)
-    active = rc.report_index_row_html(["provider/model-b", "可作为"], active=True)
+    labels = ("模型", "样本数／平均分", "当前判断", "主要依据")
+    inactive = rc.report_index_row_html(
+        ["provider/model-a", "13 个／8.2 分", "谨慎使用", "依据 A"],
+        labels=labels,
+        active=False,
+    )
+    active = rc.report_index_row_html(
+        ["provider/model-b", "13 个／9.1 分", "可作为参考", "依据 B"],
+        labels=labels,
+        active=True,
+    )
 
     for html in [header, inactive, active]:
-        assert 'role="table"' in html
-        assert 'aria-label="模型评测结论"' in html
-        assert 'role="row"' in html
-    assert header.count('role="columnheader"') == 2
-    assert 'aria-selected=' not in header
-    assert inactive.count('role="cell"') == 2
-    assert 'aria-label="模型：provider/model-a"' in inactive
-    assert 'aria-selected="false"' in inactive
-    assert 'aria-selected="true"' in active
+        assert 'role="table"' not in html
+        assert 'aria-selected=' not in html
+    assert 'aria-hidden="true"' in header
+    assert 'role="group"' not in header
+    assert 'role="group"' in inactive
+    assert 'aria-current=' not in inactive
+    assert (
+        'aria-label="模型：provider/model-a；样本数／平均分：13 个／8.2 分；当前判断：谨慎使用"'
+        in inactive
+    )
+    assert 'aria-current="true"' in active
+    assert 'data-label="样本数／平均分"' in active
 
 
 def test_model_evidence_action_names_distinguish_raw_model_ids():
@@ -205,6 +217,25 @@ def test_model_evidence_action_names_distinguish_raw_model_ids():
     assert first != second
     source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
     assert "_model_evidence_action_label(raw_model_id)" in source
+
+
+def test_model_review_group_label_uses_unique_raw_model_id():
+    from src.ui import conclusions as ui
+
+    values = ("同名模型", "13 个／8.8 分", "谨慎使用", "依据")
+    label = ui._model_review_accessible_label("provider/raw-model", values)
+    html = rc.report_index_row_html(
+        values,
+        labels=("模型", "样本数／平均分", "当前判断", "主要依据"),
+        accessible_label=label,
+    )
+
+    assert (
+        'aria-label="模型：provider/raw-model；样本数／平均分：13 个／8.8 分；当前判断：谨慎使用"'
+        in html
+    )
+    source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
+    assert "accessible_label=_model_review_accessible_label(raw_model_id, values)" in source
 
 
 def test_conclusion_page_is_report_first_and_never_surfaces_excluded_count():

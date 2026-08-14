@@ -293,6 +293,21 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", mobile_css)
         self.assertNotIn("min-width: 44rem", mobile_css)
 
+    def test_mobile_model_evidence_actions_are_full_width_touch_targets(self):
+        from src.ui.report_styles import REPORT_STYLE_CSS
+
+        mobile_css = REPORT_STYLE_CSS.split("@media (max-width: 760px)", 1)[1]
+        selector = (
+            '.st-key-conclusion_model_index [class*="st-key-conclusion_model_action_"] '
+            ".stButton > button"
+        )
+        self.assertIn(selector + " {", mobile_css)
+        rule = mobile_css.split(selector + " {", 1)[1].split("}", 1)[0]
+
+        self.assertIn("min-height: 44px", rule)
+        self.assertIn("width: 100%", rule)
+        self.assertIn("white-space: normal", rule)
+
     def test_mobile_popover_triggers_are_real_44px_touch_targets(self):
         css = self._responsive_css()
         mobile_css = css.split(

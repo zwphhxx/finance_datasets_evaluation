@@ -55,6 +55,7 @@ def report_index_row_html(
     cells: Iterable[object],
     *,
     labels: Iterable[object] | None = None,
+    accessible_label: object | None = None,
     active: bool = False,
     header: bool = False,
 ) -> str:
@@ -67,9 +68,8 @@ def report_index_row_html(
     class_name = " ".join(classes)
     values = tuple(cells)
     cell_labels = tuple(labels or ())
-    cell_role = "columnheader" if header else "cell"
     cell_html = "".join(
-        f'<div class="report-index-cell" role="{cell_role}"'
+        '<div class="report-index-cell"'
         + (
             f' data-label="{_escaped(cell_labels[index])}"'
             if index < len(cell_labels) and str(cell_labels[index]).strip()
@@ -78,11 +78,17 @@ def report_index_row_html(
         + f">{_escaped(cell)}</div>"
         for index, cell in enumerate(values)
     )
-    row_state = "" if header else f' aria-label="模型：{_escaped(values[0] if values else "—")}" aria-selected="{str(active).lower()}"'
+    if header:
+        return f'<div class="{class_name}" aria-hidden="true">{cell_html}</div>'
+    current = ' aria-current="true"' if active else ""
+    row_label = (
+        _review_row_accessible_label(values, cell_labels)
+        if accessible_label is None
+        else str(accessible_label)
+    )
     return (
-        '<div class="report-index-table" role="table" aria-label="模型评测结论">'
-        f'<div class="{class_name}" role="row"{row_state}>{cell_html}</div>'
-        "</div>"
+        f'<div class="{class_name}" role="group" '
+        f'aria-label="{_escaped(row_label)}"{current}>{cell_html}</div>'
     )
 
 
@@ -165,6 +171,18 @@ def _escaped_dimension_list_html(scores: Mapping[object, object]) -> str:
 
 def _escaped(value: object) -> str:
     return escape(_display(value), quote=True)
+
+
+def _review_row_accessible_label(
+    values: Sequence[object],
+    labels: Sequence[object],
+) -> str:
+    default_labels = ("模型", "样本数／平均分", "当前判断")
+    parts = []
+    for index, value in enumerate(values[:3]):
+        label = labels[index] if index < len(labels) and str(labels[index]).strip() else default_labels[index]
+        parts.append(f"{label}：{_display(value)}")
+    return "；".join(parts)
 
 
 def _display(value: object) -> str:

@@ -227,6 +227,7 @@ def _render_model_recommendations(
                 + report_index_row_html(
                     values,
                     labels=labels,
+                    accessible_label=_model_review_accessible_label(raw_model_id, values),
                     active=raw_model_id == selected_model,
                 )
                 + "</div>"
@@ -249,6 +250,13 @@ def _select_model_evidence(model_id: str) -> None:
 
 def _model_evidence_action_label(model_id: str) -> str:
     return f"查看证据：{model_id}"
+
+
+def _model_review_accessible_label(
+    model_id: str,
+    values: Sequence[object],
+) -> str:
+    return f"模型：{model_id}；样本数／平均分：{values[1]}；当前判断：{values[2]}"
 
 
 def _recommendation_row(item: Mapping[str, object]) -> dict[str, object]:

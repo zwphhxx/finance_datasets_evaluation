@@ -358,6 +358,11 @@ REPORT_STYLE_CSS = r"""
     .conclusion-model-index .report-index-row {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+    .st-key-conclusion_model_index [class*="st-key-conclusion_model_action_"] .stButton > button {
+        min-height: 44px;
+        white-space: normal;
+        width: 100%;
+    }
     .report-index-cell {
         padding: 0.55rem 0.45rem;
     }
