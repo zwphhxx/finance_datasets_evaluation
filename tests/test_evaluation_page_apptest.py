@@ -22,6 +22,8 @@ def _script(state: str | None, *, api_ready: bool) -> str:
             def latest_queue(self, table):
                 return {('[{"run_id": "RUN-1", "provider": "siliconflow", "case_id": "C1", "model_id": "vendor/model-1"}]' if state else '[]')}
             def list_rows(self, table, **filters):
+                if table == "live_evaluation_runs":
+                    return {('[{"run_id": "RUN-1", "provider": "siliconflow", "run_mode": "live", "status": "running"}]' if state else '[]')}
                 return []
 
         def forbidden(name):
@@ -41,14 +43,12 @@ def _script(state: str | None, *, api_ready: bool) -> str:
             "load_samples": tr.sr.load_samples,
             "rubric": tr.ds.get_testable_rubric_dimensions,
             "sample_options": tr.build_sample_options,
-            "eligible": tr.formal.formal_recovery_run_eligible,
             "configured": tr.sf.is_configured,
             "provider": tr.sf.SiliconFlowProvider,
         }}
         tr.sr.load_samples = lambda: []
         tr.ds.get_testable_rubric_dimensions = lambda: []
         tr.build_sample_options = lambda *args, **kwargs: [sample]
-        tr.formal.formal_recovery_run_eligible = lambda *args, **kwargs: True
         tr.sf.is_configured = lambda: {api_ready!r}
         tr.sf.SiliconFlowProvider = forbidden("model_provider")
 
@@ -74,7 +74,6 @@ def _script(state: str | None, *, api_ready: bool) -> str:
             tr.sr.load_samples = originals["load_samples"]
             tr.ds.get_testable_rubric_dimensions = originals["rubric"]
             tr.build_sample_options = originals["sample_options"]
-            tr.formal.formal_recovery_run_eligible = originals["eligible"]
             tr.sf.is_configured = originals["configured"]
             tr.sf.SiliconFlowProvider = originals["provider"]
         """

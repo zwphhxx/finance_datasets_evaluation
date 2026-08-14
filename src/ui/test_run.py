@@ -69,15 +69,13 @@ def _persistence_gate(result: bool) -> None:
         raise RuntimeError("runtime persistence required")
 
 
-def _require_persistence_preflight(provider_name: str) -> None:
+def _require_persistence_preflight(store, provider_name: str) -> None:
     from app.persistence import (
         ResultStoreSettings,
         ResultStoreUnavailableError,
-        get_result_store,
         require_durable_live_store,
     )
 
-    store = get_result_store()
     settings = ResultStoreSettings(url="", is_postgresql=store.is_postgresql)
     require_durable_live_store(provider_name, settings)
     if not store.ping():
@@ -146,9 +144,17 @@ def render_test_run_page(
     if store_available:
         try:
             latest_rows = list(result_store.latest_queue("live_run_queue"))
-            if latest_rows and formal.formal_recovery_run_eligible(None, latest_rows):
+            if latest_rows:
                 latest_run_id = str(latest_rows[0].get("run_id") or "").strip()
-                if latest_run_id:
+                metadata_rows = (
+                    result_store.list_rows("live_evaluation_runs", run_id=latest_run_id)
+                    if latest_run_id
+                    else []
+                )
+                metadata = metadata_rows[0] if len(metadata_rows) == 1 else None
+                if metadata is not None and formal.formal_recovery_run_eligible(
+                    metadata, latest_rows
+                ):
                     status = load_status(result_store, latest_run_id)
         except (ResultStoreError, ResultStoreUnavailableError, WorkflowCheckpointError):
             store_available = False
@@ -193,7 +199,7 @@ def render_test_run_page(
             )
         if start_clicked:
             try:
-                require_preflight(provider_name)
+                require_preflight(result_store, provider_name)
                 evaluation_config = build_new_config(base, selected_tasks, model_ids)
                 workflow = build_workflow(result_store)
                 workflow.start_evaluation(evaluation_config)
@@ -235,7 +241,7 @@ def render_test_run_page(
             )
         if continue_clicked:
             try:
-                require_preflight(provider_name)
+                require_preflight(result_store, provider_name)
                 workflow = build_workflow(result_store)
                 workflow.continue_evaluation(status.run_id, checkpoint_config)
             except WorkflowStopped as exc:
@@ -265,7 +271,21 @@ def render_test_run_page(
 
     _render_evaluation_maintenance(result_store if store_available else None, status)
     dialog_name = ec.pending_dialog_name()
-    model_provider = sf.SiliconFlowProvider() if dialog_name == "models" else None
+    model_provider = None
+    if dialog_name == "models" and store_available and sf.is_configured():
+        try:
+            require_preflight(result_store, provider_name)
+        except (
+            PersistenceConfigurationError,
+            ResultStoreUnavailableError,
+            ResultStoreError,
+        ):
+            store_available = False
+            render_persistence_status(
+                "评测结果数据库暂不可用，模型列表暂不可读取。请在数据库恢复后重试。"
+            )
+        else:
+            model_provider = sf.SiliconFlowProvider()
     ec.render_pending_dialogs(
         sample_options,
         provider_name=provider_name,

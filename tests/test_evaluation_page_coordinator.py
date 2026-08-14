@@ -72,9 +72,26 @@ class FakeStreamlit:
 
 
 class FakeStore:
-    def __init__(self, *, has_run: bool, latest_error: Exception | None = None):
+    def __init__(
+        self,
+        *,
+        has_run: bool,
+        latest_error: Exception | None = None,
+        metadata: dict | None = None,
+        metadata_error: Exception | None = None,
+        ping_result: bool = True,
+    ):
         self.has_run = has_run
         self.latest_error = latest_error
+        self.metadata = metadata or {
+            "run_id": "RUN-1",
+            "provider": "siliconflow",
+            "run_mode": "live",
+            "status": "running",
+        }
+        self.metadata_error = metadata_error
+        self.ping_result = ping_result
+        self.is_postgresql = True
         self.calls: list[tuple] = []
 
     def latest_queue(self, table):
@@ -89,7 +106,15 @@ class FakeStore:
 
     def list_rows(self, table, **filters):
         self.calls.append(("list_rows", table, filters))
+        if table == "live_evaluation_runs":
+            if self.metadata_error is not None:
+                raise self.metadata_error
+            return [self.metadata] if self.has_run else []
         return []
+
+    def ping(self):
+        self.calls.append(("ping",))
+        return self.ping_result
 
 
 def _status(state: str) -> EvaluationRunStatus:
@@ -129,10 +154,21 @@ def _render(
     latest_error: Exception | None = None,
     status_error: Exception | None = None,
     preflight=None,
+    metadata: dict | None = None,
+    metadata_error: Exception | None = None,
+    store_override=None,
+    dialog: str = "",
     capture_errors=False,
 ):
     fake_st = FakeStreamlit(click_key=click_key)
-    store = FakeStore(has_run=state is not None, latest_error=latest_error)
+    if dialog:
+        fake_st.session_state["test_run_dialog"] = dialog
+    store = store_override or FakeStore(
+        has_run=state is not None,
+        latest_error=latest_error,
+        metadata=metadata,
+        metadata_error=metadata_error,
+    )
     events: list[str] = []
     monkeypatch.setattr(tr, "st", fake_st)
     monkeypatch.setattr(ec, "st", fake_st)
@@ -195,7 +231,7 @@ def _render(
             workflow_factory=workflow_factory,
             config_builder=config_builder,
             checkpoint_builder=checkpoint_builder,
-            preflight=preflight or (lambda _provider: events.append("preflight")),
+            preflight=preflight or (lambda _store, _provider: events.append("preflight")),
         )
     except RerunRequested:
         events.append("rerun")
@@ -238,6 +274,43 @@ def test_read_only_page_load_never_constructs_or_runs_live_workflow(monkeypatch)
     assert not any(event.startswith(("start:", "continue:")) for event in events)
 
 
+@pytest.mark.parametrize("run_mode", ["demo", "mock"])
+def test_non_formal_metadata_with_real_provider_is_never_offered_for_recovery(
+    monkeypatch, run_mode
+):
+    ui, _store, events = _render(
+        monkeypatch,
+        INTERRUPTED,
+        metadata={
+            "run_id": "RUN-1",
+            "provider": "siliconflow",
+            "run_mode": run_mode,
+            "status": "partial",
+        },
+    )
+
+    action_keys = [button["key"] for button in ui.buttons if "evaluation" in button["key"]]
+    assert action_keys == ["test_run_start_evaluation"]
+    assert "test_run_continue_evaluation" not in action_keys
+    assert "load:RUN-1" not in events
+
+
+def test_formal_partial_metadata_remains_eligible_for_read_only_status(monkeypatch):
+    _ui, _store, events = _render(
+        monkeypatch,
+        PARTIAL,
+        metadata={
+            "run_id": "RUN-1",
+            "provider": "siliconflow",
+            "run_mode": "live",
+            "status": "partial",
+        },
+    )
+
+    assert "load:RUN-1" in events
+    assert "status:partial" in events
+
+
 def test_no_api_key_disables_start_without_preflight_or_workflow(monkeypatch):
     ui, _store, events = _render(
         monkeypatch,
@@ -277,13 +350,13 @@ def test_checkpoint_storage_failure_disables_continue_without_reporting_config_c
     assert not any(event.startswith("continue:") for event in events)
 
 
-@pytest.mark.parametrize("failure_point", ["latest", "status"])
+@pytest.mark.parametrize("failure_point", ["latest", "metadata", "status"])
 def test_storage_read_failure_disables_all_evaluation_actions(monkeypatch, failure_point):
-    kwargs = (
-        {"state": None, "latest_error": ResultStoreUnavailableError("offline")}
-        if failure_point == "latest"
-        else {"state": INTERRUPTED, "status_error": ResultStoreError("offline")}
-    )
+    kwargs = {
+        "latest": {"state": None, "latest_error": ResultStoreUnavailableError("offline")},
+        "metadata": {"state": INTERRUPTED, "metadata_error": ResultStoreError("offline")},
+        "status": {"state": INTERRUPTED, "status_error": ResultStoreError("offline")},
+    }[failure_point]
 
     ui, _store, events = _render(monkeypatch, **kwargs)
 
@@ -293,23 +366,25 @@ def test_storage_read_failure_disables_all_evaluation_actions(monkeypatch, failu
     assert "workflow" not in events
 
 
-def test_ping_false_stops_before_workflow_or_provider_construction(monkeypatch):
+def test_current_store_ping_false_stops_even_when_global_store_is_healthy(monkeypatch):
     import app.persistence as persistence
 
-    class UnreachableStore:
+    class HealthyGlobalStore:
         is_postgresql = True
 
         @staticmethod
         def ping():
-            return False
+            return True
 
-    monkeypatch.setattr(persistence, "get_result_store", lambda: UnreachableStore())
+    current_store = FakeStore(has_run=False, ping_result=False)
+    monkeypatch.setattr(persistence, "get_result_store", lambda: HealthyGlobalStore())
 
     _ui, _store, events = _render(
         monkeypatch,
         None,
         click_key="test_run_start_evaluation",
         preflight=tr._require_persistence_preflight,
+        store_override=current_store,
         capture_errors=True,
     )
 
@@ -317,6 +392,58 @@ def test_ping_false_stops_before_workflow_or_provider_construction(monkeypatch):
     assert "workflow" not in events
     assert not any(event.startswith("start:") for event in events)
     assert [event for event in events if event.startswith("status:")] == ["status:stopped"]
+    assert ("ping",) in current_store.calls
+
+
+def test_current_healthy_store_is_not_blocked_by_bad_global_store(monkeypatch):
+    import app.persistence as persistence
+
+    def bad_global_store():
+        raise AssertionError("global store must not be read by action preflight")
+
+    current_store = FakeStore(has_run=False, ping_result=True)
+    monkeypatch.setattr(persistence, "get_result_store", bad_global_store)
+
+    _ui, _store, events = _render(
+        monkeypatch,
+        None,
+        click_key="test_run_start_evaluation",
+        preflight=tr._require_persistence_preflight,
+        store_override=current_store,
+    )
+
+    assert "workflow" in events
+    assert "start:new-config" in events
+    assert ("ping",) in current_store.calls
+
+
+def test_model_dialog_never_constructs_provider_when_store_is_unavailable(monkeypatch):
+    _ui, _store, events = _render(
+        monkeypatch,
+        None,
+        latest_error=ResultStoreUnavailableError("offline"),
+        dialog="models",
+    )
+
+    assert "model_provider" not in events
+    assert "workflow" not in events
+
+
+def test_model_dialog_never_constructs_provider_when_current_store_ping_fails(monkeypatch):
+    current_store = FakeStore(has_run=False, ping_result=False)
+
+    ui, _store, events = _render(
+        monkeypatch,
+        None,
+        dialog="models",
+        store_override=current_store,
+        preflight=tr._require_persistence_preflight,
+    )
+
+    assert "model_provider" not in events
+    assert "workflow" not in events
+    assert ("ping",) in current_store.calls
+    assert any("模型列表" in message and "暂不可读取" in message for message in ui.messages)
 
 
 def test_start_click_preflights_before_workflow_and_runs_once(monkeypatch):
