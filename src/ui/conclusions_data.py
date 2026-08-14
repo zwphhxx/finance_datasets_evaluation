@@ -7,8 +7,8 @@ app.services.conclusions 保持纯函数与只读数据库访问；这里用 st.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import pandas as pd
@@ -18,7 +18,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.persistence.result_store import ResultStoreError
 from app.services import conclusions as cc
 from app.services.conclusion_read_model import ConclusionReport, build_conclusion_report
-
 
 _DATABASE_UNAVAILABLE_MESSAGE = "评测结果数据库暂不可用。当前无法读取已持久化的回答与评分。"
 

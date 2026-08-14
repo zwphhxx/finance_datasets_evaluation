@@ -1,6 +1,6 @@
 """评测结论页面。
 
-结论页只汇总成功的 AI 评分；失败、演示数据和被排除记录不进入结论。
+结论页只汇总成功的正式评分；失败和被排除记录不进入结论。
 """
 
 from __future__ import annotations
@@ -126,7 +126,7 @@ def _render_data_source_notice(scope) -> None:
 
 def _render_score_data_maintenance_controls() -> None:
     st.markdown("**导出**")
-    st.caption("导出当前已生成的 AI 评分结果；失败评分和演示数据不会进入结论。")
+    st.caption("导出当前已生成的正式评分结果；仅纳入正式评分。")
     payload = sc.export_score_payload(include_pending=False)
     export_text = sc.serialize_score_export_payload(payload)
     file_name = f"ai_scores_{datetime.now():%Y%m%d_%H%M}.json"

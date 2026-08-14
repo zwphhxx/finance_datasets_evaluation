@@ -103,6 +103,18 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             self.assertIn(selector, mobile_css)
         self.assertIn("grid-template-columns: repeat(3, minmax(0, 1fr))", mobile_css)
 
+    def test_responsive_css_has_no_retired_duplicate_view_or_score_stage_selectors(self):
+        css = self._responsive_css()
+
+        for selector in [
+            "mobile-select-card",
+            ".st-key-conclusion_mobile_judgment",
+            ".st-key-conclusion_desktop_judgment",
+            ".st-key-test_run_stage_scores",
+            ".st-key-test_run_score_action",
+        ]:
+            self.assertNotIn(selector, css)
+
     def test_top_navigation_is_sticky_and_uses_equal_width_items(self):
         css = self._responsive_css()
 

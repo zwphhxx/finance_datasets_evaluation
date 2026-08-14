@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import inspect
 import unittest
 from pathlib import Path
@@ -26,7 +27,42 @@ VISIBLE_UI_FILES = [
     Path("src/ui/navigation.py"),
     Path("src/ui/page_config.py"),
     Path("src/ui/components.py"),
+    Path("src/ui/evaluation_config.py"),
+    Path("src/ui/evaluation_results.py"),
 ]
+
+_VISIBLE_TEXT_CALLS = {
+    "st.button",
+    "st.caption",
+    "st.radio",
+    "st.selectbox",
+    "render_empty_state",
+    "render_persistence_status",
+}
+
+
+def _call_name(node: ast.Call) -> str:
+    if isinstance(node.func, ast.Name):
+        return node.func.id
+    if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
+        return f"{node.func.value.id}.{node.func.attr}"
+    return ""
+
+
+def _rendered_ui_text(path: Path) -> str:
+    """Collect literal text passed to user-visible Streamlit/UI calls."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    fragments: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or _call_name(node) not in _VISIBLE_TEXT_CALLS:
+            continue
+        for argument in [*node.args, *(item.value for item in node.keywords)]:
+            fragments.extend(
+                child.value
+                for child in ast.walk(argument)
+                if isinstance(child, ast.Constant) and isinstance(child.value, str)
+            )
+    return "\n".join(fragments)
 
 
 class ReadmeCurrentFlowTests(unittest.TestCase):
@@ -46,7 +82,7 @@ class ReadmeCurrentFlowTests(unittest.TestCase):
             "被测模型不看到专业标准答案",
             "AI 评分完成后直接形成评测结论",
             "结论基于当前样本、模型回答和 AI 评分生成",
-            "失败评分和示例评价不进入评测结论",
+            "仅纳入正式评分",
             "本地 SQLite 数据库属于运行期产物",
             "导出 / 导入",
         ]
@@ -72,13 +108,23 @@ class ReadmeCurrentFlowTests(unittest.TestCase):
             "SILICONFLOW_TIMEOUT_SECONDS",
             "FINDUEVAL_EVAL_MAX_TOKENS",
             "FINDUEVAL_EVAL_TEMPERATURE",
-            "## 演示与恢复",
+            "## 运行与恢复",
             "外部模型服务可能受网络、限流、模型响应时间和输出长度影响",
-            "未完成项可继续运行",
-            "失败项可单独重试",
+            "点击一次“开始评测”",
+            "模型回答和评分都会增量保存",
+            "点击“继续评测”恢复剩余任务",
+            "数据库不可用时",
+            "不会调用模型服务",
+            "开始评测按钮保持禁用",
+            "真实模型密钥",
         ]:
             self.assertIn(phrase, text)
-        for phrase in ["建议分批运行", "超过 50 条回答需要确认后再运行", "## 运行稳定性与失败恢复"]:
+        for phrase in [
+            "建议分批运行",
+            "超过 50 条回答需要确认后再运行",
+            "## 运行稳定性与失败恢复",
+            "## 演示与恢复",
+        ]:
             self.assertNotIn(phrase, text)
 
 
@@ -98,6 +144,30 @@ class NavigationAndPageConfigGuardrailTests(unittest.TestCase):
 
 
 class VisibleTextGuardrailTests(unittest.TestCase):
+    def test_product_ui_has_no_demo_mode_or_manual_score_action(self):
+        text = "\n".join(
+            _rendered_ui_text(path)
+            for path in VISIBLE_UI_FILES
+            if path.name != "case_study.py"
+        )
+        for phrase in ["演示模式", "演示恢复", "生成 AI 评分", "从演示结果文件恢复"]:
+            self.assertNotIn(phrase, text)
+
+    def test_visible_ui_has_no_mobile_selection_card_system(self):
+        text = Path("src/ui/components.py").read_text(encoding="utf-8") + Path(
+            "src/ui/responsive.py"
+        ).read_text(encoding="utf-8")
+        for selector in [
+            "mobile-select-card",
+            ".metric-card",
+            ".status-badge",
+            ".st-key-conclusion_mobile_judgment",
+            ".st-key-conclusion_desktop_judgment",
+            ".st-key-test_run_stage_scores",
+            ".st-key-test_run_score_action",
+        ]:
+            self.assertNotIn(selector, text)
+
     def test_visible_ui_and_readme_text_do_not_use_retired_or_promotional_terms(self):
         paths = [Path("README.md"), *VISIBLE_UI_FILES]
         banned_terms = [

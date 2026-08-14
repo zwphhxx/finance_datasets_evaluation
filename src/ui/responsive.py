@@ -6,9 +6,6 @@ MOBILE_RESPONSIVE_CSS = r"""
     gap: 1rem;
     grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-.st-key-conclusion_mobile_judgment {
-    display: none;
-}
 
 @media (min-width: 761px) and (max-width: 860px) {
     .block-container {
@@ -54,8 +51,7 @@ MOBILE_RESPONSIVE_CSS = r"""
     .st-key-samples_list_region,
     .st-key-samples_detail_region,
     .st-key-test_run_stage_configuration,
-    .st-key-test_run_stage_answers,
-    .st-key-test_run_stage_scores {
+    .st-key-test_run_stage_answers {
         box-sizing: border-box;
         min-width: 0;
         width: 100%;
@@ -196,12 +192,6 @@ MOBILE_RESPONSIVE_CSS = r"""
         left: 0.65rem;
         right: 0.65rem;
     }
-    .st-key-conclusion_mobile_judgment {
-        display: block;
-    }
-    .st-key-conclusion_desktop_judgment {
-        display: none;
-    }
     [data-testid="stMarkdownContainer"] .page-title-heading {
         font-size: 1.3rem;
     }
@@ -220,22 +210,6 @@ MOBILE_RESPONSIVE_CSS = r"""
     }
     [id^="fde-"] {
         scroll-margin-top: 5.75rem;
-    }
-    .mobile-select-card-meta-model {
-        align-items: start;
-        display: grid;
-        grid-template-columns: max-content minmax(0, 1fr);
-    }
-    .mobile-select-card-count {
-        white-space: nowrap;
-    }
-    .mobile-select-card-basis {
-        display: -webkit-box;
-        min-width: 0;
-        overflow: hidden;
-        text-align: left !important;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
     }
     .home-section {
         margin-top: 1.75rem;

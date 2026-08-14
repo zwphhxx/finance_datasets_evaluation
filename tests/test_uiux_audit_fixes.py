@@ -56,8 +56,24 @@ class UIUXAuditFixesTests(unittest.TestCase):
             "render_action_cards",
         ]:
             self.assertFalse(hasattr(components, name), name)
-        for selector in [".metric-card", ".status-badge", ".score-badge", ".review-risk-note"]:
+        for selector in [
+            ".metric-card",
+            ".status-badge",
+            ".score-badge",
+            ".review-risk-note",
+            ".mobile-select-card",
+            ".st-key-test_run_stage_scores",
+            ".st-key-test_run_score_action",
+        ]:
             self.assertNotIn(selector, components.STYLE_CSS)
+
+    def test_executive_takeaway_is_a_report_quote_not_a_card(self):
+        import src.ui.components as components
+
+        rule = components.STYLE_CSS.split(".executive-takeaway {", 1)[1].split("}", 1)[0]
+        self.assertIn("border-left", rule)
+        for property_name in ["background:", "border-radius:", "box-shadow:"]:
+            self.assertNotIn(property_name, rule)
 
     def test_top_navigation_has_four_items_and_no_duplicate_html_buttons(self):
         import src.ui.components as components

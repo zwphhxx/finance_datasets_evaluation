@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 import pandas as pd
 
-from app.services import conclusions
-from app.services import evidence_index
-from app.services import formal_records
+from app.services import conclusions, evidence_index, formal_records
 from app.services.evidence_index import EvidenceItem
 
 

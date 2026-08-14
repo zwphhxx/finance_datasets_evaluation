@@ -7,7 +7,6 @@ from pandas.testing import assert_frame_equal
 
 from app.services.evidence_index import build_evidence_index
 
-
 DIMENSIONS = (
     {"field": "accuracy", "full_mark": 10},
     {"field": "reasoning", "full_mark": 20},

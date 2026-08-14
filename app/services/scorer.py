@@ -28,8 +28,8 @@ from typing import Any, Callable, Collection, Mapping, Sequence
 import pandas as pd
 
 from app.models.base import STATUS_FAILED, STATUS_MOCK, STATUS_SUCCESS, ModelProvider
-from app.services import model_display as md
 from app.services import formal_records as formal
+from app.services import model_display as md
 
 # Fixed judge model for scoring.
 DEFAULT_JUDGE_MODEL = "deepseek-ai/DeepSeek-V4-Pro"

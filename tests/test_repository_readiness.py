@@ -101,7 +101,7 @@ def test_readme_uses_concise_project_submission_structure() -> None:
         "## 评测边界",
         "## 本地运行",
         "## 模型服务配置",
-        "## 演示与恢复",
+        "## 运行与恢复",
         "## 文档索引",
     ]:
         assert heading in readme
@@ -117,6 +117,35 @@ def test_readme_uses_concise_project_submission_structure() -> None:
         "详细字段、数据结构和 SQLite / 文件映射见 `docs/dataset_schema.md`",
     ]:
         assert phrase in readme
+
+
+def test_readme_documents_only_the_real_durable_evaluation_flow() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    for phrase in [
+        "点击一次“开始评测”",
+        "模型回答和评分都会增量保存",
+        "点击“继续评测”恢复剩余任务",
+        "数据库不可用时",
+        "不会调用模型服务",
+        "开始评测按钮保持禁用",
+        "真实模型密钥",
+    ]:
+        assert phrase in readme
+    assert "## 演示与恢复" not in readme
+
+
+def test_internal_mock_provider_remains_available_as_a_test_double() -> None:
+    from app.models.mock import MockProvider
+
+    provider = MockProvider()
+    result = provider.generate_response(
+        "mock/chat-base",
+        [{"role": "user", "content": "链路测试"}],
+    )
+
+    assert provider.name == "mock"
+    assert result.status == "mock"
 
 
 def test_env_example_uses_project_runtime_defaults() -> None:

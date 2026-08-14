@@ -19,8 +19,8 @@ from typing import Any, Collection, Mapping, Sequence
 import pandas as pd
 
 from app.persistence.result_store import ResultStoreError
-from app.services import model_display as md
 from app.services import formal_records as formal
+from app.services import model_display as md
 from src.metrics import SCORE_DIMENSION_FULL_MARKS, SCORE_DIMENSIONS, get_dimension_gap_ranking
 
 # 评分维度字段与中文标签，统一取自 metrics（不在此另立第二份口径）。
