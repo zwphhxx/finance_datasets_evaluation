@@ -17,7 +17,9 @@ from unittest.mock import patch
 
 import pandas as pd
 
+from app.persistence.result_store import ResultStoreError
 from app.services import conclusions as cc
+from app.services.conclusion_read_model import build_conclusion_report
 from src.data_service import load_all_data
 from src.ui.navigation import PAGES
 from src.ui.page_config import PAGE_CONFIG_BY_KEY
@@ -107,6 +109,42 @@ class DisplayNameTests(unittest.TestCase):
 
 
 class FormalConclusionTests(unittest.TestCase):
+    def test_report_uses_one_formal_cohort_for_scope_summaries_and_evidence(self):
+        tasks = pd.DataFrame([
+            {"case_id": "C1", "title": "Current task"},
+            {"case_id": "C2", "title": "Current task two"},
+        ])
+        scores = pd.DataFrame([
+            _cohort_score(1, "RUN-LIVE", "C1", "vendor/live", updated_at="2026-07-17T11:00:00"),
+            _cohort_score(2, "RUN-DEMO", "C2", "vendor/demo", updated_at="2026-07-17T11:01:00", judge_mode="demo"),
+            _cohort_score(3, "RUN-MOCK", "C2", "vendor/mock", updated_at="2026-07-17T11:02:00", judge_provider="mock"),
+            _cohort_score(4, "RUN-ORPHAN", "C1", "vendor/orphan", updated_at="2026-07-17T11:03:00"),
+            _cohort_score(5, "RUN-OUT", "C3", "vendor/out", updated_at="2026-07-17T11:04:00"),
+        ])
+        responses = pd.DataFrame([
+            {"run_id": "RUN-LIVE", "case_id": "C1", "model_name": "vendor/live", "run_status": "success", "run_mode": "live", "provider": "vendor", "answer_text": "formal answer"},
+            {"run_id": "RUN-DEMO", "case_id": "C2", "model_name": "vendor/demo", "run_status": "success", "run_mode": "demo", "provider": "vendor", "answer_text": "demo answer"},
+        ])
+        scores_before = scores.copy(deep=True)
+        responses_before = responses.copy(deep=True)
+        tasks_before = tasks.copy(deep=True)
+
+        report = build_conclusion_report(
+            scores_df=scores,
+            responses_df=responses,
+            tasks_df=tasks,
+            gold_map={"C1": {"gold": "answer"}},
+            dimensions=({"field": "accuracy_score", "full_mark": 25},),
+        )
+
+        self.assertEqual((1, 1, 1), (report.scope.sample_count, report.scope.model_count, report.scope.formal_score_count))
+        self.assertEqual(["vendor/live"], [row["model_name"] for row in report.model_summaries])
+        self.assertEqual({"vendor/live"}, set(report.evidence_by_model))
+        self.assertEqual("formal answer", report.evidence_by_model["vendor/live"][0].answer_text)
+        pd.testing.assert_frame_equal(scores, scores_before)
+        pd.testing.assert_frame_equal(responses, responses_before)
+        pd.testing.assert_frame_equal(tasks, tasks_before)
+
     def test_seed_conclusions_do_not_enter_formal(self):
         seed = _seed_scores()
         conclusions = cc.build_formal_conclusions(seed, pd.DataFrame())
@@ -195,10 +233,49 @@ class FormalConclusionTests(unittest.TestCase):
         self.assertIn('st.popover("数据维护"', notice_source)
         self.assertIn("导出 AI 评测结果", maintenance_source)
         self.assertIn("导入评分文件", maintenance_source)
-        self.assertIn("从演示结果文件恢复", maintenance_source)
+        self.assertNotIn("从演示结果文件恢复", maintenance_source)
+        self.assertIn("result_store=result_store", maintenance_source)
+
+    def test_load_live_responses_hides_demo_and_mock_history(self):
+        rows = pd.DataFrame([
+            {
+                "run_id": "RUN-LIVE",
+                "case_id": "C1",
+                "model_name": "vendor/live",
+                "run_status": "success",
+                "run_mode": "live",
+                "provider": "vendor",
+                "answer_text": "正式回答",
+            },
+            {
+                "run_id": "RUN-DEMO",
+                "case_id": "C1",
+                "model_name": "vendor/demo",
+                "run_status": "success",
+                "run_mode": "demo",
+                "provider": "vendor",
+                "answer_text": "演示回答",
+            },
+        ])
+
+        with patch("app.services.conclusions._load_live_table", return_value=rows):
+            loaded = cc.load_live_responses()
+
+        self.assertEqual(["RUN-LIVE"], loaded["run_id"].tolist())
 
 
 class CompatibleCohortTests(unittest.TestCase):
+    def test_partial_run_keeps_formal_success_and_removes_failed_rows(self):
+        runs = pd.DataFrame([_run_row("RUN-PARTIAL", created_at="2026-07-17T10:00:00", status="partial")])
+        scores = pd.DataFrame([
+            _cohort_score(1, "RUN-PARTIAL", "C1", "model-a", updated_at="2026-07-17T11:00:00"),
+            _cohort_score(2, "RUN-PARTIAL", "C2", "model-a", updated_at="2026-07-17T11:01:00", judge_status="failed"),
+        ])
+
+        selected = cc.select_current_cohort_scores(runs, scores)
+
+        self.assertEqual([1], selected["id"].tolist())
+
     def test_compatible_runs_merge_even_when_json_key_order_differs(self):
         runs = pd.DataFrame([
             _run_row("RUN-OLD", created_at="2026-07-16T10:00:00"),
@@ -258,7 +335,7 @@ class CompatibleCohortTests(unittest.TestCase):
         ai_scores, excluded = cc.split_live_scores(selected)
 
         self.assertEqual([11], ai_scores["id"].tolist())
-        self.assertEqual([12], excluded["id"].tolist())
+        self.assertTrue(excluded.empty)
 
     def test_database_id_breaks_ties_between_equally_timed_successes(self):
         runs = pd.DataFrame([
@@ -402,16 +479,16 @@ class AnswerDetailJoinTests(unittest.TestCase):
             source.index("def render_conclusions_page"):
             source.index("# --------------------------------------------------------------------------- #")
         ]
-        detail_source = source[
-            source.index("def _render_model_issue_details"):
-        ]
+        detail_source = source[source.index("def _render_all_records"):]
 
-        self.assertIn("cd.load_live_responses(allowed_case_ids)", render_source)
-        self.assertIn("cc.build_answer_detail_rows", render_source)
-        self.assertIn("answer_rows", render_source)
-        self.assertIn('"选择样本查看回答"', detail_source)
-        self.assertIn("render_markdown_detail_panel", detail_source)
-        self.assertIn('row.get("answer_text")', detail_source)
+        self.assertIn("cd.load_conclusion_source(", render_source)
+        self.assertIn("report.formal_responses", detail_source)
+        self.assertIn("report.formal_scores", detail_source)
+        self.assertIn('"查看全部评测记录"', detail_source)
+        self.assertIn('"查看完整记录"', detail_source)
+        self.assertIn("_render_formal_record_dialog", detail_source)
+        self.assertIn("render_trusted_markdown_html", detail_source)
+        self.assertIn("answer_text", detail_source)
 
     def test_conclusion_page_displays_persistence_outage(self):
         source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
@@ -420,9 +497,10 @@ class AnswerDetailJoinTests(unittest.TestCase):
             source.index("# --------------------------------------------------------------------------- #")
         ]
 
-        self.assertIn("current_result_store_failure()", render_source)
+        self.assertIn("if not source.available:", render_source)
+        self.assertIn("source.message", render_source)
         self.assertIn("render_persistence_status", render_source)
-        self.assertIn('st.spinner("正在汇总 AI 评分结果…")', render_source)
+        self.assertNotIn('st.spinner("正在汇总 AI 评分结果…")', render_source)
         self.assertNotIn("首次加载可能需要半分钟", render_source)
 
 
@@ -459,6 +537,11 @@ class RobustnessTests(unittest.TestCase):
         missing = Path(tempfile.gettempdir()) / "definitely_missing_findueval.db"
         self.assertTrue(cc.load_live_scores(missing).empty)
         self.assertTrue(cc.load_live_responses(missing).empty)
+
+    def test_strict_loader_wraps_storage_errors_without_exposing_details(self):
+        with patch("app.persistence.get_result_store", side_effect=RuntimeError("secret connection detail")):
+            with self.assertRaisesRegex(ResultStoreError, "could not read conclusion data"):
+                cc.load_live_scores(suppress_errors=False)
 
 
 class FrequentIssuesTests(unittest.TestCase):
@@ -520,7 +603,11 @@ class RenderTests(unittest.TestCase):
         )
         self.assertLess(
             page_source.index("_render_model_recommendations"),
-            page_source.index("_render_model_issue_details"),
+            page_source.index("_render_evidence_index"),
+        )
+        self.assertLess(
+            page_source.index("_render_evidence_index"),
+            page_source.index("_render_all_records"),
         )
 
     def test_executive_conclusion_reuses_existing_model_judgment(self):

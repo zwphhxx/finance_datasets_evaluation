@@ -18,6 +18,8 @@ from typing import Any, Collection, Mapping, Sequence
 
 import pandas as pd
 
+from app.persistence.result_store import ResultStoreError
+from app.services import formal_records as formal
 from app.services import model_display as md
 from src.metrics import SCORE_DIMENSION_FULL_MARKS, SCORE_DIMENSIONS, get_dimension_gap_ranking
 
@@ -74,9 +76,14 @@ def display_model_source(source: str | None) -> str:
 # --------------------------------------------------------------------------- #
 # 只读数据库访问（SQLite 不可用时一律回退空表）
 # --------------------------------------------------------------------------- #
-def load_live_scores(db_path=None) -> pd.DataFrame:
+def load_evaluation_runs(db_path=None, suppress_errors: bool = True) -> pd.DataFrame:
+    """Read persisted evaluation-run metadata for conclusion cohort selection."""
+    return _load_live_table("live_evaluation_runs", db_path, suppress_errors)
+
+
+def load_live_scores(db_path=None, suppress_errors: bool = True) -> pd.DataFrame:
     """读取全部 live_run_scores 行；数据库不可用或异常时返回空 DataFrame。"""
-    return _load_live_table("live_run_scores", db_path)
+    return _load_live_table("live_run_scores", db_path, suppress_errors)
 
 
 def load_current_cohort_scores(
@@ -85,8 +92,8 @@ def load_current_cohort_scores(
     allowed_case_ids: Collection[str] | None = None,
 ) -> pd.DataFrame:
     """读取当前元数据兼容比较组的评分；无法验证兼容性时返回空表。"""
-    runs = _load_live_table("live_evaluation_runs", db_path)
-    scores = _load_live_table("live_run_scores", db_path)
+    runs = load_evaluation_runs(db_path)
+    scores = load_live_scores(db_path)
     return select_current_cohort_scores(
         runs,
         scores,
@@ -98,22 +105,22 @@ def load_live_responses(
     db_path=None,
     *,
     allowed_case_ids: Collection[str] | None = None,
+    suppress_errors: bool = True,
 ) -> pd.DataFrame:
     """读取全部 live_run_responses 行（含模型回答），用于草稿区拼接回答。"""
-    rows = _load_live_table("live_run_responses", db_path)
-    if allowed_case_ids is None or rows.empty or "case_id" not in rows.columns:
-        return rows
-    allowed = {_text(case_id) for case_id in allowed_case_ids if _text(case_id)}
-    return rows[rows["case_id"].map(_text).isin(allowed)].copy()
+    rows = _load_live_table("live_run_responses", db_path, suppress_errors)
+    return formal.filter_formal_responses(rows, allowed_case_ids)
 
 
-def _load_live_table(table: str, db_path) -> pd.DataFrame:
+def _load_live_table(table: str, db_path, suppress_errors: bool = True) -> pd.DataFrame:
     try:
         from app.persistence import get_result_store
 
         rows = get_result_store(db_path).list_rows(table)
         return pd.DataFrame(rows)
-    except Exception:
+    except Exception as exc:
+        if not suppress_errors:
+            raise ResultStoreError("could not read conclusion data") from exc
         return pd.DataFrame()
 
 
@@ -159,7 +166,7 @@ def select_current_cohort_scores(
     run_status = _text_series(runs, "status", "").str.lower()
     runs["_cohort_signature"] = runs.apply(_cohort_signature, axis=1)
     runs = runs[
-        (run_status == "completed")
+        run_status.isin(("completed", "partial"))
         & runs["run_id"].map(_text).isin(successful_run_ids)
         & runs["_cohort_signature"].notna()
     ].copy()
@@ -187,9 +194,9 @@ def select_current_cohort_scores(
     if cohort.empty:
         return empty
 
-    success_mask = _successful_conclusion_score_mask(cohort)
-    successful = cohort[success_mask].copy()
-    excluded = cohort[~success_mask].copy()
+    successful = cohort[formal.formal_score_mask(cohort)].copy()
+    if successful.empty:
+        return empty
     if not successful.empty and {"case_id", "eval_model"}.issubset(successful.columns):
         successful["_cohort_updated_order"] = pd.to_datetime(
             _text_series(successful, "updated_at", ""), errors="coerce", utc=True
@@ -210,7 +217,7 @@ def select_current_cohort_scores(
             columns=["_cohort_updated_order", "_cohort_created_order", "_cohort_id_order"]
         )
 
-    return pd.concat([successful, excluded], ignore_index=True, sort=False)
+    return successful.reset_index(drop=True)
 
 
 def _cohort_signature(row: pd.Series) -> tuple[str, str, str, str, str] | None:
@@ -242,15 +249,7 @@ def _canonical_json_mapping(value: Any) -> str | None:
 
 
 def _successful_conclusion_score_mask(df: pd.DataFrame) -> pd.Series:
-    if not isinstance(df, pd.DataFrame) or df.empty:
-        return pd.Series(False, index=getattr(df, "index", None), dtype=bool)
-    active = _text_series(df, "status", "active").str.lower() != "inactive"
-    successful = _text_series(df, "judge_status", "").str.lower() == "success"
-    included = _text_series(df, "review_status", "ai_final").str.lower() != "skipped"
-    live_mode = _text_series(df, "judge_mode", "live").str.lower() != "mock"
-    real_model = ~_text_series(df, "eval_model", "").apply(md.is_seed_model)
-    has_run = _text_series(df, "run_id", "") != ""
-    return active & successful & included & live_mode & real_model & has_run
+    return formal.formal_score_mask(df)
 
 
 def _text_series(df: pd.DataFrame, column: str, default: str) -> pd.Series:
@@ -270,23 +269,14 @@ def split_live_scores(live_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame
         return empty, empty
 
     df = live_df.copy()
-    if "status" in df.columns:
-        df = df[df["status"].astype(str).str.strip().str.lower() != "inactive"]
-    if "eval_model" in df.columns:
-        df = df[~df["eval_model"].apply(md.is_seed_model)]
+    base_mask = (
+        _text_series(df, "status", "active").str.lower() != "inactive"
+    ) & (~_text_series(df, "eval_model", "").apply(md.is_seed_model))
+    df = df[base_mask]
     if df.empty:
         return empty, empty
 
-    judge_status = df.get("judge_status", pd.Series(dtype=str)).astype(str).str.strip().str.lower()
-    if "review_status" in df.columns:
-        review_status = df["review_status"].astype(str).str.strip().str.lower()
-    else:
-        review_status = pd.Series(["ai_final"] * len(df), index=df.index)
-    if "judge_mode" in df.columns:
-        judge_mode = df["judge_mode"].astype(str).str.strip().str.lower()
-    else:
-        judge_mode = pd.Series(["live"] * len(df), index=df.index)
-    conclusion_mask = (judge_status == "success") & (review_status != "skipped") & (judge_mode != "mock")
+    conclusion_mask = formal.formal_score_mask(df)
     ai_scores = df[conclusion_mask].reset_index(drop=True)
     excluded = df[~conclusion_mask].reset_index(drop=True)
     return ai_scores, excluded

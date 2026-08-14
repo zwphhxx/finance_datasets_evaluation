@@ -18,6 +18,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Collection, Mapping, Sequence
 
+import pandas as pd
+
 from app.models.base import (
     ERROR_EMPTY_RESPONSE,
     ERROR_INCOMPLETE_RESPONSE,
@@ -26,6 +28,7 @@ from app.models.base import (
     GenerationResult,
     ModelProvider,
 )
+from app.services import formal_records as formal
 
 # 被评测模型可见的任务字段（白名单）。Gold Answer 相关字段一律不在其中。
 _VISIBLE_TASK_FIELDS = ("scenario", "question", "context", "output_requirement")
@@ -629,11 +632,16 @@ def mark_run_queue_item_running(
     model_id: str,
     *,
     db_path: Path | None = None,
+    combined: bool = False,
 ) -> bool:
     """将一条模型回答队列项标记为运行中，并增加尝试次数。"""
     try:
         store = _runtime_result_store(db_path)
-        return bool(store and store.mark_run_item_running(run_id, case_id, model_id))
+        if store is None:
+            return False
+        if combined:
+            return bool(store.mark_run_item_running(run_id, case_id, model_id, combined=True))
+        return bool(store.mark_run_item_running(run_id, case_id, model_id))
     except Exception:
         return False
 
@@ -644,15 +652,18 @@ def persist_run_outcome(
     outcome: RunOutcome,
     *,
     db_path: Path | None = None,
+    combined: bool = False,
 ) -> bool:
     """逐条写入模型回答，并同步 live_run_queue 状态。"""
     try:
         store = _runtime_result_store(db_path)
         if store is None:
             return False
+        kwargs = {"combined": True} if combined else {}
         return store.save_run_outcome(
-            _run_outcome_row(run_id, mode, outcome),
+            serialize_run_outcome(run_id, mode, outcome),
             queue_status="success" if outcome.success else "failed",
+            **kwargs,
         )
     except Exception:
         return False
@@ -712,7 +723,13 @@ def latest_run_queue(*, db_path: Path | None = None) -> list[dict[str, Any]]:
     """返回最近一次模型回答队列，供页面 session 丢失时恢复提示。"""
     try:
         store = _runtime_result_store(db_path)
-        return [] if store is None else store.latest_queue("live_run_queue")
+        if store is None:
+            return []
+        return [
+            row
+            for row in store.latest_queue("live_run_queue")
+            if formal.formal_recovery_run_eligible(row, [row])
+        ]
     except Exception:
         return []
 
@@ -764,8 +781,10 @@ def build_persisted_answer_run_summaries(
         if run_id:
             queue_by_run.setdefault(run_id, []).append(row)
 
+    response_frame = responses if isinstance(responses, pd.DataFrame) else pd.DataFrame(responses or [])
+    formal_responses = formal.filter_formal_responses(response_frame).to_dict("records")
     responses_by_run: dict[str, list[Mapping[str, Any]]] = {}
-    for row in responses or []:
+    for row in formal_responses:
         run_id = _clean(row.get("run_id"))
         if run_id and _clean(row.get("case_id")) and _clean(row.get("model_name")):
             responses_by_run.setdefault(run_id, []).append(row)
@@ -774,6 +793,8 @@ def build_persisted_answer_run_summaries(
     for run_id, answer_rows in responses_by_run.items():
         metadata = run_metadata.get(run_id, {})
         queued = queue_by_run.get(run_id, [])
+        if not formal.formal_recovery_run_eligible(metadata, queued):
+            continue
         models = {
             _clean(row.get("model_name"))
             for row in answer_rows
@@ -784,11 +805,7 @@ def build_persisted_answer_run_summaries(
             for row in answer_rows
             if _clean(row.get("case_id"))
         }
-        success_count = sum(
-            _clean(row.get("run_status")).lower() in {"success", STATUS_MOCK}
-            and bool(_clean(row.get("answer_text")))
-            for row in answer_rows
-        )
+        success_count = len(answer_rows)
         unfinished_count = sum(
             _clean(row.get("status")).lower() in {"queued", "running"}
             for row in queued
@@ -990,6 +1007,11 @@ def _build_fallback_run_metadata(
         dataset_version="",
         prompt_payload={"system": _SYSTEM_PROMPT, "output_hint": _OUTPUT_HINT},
     )
+
+
+def serialize_run_outcome(run_id: str, mode: str, outcome: RunOutcome) -> dict[str, Any]:
+    """Serialize one answer outcome at the persistence boundary."""
+    return _run_outcome_row(run_id, mode, outcome)
 
 
 def _run_outcome_row(run_id: str, mode: str, outcome: RunOutcome) -> dict[str, Any]:

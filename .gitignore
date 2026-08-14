@@ -1,6 +1,7 @@
 .venv/
 .worktrees/
 .superpowers/
+.playwright-cli/
 __pycache__/
 *.py[cod]
 *$py.class

@@ -1,14 +1,10 @@
 """Shared responsive styles for the Streamlit user interface."""
 
 MOBILE_RESPONSIVE_CSS = r"""
-.st-key-test_run_actions {
+.st-key-test_run_scope_actions {
     display: grid;
     gap: 1rem;
-    grid-template-columns: 1fr 1fr 1.2fr;
-}
-.st-key-samples_mobile_index,
-.st-key-conclusion_mobile_judgment {
-    display: none;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 @media (min-width: 761px) and (max-width: 860px) {
@@ -35,16 +31,6 @@ MOBILE_RESPONSIVE_CSS = r"""
         padding-right: 0.875rem;
         padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
     }
-    .brief-intro {
-        margin-bottom: 1.35rem;
-        padding-bottom: 1.2rem;
-        padding-top: 0.65rem;
-    }
-    .brief-facts {
-        gap: 0.85rem 1rem;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        margin-top: 1.35rem;
-    }
     .executive-takeaway {
         font-size: 1.05rem;
         margin-bottom: 1rem;
@@ -55,8 +41,7 @@ MOBILE_RESPONSIVE_CSS = r"""
     .st-key-samples_list_region,
     .st-key-samples_detail_region,
     .st-key-test_run_stage_configuration,
-    .st-key-test_run_stage_answers,
-    .st-key-test_run_stage_scores {
+    .st-key-test_run_stage_answers {
         box-sizing: border-box;
         min-width: 0;
         width: 100%;
@@ -92,7 +77,12 @@ MOBILE_RESPONSIVE_CSS = r"""
     }
     .st-key-samples_title_bar [data-testid="stPopover"] button,
     .st-key-conclusion_maintenance_entry [data-testid="stPopover"] button,
+    .st-key-test_run_maintenance_entry [data-testid="stPopover"] button,
     .st-key-samples_detail_region [data-testid="stPopover"] button {
+        min-height: 44px !important;
+    }
+    .st-key-samples_detail_region [role="tab"],
+    .st-key-samples_detail_region [data-baseweb="tab"] {
         min-height: 44px !important;
     }
     .st-key-conclusion_data_notice [data-testid="stHorizontalBlock"] {
@@ -115,7 +105,7 @@ MOBILE_RESPONSIVE_CSS = r"""
         min-height: 44px;
         min-width: 44px;
     }
-    .st-key-test_run_actions {
+    .st-key-test_run_scope_actions {
         gap: 0.55rem;
         grid-template-columns: 1fr;
     }
@@ -131,7 +121,7 @@ MOBILE_RESPONSIVE_CSS = r"""
         box-sizing: border-box;
         display: grid;
         gap: 0.4rem;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         margin: 0 -0.875rem;
         max-width: none;
         padding: 0.45rem 0.875rem 0.55rem;
@@ -152,6 +142,34 @@ MOBILE_RESPONSIVE_CSS = r"""
         min-width: 0;
         width: 100% !important;
     }
+    .block-container [data-testid="stHorizontalBlock"]:has(.top-nav-brand)
+        > [data-testid="stColumn"]:nth-child(2) {
+        grid-column: 1 / -1;
+        width: 100% !important;
+    }
+    .block-container [data-testid="stHorizontalBlock"]:has(.top-nav-brand)
+        > [data-testid="stColumn"]:nth-child(3) {
+        grid-column: 3;
+        justify-self: end;
+        width: auto !important;
+    }
+    .st-key-top_nav_review_region [data-testid="stHorizontalBlock"] {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        width: 100%;
+    }
+    .st-key-top_nav_review_region [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        flex: 0 0 auto !important;
+        min-width: 0;
+        width: 100% !important;
+    }
+    .st-key-top_nav_operation_region .stButton {
+        justify-content: flex-end !important;
+    }
+    .st-key-top_nav_operation_region .stButton > button {
+        min-height: 44px;
+        width: auto !important;
+    }
     [data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton {
         justify-content: center;
         width: 100%;
@@ -169,19 +187,8 @@ MOBILE_RESPONSIVE_CSS = r"""
         left: 0.65rem;
         right: 0.65rem;
     }
-    .st-key-samples_mobile_index,
-    .st-key-conclusion_mobile_judgment {
-        display: block;
-    }
-    .st-key-samples_desktop_index,
-    .st-key-conclusion_desktop_judgment {
-        display: none;
-    }
     [data-testid="stMarkdownContainer"] .page-title-heading {
         font-size: 1.3rem;
-    }
-    [data-testid="stMarkdownContainer"] .brief-title {
-        font-size: 1.78rem;
     }
     .page-title-copy {
         font-size: 0.9rem;
@@ -195,30 +202,6 @@ MOBILE_RESPONSIVE_CSS = r"""
     }
     [id^="fde-"] {
         scroll-margin-top: 5.75rem;
-    }
-    .mobile-select-card-meta-model {
-        align-items: start;
-        display: grid;
-        grid-template-columns: max-content minmax(0, 1fr);
-    }
-    .mobile-select-card-count {
-        white-space: nowrap;
-    }
-    .mobile-select-card-basis {
-        display: -webkit-box;
-        min-width: 0;
-        overflow: hidden;
-        text-align: left !important;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
-    }
-    .home-section {
-        margin-top: 1.75rem;
-        padding-top: 1.2rem;
-    }
-    .home-section-first {
-        margin-top: 1.25rem;
-        padding-top: 0;
     }
     .detail-panel-body,
     .sample-detail-panel-body {
@@ -361,69 +344,18 @@ MOBILE_RESPONSIVE_CSS = r"""
         min-height: 44px;
         width: 100%;
     }
-    .st-key-test_run_answer_viewer {
-        gap: 0.7rem;
-    }
-    .st-key-test_run_run {
-        background: var(--fde-bg);
-        border-top: 1px solid var(--fde-line);
-        bottom: 0;
-        box-shadow: 0 -8px 20px color-mix(in srgb, var(--fde-ink) 12%, transparent);
-        box-sizing: border-box;
-        left: 0;
-        padding: 0.65rem 0.875rem calc(0.65rem + env(safe-area-inset-bottom));
-        position: fixed;
-        right: 0;
-        width: 100vw;
-        z-index: 45;
-    }
-    .st-key-test_run_run .stButton > button {
+    .st-key-test_run_primary_action .stButton > button {
         min-height: 44px;
         width: 100%;
     }
-    .st-key-test_run_run .stButton {
-        width: 100%;
-    }
-    .st-key-test_run_run:has(button:disabled),
-    .stApp:has(.st-key-test_run_answer_viewer) .st-key-test_run_run {
-        background: transparent;
-        border-top: 0;
-        box-shadow: none;
-        left: auto;
-        padding: 0;
-        position: static;
-        right: auto;
-        width: 100%;
-    }
-    .stApp:has(.st-key-test_run_run:not(:has(button:disabled))) .block-container {
-        padding-bottom: calc(6.75rem + env(safe-area-inset-bottom));
-    }
-    .stApp:has(.st-key-test_run_answer_viewer) .block-container {
-        padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
-    }
-    body:has([data-testid="stDialog"]) .st-key-test_run_run {
-        visibility: hidden;
-    }
-    .stApp:has(input:focus) .st-key-test_run_run,
-    .stApp:has(textarea:focus) .st-key-test_run_run {
-        background: transparent;
-        border-top: 0;
-        box-shadow: none;
-        left: auto;
-        padding: 0;
-        position: static;
-        right: auto;
+    .st-key-test_run_primary_action .stButton,
+    .st-key-test_run_primary_action {
         width: 100%;
     }
     .stButton > button,
     .stDownloadButton > button,
     .stFormSubmitButton > button {
         min-height: 44px;
-    }
-    .st-key-test_run_score_action,
-    .st-key-test_run_score_action .stButton,
-    .st-key-test_run_score_action .stButton > button {
-        width: 100%;
     }
 }
 
@@ -446,8 +378,9 @@ MOBILE_RESPONSIVE_CSS = r"""
         padding-left: 0.2rem;
         padding-right: 0.2rem;
     }
-    [data-testid="stMarkdownContainer"] .brief-title {
-        font-size: 1.6rem;
+    [data-testid="stHorizontalBlock"]:has(.top-nav-brand) .st-key-top_nav_operation_region .stButton > button {
+        font-size: 0.78rem;
+        font-weight: 500;
     }
     .section-heading-page .section-heading-title {
         font-size: 1.08rem;

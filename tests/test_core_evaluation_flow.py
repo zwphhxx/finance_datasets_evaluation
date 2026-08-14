@@ -17,7 +17,7 @@ from app.services import conclusions as cc
 from app.services import dataset_service as ds
 from app.services import eval_runner as er
 from app.services import scorer as sc
-from src.ui.navigation import _TOP_NAV_ITEMS, get_primary_nav_items
+from src.ui.navigation import OPERATION_NAV_ITEM, PRIMARY_NAV_ITEMS, get_primary_nav_items
 
 
 class SampleJudgmentCriteriaTests(unittest.TestCase):
@@ -192,15 +192,15 @@ class PromptBoundaryTests(unittest.TestCase):
 
 
 class NavigationTests(unittest.TestCase):
-    def test_main_nav_has_exactly_four_items(self):
-        """主导航必须恰好有 4 个条目。"""
+    def test_main_nav_has_exactly_three_review_items(self):
+        """主导航只保留三个同权审阅入口。"""
         items = get_primary_nav_items()
-        self.assertEqual(4, len(items))
+        self.assertEqual(3, len(items))
 
     def test_top_nav_items_are_core_workflow(self):
-        """主导航条目对应核心评测流程。"""
-        labels = [label for label, _ in _TOP_NAV_ITEMS]
-        expected = ["项目说明", "评测结论", "样本库", "发起评测"]
+        """审阅导航和操作入口共同覆盖核心评测流程。"""
+        labels = [label for label, _ in [*PRIMARY_NAV_ITEMS, OPERATION_NAV_ITEM]]
+        expected = ["评测结论", "项目说明", "样本库", "评测操作"]
         self.assertEqual(labels, expected)
 
 

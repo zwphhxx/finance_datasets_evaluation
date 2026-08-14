@@ -2,9 +2,9 @@
 
 Covers:
 - PAGES dict exposes exactly 4 user-facing keys: case_study, samples, test_run, conclusions
-- Top nav has exactly 4 items
+- Review nav has 3 primary items and 1 secondary operation item
 - Sidebar does not contain old page titles
-- DEFAULT_PAGE_KEY == "case_study"
+- DEFAULT_PAGE_KEY == "conclusions"
 - DEFAULT_JUDGE_MODEL == "deepseek-ai/DeepSeek-V4-Pro"
 - AI scoring success enters conclusions directly
 - Failed scoring does not enter conclusions
@@ -21,7 +21,14 @@ import pandas as pd
 from app.services import conclusions as cc
 from app.services import eval_runner as er
 from app.services import scorer as sc
-from src.ui.navigation import _TOP_NAV_ITEMS, DEFAULT_PAGE_KEY, PAGES, get_primary_nav_items
+from src.ui.navigation import (
+    DEFAULT_PAGE_KEY,
+    OPERATION_NAV_ITEM,
+    PAGES,
+    PRIMARY_NAV_ITEMS,
+    get_operation_nav_item,
+    get_primary_nav_items,
+)
 from src.ui.page_config import DEFAULT_PAGE_KEY as PC_DEFAULT_PAGE_KEY
 from src.ui.page_config import PAGE_CONFIG_BY_KEY
 
@@ -85,33 +92,36 @@ class PageConfigTests(unittest.TestCase):
         """PAGE_CONFIG_BY_KEY keys must match PAGES keys."""
         self.assertEqual(set(PAGES.keys()), set(PAGE_CONFIG_BY_KEY.keys()))
 
-    def test_default_page_key_is_case_study(self):
-        """Default page must be case_study."""
-        self.assertEqual("case_study", DEFAULT_PAGE_KEY)
-        self.assertEqual("case_study", PC_DEFAULT_PAGE_KEY)
+    def test_default_page_key_is_conclusions(self):
+        """Default page must be conclusions."""
+        self.assertEqual("conclusions", DEFAULT_PAGE_KEY)
+        self.assertEqual("conclusions", PC_DEFAULT_PAGE_KEY)
 
 
 class TopNavTests(unittest.TestCase):
-    def test_top_nav_has_exactly_four_items(self):
-        """Top nav must have exactly 4 items."""
-        self.assertEqual(4, len(_TOP_NAV_ITEMS))
+    def test_review_nav_has_three_primary_items(self):
+        """The review navigation contains exactly three peer items."""
+        self.assertEqual(3, len(PRIMARY_NAV_ITEMS))
 
-    def test_top_nav_labels_are_core_workflow(self):
-        """Top nav labels must match the core evaluation workflow."""
-        labels = [label for label, _ in _TOP_NAV_ITEMS]
-        expected = ["项目说明", "评测结论", "样本库", "发起评测"]
+    def test_navigation_labels_are_grouped_by_review_and_operation(self):
+        """Review destinations stay separate from the secondary operation entry."""
+        labels = [label for label, _ in PRIMARY_NAV_ITEMS]
+        expected = ["评测结论", "项目说明", "样本库"]
         self.assertEqual(labels, expected)
+        self.assertEqual(("评测操作", "test_run"), OPERATION_NAV_ITEM)
         self.assertNotIn("评分" + "确认", labels)
 
-    def test_top_nav_keys_match_pages(self):
-        """Top nav page keys must match PAGES keys."""
-        nav_keys = {key for _, key in _TOP_NAV_ITEMS}
+    def test_navigation_route_keys_match_pages(self):
+        """Primary and operation navigation together cover the four routes."""
+        nav_keys = {key for _, key in PRIMARY_NAV_ITEMS}
+        nav_keys.add(OPERATION_NAV_ITEM[1])
         self.assertEqual(nav_keys, set(PAGES.keys()))
 
-    def test_get_primary_nav_items_returns_four(self):
-        """get_primary_nav_items must return exactly 4 items."""
+    def test_get_primary_nav_items_returns_only_review_items(self):
+        """The primary accessor cannot accidentally expose the operation item."""
         items = get_primary_nav_items()
-        self.assertEqual(4, len(items))
+        self.assertEqual(PRIMARY_NAV_ITEMS, items)
+        self.assertEqual(OPERATION_NAV_ITEM, get_operation_nav_item())
 
 
 class SidebarTests(unittest.TestCase):

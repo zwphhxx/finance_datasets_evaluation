@@ -101,7 +101,7 @@ def test_readme_uses_concise_project_submission_structure() -> None:
         "## 评测边界",
         "## 本地运行",
         "## 模型服务配置",
-        "## 演示与恢复",
+        "## 运行与恢复",
         "## 文档索引",
     ]:
         assert heading in readme
@@ -117,6 +117,38 @@ def test_readme_uses_concise_project_submission_structure() -> None:
         "详细字段、数据结构和 SQLite / 文件映射见 `docs/dataset_schema.md`",
     ]:
         assert phrase in readme
+
+
+def test_readme_documents_only_the_real_durable_evaluation_flow() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    for phrase in [
+        "点击一次“开始评测”",
+        "模型回答和评分都会增量保存",
+        "点击“继续评测”恢复剩余任务",
+        "数据库不可用时",
+        "不会调用模型服务",
+        "开始评测按钮保持禁用",
+        "真实模型密钥",
+        "只导入评分行",
+        "目标环境已存在相同运行批次、样本和模型的正式回答",
+    ]:
+        assert phrase in readme
+    assert "迁移已校验记录" not in readme
+    assert "## 演示与恢复" not in readme
+
+
+def test_internal_mock_provider_remains_available_as_a_test_double() -> None:
+    from app.models.mock import MockProvider
+
+    provider = MockProvider()
+    result = provider.generate_response(
+        "mock/chat-base",
+        [{"role": "user", "content": "链路测试"}],
+    )
+
+    assert provider.name == "mock"
+    assert result.status == "mock"
 
 
 def test_env_example_uses_project_runtime_defaults() -> None:
@@ -191,6 +223,20 @@ def test_demo_ai_score_export_contains_usable_demo_records() -> None:
     assert len({row["eval_model"] for row in records}) >= 2
     assert all(row["judge_status"] == "success" for row in records)
     assert all(row["review_status"] == "ai_final" for row in records)
+
+
+def test_product_code_never_restores_demo_ai_scores() -> None:
+    terms = ("demo_ai_scores" + ".json", "import_demo_ai_scores")
+    paths = [
+        *sorted((ROOT / "app" / "services").glob("*.py")),
+        *sorted((ROOT / "src" / "ui").glob("*.py")),
+    ]
+    offenders = {
+        path.relative_to(ROOT).as_posix(): [term for term in terms if term in path.read_text(encoding="utf-8")]
+        for path in paths
+        if any(term in path.read_text(encoding="utf-8") for term in terms)
+    }
+    assert offenders == {}
 
 
 def test_committed_runtime_result_seed_files_are_header_only() -> None:

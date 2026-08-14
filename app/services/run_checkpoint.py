@@ -29,6 +29,8 @@ def build_run_metadata(
     judge_parameters: Mapping[str, Any],
     dataset_version: str,
     prompt_payload: Any,
+    gold_map: Mapping[str, Mapping[str, Any]] | None = None,
+    dimensions: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build the persisted run record used to validate safe resumption."""
 
@@ -36,6 +38,23 @@ def build_run_metadata(
         {"case_id": item.get("case_id"), "task": item.get("task") or {}}
         for item in queue_items
     ]
+    dataset_payload: Any = samples
+    if gold_map is not None or dimensions is not None:
+        case_ids = sorted(
+            {
+                str(item.get("case_id") or "").strip()
+                for item in queue_items
+                if str(item.get("case_id") or "").strip()
+            }
+        )
+        dataset_payload = {
+            "samples": samples,
+            "gold": [
+                {"case_id": case_id, "record": dict((gold_map or {}).get(case_id) or {})}
+                for case_id in case_ids
+            ],
+            "dimensions": [dict(dimension) for dimension in dimensions or ()],
+        }
     return {
         "run_id": run_id,
         "provider": provider,
@@ -47,7 +66,7 @@ def build_run_metadata(
             dict(judge_parameters), ensure_ascii=False, sort_keys=True
         ),
         "dataset_version": dataset_version,
-        "dataset_hash": canonical_hash(samples),
+        "dataset_hash": canonical_hash(dataset_payload),
         "prompt_hash": canonical_hash(prompt_payload),
         "status": "running",
         "completed_count": 0,

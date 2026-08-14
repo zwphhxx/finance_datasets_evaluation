@@ -56,15 +56,32 @@ class UIUXAuditFixesTests(unittest.TestCase):
             "render_action_cards",
         ]:
             self.assertFalse(hasattr(components, name), name)
-        for selector in [".metric-card", ".status-badge", ".score-badge", ".review-risk-note"]:
+        for selector in [
+            ".metric-card",
+            ".status-badge",
+            ".score-badge",
+            ".review-risk-note",
+            ".mobile-select-card",
+            ".st-key-test_run_stage_scores",
+            ".st-key-test_run_score_action",
+        ]:
             self.assertNotIn(selector, components.STYLE_CSS)
+
+    def test_executive_takeaway_is_a_report_quote_not_a_card(self):
+        import src.ui.components as components
+
+        rule = components.STYLE_CSS.split(".executive-takeaway {", 1)[1].split("}", 1)[0]
+        self.assertIn("border-left", rule)
+        for property_name in ["background:", "border-radius:", "box-shadow:"]:
+            self.assertNotIn(property_name, rule)
 
     def test_top_navigation_has_four_items_and_no_duplicate_html_buttons(self):
         import src.ui.components as components
-        from src.ui.navigation import _TOP_NAV_ITEMS, PAGES
+        from src.ui.navigation import OPERATION_NAV_ITEM, PAGES, PRIMARY_NAV_ITEMS
 
-        self.assertEqual(4, len(_TOP_NAV_ITEMS))
-        self.assertEqual(sorted([key for _, key in _TOP_NAV_ITEMS]), sorted(PAGES.keys()))
+        self.assertEqual(3, len(PRIMARY_NAV_ITEMS))
+        nav_items = [*PRIMARY_NAV_ITEMS, OPERATION_NAV_ITEM]
+        self.assertEqual(sorted([key for _, key in nav_items]), sorted(PAGES.keys()))
         self.assertIn(".top-nav-brand", components.STYLE_CSS)
 
         navigation_source = Path("src/ui/navigation.py").read_text(encoding="utf-8")
@@ -174,23 +191,28 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn("_build_sample_scope_text", source)
         self.assertIn("不包含真实公司、真实交易或敏感数据", source)
 
-    def test_sample_index_table_is_compact(self):
+    def test_sample_index_is_compact_and_uses_one_responsive_structure(self):
         samples_source = Path("src/ui/samples.py").read_text(encoding="utf-8")
-        components_source = Path("src/ui/components.py").read_text(encoding="utf-8")
+        report_css = Path("src/ui/report_styles.py").read_text(encoding="utf-8")
 
-        self.assertIn("st.dataframe", samples_source)
         self.assertIn('"测试状态"', samples_source)
         self.assertNotIn('"缺失项摘要"', samples_source)
         self.assertNotIn("sample-index-grid", samples_source)
         self.assertNotIn("samples_view_", samples_source)
-        self.assertIn("def _render_mobile_sample_cards", samples_source)
+        self.assertIn("def _render_sample_index", samples_source)
+        self.assertNotIn("def _render_mobile_sample_cards", samples_source)
         self.assertIn("for sample, row in zip", samples_source)
-        self.assertIn("selection_mode=\"single-row\"", samples_source)
-        self.assertIn("on_select=\"rerun\"", samples_source)
+        self.assertIn("report_index_row_html", samples_source)
+        self.assertEqual(
+            1,
+            samples_source[
+                samples_source.index("def _render_sample_index"):
+                samples_source.index("def _ensure_selected_sample")
+            ].count("build_sample_table_rows("),
+        )
         self.assertNotIn('"查看样本"', samples_source)
         self.assertNotIn("samples_index_dataframe", samples_source)
-        self.assertIn("[data-testid=\"stDataFrame\"]", components_source)
-        self.assertNotIn(".sample-operation-selected", components_source)
+        self.assertIn(".sample-report-index .report-index-row", report_css)
 
     def test_sample_library_uses_dialogs_and_selected_actions(self):
         samples_source = Path("src/ui/samples.py").read_text(encoding="utf-8")
@@ -237,14 +259,14 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertNotIn("选择一个样本，查看评测资产结构。", samples_source)
         self.assertIn("render_sample_detail_panel", samples_source)
         self.assertIn("render_badge", components_source)
-        self.assertIn("render_selection_echo", components_source)
-        self.assertIn("render_detail_panel(body)", samples_source)
+        self.assertNotIn("render_selection_echo", samples_source)
+        self.assertIn("sample-archive-panel", samples_source)
         self.assertIn("sample-detail-toolbar-title", components_source)
         self.assertIn(".sample-detail-panel", components_source)
         self.assertIn("sample-detail-section-title", components_source)
-        self.assertIn("_detail_section_html(\"任务内容\"", samples_source)
-        self.assertIn('st.expander("专业标准答案", expanded=False)', samples_source)
-        self.assertIn("_detail_section_html(\"\", _gold_detail_html(gold_display))", samples_source)
+        self.assertIn('"任务与模拟数据"', samples_source)
+        self.assertIn("task_tab, gold_tab, quality_tab, review_tab = st.tabs", samples_source)
+        self.assertIn("_detail_section_html(\"\", _gold_answer_html(gold_display))", samples_source)
         self.assertIn("评分标准", samples_source)
         self.assertIn("评分维度配置", samples_source)
         self.assertIn("_detail_section_html(\"准入状态\"", samples_source)
@@ -256,37 +278,38 @@ class UIUXAuditFixesTests(unittest.TestCase):
 
     def test_test_run_keeps_primary_buttons_for_confirmation_and_execution(self):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
-        primary_buttons = re.findall(r'type\s*=\s*"primary"', source)
-        self.assertEqual(3, len(primary_buttons), "样本确认、模型确认和运行可使用 Primary")
-        self.assertIn('"运行评测",\n        type="primary",', source)
-        self.assertIn('button_label = "仅对已完成回答生成 AI 评分" if partial_run else "生成 AI 评分"', source)
-        self.assertIn('key="test_run_score_action"', source)
-        self.assertIn('key="test_run_score_run"', source)
-        self.assertIn("has_confirmable_score_drafts(score_result)", source)
-        self.assertIn('"查看评测结论"', source)
-        self.assertIn('"确认选择"', source)
-        self.assertIn('key="test_run_sample_dialog_confirm"', source)
-        self.assertIn('key="test_run_model_dialog_confirm"', source)
-        self.assertIn('disabled=not selected_cases', source)
-        self.assertIn('disabled=not chosen_models', source)
+        config_source = Path("src/ui/evaluation_config.py").read_text(encoding="utf-8")
+        primary_buttons = re.findall(r'type\s*=\s*"primary"', source + config_source)
+        self.assertEqual(4, len(primary_buttons), "样本、模型确认以及互斥的开始/继续评测可使用 Primary")
+        self.assertIn('key="test_run_start_evaluation"', source)
+        self.assertIn('key="test_run_continue_evaluation"', source)
+        self.assertNotIn('key="test_run_score_action"', source)
+        self.assertNotIn('key="test_run_score_run"', source)
+        self.assertNotIn("生成 AI 评分", source)
+        self.assertIn('"确认选择"', config_source)
+        self.assertIn('key="test_run_sample_dialog_confirm"', config_source)
+        self.assertIn('key="test_run_model_dialog_confirm"', config_source)
+        self.assertIn('disabled=not selected_cases', config_source)
+        self.assertIn('disabled=not chosen_models', config_source)
 
     def test_auxiliary_view_entries_use_detail_header_actions(self):
         test_run_source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+        results_source = Path("src/ui/evaluation_results.py").read_text(encoding="utf-8")
         components_source = Path("src/ui/components.py").read_text(encoding="utf-8")
 
-        self.assertIn("render_markdown_detail_panel", test_run_source)
-        self.assertIn("action_label=\"查看技术明细\"", test_run_source)
-        self.assertIn("action_label=\"查看评分对比表\"", test_run_source)
-        self.assertIn('"查看评分对比表"', test_run_source)
-        self.assertIn("action_type=\"secondary\"", test_run_source)
+        self.assertIn("render_markdown_detail_panel", results_source)
+        self.assertIn("action_label=\"查看技术明细\"", results_source)
+        self.assertIn("action_label=\"查看评分技术明细\"", results_source)
+        self.assertIn("action_type=\"secondary\"", results_source)
+        self.assertNotIn("查看评分对比表", test_run_source)
         self.assertIn("def render_detail_panel_with_action", components_source)
         self.assertIn("detail-panel-toolbar-title", components_source)
 
     def test_review_page_is_not_in_primary_navigation(self):
-        from src.ui.navigation import _TOP_NAV_ITEMS, PAGES
+        from src.ui.navigation import OPERATION_NAV_ITEM, PAGES, PRIMARY_NAV_ITEMS
 
         self.assertNotIn("review", PAGES)
-        labels = [label for label, _ in _TOP_NAV_ITEMS]
+        labels = [label for label, _ in [*PRIMARY_NAV_ITEMS, OPERATION_NAV_ITEM]]
         self.assertNotIn("评分" + "确认", labels)
 
     def test_conclusions_does_not_render_card_classes(self):
@@ -297,7 +320,10 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertNotIn("status-badge", source)
         self.assertNotIn("review-risk-note", source)
         self.assertNotIn("render_evidence_panel", source)
-        self.assertNotIn("st.expander", source)
+        self.assertEqual(1, source.count("st.expander("))
+        all_records = source[source.index("def _render_all_records"):]
+        self.assertIn('st.expander("查看全部评测记录"', all_records)
+        self.assertNotIn("_render_model_issue_details", source)
 
     def test_review_uses_current_component_surface(self):
         import src.ui.components as components

@@ -25,7 +25,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Collection, Mapping, Sequence
 
+import pandas as pd
+
 from app.models.base import STATUS_FAILED, STATUS_MOCK, STATUS_SUCCESS, ModelProvider
+from app.services import formal_records as formal
 from app.services import model_display as md
 
 # Fixed judge model for scoring.
@@ -33,7 +36,6 @@ DEFAULT_JUDGE_MODEL = "deepseek-ai/DeepSeek-V4-Pro"
 PROJECT_DISPLAY_NAME = "财务/法律/投行场景大模型对比评测"
 SCORE_EXPORT_TYPE = "ai_score_export"
 SCORE_EXPORT_SCHEMA_VERSION = 1
-DEMO_AI_SCORE_EXPORT_PATH = Path(__file__).resolve().parents[2] / "data" / "demo_exports" / "demo_ai_scores.json"
 DEFAULT_JUDGE_RETRY_DELAYS: tuple[float, float] = (3.0, 8.0)
 RETRYABLE_JUDGE_ERRORS = {
     "timeout",
@@ -479,7 +481,7 @@ def persist_score_outcome(
                 ]
             )
         return store.save_score_outcome(
-            _score_outcome_row(
+            serialize_score_outcome(
                 score_run_id,
                 run_id,
                 judge_provider,
@@ -677,6 +679,25 @@ def _score_outcome_row(
     return row
 
 
+def serialize_score_outcome(
+    score_run_id: str,
+    run_id: str,
+    judge_provider: str,
+    judge_model: str,
+    mode: str,
+    outcome: ScoreOutcome,
+) -> dict[str, Any]:
+    """Serialize one score outcome at the persistence boundary."""
+    return _score_outcome_row(
+        score_run_id,
+        run_id,
+        judge_provider,
+        judge_model,
+        mode,
+        outcome,
+    )
+
+
 def _score_queue_row(
     score_run_id: str,
     run_id: str,
@@ -743,16 +764,9 @@ def load_exportable_score_rows(
         store = _runtime_result_store(db_path)
         if store is None:
             return []
-        rows = store.list_rows("live_run_scores")
-        exportable = [
-            row
-            for row in rows
-            if str(row.get("judge_status") or "").strip().lower() == STATUS_SUCCESS
-            and str(row.get("status") or "").strip().lower() != "inactive"
-            and not md.is_seed_model(row.get("eval_model"))
-            and str(row.get("review_status") or "").strip().lower() != "skipped"
-        ]
-        return [_score_export_row(row) for row in exportable]
+        scores = pd.DataFrame(store.list_rows("live_run_scores"))
+        responses = pd.DataFrame(store.list_rows("live_run_responses"))
+        return [_score_export_row(row) for row in formal.filter_formal_score_rows(scores, responses)]
     except Exception:
         return []
 
@@ -862,6 +876,7 @@ def import_score_rows(
     *,
     duplicate_action: str = "skip",
     db_path: Path | None = None,
+    result_store=None,
 ) -> dict[str, Any]:
     """导入历史评分到 live_run_scores。
 
@@ -882,78 +897,20 @@ def import_score_rows(
         return _import_result(0, 0, 0, errors or ["没有可导入的评分记录。"])
 
     try:
-        from app.db.repository import Repository
-        from app.services.dataset_service import database_ready, get_db_path
+        from app.persistence import ResultStoreError
 
-        path = db_path or get_db_path()
-        if not database_ready(path):
-            return _import_result(0, 0, 0, ["SQLite 数据层不可用。"])
-        repo = Repository(path)
-        existing = repo.list_df("live_run_scores")
-        existing_by_key: dict[tuple[str, str, str], int] = {}
-        if not existing.empty:
-            for _, row in existing.iterrows():
-                key = _score_unique_key(row)
-                if all(key):
-                    existing_by_key[key] = int(row.get("id"))
-
-        imported = 0
-        updated = 0
-        skipped = 0
-        for row in valid_rows:
-            key = _score_unique_key(row)
-            existing_id = existing_by_key.get(key)
-            payload = {column: row.get(column) for column in SCORE_EXPORT_COLUMNS if column in row}
-            payload.setdefault("status", "active")
-            if existing_id is None:
-                payload.pop("updated_at", None)
-                new_id = repo.insert("live_run_scores", payload)
-                existing_by_key[key] = new_id
-                imported += 1
-                continue
-            if duplicate_action == "skip":
-                skipped += 1
-                continue
-            changes = {
-                key_name: value
-                for key_name, value in payload.items()
-                if key_name not in {"created_at", "updated_at"}
-            }
-            repo.update("live_run_scores", existing_id, changes)
-            updated += 1
-        return _import_result(imported, updated, skipped, errors)
-    except Exception:
-        return _import_result(0, 0, 0, ["导入失败：请检查 SQLite 数据层是否已初始化。"])
-
-
-def load_demo_score_export_payload(path: Path | None = None) -> dict[str, Any]:
-    """Load the committed demo score export payload, returning an empty valid payload if absent."""
-    source = path or DEMO_AI_SCORE_EXPORT_PATH
-    if not source.exists():
-        return build_score_export_payload([])
-    try:
-        payload = json.loads(source.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return build_score_export_payload([])
-    if not isinstance(payload, Mapping):
-        return build_score_export_payload([])
-    return dict(payload)
-
-
-def import_demo_ai_scores(
-    *,
-    path: Path | None = None,
-    duplicate_action: str = "skip",
-    db_path: Path | None = None,
-) -> dict[str, Any]:
-    """Restore the committed demo AI-score export into live_run_scores."""
-    payload = load_demo_score_export_payload(path)
-    if payload.get("export_type") != SCORE_EXPORT_TYPE:
-        return _import_result(0, 0, 0, ["演示评分文件不是项目导出的评分文件。"])
-    records = payload.get("records")
-    if not isinstance(records, list):
-        return _import_result(0, 0, 0, ["演示评分文件缺少 records。"])
-    return import_score_rows(records, duplicate_action=duplicate_action, db_path=db_path)
+        store = result_store if result_store is not None else _runtime_result_store(db_path)
+        if store is None:
+            return _import_result(0, 0, 0, ["评测结果数据库不可用。"])
+        stored = store.import_formal_scores(valid_rows, duplicate_action=duplicate_action)
+        return _import_result(
+            int(stored.get("imported_count") or 0),
+            int(stored.get("updated_count") or 0),
+            int(stored.get("skipped_count") or 0),
+            [*errors, *(stored.get("errors") or [])],
+        )
+    except ResultStoreError:
+        return _import_result(0, 0, 0, ["导入失败：评测结果数据库未能完整写入。"])
 
 
 # --------------------------------------------------------------------------- #

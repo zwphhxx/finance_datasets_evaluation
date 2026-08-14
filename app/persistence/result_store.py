@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from sqlalchemy import create_engine, func, inspect, select, update
+from sqlalchemy import and_, create_engine, func, inspect, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Connection, Engine
@@ -105,12 +105,56 @@ class ResultStore:
                         row,
                         update_existing=False,
                     )
-                self._refresh_run_counts(connection, str(run_row["run_id"]))
+                self._refresh_answer_counts(connection, str(run_row["run_id"]))
             return True
         except SQLAlchemyError as exc:
             raise ResultStoreError("could not initialize runtime queue") from exc
 
-    def mark_run_item_running(self, run_id: str, case_id: str, model_id: str) -> bool:
+    def initialize_evaluation(
+        self,
+        run: Mapping[str, Any],
+        answer_rows: Iterable[Mapping[str, Any]],
+        score_rows: Iterable[Mapping[str, Any]],
+    ) -> bool:
+        """Atomically initialize the answer and score queues for one evaluation."""
+        run_row = self._validated(
+            run,
+            "live_evaluation_runs",
+            ("run_id", "provider", "dataset_hash", "prompt_hash"),
+        )
+        answers = [
+            self._validated(row, "live_run_queue", ("run_id", "case_id", "model_id"))
+            for row in answer_rows
+        ]
+        scores = [
+            self._validated(
+                row,
+                "live_score_queue",
+                ("score_run_id", "run_id", "case_id", "eval_model"),
+            )
+            for row in score_rows
+        ]
+        self._validate_evaluation_queue_rows(str(run_row["run_id"]), answers, scores)
+        try:
+            with self.engine.begin() as connection:
+                self._upsert(connection, live_evaluation_runs, run_row, update_existing=False)
+                for row in answers:
+                    self._upsert(connection, live_run_queue, row, update_existing=False)
+                for row in scores:
+                    self._upsert(connection, live_score_queue, row, update_existing=False)
+                self._refresh_evaluation_counts(connection, str(run_row["run_id"]))
+            return True
+        except SQLAlchemyError as exc:
+            raise ResultStoreError("could not initialize evaluation queues") from exc
+
+    def mark_run_item_running(
+        self,
+        run_id: str,
+        case_id: str,
+        model_id: str,
+        *,
+        combined: bool = False,
+    ) -> bool:
         try:
             with self.engine.begin() as connection:
                 result = connection.execute(
@@ -128,11 +172,20 @@ class ResultStore:
                 )
                 if result.rowcount != 1:
                     raise ResultStoreError("runtime queue item does not exist")
+                self._heartbeat_run(connection, run_id)
+                if combined:
+                    self._refresh_evaluation_counts(connection, run_id)
             return True
         except SQLAlchemyError as exc:
             raise ResultStoreError("could not mark runtime queue item") from exc
 
-    def save_run_outcome(self, row: Mapping[str, Any], *, queue_status: str) -> bool:
+    def save_run_outcome(
+        self,
+        row: Mapping[str, Any],
+        *,
+        queue_status: str,
+        combined: bool = False,
+    ) -> bool:
         response = self._validated(
             row,
             "live_run_responses",
@@ -158,7 +211,26 @@ class ResultStore:
                 )
                 if result.rowcount != 1:
                     raise ResultStoreError("runtime queue item does not exist")
-                self._refresh_run_counts(connection, run_id)
+                if combined and queue_status == "failed":
+                    connection.execute(
+                        update(live_score_queue)
+                        .where(
+                            live_score_queue.c.run_id == run_id,
+                            live_score_queue.c.case_id == response["case_id"],
+                            live_score_queue.c.eval_model == response["model_name"],
+                            live_score_queue.c.status.in_(("queued", "running")),
+                        )
+                        .values(
+                            status="skipped",
+                            error_code=response.get("error_code") or "answer_failed",
+                            error_message=response.get("error_message"),
+                            updated_at=func.now(),
+                        )
+                    )
+                if combined:
+                    self._refresh_evaluation_counts(connection, run_id)
+                else:
+                    self._refresh_answer_counts(connection, run_id)
             return True
         except SQLAlchemyError as exc:
             raise ResultStoreError("could not save runtime outcome") from exc
@@ -186,6 +258,7 @@ class ResultStore:
     def mark_score_item_running(self, score_run_id: str, case_id: str, eval_model: str) -> bool:
         try:
             with self.engine.begin() as connection:
+                run_id = self._score_queue_run_id(connection, score_run_id, case_id, eval_model)
                 result = connection.execute(
                     update(live_score_queue)
                     .where(
@@ -201,9 +274,38 @@ class ResultStore:
                 )
                 if result.rowcount != 1:
                     raise ResultStoreError("score queue item does not exist")
+                self._heartbeat_run(connection, run_id)
+                self._refresh_evaluation_counts(connection, run_id)
             return True
         except SQLAlchemyError as exc:
             raise ResultStoreError("could not mark score queue item") from exc
+
+    def mark_score_item_skipped(
+        self,
+        score_run_id: str,
+        case_id: str,
+        eval_model: str,
+        error_code: str,
+    ) -> bool:
+        try:
+            with self.engine.begin() as connection:
+                run_id = self._score_queue_run_id(connection, score_run_id, case_id, eval_model)
+                result = connection.execute(
+                    update(live_score_queue)
+                    .where(
+                        live_score_queue.c.score_run_id == score_run_id,
+                        live_score_queue.c.case_id == case_id,
+                        live_score_queue.c.eval_model == eval_model,
+                    )
+                    .values(status="skipped", error_code=error_code, updated_at=func.now())
+                )
+                if result.rowcount != 1:
+                    raise ResultStoreError("score queue item does not exist")
+                self._heartbeat_run(connection, run_id)
+                self._refresh_evaluation_counts(connection, run_id)
+            return True
+        except SQLAlchemyError as exc:
+            raise ResultStoreError("could not skip score queue item") from exc
 
     def save_score_outcome(self, row: Mapping[str, Any], *, queue_status: str) -> bool:
         score = self._validated(
@@ -213,6 +315,13 @@ class ResultStore:
         )
         try:
             with self.engine.begin() as connection:
+                run_id = self._score_queue_run_id(
+                    connection,
+                    str(score["score_run_id"]),
+                    str(score["case_id"]),
+                    str(score["eval_model"]),
+                )
+                score["run_id"] = run_id
                 self._upsert(connection, live_run_scores, score)
                 result = connection.execute(
                     update(live_score_queue)
@@ -230,9 +339,135 @@ class ResultStore:
                 )
                 if result.rowcount != 1:
                     raise ResultStoreError("score queue item does not exist")
+                self._refresh_evaluation_counts(connection, run_id)
             return True
         except SQLAlchemyError as exc:
             raise ResultStoreError("could not save score outcome") from exc
+
+    def import_formal_scores(
+        self,
+        rows: Iterable[Mapping[str, Any]],
+        *,
+        duplicate_action: str = "skip",
+    ) -> dict[str, Any]:
+        """Atomically import scores backed by a formal run and formal response."""
+        if duplicate_action not in {"skip", "update"}:
+            raise ResultStoreError("unsupported score import duplicate action")
+        payload = [
+            self._validated(
+                row,
+                "live_run_scores",
+                ("score_run_id", "run_id", "case_id", "eval_model"),
+            )
+            for row in rows
+        ]
+        imported = updated = skipped = 0
+        errors: list[str] = []
+        try:
+            with self.engine.begin() as connection:
+                for index, score in enumerate(payload, start=1):
+                    link_error = self._formal_score_import_link_error(connection, score)
+                    if link_error:
+                        skipped += 1
+                        errors.append(f"row {index}: {link_error}")
+                        continue
+                    score.pop("id", None)
+                    score.pop("created_at", None)
+                    score.pop("updated_at", None)
+                    existing_id = connection.execute(
+                        select(live_run_scores.c.id).where(
+                            live_run_scores.c.score_run_id == score["score_run_id"],
+                            live_run_scores.c.case_id == score["case_id"],
+                            live_run_scores.c.eval_model == score["eval_model"],
+                        )
+                    ).scalar_one_or_none()
+                    if existing_id is not None and duplicate_action == "skip":
+                        skipped += 1
+                        continue
+                    self._upsert(connection, live_run_scores, score)
+                    if existing_id is None:
+                        imported += 1
+                    else:
+                        updated += 1
+            return {
+                "imported_count": imported,
+                "updated_count": updated,
+                "skipped_count": skipped,
+                "errors": errors,
+            }
+        except SQLAlchemyError as exc:
+            raise ResultStoreError("could not import formal scores") from exc
+
+    @staticmethod
+    def _formal_score_import_link_error(
+        connection: Connection,
+        score: Mapping[str, Any],
+    ) -> str:
+        run_id = str(score["run_id"])
+        provider = connection.execute(
+            select(live_evaluation_runs.c.provider).where(
+                live_evaluation_runs.c.run_id == run_id
+            )
+        ).scalar_one_or_none()
+        if provider is None or str(provider).strip().lower() in {"demo", "mock"}:
+            return "matching formal evaluation run does not exist"
+
+        response_id = connection.execute(
+            select(live_run_responses.c.id).where(
+                live_run_responses.c.run_id == run_id,
+                live_run_responses.c.case_id == score["case_id"],
+                live_run_responses.c.model_name == score["eval_model"],
+                func.lower(func.coalesce(live_run_responses.c.run_status, "")) == "success",
+                func.lower(func.coalesce(live_run_responses.c.run_mode, "live")).notin_(("demo", "mock")),
+                func.lower(func.coalesce(live_run_responses.c.provider, "")).notin_(("demo", "mock")),
+                func.lower(func.coalesce(live_run_responses.c.status, "active")) != "inactive",
+                func.trim(func.coalesce(live_run_responses.c.answer_text, "")) != "",
+            )
+        ).scalar_one_or_none()
+        if response_id is None:
+            return "matching formal response does not exist"
+        return ""
+
+    def _claim_run_statement(self, run_id: str, stale_before: Any):
+        return (
+            update(live_evaluation_runs)
+            .where(
+                live_evaluation_runs.c.run_id == run_id,
+                or_(
+                    live_evaluation_runs.c.status.in_(("interrupted", "stopped")),
+                    and_(
+                        live_evaluation_runs.c.status == "running",
+                        live_evaluation_runs.c.updated_at <= stale_before,
+                    ),
+                ),
+            )
+            .values(status="running", last_persistence_error=None, updated_at=func.now())
+        )
+
+    def claim_run(self, run_id: str, stale_before: Any) -> bool:
+        """Atomically claim an interrupted, stopped, or stale-running evaluation."""
+        try:
+            with self.engine.begin() as connection:
+                result = connection.execute(self._claim_run_statement(run_id, stale_before))
+            return result.rowcount == 1
+        except SQLAlchemyError as exc:
+            raise ResultStoreError("could not claim evaluation run") from exc
+
+    def mark_run_stopped(self, run_id: str, message: str) -> bool:
+        try:
+            with self.engine.begin() as connection:
+                result = connection.execute(
+                    update(live_evaluation_runs)
+                    .where(live_evaluation_runs.c.run_id == run_id)
+                    .values(
+                        status="stopped",
+                        last_persistence_error=message,
+                        updated_at=func.now(),
+                    )
+                )
+            return result.rowcount == 1
+        except SQLAlchemyError as exc:
+            raise ResultStoreError("could not stop evaluation run") from exc
 
     def list_rows(self, table: str, **filters: object) -> list[dict[str, Any]]:
         target = self._table(table)
@@ -300,7 +535,7 @@ class ResultStore:
             )
         )
 
-    def _refresh_run_counts(self, connection: Connection, run_id: str) -> None:
+    def _refresh_answer_counts(self, connection: Connection, run_id: str) -> None:
         statuses = connection.execute(
             select(live_run_queue.c.status, func.count().label("count"))
             .where(live_run_queue.c.run_id == run_id)
@@ -321,6 +556,102 @@ class ResultStore:
                 status=status,
                 updated_at=func.now(),
             )
+        )
+
+    def _refresh_evaluation_counts(self, connection: Connection, run_id: str) -> None:
+        answer_rows = connection.execute(
+            select(
+                live_run_queue.c.case_id,
+                live_run_queue.c.model_id,
+                live_run_queue.c.status,
+            ).where(live_run_queue.c.run_id == run_id)
+        ).all()
+        score_rows = connection.execute(
+            select(
+                live_score_queue.c.case_id,
+                live_score_queue.c.eval_model,
+                live_score_queue.c.status,
+            ).where(live_score_queue.c.run_id == run_id)
+        ).all()
+        scores_by_pair: dict[tuple[str, str], list[str]] = {}
+        for case_id, eval_model, status in score_rows:
+            scores_by_pair.setdefault((str(case_id), str(eval_model)), []).append(str(status))
+
+        completed = failed = pending = 0
+        for case_id, model_id, answer_status in answer_rows:
+            score_statuses = scores_by_pair.get((str(case_id), str(model_id)), [])
+            if str(answer_status) == "failed" or any(
+                status in {"failed", "skipped"} for status in score_statuses
+            ):
+                failed += 1
+            elif str(answer_status) == "success" and score_statuses and all(
+                status == "success" for status in score_statuses
+            ):
+                completed += 1
+            else:
+                pending += 1
+
+        if pending:
+            status = "running"
+        elif completed and failed:
+            status = "partial"
+        elif completed:
+            status = "completed"
+        else:
+            status = "failed"
+        connection.execute(
+            update(live_evaluation_runs)
+            .where(live_evaluation_runs.c.run_id == run_id)
+            .values(
+                completed_count=completed,
+                failed_count=failed,
+                pending_count=pending,
+                status=status,
+                updated_at=func.now(),
+            )
+        )
+
+    @staticmethod
+    def _validate_evaluation_queue_rows(
+        run_id: str,
+        answer_rows: list[Mapping[str, Any]],
+        score_rows: list[Mapping[str, Any]],
+    ) -> None:
+        if not answer_rows or not score_rows:
+            raise ResultStoreError("evaluation queues cannot be empty")
+        if any(str(row["run_id"]) != run_id for row in answer_rows + score_rows):
+            raise ResultStoreError("evaluation queue rows must belong to the run")
+        answer_pairs = [(str(row["case_id"]), str(row["model_id"])) for row in answer_rows]
+        score_pairs = [(str(row["case_id"]), str(row["eval_model"])) for row in score_rows]
+        if len(answer_pairs) != len(set(answer_pairs)) or len(score_pairs) != len(set(score_pairs)):
+            raise ResultStoreError("evaluation queue contains duplicate pairs")
+        if set(answer_pairs) != set(score_pairs):
+            raise ResultStoreError("answer and score queue pairs must align")
+
+    @staticmethod
+    def _score_queue_run_id(
+        connection: Connection,
+        score_run_id: str,
+        case_id: str,
+        eval_model: str,
+    ) -> str:
+        run_id = connection.execute(
+            select(live_score_queue.c.run_id).where(
+                live_score_queue.c.score_run_id == score_run_id,
+                live_score_queue.c.case_id == case_id,
+                live_score_queue.c.eval_model == eval_model,
+            )
+        ).scalar_one_or_none()
+        if not run_id:
+            raise ResultStoreError("score queue item does not exist")
+        return str(run_id)
+
+    @staticmethod
+    def _heartbeat_run(connection: Connection, run_id: str) -> None:
+        connection.execute(
+            update(live_evaluation_runs)
+            .where(live_evaluation_runs.c.run_id == run_id)
+            .values(updated_at=func.now())
         )
 
     def _validated(

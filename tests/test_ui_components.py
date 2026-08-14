@@ -6,6 +6,7 @@ from src.ui.navigation import PAGES
 from src.ui.page_config import PAGE_CONFIGS
 
 EXPECTED_PAGE_ORDER = ["case_study", "samples", "test_run", "conclusions"]
+EXPECTED_PAGE_CONFIG_ORDER = ["conclusions", "case_study", "samples", "test_run"]
 
 BANNED_PHRASES = ["AI赋能", "智能洞察", "一键优化", "专家级", "秒级"]
 
@@ -40,10 +41,17 @@ class UIComponentsTests(unittest.TestCase):
         self.assertIn("transition", components.STYLE_CSS)
         self.assertIn("prefers-reduced-motion", components.STYLE_CSS)
 
-    def test_brief_intro_supports_derived_facts(self):
+    def test_report_style_css_is_composed_once_inside_the_global_style_tag(self):
         import src.ui.components as components
+        from src.ui.report_styles import REPORT_STYLE_CSS
 
-        self.assertIn("facts", inspect.signature(components.render_brief_intro).parameters)
+        self.assertEqual(1, components.STYLE_CSS.count("<style>"))
+        self.assertEqual(1, components.STYLE_CSS.count("</style>"))
+        self.assertIn(REPORT_STYLE_CSS, components.STYLE_CSS)
+        self.assertLess(
+            components.STYLE_CSS.index(REPORT_STYLE_CSS),
+            components.STYLE_CSS.index("</style>"),
+        )
 
     def test_top_navigation_styles_current_button_without_a_layout_marker(self):
         source = Path("src/ui/navigation.py").read_text(encoding="utf-8")
@@ -86,6 +94,10 @@ class UIComponentsTests(unittest.TestCase):
             "render_evidence_panel",
             "render_status_summary",
             "render_model_answer_card",
+            "render_brief_intro",
+            "render_fact_strip",
+            "render_home_section",
+            "render_selection_echo",
         ]
         for name in removed_functions:
             self.assertFalse(hasattr(components, name), name)
@@ -99,11 +111,19 @@ class UIComponentsTests(unittest.TestCase):
             ".verdict-card",
             ".review-risk-note",
             ".portfolio-hero",
+            ".brief-intro",
+            ".brief-title",
+            ".brief-note",
+            ".brief-fact",
+            ".process-line",
+            ".home-section",
+            ".table-selection-echo",
+            ".section-heading-home",
         ]:
             self.assertNotIn(selector, components.STYLE_CSS)
 
     def test_navigation_uses_button_items_in_current_order(self):
-        self.assertEqual(EXPECTED_PAGE_ORDER, [config.page_key for config in PAGE_CONFIGS])
+        self.assertEqual(EXPECTED_PAGE_CONFIG_ORDER, [config.page_key for config in PAGE_CONFIGS])
         self.assertEqual(EXPECTED_PAGE_ORDER, list(PAGES.keys()))
         for config in PAGE_CONFIGS:
             self.assertTrue(config.title.strip())
@@ -131,15 +151,16 @@ class UIComponentsTests(unittest.TestCase):
     def test_sample_and_evaluation_pages_expose_report_regions(self):
         samples_source = Path("src/ui/samples.py").read_text(encoding="utf-8")
         test_run_source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+        evaluation_config_source = Path("src/ui/evaluation_config.py").read_text(encoding="utf-8")
 
         for key in ["samples_filter_region", "samples_list_region", "samples_detail_region"]:
             self.assertIn(f'with st.container(key="{key}"):', samples_source)
-        for key in [
-            "test_run_stage_configuration",
-            "test_run_stage_answers",
-            "test_run_stage_scores",
-        ]:
-            self.assertIn(f'with st.container(key="{key}"):', test_run_source)
+        self.assertIn(
+            'with st.container(key="test_run_scope_actions"):',
+            evaluation_config_source,
+        )
+        self.assertIn('with st.container(key="test_run_primary_action"):', test_run_source)
+        self.assertNotIn("test_run_stage_scores", test_run_source)
 
     def test_component_signatures_match_current_contract(self):
         import src.ui.components as components
@@ -158,6 +179,11 @@ class UIComponentsTests(unittest.TestCase):
             actual = inspect.signature(getattr(components, function_name))
             for parameter_name in parameter_names:
                 self.assertIn(parameter_name, actual.parameters, function_name)
+
+        self.assertNotIn(
+            "variant",
+            inspect.signature(components.render_section_heading).parameters,
+        )
 
     def test_document_reading_components_use_shared_long_text_classes(self):
         import src.ui.components as components

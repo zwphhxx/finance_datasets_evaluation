@@ -1,6 +1,5 @@
 import pytest
 
-from app.persistence import ResultStoreUnavailableError
 from app.services import conclusions, scorer
 from src.ui import test_run
 
@@ -25,66 +24,25 @@ def test_persistence_gate_stops_before_provider_call():
     assert events == ["initialize"]
 
 
-def test_unavailable_persistence_stops_before_provider_construction(monkeypatch):
-    provider_calls = []
-    status_messages = []
+def test_status_reader_does_not_construct_model_providers(monkeypatch):
+    events = []
 
-    def unavailable(_provider_name):
-        raise ResultStoreUnavailableError("database unavailable")
+    class Reader:
+        def __init__(self, store, answer_provider, judge_provider):
+            events.append((store, answer_provider, judge_provider))
 
-    monkeypatch.setattr(test_run, "_require_persistence_preflight", unavailable)
+        def load_evaluation_status(self, run_id):
+            return run_id
+
+    monkeypatch.setattr(test_run, "EvaluationWorkflow", Reader)
     monkeypatch.setattr(
         test_run,
         "get_text_provider",
-        lambda **kwargs: provider_calls.append(kwargs),
-    )
-    monkeypatch.setattr(
-        test_run,
-        "render_persistence_status",
-        lambda message: status_messages.append(message),
-        raising=False,
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("provider constructed")),
     )
 
-    test_run._execute_run_queue(
-        "siliconflow",
-        queue_items=[],
-        model_ids=[],
-        temperature=0.1,
-        max_tokens=128,
-    )
-
-    assert provider_calls == []
-    assert status_messages == ["评测结果数据库暂不可用，当前不会调用模型服务。"]
-
-
-def test_test_run_page_displays_persistence_outage():
-    source = open("src/ui/test_run.py", encoding="utf-8").read()
-    render_source = source[
-        source.index("def render_test_run_page"):
-        source.index("def _default_provider_name")
-    ]
-
-    assert "current_result_store_failure()" in render_source
-    assert "render_persistence_status" in render_source
-
-
-def test_checkpoint_rejects_changed_sample_or_prompt():
-    current = {
-        "dataset_version": "2.0.0",
-        "dataset_hash": "d" * 64,
-        "prompt_hash": "p" * 64,
-    }
-
-    assert test_run._checkpoint_matches_current(dict(current), current)
-    assert not test_run._checkpoint_matches_current(
-        {**current, "dataset_hash": "x" * 64},
-        current,
-    )
-    assert not test_run._checkpoint_matches_current(
-        {**current, "prompt_hash": "x" * 64},
-        current,
-    )
-    assert not test_run._checkpoint_matches_current(None, current)
+    assert test_run._load_evaluation_status("store", "RUN-1") == "RUN-1"
+    assert events == [("store", None, None)]
 
 
 def test_conclusion_reader_uses_result_store(monkeypatch):
@@ -119,11 +77,25 @@ def test_score_export_reader_uses_result_store(monkeypatch):
                     "case_id": "FD-001",
                     "eval_model": "vendor/model",
                     "judge_status": "success",
+                    "judge_mode": "live",
+                    "judge_provider": "test-live",
                     "review_status": "ai_final",
                     "status": "active",
                     "total_score": 88,
                 }
-            ]
+            ],
+            "live_run_responses": [
+                {
+                    "run_id": "RUN-1",
+                    "case_id": "FD-001",
+                    "model_name": "vendor/model",
+                    "provider": "test-live",
+                    "run_mode": "live",
+                    "run_status": "success",
+                    "answer_text": "saved answer",
+                    "status": "active",
+                }
+            ],
         }
     )
     monkeypatch.setattr("app.persistence.get_result_store", lambda db_path=None: store)
@@ -131,4 +103,4 @@ def test_score_export_reader_uses_result_store(monkeypatch):
     rows = scorer.load_exportable_score_rows()
 
     assert rows[0]["total_score"] == 88
-    assert store.reads == [("live_run_scores", {})]
+    assert store.reads == [("live_run_scores", {}), ("live_run_responses", {})]

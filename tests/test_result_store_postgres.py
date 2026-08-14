@@ -1,8 +1,10 @@
 import os
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import delete, or_
+from sqlalchemy import delete, or_, update
+from sqlalchemy.dialects import postgresql
 
 from app.persistence.result_store import ResultStore, ResultStoreError
 from app.persistence.schema import (
@@ -13,7 +15,11 @@ from app.persistence.schema import (
     live_score_queue,
 )
 
-pytestmark = pytest.mark.skipif(
+
+def utcnow() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
+
+requires_postgres = pytest.mark.skipif(
     not os.getenv("TEST_DATABASE_URL"),
     reason="TEST_DATABASE_URL is not configured",
 )
@@ -56,6 +62,7 @@ def store():
         )
 
 
+@requires_postgres
 def test_postgres_schema_contains_all_runtime_tables(store):
     assert set(store.table_names()) == {
         "live_evaluation_runs",
@@ -66,6 +73,7 @@ def test_postgres_schema_contains_all_runtime_tables(store):
     }
 
 
+@requires_postgres
 def test_postgres_answer_transition_is_idempotent_and_atomic(store):
     run_id = f"PYTEST-{uuid.uuid4().hex}"
     metadata = {
@@ -98,6 +106,7 @@ def test_postgres_answer_transition_is_idempotent_and_atomic(store):
     assert store.list_rows("live_run_queue", run_id=run_id)[0]["status"] == "success"
 
 
+@requires_postgres
 def test_postgres_failed_answer_transition_rolls_back(store):
     run_id = f"PYTEST-{uuid.uuid4().hex}"
     store.initialize_run(
@@ -132,6 +141,7 @@ def test_postgres_failed_answer_transition_rolls_back(store):
     assert store.list_rows("live_run_queue", run_id=run_id)[0]["status"] == "queued"
 
 
+@requires_postgres
 def test_postgres_score_transition_is_idempotent_and_atomic(store):
     score_run_id = f"PYTEST-SCORE-{uuid.uuid4().hex}"
     queue = {
@@ -162,6 +172,7 @@ def test_postgres_score_transition_is_idempotent_and_atomic(store):
     assert store.list_rows("live_score_queue", score_run_id=score_run_id)[0]["status"] == "success"
 
 
+@requires_postgres
 def test_postgres_new_store_instance_reads_committed_answer(store):
     run_id = f"PYTEST-{uuid.uuid4().hex}"
     store.initialize_run(
@@ -195,3 +206,41 @@ def test_postgres_new_store_instance_reads_committed_answer(store):
     rows = restarted.list_rows("live_run_responses", run_id=run_id)
 
     assert rows[0]["answer_text"] == "survives restart"
+
+
+def test_postgres_claim_uses_one_conditional_update_without_sqlite_syntax():
+    store = ResultStore("sqlite:///:memory:")
+    statement = store._claim_run_statement(
+        "PYTEST-CLAIM", utcnow() - timedelta(minutes=1)
+    )
+    sql = str(statement.compile(dialect=postgresql.dialect()))
+
+    assert sql.count("UPDATE live_evaluation_runs") == 1
+    assert "WHERE live_evaluation_runs.run_id" in sql
+    assert "updated_at <=" in sql
+    assert "ON CONFLICT" not in sql
+    assert "?" not in sql
+
+
+@requires_postgres
+def test_postgres_claim_is_atomic_for_stale_and_fresh_runs(store):
+    run_id = f"PYTEST-{uuid.uuid4().hex}"
+    store.initialize_run(
+        {
+            "run_id": run_id,
+            "provider": "mock",
+            "dataset_hash": "d" * 64,
+            "prompt_hash": "p" * 64,
+        },
+        [{"run_id": run_id, "case_id": "FD-001", "model_id": "m1"}],
+    )
+    with store.engine.begin() as connection:
+        connection.execute(
+            update(live_evaluation_runs)
+            .where(live_evaluation_runs.c.run_id == run_id)
+            .values(status="running", updated_at=utcnow() - timedelta(hours=1))
+        )
+
+    stale_before = utcnow() - timedelta(minutes=1)
+    assert store.claim_run(run_id, stale_before) is True
+    assert store.claim_run(run_id, stale_before) is False

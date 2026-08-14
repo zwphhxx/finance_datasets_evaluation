@@ -6,6 +6,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RESPONSIVE_PATH = PROJECT_ROOT / "src" / "ui" / "responsive.py"
 COMPONENTS_PATH = PROJECT_ROOT / "src" / "ui" / "components.py"
 TEST_RUN_PATH = PROJECT_ROOT / "src" / "ui" / "test_run.py"
+EVALUATION_CONFIG_PATH = PROJECT_ROOT / "src" / "ui" / "evaluation_config.py"
 SAMPLES_PATH = PROJECT_ROOT / "src" / "ui" / "samples.py"
 
 
@@ -48,6 +49,44 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         ]:
             self.assertIn(contract, css)
 
+    def test_report_primitives_reflow_without_a_second_mobile_data_structure(self):
+        from src.ui.report_styles import REPORT_STYLE_CSS
+
+        mobile_css = REPORT_STYLE_CSS.split("@media (max-width: 760px)", 1)[1]
+        for selector in [
+            ".report-ledger",
+            ".report-section-heading",
+            ".report-index-row--header",
+            ".report-index-row",
+            ".evidence-index-item",
+        ]:
+            self.assertIn(selector, mobile_css)
+        self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", mobile_css)
+        self.assertIn("display: none", mobile_css)
+        self.assertIn("overflow-wrap: anywhere", mobile_css)
+        self.assertIn("min-width: 0", mobile_css)
+        self.assertIn("min-height: 44px", mobile_css)
+        self.assertIn("max(5.5rem, env(safe-area-inset-bottom))", mobile_css)
+        self.assertIn(
+            "max-height: calc(100dvh - 5.5rem - env(safe-area-inset-bottom))",
+            mobile_css,
+        )
+        self.assertIn("overflow-y: auto", mobile_css)
+
+    def test_mobile_report_masthead_keeps_the_first_judgment_in_reach(self):
+        from src.ui.report_styles import REPORT_STYLE_CSS
+
+        mobile_css = REPORT_STYLE_CSS.split("@media (max-width: 760px)", 1)[1]
+        masthead_rule = mobile_css.split(".report-masthead {", 1)[1].split("}", 1)[0]
+        title_rule = mobile_css.split(
+            '[data-testid="stMarkdownContainer"] .report-masthead-title {', 1
+        )[1].split("}", 1)[0]
+
+        self.assertIn("padding: 0.85rem 0 0.95rem", masthead_rule)
+        self.assertIn("margin: 0.4rem 0 1rem", masthead_rule)
+        self.assertIn("font-size: 1.8rem !important", title_rule)
+        self.assertIn("padding: 0 !important", title_rule)
+
     def test_consulting_report_regions_adapt_on_mobile(self):
         css = self._responsive_css()
         mobile_css = css.split(
@@ -56,7 +95,6 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         )[1].split("@media (max-width: 480px)", 1)[0]
 
         for selector in [
-            ".brief-facts",
             ".executive-takeaway",
             ".st-key-samples_filter_region",
             ".st-key-test_run_stage_configuration",
@@ -64,13 +102,36 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             self.assertIn(selector, mobile_css)
         self.assertIn("grid-template-columns: repeat(3, minmax(0, 1fr))", mobile_css)
 
+    def test_responsive_css_has_no_retired_duplicate_view_or_score_stage_selectors(self):
+        css = self._responsive_css()
+
+        for selector in [
+            "mobile-select-card",
+            ".st-key-conclusion_mobile_judgment",
+            ".st-key-conclusion_desktop_judgment",
+            ".st-key-test_run_stage_scores",
+            ".st-key-test_run_score_action",
+        ]:
+            self.assertNotIn(selector, css)
+
+        for selector in [
+            ".brief-intro",
+            ".brief-title",
+            ".brief-facts",
+            ".home-section",
+            ".process-line",
+            ".table-selection-echo",
+            ".section-heading-home",
+        ]:
+            self.assertNotIn(selector, css)
+
     def test_top_navigation_is_sticky_and_uses_equal_width_items(self):
         css = self._responsive_css()
 
         for contract in [
             '[data-testid="stHorizontalBlock"]:has(.top-nav-brand)',
             "position: sticky",
-            "grid-template-columns: repeat(4, minmax(0, 1fr))",
+            "grid-template-columns: repeat(3, minmax(0, 1fr))",
         ]:
             self.assertIn(contract, css)
 
@@ -110,7 +171,6 @@ class MobileResponsiveUIContracts(unittest.TestCase):
 
         for selector in [
             '[data-testid="stMarkdownContainer"] .page-title-heading',
-            '[data-testid="stMarkdownContainer"] .brief-title',
             '[data-testid="stMarkdownContainer"] .section-heading-title',
         ]:
             declarations = _declarations_for_selector(STYLE_CSS, selector)
@@ -126,7 +186,6 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         )[1].split("@media (max-width: 480px)", 1)[0]
         expected_mobile_sizes = {
             '[data-testid="stMarkdownContainer"] .page-title-heading': "1.3rem",
-            '[data-testid="stMarkdownContainer"] .brief-title': "1.78rem",
         }
         for selector, expected_size in expected_mobile_sizes.items():
             self.assertTrue(
@@ -139,25 +198,6 @@ class MobileResponsiveUIContracts(unittest.TestCase):
                 ),
                 selector,
             )
-
-    def test_mobile_home_page_uses_compact_section_rhythm(self):
-        mobile_css = self._responsive_css().split(
-            "@media (max-width: 760px)",
-            1,
-        )[1].split("@media (max-width: 480px)", 1)[0]
-
-        self.assertTrue(
-            any(
-                re.search(r"margin-top\s*:\s*1\.75rem\s*;", rule)
-                for rule in _declarations_for_selector(mobile_css, ".home-section")
-            )
-        )
-        self.assertTrue(
-            any(
-                re.search(r"margin-top\s*:\s*1\.25rem\s*;", rule)
-                for rule in _declarations_for_selector(mobile_css, ".home-section-first")
-            )
-        )
 
     def test_mobile_columns_dialogs_and_tables_fit_the_viewport(self):
         css = self._responsive_css()
@@ -177,7 +217,7 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             "@media (max-width: 760px)",
             1,
         )[1].split("@media (max-width: 480px)", 1)[0]
-        source = TEST_RUN_PATH.read_text(encoding="utf-8")
+        source = EVALUATION_CONFIG_PATH.read_text(encoding="utf-8")
 
         self.assertNotIn("min-width: 44rem", mobile_css)
         self.assertIn("test_run_sample_table_header", source)
@@ -192,7 +232,7 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             "@media (max-width: 760px)",
             1,
         )[1].split("@media (max-width: 480px)", 1)[0]
-        source = TEST_RUN_PATH.read_text(encoding="utf-8")
+        source = EVALUATION_CONFIG_PATH.read_text(encoding="utf-8")
 
         self.assertIn(
             "max-height: calc(100dvh - 5.5rem - env(safe-area-inset-bottom))",
@@ -240,16 +280,59 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         )
         self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", mobile_css)
 
-    def test_mobile_model_metadata_is_two_columns_and_clamps_basis(self):
-        css = self._responsive_css()
-        source = (PROJECT_ROOT / "src" / "ui" / "conclusions.py").read_text(encoding="utf-8")
+    def test_mobile_model_index_reflows_the_same_semantic_rows(self):
+        from src.ui.report_styles import REPORT_STYLE_CSS
 
-        self.assertIn("mobile-select-card-meta-model", source)
-        self.assertIn("mobile-select-card-count", source)
-        self.assertIn("mobile-select-card-basis", source)
-        self.assertIn(".mobile-select-card-meta-model", css)
-        self.assertIn("white-space: nowrap", css)
-        self.assertIn("-webkit-line-clamp: 2", css)
+        source = (PROJECT_ROOT / "src" / "ui" / "conclusions.py").read_text(encoding="utf-8")
+        mobile_css = REPORT_STYLE_CSS.split("@media (max-width: 760px)", 1)[1]
+
+        self.assertIn("report_index_row_html", source)
+        self.assertNotIn("_render_mobile_model_cards", source)
+        self.assertNotIn("mobile-select-card", source)
+        self.assertIn(".conclusion-model-index .report-index-row", mobile_css)
+        self.assertIn(".report-index-cell::before", mobile_css)
+        self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", mobile_css)
+        self.assertNotIn("min-width: 44rem", mobile_css)
+
+    def test_mobile_sample_index_reflows_the_same_semantic_rows(self):
+        from src.ui.report_styles import REPORT_STYLE_CSS
+
+        source = SAMPLES_PATH.read_text(encoding="utf-8")
+        mobile_css = REPORT_STYLE_CSS.split("@media (max-width: 760px)", 1)[1]
+
+        self.assertIn("def _render_sample_index", source)
+        self.assertIn("report_index_row_html", source)
+        self.assertNotIn("_render_mobile_sample_cards", source)
+        self.assertIn(".sample-report-index .report-index-row", mobile_css)
+        self.assertIn('.st-key-samples_index [class*="st-key-samples_index_row_"]', mobile_css)
+        self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", mobile_css)
+        for cell in range(1, 6):
+            self.assertIn(
+                f".sample-report-index .report-index-cell:nth-child({cell})",
+                mobile_css,
+            )
+        action_selector = (
+            '.st-key-samples_index [class*="st-key-samples_index_row_"] '
+            ".stButton > button"
+        )
+        action_rule = mobile_css.split(action_selector + " {", 1)[1].split("}", 1)[0]
+        self.assertIn("min-height: 44px", action_rule)
+        self.assertIn("overflow-wrap: anywhere", action_rule)
+
+    def test_mobile_model_evidence_actions_are_full_width_touch_targets(self):
+        from src.ui.report_styles import REPORT_STYLE_CSS
+
+        mobile_css = REPORT_STYLE_CSS.split("@media (max-width: 760px)", 1)[1]
+        selector = (
+            '.st-key-conclusion_model_index [class*="st-key-conclusion_model_action_"] '
+            ".stButton > button"
+        )
+        self.assertIn(selector + " {", mobile_css)
+        rule = mobile_css.split(selector + " {", 1)[1].split("}", 1)[0]
+
+        self.assertIn("min-height: 44px", rule)
+        self.assertIn("width: 100%", rule)
+        self.assertIn("white-space: normal", rule)
 
     def test_mobile_popover_triggers_are_real_44px_touch_targets(self):
         css = self._responsive_css()
@@ -267,6 +350,50 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         self.assertIn('[data-testid="stPopover"] button', mobile_css)
         self.assertRegex(mobile_css, r"min-height\s*:\s*44px\s*!important")
 
+    def test_mobile_evaluation_maintenance_has_a_stable_44px_popover_target(self):
+        source = TEST_RUN_PATH.read_text(encoding="utf-8")
+        maintenance_source = source.split(
+            "def _render_evaluation_maintenance",
+            1,
+        )[1].split("\ndef ", 1)[0]
+        self.assertIn(
+            'with st.container(key="test_run_maintenance_entry"):',
+            maintenance_source,
+        )
+        self.assertLess(
+            maintenance_source.index('key="test_run_maintenance_entry"'),
+            maintenance_source.index('st.popover("评测维护"'),
+        )
+
+        mobile_css = self._responsive_css().split(
+            "@media (max-width: 760px)",
+            1,
+        )[1].split("@media (max-width: 480px)", 1)[0]
+        selector = (
+            '.st-key-test_run_maintenance_entry [data-testid="stPopover"] button'
+        )
+        rules = _declarations_for_selector(mobile_css, selector)
+        self.assertTrue(rules)
+        self.assertTrue(
+            any(re.search(r"min-height\s*:\s*44px\s*!important", rule) for rule in rules)
+        )
+
+    def test_mobile_sample_archive_tabs_have_44px_touch_targets(self):
+        mobile_css = self._responsive_css().split(
+            "@media (max-width: 760px)",
+            1,
+        )[1].split("@media (max-width: 480px)", 1)[0]
+
+        for selector in [
+            '.st-key-samples_detail_region [role="tab"]',
+            '.st-key-samples_detail_region [data-baseweb="tab"]',
+        ]:
+            rules = _declarations_for_selector(mobile_css, selector)
+            self.assertTrue(rules)
+            self.assertTrue(
+                any(re.search(r"min-height\s*:\s*44px\s*!important", rule) for rule in rules)
+            )
+
     def test_mobile_native_anchors_clear_sticky_navigation(self):
         mobile_css = self._responsive_css().split(
             "@media (max-width: 760px)",
@@ -277,7 +404,7 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         self.assertIn("scroll-margin-top: 5.75rem", mobile_css)
 
     def test_blocking_dialog_preparation_has_explicit_loading_feedback(self):
-        source = TEST_RUN_PATH.read_text(encoding="utf-8")
+        source = EVALUATION_CONFIG_PATH.read_text(encoding="utf-8")
 
         self.assertIn('st.spinner("正在获取模型列表…")', source)
         self.assertIn('st.spinner("正在准备提示词…")', source)
@@ -351,7 +478,7 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         for rule in _declarations_for_selector(mobile_css, ".sample-detail-table"):
             self.assertNotRegex(rule, r"display\s*:")
 
-    def test_fixed_actions_are_limited_to_run_and_dialog_controls(self):
+    def test_fixed_actions_are_limited_to_dialog_controls(self):
         css = self._responsive_css()
         mobile_css = css.split(
             "@media (max-width: 760px)",
@@ -363,9 +490,7 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             if re.search(r"position\s*:\s*fixed\b", declarations)
         ]
 
-        self.assertEqual(2, len(fixed_rules))
-        run_rule = next(item for item in fixed_rules if ".st-key-test_run_run" in item[0])
-        self.assertRegex(run_rule[1], r"position\s*:\s*fixed\b")
+        self.assertEqual(1, len(fixed_rules))
         dialog_rule = next(
             item
             for item in fixed_rules
@@ -393,73 +518,8 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             ),
             "dialog action styles must not leak onto Streamlit's transient rerun DOM",
         )
-
-        dialog_selector = (
-            'body:has([data-testid="stDialog"]) .st-key-test_run_run'
-        )
-        self.assertTrue(
-            any(
-                re.search(r"visibility\s*:\s*hidden\b", declarations)
-                for declarations in _declarations_for_selector(
-                    mobile_css,
-                    dialog_selector,
-                )
-            )
-        )
-        old_dialog_selector = (
-            '.stApp:has([data-testid="stDialog"]) .st-key-test_run_run'
-        )
-        self.assertEqual(
-            [],
-            _declarations_for_selector(css, old_dialog_selector),
-        )
-
-        for focus_selector in [
-            ".stApp:has(input:focus) .st-key-test_run_run",
-            ".stApp:has(textarea:focus) .st-key-test_run_run",
-        ]:
-            self.assertTrue(
-                any(
-                    re.search(r"position\s*:\s*static\b", declarations)
-                    for declarations in _declarations_for_selector(
-                        mobile_css,
-                        focus_selector,
-                    )
-                ),
-                focus_selector,
-            )
-
-        disabled_selector = ".st-key-test_run_run:has(button:disabled)"
-        self.assertTrue(
-            any(
-                all(
-                    re.search(contract, rule)
-                    for contract in [
-                        r"position\s*:\s*static\b",
-                        r"width\s*:\s*100%\s*;",
-                    ]
-                )
-                for rule in _declarations_for_selector(
-                    mobile_css,
-                    disabled_selector,
-                )
-            )
-        )
-
-        answer_viewer_selector = (
-            ".stApp:has(.st-key-test_run_answer_viewer) .st-key-test_run_run"
-        )
-        self.assertTrue(
-            any(
-                re.search(r"position\s*:\s*static\b", declarations)
-                for declarations in _declarations_for_selector(
-                    mobile_css,
-                    answer_viewer_selector,
-                )
-            )
-        )
-
-        run_button_wrapper = ".st-key-test_run_run .stButton"
+        self.assertNotIn(".st-key-test_run_run", css)
+        run_button_wrapper = ".st-key-test_run_primary_action .stButton"
         self.assertTrue(
             any(
                 re.search(r"width\s*:\s*100%\s*;", declarations)
@@ -473,11 +533,8 @@ class MobileResponsiveUIContracts(unittest.TestCase):
     def test_answer_viewer_and_detail_toolbar_have_stable_mobile_spacing(self):
         from src.ui.components import STYLE_CSS
 
-        test_run_source = TEST_RUN_PATH.read_text(encoding="utf-8")
-        self.assertIn(
-            'with st.container(key="test_run_answer_viewer"):',
-            test_run_source,
-        )
+        results_source = Path("src/ui/evaluation_results.py").read_text(encoding="utf-8")
+        self.assertIn("render_markdown_detail_panel(", results_source)
 
         normalized_css = re.sub(r"\s+", " ", STYLE_CSS)
         self.assertRegex(
@@ -500,11 +557,11 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         )
 
     def test_sample_table_has_stable_keys_without_mobile_minimum_width(self):
-        test_run_source = TEST_RUN_PATH.read_text(encoding="utf-8")
+        test_run_source = EVALUATION_CONFIG_PATH.read_text(encoding="utf-8")
 
         self.assertTrue(
             'key="test_run_sample_table"' in test_run_source,
-            "src/ui/test_run.py must give the sample selection table container a stable key",
+            "evaluation_config.py must give the sample selection table container a stable key",
         )
         css = self._responsive_css()
         self.assertIn(".st-key-test_run_sample_table", css)
@@ -515,13 +572,12 @@ class MobileResponsiveUIContracts(unittest.TestCase):
     def test_run_action_is_rendered_outside_streamlit_columns(self):
         import inspect
 
-        from src.ui.test_run import _render_configuration_panel
+        from src.ui.evaluation_config import render_evaluation_scope
 
-        source = inspect.getsource(_render_configuration_panel)
-        self.assertIn('with st.container(key="test_run_actions"):', source)
-        self.assertIn('with st.container(key="test_run_action_samples"):', source)
-        self.assertIn('with st.container(key="test_run_action_models"):', source)
-        self.assertIn('with st.container(key="test_run_action_primary"):', source)
+        source = inspect.getsource(render_evaluation_scope)
+        self.assertIn('with st.container(key="test_run_scope_actions"):', source)
+        self.assertIn('key="test_run_open_samples"', source)
+        self.assertIn('key="test_run_open_models"', source)
         self.assertNotIn("st.columns(", source)
 
     def test_run_action_group_uses_desktop_grid_and_mobile_stack(self):
@@ -532,14 +588,14 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         self.assertRegex(
             desktop_css,
             (
-                r"\.st-key-test_run_actions\s*\{[^}]*"
+                r"\.st-key-test_run_scope_actions\s*\{[^}]*"
                 r"display\s*:\s*grid\s*;[^}]*"
-                r"grid-template-columns\s*:\s*1fr\s+1fr\s+1\.2fr\s*;"
+                r"grid-template-columns\s*:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)\s*;"
             ),
         )
         mobile_rules = _declarations_for_selector(
             mobile_css,
-            ".st-key-test_run_actions",
+            ".st-key-test_run_scope_actions",
         )
         self.assertTrue(
             any(

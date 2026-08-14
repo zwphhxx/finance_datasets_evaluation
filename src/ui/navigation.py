@@ -21,33 +21,49 @@ PAGES = {
 }
 
 
-# Top nav: exactly 4 main items matching the simplified AI evaluation workflow.
-# Maps display label -> page_key for the top nav bar.
-_TOP_NAV_ITEMS = [
-    ("项目说明", "case_study"),
+# Review destinations are peers. Evaluation remains reachable but deliberately
+# sits in a separate, lower-emphasis operation entry.
+PRIMARY_NAV_ITEMS = [
     ("评测结论", "conclusions"),
+    ("项目说明", "case_study"),
     ("样本库", "samples"),
-    ("发起评测", "test_run"),
 ]
+OPERATION_NAV_ITEM = ("评测操作", "test_run")
+
+
+def _render_navigation_button(label: str, page_key: str, current: str, *, key: str) -> None:
+    if st.button(
+        label,
+        key=key,
+        type="secondary" if current == page_key else "tertiary",
+        use_container_width=False,
+    ):
+        st.session_state.current_page = page_key
+        request_scroll("top")
+        st.rerun()
 
 
 def render_top_navigation() -> None:
-    """Render a lightweight tab-style top navigation."""
+    """Render review navigation separately from the evaluation operation."""
     current = st.session_state.get("current_page", DEFAULT_PAGE_KEY)
-    cols = st.columns([3.35, 0.78, 0.78, 0.86, 0.86], gap="medium")
-    with cols[0]:
+    brand_column, review_column, operation_column = st.columns([3.1, 2.6, 0.9], gap="medium")
+    with brand_column:
         render_html(f'<div class="top-nav-brand">{PROJECT_DISPLAY_NAME}</div>')
-    for col, (label, page_key) in zip(cols[1:], _TOP_NAV_ITEMS):
-        with col:
-            if st.button(
-                label,
-                key=f"top_nav_{page_key}",
-                type="secondary" if current == page_key else "tertiary",
-                use_container_width=False,
-            ):
-                st.session_state.current_page = page_key
-                request_scroll("top")
-                st.rerun()
+    with review_column:
+        with st.container(key="top_nav_review_region"):
+            review_columns = st.columns(len(PRIMARY_NAV_ITEMS), gap="small")
+            for column, (label, page_key) in zip(review_columns, PRIMARY_NAV_ITEMS):
+                with column:
+                    _render_navigation_button(
+                        label,
+                        page_key,
+                        current,
+                        key=f"top_nav_{page_key}",
+                    )
+    with operation_column:
+        with st.container(key="top_nav_operation_region"):
+            label, page_key = OPERATION_NAV_ITEM
+            _render_navigation_button(label, page_key, current, key="top_nav_operation")
 
 
 def render_sidebar_navigation() -> str:
@@ -62,4 +78,9 @@ def render_sidebar_navigation() -> str:
 
 def get_primary_nav_items() -> list[tuple[str, str]]:
     """Return the primary navigation items (label, page_key)."""
-    return _TOP_NAV_ITEMS[:]
+    return PRIMARY_NAV_ITEMS[:]
+
+
+def get_operation_nav_item() -> tuple[str, str]:
+    """Return the secondary operation navigation item."""
+    return OPERATION_NAV_ITEM
