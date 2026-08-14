@@ -350,6 +350,50 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         self.assertIn('[data-testid="stPopover"] button', mobile_css)
         self.assertRegex(mobile_css, r"min-height\s*:\s*44px\s*!important")
 
+    def test_mobile_evaluation_maintenance_has_a_stable_44px_popover_target(self):
+        source = TEST_RUN_PATH.read_text(encoding="utf-8")
+        maintenance_source = source.split(
+            "def _render_evaluation_maintenance",
+            1,
+        )[1].split("\ndef ", 1)[0]
+        self.assertIn(
+            'with st.container(key="test_run_maintenance_entry"):',
+            maintenance_source,
+        )
+        self.assertLess(
+            maintenance_source.index('key="test_run_maintenance_entry"'),
+            maintenance_source.index('st.popover("评测维护"'),
+        )
+
+        mobile_css = self._responsive_css().split(
+            "@media (max-width: 760px)",
+            1,
+        )[1].split("@media (max-width: 480px)", 1)[0]
+        selector = (
+            '.st-key-test_run_maintenance_entry [data-testid="stPopover"] button'
+        )
+        rules = _declarations_for_selector(mobile_css, selector)
+        self.assertTrue(rules)
+        self.assertTrue(
+            any(re.search(r"min-height\s*:\s*44px\s*!important", rule) for rule in rules)
+        )
+
+    def test_mobile_sample_archive_tabs_have_44px_touch_targets(self):
+        mobile_css = self._responsive_css().split(
+            "@media (max-width: 760px)",
+            1,
+        )[1].split("@media (max-width: 480px)", 1)[0]
+
+        for selector in [
+            '.st-key-samples_detail_region [role="tab"]',
+            '.st-key-samples_detail_region [data-baseweb="tab"]',
+        ]:
+            rules = _declarations_for_selector(mobile_css, selector)
+            self.assertTrue(rules)
+            self.assertTrue(
+                any(re.search(r"min-height\s*:\s*44px\s*!important", rule) for rule in rules)
+            )
+
     def test_mobile_native_anchors_clear_sticky_navigation(self):
         mobile_css = self._responsive_css().split(
             "@media (max-width: 760px)",

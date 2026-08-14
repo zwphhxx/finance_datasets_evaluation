@@ -77,7 +77,12 @@ MOBILE_RESPONSIVE_CSS = r"""
     }
     .st-key-samples_title_bar [data-testid="stPopover"] button,
     .st-key-conclusion_maintenance_entry [data-testid="stPopover"] button,
+    .st-key-test_run_maintenance_entry [data-testid="stPopover"] button,
     .st-key-samples_detail_region [data-testid="stPopover"] button {
+        min-height: 44px !important;
+    }
+    .st-key-samples_detail_region [role="tab"],
+    .st-key-samples_detail_region [data-baseweb="tab"] {
         min-height: 44px !important;
     }
     .st-key-conclusion_data_notice [data-testid="stHorizontalBlock"] {

@@ -362,7 +362,9 @@ def _render_persisted_evaluation_records(store, status: EvaluationRunStatus) -> 
 
 def _render_evaluation_maintenance(store=None, status: EvaluationRunStatus | None = None) -> None:
     """Keep data portability and technical navigation out of the primary flow."""
-    with st.popover("评测维护", type="tertiary"):
+    with st.container(key="test_run_maintenance_entry"):
+        maintenance_popover = st.popover("评测维护", type="tertiary")
+    with maintenance_popover:
         st.markdown("**批次技术字段**")
         if status is None:
             st.caption("当前没有可展示的持久化批次。")
