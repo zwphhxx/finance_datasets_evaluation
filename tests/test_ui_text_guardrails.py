@@ -34,6 +34,8 @@ VISIBLE_UI_FILES = [
 _STREAMLIT_VISIBLE_METHODS = {
     "button",
     "caption",
+    "checkbox",
+    "dialog",
     "markdown",
     "write",
     "info",
@@ -43,10 +45,13 @@ _STREAMLIT_VISIBLE_METHODS = {
     "toast",
     "download_button",
     "file_uploader",
+    "form_submit_button",
     "text_input",
     "text_area",
     "radio",
     "selectbox",
+    "slider",
+    "spinner",
     "multiselect",
     "tabs",
     "popover",
@@ -120,8 +125,8 @@ def _rendered_ui_text(path: Path) -> str:
 
 class _StaticScope:
     def __init__(self) -> None:
-        self.bindings: dict[str, ast.AST | None] = {}
-        self.streamlit_aliases: set[str] = set()
+        self.bindings: dict[str, list[tuple[int, ast.AST | None]]] = {}
+        self.streamlit_aliases: dict[str, list[int]] = {}
         self.imports: dict[str, str] = {}
 
 
@@ -164,9 +169,9 @@ def _is_static_text_expression(node: ast.AST) -> bool:
 
 
 class _ScopeBindingCollector(ast.NodeVisitor):
-    def __init__(self, scope: _StaticScope, parent_aliases: set[str]) -> None:
+    def __init__(self, scope: _StaticScope, parent_scopes: list[_StaticScope]) -> None:
         self.scope = scope
-        self.parent_aliases = parent_aliases
+        self.parent_scopes = parent_scopes
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         return
@@ -208,7 +213,9 @@ class _ScopeBindingCollector(ast.NodeVisitor):
     def visit_With(self, node: ast.With) -> None:
         for item in node.items:
             if item.optional_vars is not None and self._factory_method(item.context_expr):
-                self.scope.streamlit_aliases.update(_target_names(item.optional_vars))
+                for name in _target_names(item.optional_vars):
+                    self._record_binding(name, item.context_expr.lineno, None)
+                    self._record_streamlit_alias(name, item.context_expr.lineno)
             self.visit(item.context_expr)
         for statement in node.body:
             self.visit(statement)
@@ -220,13 +227,14 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         names = _target_names(target)
         binding = value if _is_static_text_expression(value) else None
         for name in names:
-            self.scope.bindings[name] = binding
+            self._record_binding(name, value.lineno, binding)
 
         factory = self._factory_method(value)
         if factory in {"columns", "tabs"} and not isinstance(target, (ast.List, ast.Tuple)):
             return
         if factory:
-            self.scope.streamlit_aliases.update(names)
+            for name in names:
+                self._record_streamlit_alias(name, value.lineno)
 
     def _factory_method(self, node: ast.AST) -> str:
         current = node
@@ -237,9 +245,19 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         parts = _attribute_parts(current.func)
         if len(parts) < 2 or parts[-1] not in _STREAMLIT_CONTAINER_FACTORIES:
             return ""
-        if parts[0] == "st" or parts[0] in self.scope.streamlit_aliases | self.parent_aliases:
+        if parts[0] == "st" or _streamlit_alias_available(
+            [*self.parent_scopes, self.scope],
+            parts[0],
+            current.lineno,
+        ):
             return parts[-1]
         return ""
+
+    def _record_binding(self, name: str, lineno: int, value: ast.AST | None) -> None:
+        self.scope.bindings.setdefault(name, []).append((lineno, value))
+
+    def _record_streamlit_alias(self, name: str, lineno: int) -> None:
+        self.scope.streamlit_aliases.setdefault(name, []).append(lineno)
 
 
 class _VisibleTextCollector(ast.NodeVisitor):
@@ -251,13 +269,27 @@ class _VisibleTextCollector(ast.NodeVisitor):
         self._visit_scope(node.body)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        self._visit_scope(node.body, parameters=_parameter_names(node.args))
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        self._visit_scope(
+            node.body,
+            parameters=_parameter_names(node.args),
+            start_lineno=node.lineno,
+        )
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-        self._visit_scope(node.body, parameters=_parameter_names(node.args))
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        self._visit_scope(
+            node.body,
+            parameters=_parameter_names(node.args),
+            start_lineno=node.lineno,
+        )
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
-        self._visit_scope(node.body)
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        self._visit_scope(node.body, start_lineno=node.lineno)
 
     def visit_Call(self, node: ast.Call) -> None:
         call_name = self._visible_call_name(node.func)
@@ -270,17 +302,21 @@ class _VisibleTextCollector(ast.NodeVisitor):
                 if item.arg in _VISIBLE_TEXT_KEYWORDS
             ]
             for argument in [*positional, *visible_keywords]:
-                self.fragments.extend(self._static_text_values(argument, set()))
+                self.fragments.extend(
+                    self._static_text_values(argument, node.lineno, set())
+                )
         self.generic_visit(node)
 
-    def _visit_scope(self, body: list[ast.stmt], parameters: list[str] | None = None) -> None:
+    def _visit_scope(
+        self,
+        body: list[ast.stmt],
+        parameters: list[str] | None = None,
+        start_lineno: int = 0,
+    ) -> None:
         scope = _StaticScope()
         for parameter in parameters or []:
-            scope.bindings[parameter] = None
-        parent_aliases = {
-            alias for outer in self.scopes for alias in outer.streamlit_aliases
-        }
-        binding_collector = _ScopeBindingCollector(scope, parent_aliases)
+            scope.bindings.setdefault(parameter, []).append((start_lineno, None))
+        binding_collector = _ScopeBindingCollector(scope, list(self.scopes))
         for statement in body:
             binding_collector.visit(statement)
         self.scopes.append(scope)
@@ -300,7 +336,8 @@ class _VisibleTextCollector(ast.NodeVisitor):
             return ""
         method = parts[-1]
         if method in _STREAMLIT_VISIBLE_METHODS and (
-            parts[0] == "st" or self._is_streamlit_alias(parts[0])
+            parts[0] == "st"
+            or self._is_streamlit_alias(parts[0], getattr(func, "lineno", 0))
         ):
             return method
         imported_root = self._lookup_import(parts[0])
@@ -310,47 +347,77 @@ class _VisibleTextCollector(ast.NodeVisitor):
                 return method
         return ""
 
-    def _static_text_values(self, node: ast.AST, seen: set[str]) -> list[str]:
+    def _static_text_values(
+        self,
+        node: ast.AST,
+        at_lineno: int,
+        seen: set[str],
+    ) -> list[str]:
         if isinstance(node, ast.Constant):
             return [node.value] if isinstance(node.value, str) else []
         if isinstance(node, ast.Name):
             if node.id in seen:
                 return []
-            binding = self._lookup_binding(node.id)
-            return [] if binding is None else self._static_text_values(binding, seen | {node.id})
+            found, binding_lineno, binding = self._lookup_binding(node.id, at_lineno)
+            return (
+                []
+                if not found or binding is None
+                else self._static_text_values(
+                    binding,
+                    binding_lineno,
+                    seen | {node.id},
+                )
+            )
         if isinstance(node, ast.FormattedValue):
-            values = self._static_text_values(node.value, seen)
+            values = self._static_text_values(node.value, at_lineno, seen)
             return values or [""]
         if isinstance(node, ast.JoinedStr):
-            return self._join_static_parts(node.values, seen)
+            return self._join_static_parts(node.values, at_lineno, seen)
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-            return self._join_static_parts([node.left, node.right], seen)
+            return self._join_static_parts([node.left, node.right], at_lineno, seen)
         if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return [
                 value
                 for element in node.elts
-                for value in self._static_text_values(element, seen)
+                for value in self._static_text_values(element, at_lineno, seen)
             ]
         if isinstance(node, ast.Dict):
             return [
                 text
                 for value in node.values
-                for text in self._static_text_values(value, seen)
+                for text in self._static_text_values(value, at_lineno, seen)
             ]
         return []
 
-    def _join_static_parts(self, parts: list[ast.AST], seen: set[str]) -> list[str]:
+    def _join_static_parts(
+        self,
+        parts: list[ast.AST],
+        at_lineno: int,
+        seen: set[str],
+    ) -> list[str]:
         combined = [""]
         for part in parts:
-            values = self._static_text_values(part, seen) or [""]
+            values = self._static_text_values(part, at_lineno, seen) or [""]
             combined = [prefix + suffix for prefix in combined for suffix in values]
         return combined
 
-    def _lookup_binding(self, name: str) -> ast.AST | None:
+    def _lookup_binding(
+        self,
+        name: str,
+        at_lineno: int,
+    ) -> tuple[bool, int, ast.AST | None]:
         for scope in reversed(self.scopes):
             if name in scope.bindings:
-                return scope.bindings[name]
-        return None
+                prior = [
+                    entry
+                    for entry in scope.bindings[name]
+                    if entry[0] < at_lineno
+                ]
+                if prior:
+                    lineno, value = max(prior, key=lambda entry: entry[0])
+                    return True, lineno, value
+                return True, -1, None
+        return False, -1, None
 
     def _lookup_import(self, name: str) -> str:
         for scope in reversed(self.scopes):
@@ -358,8 +425,32 @@ class _VisibleTextCollector(ast.NodeVisitor):
                 return scope.imports[name]
         return ""
 
-    def _is_streamlit_alias(self, name: str) -> bool:
-        return any(name in scope.streamlit_aliases for scope in reversed(self.scopes))
+    def _is_streamlit_alias(self, name: str, at_lineno: int) -> bool:
+        return _streamlit_alias_available(self.scopes, name, at_lineno)
+
+
+def _streamlit_alias_available(
+    scopes: list[_StaticScope],
+    name: str,
+    at_lineno: int,
+) -> bool:
+    for scope in reversed(scopes):
+        if name not in scope.bindings and name not in scope.streamlit_aliases:
+            continue
+        prior_bindings = [
+            lineno
+            for lineno, _value in scope.bindings.get(name, [])
+            if lineno < at_lineno
+        ]
+        prior_aliases = [
+            lineno
+            for lineno in scope.streamlit_aliases.get(name, [])
+            if lineno < at_lineno
+        ]
+        if not prior_bindings:
+            return bool(prior_aliases)
+        return bool(prior_aliases) and max(prior_bindings) == max(prior_aliases)
+    return False
 
 
 def _parameter_names(arguments: ast.arguments) -> list[str]:
@@ -487,10 +578,17 @@ class VisibleTextGuardrailTests(unittest.TestCase):
             "演示恢复",
             "可见章节",
             "可见说明",
+            "先前禁语应保留",
+            "演示弹层",
+            "演示加载",
+            "演示选择",
+            "演示滑杆",
+            "演示提交",
         ]:
             self.assertIn(phrase, text)
         self.assertNotIn("从演示结果文件恢复", text)
         self.assertNotIn("假标题不可见", text)
+        self.assertNotIn("后置禁语不应出现", text)
 
     def test_ast_guard_excludes_case_study_fixture(self):
         text = _product_ui_text(
