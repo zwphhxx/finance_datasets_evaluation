@@ -257,18 +257,19 @@ class UIUXAuditFixesTests(unittest.TestCase):
 
     def test_test_run_keeps_primary_buttons_for_confirmation_and_execution(self):
         source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
-        primary_buttons = re.findall(r'type\s*=\s*"primary"', source)
+        config_source = Path("src/ui/evaluation_config.py").read_text(encoding="utf-8")
+        primary_buttons = re.findall(r'type\s*=\s*"primary"', source + config_source)
         self.assertEqual(4, len(primary_buttons), "样本、模型确认以及互斥的开始/继续评测可使用 Primary")
         self.assertIn('key="test_run_start_evaluation"', source)
         self.assertIn('key="test_run_continue_evaluation"', source)
         self.assertNotIn('key="test_run_score_action"', source)
         self.assertNotIn('key="test_run_score_run"', source)
         self.assertNotIn("生成 AI 评分", source)
-        self.assertIn('"确认选择"', source)
-        self.assertIn('key="test_run_sample_dialog_confirm"', source)
-        self.assertIn('key="test_run_model_dialog_confirm"', source)
-        self.assertIn('disabled=not selected_cases', source)
-        self.assertIn('disabled=not chosen_models', source)
+        self.assertIn('"确认选择"', config_source)
+        self.assertIn('key="test_run_sample_dialog_confirm"', config_source)
+        self.assertIn('key="test_run_model_dialog_confirm"', config_source)
+        self.assertIn('disabled=not selected_cases', config_source)
+        self.assertIn('disabled=not chosen_models', config_source)
 
     def test_auxiliary_view_entries_use_detail_header_actions(self):
         test_run_source = Path("src/ui/test_run.py").read_text(encoding="utf-8")

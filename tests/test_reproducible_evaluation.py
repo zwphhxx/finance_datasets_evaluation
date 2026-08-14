@@ -24,6 +24,7 @@ from src.ui.page_config import PAGE_CONFIG_BY_KEY
 from src.ui.test_run import eligible_case_ids
 
 _PAGE_SOURCE = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+_CONFIG_SOURCE = Path("src/ui/evaluation_config.py").read_text(encoding="utf-8")
 
 
 class DefaultActiveTaskSelectionTests(unittest.TestCase):
@@ -58,7 +59,7 @@ class PageFramingTests(unittest.TestCase):
         self.assertIn("评测", config.question)
 
     def test_boundary_mentions_prompt_separation(self):
-        self.assertIn("不会看到专业标准答案", _PAGE_SOURCE)
+        self.assertIn("不会看到专业标准答案", _CONFIG_SOURCE)
 
     def test_page_uses_one_durable_answer_and_score_pipeline(self):
         self.assertIn("EvaluationWorkflow", _PAGE_SOURCE)

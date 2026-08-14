@@ -144,11 +144,15 @@ class UIComponentsTests(unittest.TestCase):
     def test_sample_and_evaluation_pages_expose_report_regions(self):
         samples_source = Path("src/ui/samples.py").read_text(encoding="utf-8")
         test_run_source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+        evaluation_config_source = Path("src/ui/evaluation_config.py").read_text(encoding="utf-8")
 
         for key in ["samples_filter_region", "samples_list_region", "samples_detail_region"]:
             self.assertIn(f'with st.container(key="{key}"):', samples_source)
-        for key in ["test_run_scope_actions", "test_run_primary_action"]:
-            self.assertIn(f'with st.container(key="{key}"):', test_run_source)
+        self.assertIn(
+            'with st.container(key="test_run_scope_actions"):',
+            evaluation_config_source,
+        )
+        self.assertIn('with st.container(key="test_run_primary_action"):', test_run_source)
         self.assertNotIn("test_run_stage_scores", test_run_source)
 
     def test_component_signatures_match_current_contract(self):

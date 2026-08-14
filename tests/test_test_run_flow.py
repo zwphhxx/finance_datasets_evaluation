@@ -1,9 +1,39 @@
 """Pure contracts for the single-entry evaluation configuration flow."""
 
+from pathlib import Path
+
 from app.models.base import ModelInfo
 from app.services import dataset_service as ds
 from src.ui import evaluation_config as ec
 from src.ui import test_run as tr
+
+
+def test_configuration_view_owns_form_state_filters_and_dialogs():
+    test_run_source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+    config_source = Path("src/ui/evaluation_config.py").read_text(encoding="utf-8")
+
+    moved_functions = [
+        "resolve_eval_max_tokens",
+        "resolve_eval_temperature",
+        "filter_sample_selection_options",
+        "build_sample_selection_rows",
+        "sample_checkbox_key",
+        "merge_sample_checkbox_selection",
+        "build_model_selection_options",
+        "prompt_preview_task_for_case",
+        "render_evaluation_scope",
+        "render_pending_dialogs",
+        "_render_prompt_preview_dialog",
+        "_render_sample_selection_dialog",
+        "_render_model_selection_dialog",
+    ]
+    for name in moved_functions:
+        assert f"def {name}(" not in test_run_source
+        assert f"def {name}(" in config_source
+
+    assert "@st.dialog" not in test_run_source
+    assert "EvaluationWorkflow(" not in config_source
+    assert "SiliconFlowProvider(" not in config_source
 
 
 def _dimension():

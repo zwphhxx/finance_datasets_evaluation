@@ -17,6 +17,7 @@ from app.services.evaluation_workflow import (
     EvaluationRunStatus,
     WorkflowStopped,
 )
+from src.ui import evaluation_config as ec
 from src.ui import test_run as tr
 
 
@@ -133,13 +134,14 @@ def _render(
     store = FakeStore(has_run=state is not None, latest_error=latest_error)
     events: list[str] = []
     monkeypatch.setattr(tr, "st", fake_st)
+    monkeypatch.setattr(ec, "st", fake_st)
     monkeypatch.setattr(tr, "render_page_heading", lambda *args, **kwargs: None)
     monkeypatch.setattr(tr, "render_numbered_section", lambda *args, **kwargs: None)
-    monkeypatch.setattr(tr, "render_inline_status", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ec, "render_evaluation_scope", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ec, "render_pending_dialogs", lambda *args, **kwargs: None)
     monkeypatch.setattr(tr, "render_persistence_status", lambda value: fake_st.messages.append(value))
     monkeypatch.setattr(tr, "render_evaluation_status", lambda status: events.append(f"status:{status.state}"))
     monkeypatch.setattr(tr, "render_run_record", lambda *args: events.append("records"))
-    monkeypatch.setattr(tr, "_render_pending_dialogs", lambda *args: None)
     monkeypatch.setattr(tr.sr, "load_samples", lambda: [])
     monkeypatch.setattr(tr.ds, "get_testable_rubric_dimensions", lambda: [])
     monkeypatch.setattr(tr.ds, "get_rubric_dimensions", lambda: [{"field": "accuracy_score"}])

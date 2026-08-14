@@ -6,6 +6,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RESPONSIVE_PATH = PROJECT_ROOT / "src" / "ui" / "responsive.py"
 COMPONENTS_PATH = PROJECT_ROOT / "src" / "ui" / "components.py"
 TEST_RUN_PATH = PROJECT_ROOT / "src" / "ui" / "test_run.py"
+EVALUATION_CONFIG_PATH = PROJECT_ROOT / "src" / "ui" / "evaluation_config.py"
 SAMPLES_PATH = PROJECT_ROOT / "src" / "ui" / "samples.py"
 
 
@@ -201,7 +202,7 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             "@media (max-width: 760px)",
             1,
         )[1].split("@media (max-width: 480px)", 1)[0]
-        source = TEST_RUN_PATH.read_text(encoding="utf-8")
+        source = EVALUATION_CONFIG_PATH.read_text(encoding="utf-8")
 
         self.assertNotIn("min-width: 44rem", mobile_css)
         self.assertIn("test_run_sample_table_header", source)
@@ -216,7 +217,7 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             "@media (max-width: 760px)",
             1,
         )[1].split("@media (max-width: 480px)", 1)[0]
-        source = TEST_RUN_PATH.read_text(encoding="utf-8")
+        source = EVALUATION_CONFIG_PATH.read_text(encoding="utf-8")
 
         self.assertIn(
             "max-height: calc(100dvh - 5.5rem - env(safe-area-inset-bottom))",
@@ -301,7 +302,7 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         self.assertIn("scroll-margin-top: 5.75rem", mobile_css)
 
     def test_blocking_dialog_preparation_has_explicit_loading_feedback(self):
-        source = TEST_RUN_PATH.read_text(encoding="utf-8")
+        source = EVALUATION_CONFIG_PATH.read_text(encoding="utf-8")
 
         self.assertIn('st.spinner("正在获取模型列表…")', source)
         self.assertIn('st.spinner("正在准备提示词…")', source)
@@ -454,11 +455,11 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         )
 
     def test_sample_table_has_stable_keys_without_mobile_minimum_width(self):
-        test_run_source = TEST_RUN_PATH.read_text(encoding="utf-8")
+        test_run_source = EVALUATION_CONFIG_PATH.read_text(encoding="utf-8")
 
         self.assertTrue(
             'key="test_run_sample_table"' in test_run_source,
-            "src/ui/test_run.py must give the sample selection table container a stable key",
+            "evaluation_config.py must give the sample selection table container a stable key",
         )
         css = self._responsive_css()
         self.assertIn(".st-key-test_run_sample_table", css)
@@ -469,9 +470,9 @@ class MobileResponsiveUIContracts(unittest.TestCase):
     def test_run_action_is_rendered_outside_streamlit_columns(self):
         import inspect
 
-        from src.ui.test_run import _render_evaluation_scope
+        from src.ui.evaluation_config import render_evaluation_scope
 
-        source = inspect.getsource(_render_evaluation_scope)
+        source = inspect.getsource(render_evaluation_scope)
         self.assertIn('with st.container(key="test_run_scope_actions"):', source)
         self.assertIn('key="test_run_open_samples"', source)
         self.assertIn('key="test_run_open_models"', source)
