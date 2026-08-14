@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
+from app.persistence import ResultStoreError, ResultStoreUnavailableError
 from app.services.evaluation_workflow import (
     COMPLETED,
     FAILED,
@@ -14,6 +15,7 @@ from app.services.evaluation_workflow import (
     RUNNING,
     STOPPED,
     EvaluationRunStatus,
+    WorkflowStopped,
 )
 from src.ui import test_run as tr
 
@@ -35,6 +37,9 @@ class FakeStreamlit:
 
     def container(self, *args, **kwargs):
         return nullcontext()
+
+    def empty(self):
+        return SimpleNamespace(container=lambda: nullcontext())
 
     def popover(self, *args, **kwargs):
         self.popovers.append({"label": args[0] if args else "", "type": kwargs.get("type")})
@@ -66,12 +71,15 @@ class FakeStreamlit:
 
 
 class FakeStore:
-    def __init__(self, *, has_run: bool):
+    def __init__(self, *, has_run: bool, latest_error: Exception | None = None):
         self.has_run = has_run
+        self.latest_error = latest_error
         self.calls: list[tuple] = []
 
     def latest_queue(self, table):
         self.calls.append(("latest_queue", table))
+        if self.latest_error is not None:
+            raise self.latest_error
         return (
             [{"run_id": "RUN-1", "provider": "siliconflow", "case_id": "C1", "model_id": "vendor/model-1"}]
             if self.has_run
@@ -116,9 +124,13 @@ def _render(
     click_key="",
     workflow=None,
     checkpoint_valid=True,
+    latest_error: Exception | None = None,
+    status_error: Exception | None = None,
+    preflight=None,
+    capture_errors=False,
 ):
     fake_st = FakeStreamlit(click_key=click_key)
-    store = FakeStore(has_run=state is not None)
+    store = FakeStore(has_run=state is not None, latest_error=latest_error)
     events: list[str] = []
     monkeypatch.setattr(tr, "st", fake_st)
     monkeypatch.setattr(tr, "render_page_heading", lambda *args, **kwargs: None)
@@ -142,6 +154,8 @@ def _render(
 
     def status_loader(_store, run_id):
         events.append(f"load:{run_id}")
+        if status_error is not None:
+            raise status_error
         return _status(state)  # type: ignore[arg-type]
 
     def checkpoint_builder(*args, **kwargs):
@@ -171,10 +185,14 @@ def _render(
             workflow_factory=workflow_factory,
             config_builder=config_builder,
             checkpoint_builder=checkpoint_builder,
-            preflight=lambda _provider: events.append("preflight"),
+            preflight=preflight or (lambda _provider: events.append("preflight")),
         )
     except RerunRequested:
         events.append("rerun")
+    except Exception as exc:
+        if not capture_errors:
+            raise
+        events.append(f"error:{type(exc).__name__}:{exc}")
     return fake_st, store, events
 
 
@@ -204,7 +222,8 @@ def test_read_only_page_load_never_constructs_or_runs_live_workflow(monkeypatch)
     ui, store, events = _render(monkeypatch, INTERRUPTED)
 
     assert store.calls[0] == ("latest_queue", "live_run_queue")
-    assert events[:2] == ["load:RUN-1", "status:interrupted"]
+    assert events[0] == "load:RUN-1"
+    assert "status:interrupted" in events
     assert "workflow" not in events
     assert not any(event.startswith(("start:", "continue:")) for event in events)
 
@@ -221,6 +240,48 @@ def test_no_api_key_disables_start_without_preflight_or_workflow(monkeypatch):
     assert start["disabled"] is True
     assert "preflight" not in events
     assert "workflow" not in events
+
+
+@pytest.mark.parametrize("failure_point", ["latest", "status"])
+def test_storage_read_failure_disables_all_evaluation_actions(monkeypatch, failure_point):
+    kwargs = (
+        {"state": None, "latest_error": ResultStoreUnavailableError("offline")}
+        if failure_point == "latest"
+        else {"state": INTERRUPTED, "status_error": ResultStoreError("offline")}
+    )
+
+    ui, _store, events = _render(monkeypatch, **kwargs)
+
+    actions = [button for button in ui.buttons if "evaluation" in button["key"]]
+    assert actions and all(button["disabled"] for button in actions)
+    assert any("数据库" in message and "不可用" in message for message in ui.messages)
+    assert "workflow" not in events
+
+
+def test_ping_false_stops_before_workflow_or_provider_construction(monkeypatch):
+    import app.persistence as persistence
+
+    class UnreachableStore:
+        is_postgresql = True
+
+        @staticmethod
+        def ping():
+            return False
+
+    monkeypatch.setattr(persistence, "get_result_store", lambda: UnreachableStore())
+
+    _ui, _store, events = _render(
+        monkeypatch,
+        None,
+        click_key="test_run_start_evaluation",
+        preflight=tr._require_persistence_preflight,
+        capture_errors=True,
+    )
+
+    assert not any(event.startswith("error:") for event in events)
+    assert "workflow" not in events
+    assert not any(event.startswith("start:") for event in events)
+    assert [event for event in events if event.startswith("status:")] == ["status:stopped"]
 
 
 def test_start_click_preflights_before_workflow_and_runs_once(monkeypatch):
@@ -264,6 +325,29 @@ def test_changed_checkpoint_disables_continue_with_clear_explanation(monkeypatch
     assert any("当前样本或参数已变化，不能继续旧批次" in message for message in ui.messages)
     assert "preflight" not in events
     assert "workflow" not in events
+
+
+def test_workflow_stop_replaces_current_status_with_one_stopped_state(monkeypatch):
+    def stop(*_args):
+        raise WorkflowStopped("could not persist evaluation outcome")
+
+    workflow = SimpleNamespace(start_evaluation=stop, continue_evaluation=stop)
+
+    _ui, _store, events = _render(
+        monkeypatch,
+        INTERRUPTED,
+        click_key="test_run_continue_evaluation",
+        workflow=workflow,
+    )
+
+    assert [event for event in events if event.startswith("status:")] == ["status:stopped"]
+    assert "rerun" not in events
+
+
+def test_next_successful_read_derives_interrupted_without_session_override(monkeypatch):
+    _ui, _store, events = _render(monkeypatch, INTERRUPTED)
+
+    assert [event for event in events if event.startswith("status:")] == ["status:interrupted"]
 
 
 def test_maintenance_is_a_tertiary_popover_without_primary_actions(monkeypatch):

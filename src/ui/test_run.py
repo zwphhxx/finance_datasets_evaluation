@@ -27,7 +27,6 @@ from app.services.evaluation_workflow import (
     FAILED,
     INTERRUPTED,
     PARTIAL,
-    RUNNING,
     STOPPED,
     EvaluationConfig,
     EvaluationRunStatus,
@@ -84,6 +83,7 @@ def _persistence_gate(result: bool) -> None:
 def _require_persistence_preflight(provider_name: str) -> None:
     from app.persistence import (
         ResultStoreSettings,
+        ResultStoreUnavailableError,
         get_result_store,
         require_durable_live_store,
     )
@@ -91,7 +91,10 @@ def _require_persistence_preflight(provider_name: str) -> None:
     store = get_result_store()
     settings = ResultStoreSettings(url="", is_postgresql=store.is_postgresql)
     require_durable_live_store(provider_name, settings)
-    _persistence_gate(store.ping())
+    if not store.ping():
+        raise ResultStoreUnavailableError(
+            "评测结果数据库暂不可用，已停止模型调用。"
+        )
 
 
 def resolve_eval_max_tokens(raw_value: str | None = None) -> int:
@@ -330,14 +333,30 @@ def render_test_run_page(
                 if latest_run_id:
                     status = load_status(result_store, latest_run_id)
         except (ResultStoreError, ResultStoreUnavailableError, WorkflowCheckpointError):
-            render_persistence_status("最近评测批次暂时无法读取，请在数据库恢复后重试。")
+            store_available = False
+            latest_rows = []
+            status = None
+            render_persistence_status(
+                "评测结果数据库暂不可用，已禁用开始与继续评测。请在数据库恢复后重试。"
+            )
 
     render_numbered_section("02", "评测进度")
-    if status is None:
-        st.caption("当前没有进行中的评测批次。")
-    else:
-        render_evaluation_status(status)
-        _render_persisted_evaluation_records(result_store, status)
+    status_region = st.empty()
+    display_status = status
+
+    def stopped_status(message: str) -> EvaluationRunStatus:
+        return EvaluationRunStatus(
+            run_id=status.run_id if status is not None else "",
+            score_run_id=status.score_run_id if status is not None else "",
+            state=STOPPED,
+            total=status.total if status is not None else int(run_plan["planned_responses"]),
+            succeeded=status.succeeded if status is not None else 0,
+            failed=status.failed if status is not None else 0,
+            pending=status.pending if status is not None else int(run_plan["planned_responses"]),
+            resumable=False,
+            message=message,
+            persistence_failed_in_session=True,
+        )
 
     service_ready = bool(store_available and sf.is_configured())
     if not sf.is_configured():
@@ -360,14 +379,20 @@ def render_test_run_page(
                 evaluation_config = build_new_config(base, selected_tasks, model_ids)
                 workflow = build_workflow(result_store)
                 workflow.start_evaluation(evaluation_config)
+            except WorkflowStopped as exc:
+                display_status = stopped_status(
+                    str(exc) or "评测已停止，未继续调用模型服务。"
+                )
             except (
                 PersistenceConfigurationError,
                 ResultStoreUnavailableError,
                 ResultStoreError,
-                WorkflowCheckpointError,
-                WorkflowStopped,
             ) as exc:
-                render_persistence_status(str(exc) or "评测已停止，未继续调用模型服务。")
+                display_status = stopped_status(
+                    str(exc) or "评测已停止，未继续调用模型服务。"
+                )
+            except WorkflowCheckpointError as exc:
+                render_persistence_status(str(exc) or "评测配置无法通过一致性校验。")
             else:
                 cd.clear_conclusions_caches()
                 st.rerun()
@@ -390,21 +415,30 @@ def render_test_run_page(
                 require_preflight(provider_name)
                 workflow = build_workflow(result_store)
                 workflow.continue_evaluation(status.run_id, checkpoint_config)
+            except WorkflowStopped as exc:
+                display_status = stopped_status(
+                    str(exc) or "评测已停止，未继续调用模型服务。"
+                )
             except (
                 PersistenceConfigurationError,
                 ResultStoreUnavailableError,
                 ResultStoreError,
-                WorkflowCheckpointError,
-                WorkflowStopped,
             ) as exc:
-                render_persistence_status(str(exc) or "评测已停止，未继续调用模型服务。")
+                display_status = stopped_status(
+                    str(exc) or "评测已停止，未继续调用模型服务。"
+                )
+            except WorkflowCheckpointError as exc:
+                render_persistence_status(str(exc) or "评测配置无法通过一致性校验。")
             else:
                 cd.clear_conclusions_caches()
                 st.rerun()
-    elif status is not None and status.state == RUNNING:
-        st.caption("该批次仍在运行，当前页面仅展示已持久化进度。")
-    elif status is not None and status.state == STOPPED:
-        st.caption("本次评测因持久化失败已停止。数据库恢复后重新加载页面，再决定是否继续。")
+    with status_region.container():
+        if display_status is None:
+            st.caption("当前没有进行中的评测批次。")
+        else:
+            render_evaluation_status(display_status)
+            if status is not None:
+                _render_persisted_evaluation_records(result_store, status)
 
     _render_evaluation_maintenance(result_store if store_available else None, status)
     _render_pending_dialogs(sample_options)

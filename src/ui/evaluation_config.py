@@ -183,6 +183,14 @@ def build_evaluation_config_from_checkpoint(
         }
         for item in queue_items
     )
+    current_dimensions = dimensions if dimensions is not None else ds.get_rubric_dimensions()
+    dimension_rows = tuple(
+        dict(row) for row in current_dimensions or [] if isinstance(row, Mapping)
+    )
+    if not dimension_rows:
+        raise WorkflowCheckpointError(
+            "evaluation checkpoint has no current scoring dimensions"
+        )
     current = build_run_metadata(
         run_id=checkpoint_run_id,
         provider=provider_name,
@@ -192,6 +200,8 @@ def build_evaluation_config_from_checkpoint(
         judge_parameters=judge_parameters,
         dataset_version=current_dataset_version,
         prompt_payload=prompt_payload,
+        gold_map=gold_map,
+        dimensions=dimension_rows,
     )
     if any(
         str(saved.get(field) or "") != str(current.get(field) or "")
@@ -208,10 +218,6 @@ def build_evaluation_config_from_checkpoint(
         ):
             raise WorkflowCheckpointError("evaluation checkpoint does not match current configuration")
 
-    current_dimensions = dimensions if dimensions is not None else ds.get_rubric_dimensions()
-    dimension_rows = tuple(dict(row) for row in current_dimensions or [] if isinstance(row, Mapping))
-    if not dimension_rows:
-        raise WorkflowCheckpointError("evaluation checkpoint has no current scoring dimensions")
     return EvaluationConfig(
         provider_name=provider_name,
         model_ids=model_ids,

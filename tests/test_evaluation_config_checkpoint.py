@@ -11,6 +11,8 @@ from app.services.evaluation_workflow import WorkflowCheckpointError
 from app.services.run_checkpoint import build_run_metadata
 from src.ui.evaluation_config import build_evaluation_config_from_checkpoint
 
+_DIMENSIONS = ({"field": "accuracy_score", "max_score": 5},)
+
 
 def _task(case_id: str, question: str | None = None) -> dict:
     return {
@@ -47,7 +49,12 @@ class FakeStore:
         raise AssertionError(f"unexpected table: {table}")
 
 
-def _checkpoint(tasks: list[dict], queue: list[dict] | None = None) -> tuple[dict, list[dict]]:
+def _checkpoint(
+    tasks: list[dict],
+    queue: list[dict] | None = None,
+    *,
+    include_scoring_evidence: bool = True,
+) -> tuple[dict, list[dict]]:
     rows = queue or [
         {"id": 1, "run_id": "RUN-1", "case_id": "C1", "model_id": "m1", "status": "queued"},
         {"id": 2, "run_id": "RUN-1", "case_id": "C2", "model_id": "m1", "status": "queued"},
@@ -65,7 +72,11 @@ def _checkpoint(tasks: list[dict], queue: list[dict] | None = None) -> tuple[dic
         {"case_id": item["case_id"], "messages": er.build_messages(item["task"])}
         for item in items
     ]
-    metadata = build_run_metadata(
+    gold_map = {
+        str(task["case_id"]): {"case_id": str(task["case_id"]), "core_conclusion": "gold"}
+        for task in tasks
+    }
+    metadata_kwargs = dict(
         run_id="RUN-1",
         provider="test-live",
         model_ids=("m1",),
@@ -75,6 +86,9 @@ def _checkpoint(tasks: list[dict], queue: list[dict] | None = None) -> tuple[dic
         dataset_version="v1",
         prompt_payload=prompt_payload,
     )
+    if include_scoring_evidence:
+        metadata_kwargs.update(gold_map=gold_map, dimensions=_DIMENSIONS)
+    metadata = build_run_metadata(**metadata_kwargs)
     return metadata, rows
 
 
@@ -84,7 +98,7 @@ def _rebuild(base, store):
         base,
         store=store,
         dataset_version="v1",
-        dimensions=({"field": "accuracy_score", "max_score": 5},),
+        dimensions=_DIMENSIONS,
     )
 
 
@@ -144,6 +158,38 @@ def test_changed_current_task_hash_rejects_checkpoint():
 
     with pytest.raises(WorkflowCheckpointError, match="does not match"):
         _rebuild(_base(*changed), FakeStore(metadata, queue))
+
+
+def test_changed_current_gold_rejects_checkpoint():
+    tasks = [_task("C1"), _task("C2")]
+    metadata, queue = _checkpoint(tasks)
+    base = _base(*tasks)
+    base.gold_answer_map["C1"]["core_conclusion"] = "changed"
+
+    with pytest.raises(WorkflowCheckpointError, match="does not match"):
+        _rebuild(base, FakeStore(metadata, queue))
+
+
+def test_changed_current_dimensions_reject_checkpoint():
+    tasks = [_task("C1"), _task("C2")]
+    metadata, queue = _checkpoint(tasks)
+
+    with pytest.raises(WorkflowCheckpointError, match="does not match"):
+        build_evaluation_config_from_checkpoint(
+            "RUN-1",
+            _base(*tasks),
+            store=FakeStore(metadata, queue),
+            dataset_version="v1",
+            dimensions=({"field": "accuracy_score", "max_score": 10},),
+        )
+
+
+def test_legacy_metadata_without_scoring_evidence_is_read_only():
+    tasks = [_task("C1"), _task("C2")]
+    metadata, queue = _checkpoint(tasks, include_scoring_evidence=False)
+
+    with pytest.raises(WorkflowCheckpointError, match="does not match"):
+        _rebuild(_base(*tasks), FakeStore(metadata, queue))
 
 
 @pytest.mark.parametrize(

@@ -5,7 +5,7 @@ from threading import Event, Thread
 import pytest
 from sqlalchemy import delete, update
 
-from app.models.base import GenerationResult, ModelListResult, ModelProvider, STATUS_FAILED, STATUS_SUCCESS
+from app.models.base import STATUS_FAILED, STATUS_SUCCESS, GenerationResult, ModelListResult, ModelProvider
 from app.persistence.result_store import ResultStore, ResultStoreError
 from app.persistence.schema import live_run_queue, live_score_queue
 from app.services import scorer as sc
@@ -114,6 +114,40 @@ def test_initialization_precedes_first_answer_call(tmp_path, monkeypatch):
     assert events.index("initialize") < events.index("answer_call:m1")
 
 
+def test_start_persists_gold_and_dimension_evidence_in_checkpoint_hash(tmp_path, monkeypatch):
+    events = []
+    store = sqlite_store(tmp_path)
+    answer = RecordingProvider(responses=[(STATUS_SUCCESS, "answer")], events=events)
+    record_score(monkeypatch, events)
+    evaluation_config = config(item("C1", "m1"))
+    persisted_metadata = {}
+    original_initialize = store.initialize_evaluation
+
+    def initialize(metadata, answers, scores):
+        persisted_metadata.update(metadata)
+        return original_initialize(metadata, answers, scores)
+
+    monkeypatch.setattr(store, "initialize_evaluation", initialize)
+
+    workflow(store, answer, RecordingProvider(events=events)).start_evaluation(
+        evaluation_config
+    )
+    expected = build_run_metadata(
+        run_id=persisted_metadata["run_id"],
+        provider=evaluation_config.provider_name,
+        model_ids=evaluation_config.model_ids,
+        queue_items=evaluation_config.queue_items,
+        generation_parameters=evaluation_config.generation_parameters,
+        judge_parameters=evaluation_config.judge_parameters,
+        dataset_version=evaluation_config.dataset_version,
+        prompt_payload=evaluation_config.prompt_payload,
+        gold_map=evaluation_config.gold_map,
+        dimensions=evaluation_config.dimensions,
+    )
+
+    assert persisted_metadata["dataset_hash"] == expected["dataset_hash"]
+
+
 def test_successful_pair_persists_answer_then_score_in_order(tmp_path, monkeypatch):
     events = []
     store = sqlite_store(tmp_path)
@@ -191,6 +225,7 @@ def test_scores_each_case_before_starting_next_answer(tmp_path, monkeypatch):
 
 
 def _prepopulate_successful_answer(store, run_id, score_run_id, pair):
+    evaluation_config = config(pair)
     metadata = build_run_metadata(
         run_id=run_id,
         provider="test-live",
@@ -200,6 +235,8 @@ def _prepopulate_successful_answer(store, run_id, score_run_id, pair):
         judge_parameters={"judge_model": "judge-1", "temperature": 0.0, "max_tokens": 128},
         dataset_version="v1",
         prompt_payload=("system", "hint"),
+        gold_map=evaluation_config.gold_map,
+        dimensions=evaluation_config.dimensions,
     )
     store.initialize_evaluation(
         metadata,
@@ -213,7 +250,7 @@ def _prepopulate_successful_answer(store, run_id, score_run_id, pair):
     )
 
 
-def _initialize_checkpoint(store, run_id, score_run_id, pair):
+def _initialize_legacy_checkpoint(store, run_id, score_run_id, pair):
     metadata = build_run_metadata(
         run_id=run_id,
         provider="test-live",
@@ -229,6 +266,93 @@ def _initialize_checkpoint(store, run_id, score_run_id, pair):
         [{"run_id": run_id, "case_id": pair["case_id"], "model_id": pair["model_id"], "status": "queued"}],
         [{"score_run_id": score_run_id, "run_id": run_id, "case_id": pair["case_id"], "eval_model": pair["model_id"], "status": "queued"}],
     )
+
+
+def _initialize_checkpoint(store, run_id, score_run_id, pair):
+    evaluation_config = config(pair)
+    metadata = build_run_metadata(
+        run_id=run_id,
+        provider=evaluation_config.provider_name,
+        model_ids=evaluation_config.model_ids,
+        queue_items=evaluation_config.queue_items,
+        generation_parameters=evaluation_config.generation_parameters,
+        judge_parameters=evaluation_config.judge_parameters,
+        dataset_version=evaluation_config.dataset_version,
+        prompt_payload=evaluation_config.prompt_payload,
+        gold_map=evaluation_config.gold_map,
+        dimensions=evaluation_config.dimensions,
+    )
+    store.initialize_evaluation(
+        metadata,
+        [{"run_id": run_id, "case_id": pair["case_id"], "model_id": pair["model_id"], "status": "queued"}],
+        [{"score_run_id": score_run_id, "run_id": run_id, "case_id": pair["case_id"], "eval_model": pair["model_id"], "status": "queued"}],
+    )
+
+
+def test_continue_accepts_matching_gold_and_dimension_evidence(tmp_path):
+    store = sqlite_store(tmp_path)
+    pair = item("C1", "m1")
+    _initialize_checkpoint(store, "RUN-FIXED", "SCORE-FIXED", pair)
+    store.save_run_outcome(
+        {"run_id": "RUN-FIXED", "case_id": "C1", "model_name": "m1", "run_status": "failed", "run_mode": "live", "provider": "test-live"},
+        queue_status="failed",
+        combined=True,
+    )
+    store.mark_run_stopped("RUN-FIXED", "resume")
+
+    status = workflow(store, RecordingProvider(), RecordingProvider()).continue_evaluation(
+        "RUN-FIXED", config(pair)
+    )
+
+    assert status.state == "failed"
+
+
+@pytest.mark.parametrize("field", ["gold_map", "dimensions"])
+def test_continue_rejects_changed_scoring_evidence_before_claim(tmp_path, monkeypatch, field):
+    store = sqlite_store(tmp_path)
+    pair = item("C1", "m1")
+    _initialize_checkpoint(store, "RUN-FIXED", "SCORE-FIXED", pair)
+    claims = []
+    monkeypatch.setattr(store, "claim_run", lambda *args: claims.append(args) or True)
+    baseline = config(pair)
+    changed_value = (
+        {"C1": {"core_conclusion": "changed"}}
+        if field == "gold_map"
+        else ({"field": "accuracy_score", "max_score": 10},)
+    )
+    incompatible = type(baseline)(**{**baseline.__dict__, field: changed_value})
+
+    from app.services.evaluation_workflow import WorkflowCheckpointError
+
+    with pytest.raises(WorkflowCheckpointError, match="checkpoint"):
+        workflow(store, RecordingProvider(), RecordingProvider()).continue_evaluation(
+            "RUN-FIXED", incompatible
+        )
+
+    assert claims == []
+
+
+def test_continue_rejects_legacy_checkpoint_before_claim(tmp_path, monkeypatch):
+    store = sqlite_store(tmp_path)
+    pair = item("C1", "m1")
+    _initialize_legacy_checkpoint(store, "RUN-FIXED", "SCORE-FIXED", pair)
+    store.save_run_outcome(
+        {"run_id": "RUN-FIXED", "case_id": "C1", "model_name": "m1", "run_status": "failed", "run_mode": "live", "provider": "test-live"},
+        queue_status="failed",
+        combined=True,
+    )
+    store.mark_run_stopped("RUN-FIXED", "resume")
+    claims = []
+    monkeypatch.setattr(store, "claim_run", lambda *args: claims.append(args) or True)
+
+    from app.services.evaluation_workflow import WorkflowCheckpointError
+
+    with pytest.raises(WorkflowCheckpointError, match="checkpoint"):
+        workflow(store, RecordingProvider(), RecordingProvider()).continue_evaluation(
+            "RUN-FIXED", config(pair)
+        )
+
+    assert claims == []
 
 
 def test_persisted_successful_answer_only_calls_judge(tmp_path, monkeypatch):
@@ -501,6 +625,7 @@ def test_continue_answer_save_failure_stops_before_score_or_later_pair(tmp_path,
 
     store = sqlite_store(tmp_path)
     first, second = item("C1", "m1"), item("C2", "m2")
+    evaluation_config = config(first, second)
     metadata = build_run_metadata(
         run_id="RUN-FIXED",
         provider="test-live",
@@ -510,6 +635,8 @@ def test_continue_answer_save_failure_stops_before_score_or_later_pair(tmp_path,
         judge_parameters={"judge_model": "judge-1", "temperature": 0.0, "max_tokens": 128},
         dataset_version="v1",
         prompt_payload=("system", "hint"),
+        gold_map=evaluation_config.gold_map,
+        dimensions=evaluation_config.dimensions,
     )
     store.initialize_evaluation(
         metadata,
@@ -533,7 +660,7 @@ def test_continue_answer_save_failure_stops_before_score_or_later_pair(tmp_path,
         RecordingProvider(events=events),
     )
     with pytest.raises(WorkflowStopped):
-        active.continue_evaluation("RUN-FIXED", config(first, second))
+        active.continue_evaluation("RUN-FIXED", evaluation_config)
 
     assert events == ["answer_call:m1"]
     current = active.load_evaluation_status("RUN-FIXED")
@@ -667,6 +794,7 @@ def test_only_one_workflow_instance_claims_and_executes_a_stopped_run(tmp_path, 
 
 def test_fresh_running_run_cannot_claim_but_stale_running_run_can(tmp_path, monkeypatch):
     from sqlalchemy import update
+
     from app.persistence.schema import live_evaluation_runs
 
     store = sqlite_store(tmp_path)
@@ -697,11 +825,14 @@ def test_score_save_failure_stops_before_later_pair_and_retains_answer(tmp_path,
 
     store = sqlite_store(tmp_path)
     first, second = item("C1", "m1"), item("C2", "m2")
+    evaluation_config = config(first, second)
     metadata = build_run_metadata(
         run_id="RUN-FIXED", provider="test-live", model_ids=("m1", "m2"), queue_items=(first, second),
         generation_parameters={"temperature": 0.2, "max_tokens": 128},
         judge_parameters={"judge_model": "judge-1", "temperature": 0.0, "max_tokens": 128},
         dataset_version="v1", prompt_payload=("system", "hint"),
+        gold_map=evaluation_config.gold_map,
+        dimensions=evaluation_config.dimensions,
     )
     store.initialize_evaluation(
         metadata,
@@ -719,7 +850,7 @@ def test_score_save_failure_stops_before_later_pair_and_retains_answer(tmp_path,
         RecordingProvider(events=events),
     )
     with pytest.raises(WorkflowStopped):
-        active.continue_evaluation("RUN-FIXED", config(first, second))
+        active.continue_evaluation("RUN-FIXED", evaluation_config)
 
     assert events == ["answer_call:m1", "score_call:C1"]
     current = active.load_evaluation_status("RUN-FIXED")

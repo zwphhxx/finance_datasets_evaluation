@@ -205,6 +205,8 @@ class EvaluationWorkflow:
             judge_parameters=config.judge_parameters,
             dataset_version=config.dataset_version,
             prompt_payload=config.prompt_payload,
+            gold_map=config.gold_map,
+            dimensions=config.dimensions,
         )
         try:
             self.store.initialize_evaluation(
@@ -313,6 +315,8 @@ class EvaluationWorkflow:
             judge_parameters=config.judge_parameters,
             dataset_version=config.dataset_version,
             prompt_payload=config.prompt_payload,
+            gold_map=config.gold_map,
+            dimensions=config.dimensions,
         )
         scalar_keys = ("dataset_version", "dataset_hash", "prompt_hash")
         json_keys = ("model_ids_json", "generation_parameters_json", "judge_parameters_json")
