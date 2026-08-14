@@ -876,6 +876,7 @@ def import_score_rows(
     *,
     duplicate_action: str = "skip",
     db_path: Path | None = None,
+    result_store=None,
 ) -> dict[str, Any]:
     """导入历史评分到 live_run_scores。
 
@@ -896,48 +897,20 @@ def import_score_rows(
         return _import_result(0, 0, 0, errors or ["没有可导入的评分记录。"])
 
     try:
-        from app.db.repository import Repository
-        from app.services.dataset_service import database_ready, get_db_path
+        from app.persistence import ResultStoreError
 
-        path = db_path or get_db_path()
-        if not database_ready(path):
-            return _import_result(0, 0, 0, ["SQLite 数据层不可用。"])
-        repo = Repository(path)
-        existing = repo.list_df("live_run_scores")
-        existing_by_key: dict[tuple[str, str, str], int] = {}
-        if not existing.empty:
-            for _, row in existing.iterrows():
-                key = _score_unique_key(row)
-                if all(key):
-                    existing_by_key[key] = int(row.get("id"))
-
-        imported = 0
-        updated = 0
-        skipped = 0
-        for row in valid_rows:
-            key = _score_unique_key(row)
-            existing_id = existing_by_key.get(key)
-            payload = {column: row.get(column) for column in SCORE_EXPORT_COLUMNS if column in row}
-            payload.setdefault("status", "active")
-            if existing_id is None:
-                payload.pop("updated_at", None)
-                new_id = repo.insert("live_run_scores", payload)
-                existing_by_key[key] = new_id
-                imported += 1
-                continue
-            if duplicate_action == "skip":
-                skipped += 1
-                continue
-            changes = {
-                key_name: value
-                for key_name, value in payload.items()
-                if key_name not in {"created_at", "updated_at"}
-            }
-            repo.update("live_run_scores", existing_id, changes)
-            updated += 1
-        return _import_result(imported, updated, skipped, errors)
-    except Exception:
-        return _import_result(0, 0, 0, ["导入失败：请检查 SQLite 数据层是否已初始化。"])
+        store = result_store if result_store is not None else _runtime_result_store(db_path)
+        if store is None:
+            return _import_result(0, 0, 0, ["评测结果数据库不可用。"])
+        stored = store.import_formal_scores(valid_rows, duplicate_action=duplicate_action)
+        return _import_result(
+            int(stored.get("imported_count") or 0),
+            int(stored.get("updated_count") or 0),
+            int(stored.get("skipped_count") or 0),
+            [*errors, *(stored.get("errors") or [])],
+        )
+    except ResultStoreError:
+        return _import_result(0, 0, 0, ["导入失败：评测结果数据库未能完整写入。"])
 
 
 # --------------------------------------------------------------------------- #

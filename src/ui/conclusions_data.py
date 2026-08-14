@@ -20,6 +20,7 @@ from app.services import conclusions as cc
 from app.services.conclusion_read_model import ConclusionReport, build_conclusion_report
 
 _DATABASE_UNAVAILABLE_MESSAGE = "评测结果数据库暂不可用。当前无法读取已持久化的回答与评分。"
+CONCLUSION_REPORT_CACHE_TTL_SECONDS = 15
 
 
 @dataclass(frozen=True)
@@ -66,7 +67,7 @@ def load_conclusion_source(
         )
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(ttl=CONCLUSION_REPORT_CACHE_TTL_SECONDS, show_spinner=False)
 def _load_available_conclusion_report(
     allowed_case_ids: tuple[str, ...],
     _tasks_records: Sequence[Mapping[str, Any]],

@@ -13,6 +13,12 @@ from hashlib import sha256
 import pandas as pd
 import streamlit as st
 
+from app.persistence import (
+    PersistenceConfigurationError,
+    ResultStoreError,
+    ResultStoreUnavailableError,
+    get_result_store,
+)
 from app.services import dataset_service as ds
 from app.services import scorer as sc
 from app.services.conclusion_read_model import ConclusionReport
@@ -92,7 +98,11 @@ def render_conclusions_page(data_bundle: dict) -> None:
     selected_model = _render_model_recommendations(model_summaries)
     _render_evidence_index(report, selected_model)
     _render_all_records(report)
-    _render_data_source_notice(report.scope)
+    try:
+        result_store = get_result_store()
+    except (PersistenceConfigurationError, ResultStoreUnavailableError, ResultStoreError):
+        result_store = None
+    _render_data_source_notice(report.scope, result_store)
 
 
 def _render_executive_conclusion(model_summaries: Sequence[Mapping[str, object]]) -> None:
@@ -106,13 +116,13 @@ def _render_executive_conclusion(model_summaries: Sequence[Mapping[str, object]]
 # --------------------------------------------------------------------------- #
 # 数据源与导入导出
 # --------------------------------------------------------------------------- #
-def _render_data_source_notice(scope) -> None:
+def _render_data_source_notice(scope, result_store=None) -> None:
     source_line = f"当前结论来源：评测运行数据｜{scope.data_basis}｜仅代表当前样本范围内的自动评测结果。"
     with st.container(key="conclusion_data_notice"):
         st.caption(source_line)
     with st.container(key="conclusion_maintenance_entry"):
         with st.popover("数据维护", type="tertiary", width="stretch"):
-            _render_score_data_maintenance_controls()
+            _render_score_data_maintenance_controls(result_store)
     message = st.session_state.get("conclusion_score_io_message")
     if isinstance(message, dict) and message.get("text"):
         level = str(message.get("level") or "info")
@@ -124,7 +134,7 @@ def _render_data_source_notice(scope) -> None:
             st.info(str(message["text"]))
 
 
-def _render_score_data_maintenance_controls() -> None:
+def _render_score_data_maintenance_controls(result_store=None) -> None:
     st.markdown("**导出**")
     st.caption("导出当前已生成的正式评分结果；仅纳入正式评分。")
     payload = sc.export_score_payload(include_pending=False)
@@ -172,8 +182,17 @@ def _render_score_data_maintenance_controls() -> None:
         )
         if errors:
             st.warning("；".join(str(error) for error in errors[:3]))
-        if rows and st.button("导入评分文件", type="primary", key="conclusion_import_scores_submit"):
-            result = sc.import_score_rows(rows, duplicate_action=action_map[duplicate_label])
+        if rows and st.button(
+            "导入评分文件",
+            type="primary",
+            key="conclusion_import_scores_submit",
+            disabled=result_store is None,
+        ):
+            result = sc.import_score_rows(
+                rows,
+                duplicate_action=action_map[duplicate_label],
+                result_store=result_store,
+            )
             _record_score_io_message(result)
             cd.clear_conclusions_caches()
             st.rerun()

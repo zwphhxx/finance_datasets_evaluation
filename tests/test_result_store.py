@@ -115,6 +115,59 @@ def score_row(run_id: str = "RUN-1", score_run_id: str = "SCORE-1", *, case_id: 
     }
 
 
+def import_score_row(
+    run_id: str = "RUN-IMPORT",
+    score_run_id: str = "SCORE-IMPORT",
+    *,
+    case_id: str = "FD-001",
+    model_id: str = "vendor/model-1",
+    total_score: int = 80,
+) -> dict:
+    return {
+        "score_run_id": score_run_id,
+        "run_id": run_id,
+        "case_id": case_id,
+        "eval_model": model_id,
+        "judge_provider": "siliconflow",
+        "judge_model": "judge/model",
+        "judge_mode": "live",
+        "judge_status": "success",
+        "total_score": total_score,
+        "review_status": "ai_final",
+        "status": "active",
+    }
+
+
+def initialize_formal_answer(
+    store: ResultStore,
+    *,
+    run_id: str = "RUN-IMPORT",
+    case_ids: tuple[str, ...] = ("FD-001",),
+    model_id: str = "vendor/model-1",
+) -> None:
+    metadata = {**run_metadata(run_id), "provider": "siliconflow"}
+    queue = [
+        {
+            **run_queue_row(run_id),
+            "case_id": case_id,
+            "model_id": model_id,
+            "provider": "siliconflow",
+        }
+        for case_id in case_ids
+    ]
+    store.initialize_run(metadata, queue)
+    for case_id in case_ids:
+        store.save_run_outcome(
+            {
+                **response_row(run_id, case_id=case_id, model_id=model_id),
+                "provider": "siliconflow",
+                "run_mode": "live",
+                "status": "active",
+            },
+            queue_status="success",
+        )
+
+
 def test_schema_contains_all_runtime_tables(tmp_path):
     store = sqlite_store(tmp_path)
 
@@ -508,3 +561,72 @@ def test_save_score_outcome_rolls_back_when_queue_row_is_missing(tmp_path):
         store.save_score_outcome(score_row(model_id="missing"), queue_status="success")
 
     assert store.list_rows("live_run_scores", score_run_id="SCORE-1") == []
+
+
+def test_import_formal_scores_requires_matching_formal_run_and_answer(tmp_path):
+    store = sqlite_store(tmp_path)
+    row = import_score_row()
+
+    missing_run = store.import_formal_scores([row], duplicate_action="skip")
+
+    assert missing_run["imported_count"] == 0
+    assert missing_run["skipped_count"] == 1
+    assert any("formal evaluation run" in error for error in missing_run["errors"])
+    assert store.list_rows("live_run_scores") == []
+
+    store.initialize_run(
+        {**run_metadata("RUN-IMPORT"), "provider": "siliconflow"},
+        [{**run_queue_row("RUN-IMPORT"), "model_id": "vendor/model-1", "provider": "siliconflow"}],
+    )
+    missing_answer = store.import_formal_scores([row], duplicate_action="skip")
+
+    assert missing_answer["imported_count"] == 0
+    assert missing_answer["skipped_count"] == 1
+    assert any("formal response" in error for error in missing_answer["errors"])
+    assert store.list_rows("live_run_scores") == []
+
+
+def test_import_formal_scores_is_idempotent_for_skip_and_update(tmp_path):
+    store = sqlite_store(tmp_path)
+    initialize_formal_answer(store)
+    row = import_score_row(total_score=80)
+
+    first = store.import_formal_scores([row], duplicate_action="skip")
+    duplicate = store.import_formal_scores([row], duplicate_action="skip")
+    updated = store.import_formal_scores(
+        [{**row, "total_score": 91}],
+        duplicate_action="update",
+    )
+
+    assert (first["imported_count"], first["updated_count"], first["skipped_count"]) == (1, 0, 0)
+    assert (duplicate["imported_count"], duplicate["updated_count"], duplicate["skipped_count"]) == (0, 0, 1)
+    assert (updated["imported_count"], updated["updated_count"], updated["skipped_count"]) == (0, 1, 0)
+    scores = store.list_rows("live_run_scores", score_run_id="SCORE-IMPORT")
+    assert len(scores) == 1
+    assert scores[0]["total_score"] == 91
+
+
+def test_import_formal_scores_rolls_back_batch_on_storage_failure(tmp_path, monkeypatch):
+    store = sqlite_store(tmp_path)
+    initialize_formal_answer(store, case_ids=("FD-001", "FD-002"))
+    rows = [
+        import_score_row(case_id="FD-001"),
+        import_score_row(case_id="FD-002"),
+    ]
+    original = store._upsert
+    score_writes = 0
+
+    def fail_second_score(connection, table, row, *, update_existing=True):
+        nonlocal score_writes
+        if table.name == "live_run_scores":
+            score_writes += 1
+            if score_writes == 2:
+                raise SQLAlchemyError("forced import failure")
+        return original(connection, table, row, update_existing=update_existing)
+
+    monkeypatch.setattr(store, "_upsert", fail_second_score)
+
+    with pytest.raises(ResultStoreError, match="import formal scores"):
+        store.import_formal_scores(rows, duplicate_action="skip")
+
+    assert store.list_rows("live_run_scores") == []

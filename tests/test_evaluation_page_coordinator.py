@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
+from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
@@ -503,6 +504,48 @@ def test_workflow_stop_replaces_current_status_with_one_stopped_state(monkeypatc
     )
 
     assert [event for event in events if event.startswith("status:")] == ["status:stopped"]
+    assert "clear" in events
+    assert "rerun" not in events
+
+
+@pytest.mark.parametrize(
+    ("state", "click_key", "method_name"),
+    [
+        (None, "test_run_start_evaluation", "start_evaluation"),
+        (INTERRUPTED, "test_run_continue_evaluation", "continue_evaluation"),
+    ],
+)
+@pytest.mark.parametrize(
+    "failure",
+    [
+        WorkflowStopped("partial results were persisted"),
+        ResultStoreError("persistence failed after a partial write"),
+    ],
+)
+def test_workflow_failure_paths_invalidate_conclusion_cache(
+    monkeypatch,
+    state,
+    click_key,
+    method_name,
+    failure,
+):
+    def fail(*_args):
+        raise failure
+
+    workflow = SimpleNamespace(
+        start_evaluation=lambda *_args: None,
+        continue_evaluation=lambda *_args: None,
+    )
+    setattr(workflow, method_name, fail)
+
+    _ui, _store, events = _render(
+        monkeypatch,
+        state,
+        click_key=click_key,
+        workflow=workflow,
+    )
+
+    assert "clear" in events
     assert "rerun" not in events
 
 
@@ -525,3 +568,14 @@ def test_maintenance_is_a_tertiary_popover_without_primary_actions(monkeypatch):
         "test_run_maintenance_open_samples",
     }
     assert all(item["type"] != "primary" for item in maintenance_buttons)
+
+
+def test_maintenance_import_uses_current_store_and_public_result_keys():
+    source = Path("src/ui/test_run.py").read_text(encoding="utf-8")
+    maintenance = source[source.index("def _render_evaluation_maintenance"):]
+
+    assert "result_store=store" in maintenance
+    assert "result.get('imported_count')" in maintenance
+    assert "result.get('skipped_count')" in maintenance
+    assert "result.get('imported')" not in maintenance
+    assert "result.get('skipped')" not in maintenance

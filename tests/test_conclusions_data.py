@@ -107,6 +107,41 @@ def test_transient_unavailable_conclusion_source_is_not_cached(monkeypatch):
     cd.load_conclusion_source.clear()
 
 
+def test_successful_conclusion_report_is_cached_with_a_short_ttl(monkeypatch):
+    from src.ui import conclusions_data as cd
+
+    calls = {"runs": 0}
+
+    def load_runs(*, suppress_errors=True):
+        calls["runs"] += 1
+        return pd.DataFrame()
+
+    monkeypatch.setattr(cd.cc, "load_evaluation_runs", load_runs)
+    monkeypatch.setattr(cd.cc, "load_live_scores", lambda *, suppress_errors=True: pd.DataFrame())
+    monkeypatch.setattr(
+        cd.cc,
+        "load_live_responses",
+        lambda *, allowed_case_ids=None, suppress_errors=True: pd.DataFrame(),
+    )
+    monkeypatch.setattr(
+        cd.cc,
+        "select_current_cohort_scores",
+        lambda runs, scores, *, allowed_case_ids=None: scores,
+    )
+    cd.load_conclusion_source.clear()
+
+    first = cd.load_conclusion_source(("C1",), ({"case_id": "C1"},), (), ())
+    second = cd.load_conclusion_source(("C1",), ({"case_id": "C1"},), (), ())
+
+    assert first.available is True
+    assert second.available is True
+    assert calls["runs"] == 1
+    assert 0 < cd.CONCLUSION_REPORT_CACHE_TTL_SECONDS <= 30
+    source = Path("src/ui/conclusions_data.py").read_text(encoding="utf-8")
+    assert "ttl=CONCLUSION_REPORT_CACHE_TTL_SECONDS" in source
+    cd.load_conclusion_source.clear()
+
+
 def test_conclusion_source_rebuilds_tuple_gold_records_for_evidence(monkeypatch):
     from src.ui import conclusions_data as cd
 

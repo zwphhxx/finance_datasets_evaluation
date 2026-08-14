@@ -204,6 +204,7 @@ def render_test_run_page(
                 workflow = build_workflow(result_store)
                 workflow.start_evaluation(evaluation_config)
             except WorkflowStopped as exc:
+                cd.clear_conclusions_caches()
                 display_status = stopped_status(
                     str(exc) or "评测已停止，未继续调用模型服务。"
                 )
@@ -212,6 +213,7 @@ def render_test_run_page(
                 ResultStoreUnavailableError,
                 ResultStoreError,
             ) as exc:
+                cd.clear_conclusions_caches()
                 display_status = stopped_status(
                     str(exc) or "评测已停止，未继续调用模型服务。"
                 )
@@ -245,6 +247,7 @@ def render_test_run_page(
                 workflow = build_workflow(result_store)
                 workflow.continue_evaluation(status.run_id, checkpoint_config)
             except WorkflowStopped as exc:
+                cd.clear_conclusions_caches()
                 display_status = stopped_status(
                     str(exc) or "评测已停止，未继续调用模型服务。"
                 )
@@ -253,6 +256,7 @@ def render_test_run_page(
                 ResultStoreUnavailableError,
                 ResultStoreError,
             ) as exc:
+                cd.clear_conclusions_caches()
                 display_status = stopped_status(
                     str(exc) or "评测已停止，未继续调用模型服务。"
                 )
@@ -425,11 +429,15 @@ def _render_evaluation_maintenance(store=None, status: EvaluationRunStatus | Non
                 type="secondary",
                 disabled=not rows,
             ):
-                result = sc.import_score_rows(rows, duplicate_action="skip")
+                result = sc.import_score_rows(
+                    rows,
+                    duplicate_action="skip",
+                    result_store=store,
+                )
                 cd.clear_conclusions_caches()
                 st.caption(
-                    f"已导入 {int(result.get('imported') or 0)} 条，"
-                    f"跳过 {int(result.get('skipped') or 0)} 条。"
+                    f"已导入 {int(result.get('imported_count') or 0)} 条，"
+                    f"跳过 {int(result.get('skipped_count') or 0)} 条。"
                 )
 
         st.markdown("**样本维护**")

@@ -344,6 +344,90 @@ class ResultStore:
         except SQLAlchemyError as exc:
             raise ResultStoreError("could not save score outcome") from exc
 
+    def import_formal_scores(
+        self,
+        rows: Iterable[Mapping[str, Any]],
+        *,
+        duplicate_action: str = "skip",
+    ) -> dict[str, Any]:
+        """Atomically import scores backed by a formal run and formal response."""
+        if duplicate_action not in {"skip", "update"}:
+            raise ResultStoreError("unsupported score import duplicate action")
+        payload = [
+            self._validated(
+                row,
+                "live_run_scores",
+                ("score_run_id", "run_id", "case_id", "eval_model"),
+            )
+            for row in rows
+        ]
+        imported = updated = skipped = 0
+        errors: list[str] = []
+        try:
+            with self.engine.begin() as connection:
+                for index, score in enumerate(payload, start=1):
+                    link_error = self._formal_score_import_link_error(connection, score)
+                    if link_error:
+                        skipped += 1
+                        errors.append(f"row {index}: {link_error}")
+                        continue
+                    score.pop("id", None)
+                    score.pop("created_at", None)
+                    score.pop("updated_at", None)
+                    existing_id = connection.execute(
+                        select(live_run_scores.c.id).where(
+                            live_run_scores.c.score_run_id == score["score_run_id"],
+                            live_run_scores.c.case_id == score["case_id"],
+                            live_run_scores.c.eval_model == score["eval_model"],
+                        )
+                    ).scalar_one_or_none()
+                    if existing_id is not None and duplicate_action == "skip":
+                        skipped += 1
+                        continue
+                    self._upsert(connection, live_run_scores, score)
+                    if existing_id is None:
+                        imported += 1
+                    else:
+                        updated += 1
+            return {
+                "imported_count": imported,
+                "updated_count": updated,
+                "skipped_count": skipped,
+                "errors": errors,
+            }
+        except SQLAlchemyError as exc:
+            raise ResultStoreError("could not import formal scores") from exc
+
+    @staticmethod
+    def _formal_score_import_link_error(
+        connection: Connection,
+        score: Mapping[str, Any],
+    ) -> str:
+        run_id = str(score["run_id"])
+        provider = connection.execute(
+            select(live_evaluation_runs.c.provider).where(
+                live_evaluation_runs.c.run_id == run_id
+            )
+        ).scalar_one_or_none()
+        if provider is None or str(provider).strip().lower() in {"demo", "mock"}:
+            return "matching formal evaluation run does not exist"
+
+        response_id = connection.execute(
+            select(live_run_responses.c.id).where(
+                live_run_responses.c.run_id == run_id,
+                live_run_responses.c.case_id == score["case_id"],
+                live_run_responses.c.model_name == score["eval_model"],
+                func.lower(func.coalesce(live_run_responses.c.run_status, "")) == "success",
+                func.lower(func.coalesce(live_run_responses.c.run_mode, "live")).notin_(("demo", "mock")),
+                func.lower(func.coalesce(live_run_responses.c.provider, "")).notin_(("demo", "mock")),
+                func.lower(func.coalesce(live_run_responses.c.status, "active")) != "inactive",
+                func.trim(func.coalesce(live_run_responses.c.answer_text, "")) != "",
+            )
+        ).scalar_one_or_none()
+        if response_id is None:
+            return "matching formal response does not exist"
+        return ""
+
     def _claim_run_statement(self, run_id: str, stale_before: Any):
         return (
             update(live_evaluation_runs)

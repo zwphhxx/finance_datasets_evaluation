@@ -16,6 +16,7 @@ import pandas as pd
 from app.db.repository import Repository
 from app.models.base import STATUS_FAILED, STATUS_SUCCESS, GenerationResult, ModelProvider
 from app.models.registry import get_provider
+from app.persistence import get_result_store
 from app.services import conclusions as cc
 from app.services import dataset_service as ds
 from app.services import eval_runner as er
@@ -728,6 +729,37 @@ class ScorePersistenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             target_db = Path(tmp) / "imported.db"
             ds.initialize_database(target_db, force=True)
+            runtime_store = get_result_store(target_db)
+            runtime_store.initialize_run(
+                {
+                    "run_id": "RUN-IMPORT-1",
+                    "provider": "siliconflow",
+                    "dataset_hash": "d" * 64,
+                    "prompt_hash": "p" * 64,
+                    "status": "completed",
+                },
+                [
+                    {
+                        "run_id": "RUN-IMPORT-1",
+                        "case_id": "CM-001",
+                        "model_id": "vendor/model-import",
+                        "provider": "siliconflow",
+                        "status": "queued",
+                    }
+                ],
+            )
+            runtime_store.save_run_outcome(
+                {
+                    "run_id": "RUN-IMPORT-1",
+                    "case_id": "CM-001",
+                    "model_name": "vendor/model-import",
+                    "provider": "siliconflow",
+                    "run_mode": "live",
+                    "run_status": "success",
+                    "answer_text": "正式回答",
+                },
+                queue_status="success",
+            )
             result = sc.import_score_rows(parsed["rows"], db_path=target_db)
             self.assertEqual(1, result["imported_count"])
             self.assertEqual(0, result["failed_count"])
@@ -744,6 +776,46 @@ class ScorePersistenceTests(unittest.TestCase):
             duplicate = sc.import_score_rows(parsed["rows"], duplicate_action="skip", db_path=target_db)
             self.assertEqual(0, duplicate["imported_count"])
             self.assertEqual(1, duplicate["skipped_count"])
+
+    def test_import_uses_explicit_runtime_result_store(self):
+        row = {
+            "score_run_id": "SCORE-IMPORT-STORE",
+            "run_id": "RUN-IMPORT-STORE",
+            "case_id": "CM-001",
+            "eval_model": "vendor/model-import",
+            "judge_model": "judge/x",
+            "judge_mode": "live",
+            "judge_status": "success",
+            "total_score": 75,
+            "review_status": "ai_final",
+        }
+
+        class CapturingStore:
+            def __init__(self):
+                self.calls = []
+
+            def import_formal_scores(self, rows, *, duplicate_action):
+                self.calls.append((rows, duplicate_action))
+                return {
+                    "imported_count": 1,
+                    "updated_count": 0,
+                    "skipped_count": 0,
+                    "errors": [],
+                }
+
+        store = CapturingStore()
+        result = sc.import_score_rows([row], result_store=store)
+
+        self.assertEqual(1, result["imported_count"])
+        self.assertEqual("skip", store.calls[0][1])
+        self.assertEqual("RUN-IMPORT-STORE", store.calls[0][0][0]["run_id"])
+
+    def test_import_default_path_has_no_legacy_repository_write(self):
+        source = Path("app/services/scorer.py").read_text(encoding="utf-8")
+        import_source = source[source.index("def import_score_rows("):source.index("# --------------------------------------------------------------------------- #\n# 内部工具")]
+
+        self.assertNotIn("Repository", import_source)
+        self.assertIn("result_store", import_source)
 
     def test_import_rejects_seed_models_and_sensitive_fields(self):
         bad_rows = [

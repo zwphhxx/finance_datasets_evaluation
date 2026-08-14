@@ -234,6 +234,7 @@ class FormalConclusionTests(unittest.TestCase):
         self.assertIn("导出 AI 评测结果", maintenance_source)
         self.assertIn("导入评分文件", maintenance_source)
         self.assertNotIn("从演示结果文件恢复", maintenance_source)
+        self.assertIn("result_store=result_store", maintenance_source)
 
     def test_load_live_responses_hides_demo_and_mock_history(self):
         rows = pd.DataFrame([
