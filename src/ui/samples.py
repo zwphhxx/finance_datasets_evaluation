@@ -120,6 +120,9 @@ _LEGACY_REQUIRED_CSV_COLUMNS = [
 ]
 
 _DIFFICULTY_OPTIONS = list(DIFFICULTY_LABELS.keys())
+_STREAMLIT_MARKDOWN_PUNCTUATION_RE = re.compile(
+    r"([!\"#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~])"
+)
 
 
 def _clean_text(value, fallback: str = "未标注") -> str:
@@ -868,7 +871,8 @@ def _select_sample(sample_id: str) -> None:
 
 def _sample_detail_action_label(sample_id: str) -> str:
     """返回可唯一识别的样本详情动作名。"""
-    return f"查看详情：{str(sample_id)}"
+    escaped_id = _STREAMLIT_MARKDOWN_PUNCTUATION_RE.sub(r"\\\1", str(sample_id))
+    return f"查看详情：{escaped_id}"
 
 
 def _format_source_status_caption(status: dict) -> str:
@@ -1252,15 +1256,6 @@ def _task_detail_html(task_prompt: str, business_context: str, output_requiremen
         _field_block_html("任务题", task_prompt),
         _field_block_html("业务背景", business_context),
         _field_block_html("输出要求", output_requirement),
-    ])
-
-
-def _gold_detail_html(gold_display: dict) -> str:
-    """返回完整 Gold 详情，供旧的非分页调用保持兼容。"""
-    return "".join([
-        _gold_answer_html(gold_display),
-        _quality_requirements_html(gold_display),
-        _review_focus_html(gold_display),
     ])
 
 

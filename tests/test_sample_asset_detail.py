@@ -7,7 +7,9 @@ import unittest.mock
 from app.services import dataset_service as ds
 from app.services import sample_repository as sr
 from src.ui.samples import (
-    _gold_detail_html,
+    _gold_answer_html,
+    _quality_requirements_html,
+    _review_focus_html,
     _task_detail_html,
     build_rubric_rows_for_display,
     build_sample_asset_sections,
@@ -125,23 +127,38 @@ class GoldAnswerDisplayTests(unittest.TestCase):
         self.assertEqual("无法解析的自由文本", display["fallback_text"])
         self.assertEqual("待补充", display["fields"]["标准结论"])
 
-    def test_gold_answer_detail_uses_document_reading_fields(self):
+    def test_archive_helpers_partition_gold_quality_and_review_fields(self):
         display = parse_gold_answer_for_display({
             "core_conclusion": "核心结论第一段\n\n核心结论第二段",
             "key_evidence": "关键依据",
             "must_have_points": ["覆盖点一", "覆盖点二"],
             "unacceptable_errors": ["错误一"],
             "boundary_conditions": "边界说明",
+            "manual_review_notes": "评审提示",
+            "scoring_focus": "评分关注点",
         })
 
-        html = _gold_detail_html(display)
+        gold_html = _gold_answer_html(display)
+        quality_html = _quality_requirements_html(display)
+        review_html = _review_focus_html(display)
 
-        self.assertIn('class="document-field"', html)
-        self.assertIn('class="document-field-title"', html)
-        self.assertIn('class="document-list"', html)
-        self.assertIn('class="document-list document-list-risk"', html)
-        self.assertIn("<p>核心结论第一段</p>", html)
-        self.assertIn("<p>核心结论第二段</p>", html)
+        self.assertIn('class="document-field"', gold_html)
+        self.assertIn("<p>核心结论第一段</p>", gold_html)
+        self.assertIn("<p>核心结论第二段</p>", gold_html)
+        self.assertIn("关键依据", gold_html)
+        self.assertNotIn("覆盖点一", gold_html)
+        self.assertNotIn("边界说明", gold_html)
+
+        self.assertIn('class="document-list"', quality_html)
+        self.assertIn('class="document-list document-list-risk"', quality_html)
+        self.assertIn("覆盖点一", quality_html)
+        self.assertIn("错误一", quality_html)
+        self.assertNotIn("核心结论第一段", quality_html)
+
+        self.assertIn("边界说明", review_html)
+        self.assertIn("评审提示", review_html)
+        self.assertIn("评分关注点", review_html)
+        self.assertNotIn("覆盖点一", review_html)
 
     def test_task_detail_uses_document_reading_fields(self):
         html = _task_detail_html("任务题第一段\n\n任务题第二段", "业务背景", "输出要求")
@@ -201,13 +218,24 @@ class AssetSectionTests(unittest.TestCase):
     def test_sample_detail_action_labels_are_unique_and_keep_raw_case_ids(self):
         from src.ui import samples as sample_ui
 
-        labels = [
-            sample_ui._sample_detail_action_label("CM-001"),
-            sample_ui._sample_detail_action_label("LEGAL/01 raw"),
+        raw_and_expected = [
+            ("CM-001", r"查看详情：CM\-001"),
+            ("<raw>", r"查看详情：\<raw\>"),
+            ("**A**", r"查看详情：\*\*A\*\*"),
+            ("[A](url)", r"查看详情：\[A\]\(url\)"),
+            (r"`A`\B", r"查看详情：\`A\`\\B"),
         ]
+        labels = [sample_ui._sample_detail_action_label(raw) for raw, _ in raw_and_expected]
 
-        self.assertEqual(["查看详情：CM-001", "查看详情：LEGAL/01 raw"], labels)
+        self.assertEqual([expected for _, expected in raw_and_expected], labels)
         self.assertEqual(len(labels), len(set(labels)))
+
+    def test_no_test_only_combined_gold_renderer_remains_in_product_source(self):
+        from pathlib import Path
+
+        source = Path("src/ui/samples.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("def _gold_detail_html", source)
 
     def test_asset_sections_have_required_order_and_prompt_boundary(self):
         sample = sr.Sample(
@@ -399,7 +427,7 @@ class AssetSectionTests(unittest.TestCase):
             sample_ui._render_sample_index([sample], {}, [])
 
         build_rows.assert_called_once_with([sample], {}, [])
-        self.assertEqual("查看详情：LEGAL/01 <raw>", button.call_args.args[0])
+        self.assertEqual(r"查看详情：LEGAL\/01 \<raw\>", button.call_args.args[0])
         select_sample.assert_called_once_with(sample.sample_id)
         scroll.assert_called_once_with("#fde-current-sample")
         html = "".join(rendered)
