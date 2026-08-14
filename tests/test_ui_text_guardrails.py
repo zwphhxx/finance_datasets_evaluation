@@ -247,7 +247,7 @@ class FormalConclusionStatusGuardrailTests(unittest.TestCase):
         text = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
         for phrase in [
             "暂无模型判断",
-            "发起评测",
+            "评测操作",
         ]:
             self.assertIn(phrase, text)
 

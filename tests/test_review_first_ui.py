@@ -77,10 +77,12 @@ def test_conclusions_use_responsive_selection_without_duplicate_chart():
 
     assert "themed_bar_chart" not in source
     assert "mobile-scroll-hint" not in source
-    assert 'key="conclusion_desktop_judgment"' in source
-    assert 'key="conclusion_mobile_judgment"' in source
-    assert "def _render_mobile_model_cards(" in source
-    assert 'request_scroll("#fde-model-details")' in source
+    assert 'key="conclusion_model_index"' in source
+    assert "report_index_row_html" in source
+    assert 'key="conclusion_desktop_judgment"' not in source
+    assert 'key="conclusion_mobile_judgment"' not in source
+    assert "def _render_mobile_model_cards(" not in source
+    assert 'request_scroll("#fde-evidence-index")' in source
     assert 'st.popover("数据维护"' in source
 
 

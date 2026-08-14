@@ -51,18 +51,44 @@ def report_section_html(index: str, label: str, title: str, body_html: str) -> s
     )
 
 
-def report_index_row_html(cells: Iterable[object], *, active: bool = False) -> str:
+def report_index_row_html(
+    cells: Iterable[object],
+    *,
+    labels: Iterable[object] | None = None,
+    active: bool = False,
+    header: bool = False,
+) -> str:
     """Return a single semantic review row used on desktop and mobile alike."""
-    classes = "report-index-row report-index-row--active" if active else "report-index-row"
+    classes = ["report-index-row"]
+    if active:
+        classes.append("report-index-row--active")
+    if header:
+        classes.append("report-index-row--header")
+    class_name = " ".join(classes)
+    values = tuple(cells)
+    cell_labels = tuple(labels or ())
     cell_html = "".join(
-        f'<div class="report-index-cell">{_escaped(cell)}</div>' for cell in cells
+        '<div class="report-index-cell"'
+        + (
+            f' data-label="{_escaped(cell_labels[index])}"'
+            if index < len(cell_labels) and str(cell_labels[index]).strip()
+            else ""
+        )
+        + f">{_escaped(cell)}</div>"
+        for index, cell in enumerate(values)
     )
-    return f'<div class="{classes}">{cell_html}</div>'
+    return f'<div class="{class_name}">{cell_html}</div>'
 
 
-def evidence_index_html(items: Iterable[EvidenceItem]) -> str:
+def evidence_index_html(
+    items: Iterable[EvidenceItem],
+    *,
+    include_full_details: bool = True,
+) -> str:
     """Render the linear evidence ledger with every item field escaped."""
-    rows = "".join(_evidence_item_html(item) for item in items)
+    rows = "".join(
+        _evidence_item_html(item, include_full_details=include_full_details) for item in items
+    )
     return (
         '<section class="evidence-index" aria-label="代表样本证据索引">'
         f'<ol class="evidence-index-list">{rows}</ol>'
@@ -78,16 +104,23 @@ def render_scope_ledger(items: Iterable[tuple[object, object]]) -> None:
     render_html(scope_ledger_html(items))
 
 
-def _evidence_item_html(item: EvidenceItem) -> str:
+def _evidence_item_html(
+    item: EvidenceItem,
+    *,
+    include_full_details: bool = True,
+) -> str:
     details = (
         _detail_html("总分", item.total_score)
         + _detail_html("最弱维度", item.weakest_dimension)
         + _dimension_detail_html(item.dimension_scores)
-        + _detail_html("评分理由", item.rationale)
-        + _detail_html("审阅备注", item.review_note)
-        + _detail_html("模型回答", item.answer_text)
-        + _detail_html("专业标准答案", item.gold_answer)
     )
+    if include_full_details:
+        details += (
+            _detail_html("评分理由", item.rationale)
+            + _detail_html("审阅备注", item.review_note)
+            + _detail_html("模型回答", item.answer_text)
+            + _detail_html("专业标准答案", item.gold_answer)
+        )
     return (
         '<li class="evidence-index-item">'
         '<span class="evidence-index-rail" aria-hidden="true"></span>'

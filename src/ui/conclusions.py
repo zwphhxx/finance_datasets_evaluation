@@ -5,30 +5,37 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import json
+from collections.abc import Mapping, Sequence
 from datetime import datetime
-from html import escape
+from hashlib import sha256
 
 import pandas as pd
 import streamlit as st
 
-from app.services import conclusions as cc
 from app.services import dataset_service as ds
 from app.services import scorer as sc
+from app.services.conclusion_read_model import ConclusionReport
+from app.services.evidence_index import EvidenceItem
 from src.ui import conclusions_data as cd
 from src.ui.components import (
-    render_badge,
+    PROJECT_DISPLAY_NAME,
     render_empty_state,
     render_executive_takeaway,
     render_html,
     render_inline_status,
+    render_markdown_block,
     render_markdown_detail_panel,
     render_numbered_section,
-    render_page_heading,
     render_persistence_status,
-    render_selection_echo,
 )
 from src.ui.page_config import get_page_config
+from src.ui.report_components import (
+    evidence_index_html,
+    render_report_masthead,
+    render_scope_ledger,
+    report_index_row_html,
+)
 from src.ui.scroll import request_scroll
 
 
@@ -56,32 +63,42 @@ def render_conclusions_page(data_bundle: dict) -> None:
     )) if isinstance(gold_map, Mapping) else ()
     dimensions = tuple(ds.get_rubric_dimensions())
 
-    with st.spinner("正在汇总 AI 评分结果…"):
-        source = cd.load_conclusion_source(
-            allowed_case_ids,
-            task_records,
-            gold_records,
-            dimensions,
-        )
-    report = source.report
-    formal_scores = report.formal_scores if report is not None else pd.DataFrame()
-    formal_responses = report.formal_responses if report is not None else pd.DataFrame()
-    model_summaries = report.model_summaries if report is not None else ()
-    scope = report.scope if report is not None else None
-    answer_rows = cc.build_answer_detail_rows(formal_scores, formal_responses)
+    source = cd.load_conclusion_source(
+        allowed_case_ids,
+        task_records,
+        gold_records,
+        dimensions,
+    )
 
     config = get_page_config("conclusions")
-    render_page_heading(config.title, config.question)
+    render_report_masthead(PROJECT_DISPLAY_NAME, config.question)
     if not source.available:
         render_persistence_status(source.message)
-    _render_data_source_notice(formal_scores, scope)
+        return
+    report = source.report
+    if report is None:
+        render_persistence_status(source.message)
+        return
+    formal_scores = report.formal_scores
+    formal_responses = report.formal_responses
+    model_summaries = report.model_summaries
 
+    render_scope_ledger(
+        [
+            ("样本范围", f"{report.scope.sample_count} 个专业任务样本"),
+            ("比较范围", f"{report.scope.model_count} 个模型"),
+            ("证据记录", f"{report.scope.formal_score_count} 条正式评分"),
+            ("数据口径", report.scope.data_basis),
+        ]
+    )
     _render_executive_conclusion(model_summaries)
-    _render_model_recommendations(model_summaries)
-    _render_model_issue_details(model_summaries, answer_rows)
+    selected_model = _render_model_recommendations(model_summaries)
+    _render_evidence_index(report, selected_model)
+    _render_all_records(report, formal_scores, formal_responses)
+    _render_data_source_notice(report.scope)
 
 
-def _render_executive_conclusion(model_summaries: list[dict]) -> None:
+def _render_executive_conclusion(model_summaries: Sequence[Mapping[str, object]]) -> None:
     if not model_summaries:
         return
     item = model_summaries[0]
@@ -92,25 +109,13 @@ def _render_executive_conclusion(model_summaries: list[dict]) -> None:
 # --------------------------------------------------------------------------- #
 # 数据源与导入导出
 # --------------------------------------------------------------------------- #
-def _render_data_source_notice(formal_scores: pd.DataFrame, scope) -> None:
-    models = int(scope.model_count) if scope is not None else 0
-    cases = int(scope.sample_count) if scope is not None else 0
-    formal_count = int(scope.formal_score_count) if scope is not None else 0
-    coverage = f"（{models} 个模型 × {cases} 个样本）" if formal_count else ""
-    source_line = (
-        "当前结论来源：评测运行数据｜"
-        f"AI 评分 {formal_count} 条{coverage}｜"
-        "排除项 0 条 · "
-        "仅代表当前样本范围内的自动评测结果。"
-    )
+def _render_data_source_notice(scope) -> None:
+    source_line = f"当前结论来源：评测运行数据｜{scope.data_basis}｜仅代表当前样本范围内的自动评测结果。"
     with st.container(key="conclusion_data_notice"):
         st.caption(source_line)
     with st.container(key="conclusion_maintenance_entry"):
         with st.popover("数据维护", type="tertiary", width="stretch"):
             _render_score_data_maintenance_controls()
-    if not ds.database_ready():
-        st.caption("评分数据暂不可用。请先在发起评测页运行评测，或通过数据维护导入评分文件。")
-
     message = st.session_state.get("conclusion_score_io_message")
     if isinstance(message, dict) and message.get("text"):
         level = str(message.get("level") or "info")
@@ -176,6 +181,7 @@ def _render_score_data_maintenance_controls() -> None:
             cd.clear_conclusions_caches()
             st.rerun()
 
+
 def _record_score_io_message(result: dict) -> None:
     level = "success" if result.get("imported_count") or result.get("updated_count") else "warning"
     st.session_state["conclusion_score_io_message"] = {
@@ -187,7 +193,9 @@ def _record_score_io_message(result: dict) -> None:
 # --------------------------------------------------------------------------- #
 # 01 模型当前判断
 # --------------------------------------------------------------------------- #
-def _render_model_recommendations(model_summaries: list[dict]) -> None:
+def _render_model_recommendations(
+    model_summaries: Sequence[Mapping[str, object]],
+) -> str:
     render_numbered_section(
         "01",
         "模型当前判断",
@@ -195,77 +203,54 @@ def _render_model_recommendations(model_summaries: list[dict]) -> None:
     )
 
     if not model_summaries:
-        render_empty_state("暂无模型判断。请先在发起评测页运行评测。")
-        if st.button("发起评测", key="conclusion_goto_test_run_models", type="secondary"):
+        render_empty_state("暂无模型判断。请先在评测操作页运行评测。")
+        if st.button("评测操作", key="conclusion_goto_test_run_models", type="secondary"):
             st.session_state.current_page = "test_run"
             st.rerun()
-        return
+        return ""
 
-    rows = [_recommendation_row(item) for item in model_summaries]
-    st.caption("选择模型，在下方 02 区查看该模型的使用边界与回答。")
-    with st.container(key="conclusion_desktop_judgment"):
-        event = st.dataframe(
-            pd.DataFrame(rows),
-            hide_index=True,
-            use_container_width=True,
-            on_select="rerun",
-            selection_mode="single-row",
-            key="conclusion_model_judgment_table",
-            column_config={
-                "模型": st.column_config.TextColumn("模型", width="medium"),
-                "AI 评分样本数": st.column_config.NumberColumn("AI 评分样本数", width="small"),
-                "平均分": st.column_config.NumberColumn("平均分", format="%.1f", width="small"),
-                "当前判断": st.column_config.TextColumn("当前判断", width="medium"),
-                "主要依据": st.column_config.TextColumn("主要依据", width="large"),
-            },
-        )
-        selected_rows = getattr(getattr(event, "selection", None), "rows", None) or []
-        if selected_rows and 0 <= selected_rows[0] < len(model_summaries):
-            chosen = model_summaries[selected_rows[0]]
-            chosen_name = str(chosen.get("display_name") or chosen.get("model_name") or "")
-            if st.session_state.get("conclusion_selected_model") != chosen_name:
-                st.session_state["conclusion_selected_model"] = chosen_name
-                request_scroll("#fde-model-details")
-    with st.container(key="conclusion_mobile_judgment"):
-        _render_mobile_model_cards(model_summaries)
-    current_choice = st.session_state.get("conclusion_selected_model")
-    if current_choice:
-        render_selection_echo(f"已选 {current_choice}", "#fde-model-details", "详情见下方 02 ↓")
-
-
-def _render_mobile_model_cards(model_summaries: list[dict]) -> None:
-    """Render model judgment rows as tap-friendly cards on narrow screens."""
-    current = str(st.session_state.get("conclusion_selected_model") or "")
-    for item in model_summaries:
-        row = _recommendation_row(item)
-        display = str(row["模型"])
-        active_class = " mobile-select-card-active" if display == current else ""
-        with st.container(border=True, key=f"conclusion_mobile_card_{_safe_key(display)}"):
-            render_html(
-                '<div class="mobile-select-card' + active_class + '">'
-                '<div class="mobile-select-card-head">'
-                f'<strong>{escape(display)}</strong>'
-                f'<span>{float(row["平均分"]):.1f} 分</span>'
-                "</div>"
-                f'<div class="mobile-select-card-title">{escape(str(row["当前判断"]))}</div>'
-                '<div class="mobile-select-card-meta mobile-select-card-meta-model">'
-                f'<span class="mobile-select-card-count">{int(row["AI 评分样本数"])} 个样本</span>'
-                f'<span class="mobile-select-card-basis">{escape(str(row["主要依据"]))}</span>'
-                "</div>"
-                "</div>"
+    raw_ids = tuple(str(item.get("model_name") or "") for item in model_summaries)
+    current = str(st.session_state.get("conclusion_selected_model_id") or "")
+    selected_model = current if current in raw_ids else raw_ids[0]
+    labels = ("模型", "样本数／平均分", "当前判断", "主要依据")
+    st.caption("选择模型，在下方证据索引中查证代表样本。")
+    with st.container(key="conclusion_model_index"):
+        render_html('<div class="conclusion-model-index">' + report_index_row_html(labels, header=True) + "</div>")
+        for item in model_summaries:
+            raw_model_id = str(item.get("model_name") or "")
+            row = _recommendation_row(item)
+            values = (
+                row["模型"],
+                f"{int(row['AI 评分样本数'])} 个／{float(row['平均分']):.1f} 分",
+                row["当前判断"],
+                row["主要依据"],
             )
-            if st.button(
-                "查看回答",
-                key=f"conclusion_mobile_select_{_safe_key(display)}",
-                type="tertiary",
-                use_container_width=True,
-            ):
-                st.session_state["conclusion_selected_model"] = display
-                request_scroll("#fde-model-details")
-                st.rerun()
+            render_html(
+                '<div class="conclusion-model-index">'
+                + report_index_row_html(
+                    values,
+                    labels=labels,
+                    active=raw_model_id == selected_model,
+                )
+                + "</div>"
+            )
+            with st.container(key=f"conclusion_model_action_{_stable_key(raw_model_id)}"):
+                if st.button(
+                    "查看证据",
+                    key=f"conclusion_select_model_{_stable_key(raw_model_id)}",
+                    type="tertiary",
+                ):
+                    _select_model_evidence(raw_model_id)
+                    st.rerun()
+    return selected_model
 
 
-def _recommendation_row(item: dict) -> dict[str, object]:
+def _select_model_evidence(model_id: str) -> None:
+    st.session_state["conclusion_selected_model_id"] = str(model_id)
+    request_scroll("#fde-evidence-index")
+
+
+def _recommendation_row(item: Mapping[str, object]) -> dict[str, object]:
     return {
         "模型": str(item.get("display_name") or item.get("model_name") or "未标注模型"),
         "AI 评分样本数": int(item.get("sample_count") or 0),
@@ -276,93 +261,161 @@ def _recommendation_row(item: dict) -> dict[str, object]:
 
 
 # --------------------------------------------------------------------------- #
-# 02 模型回答明细
+# 02 证据索引
 # --------------------------------------------------------------------------- #
-def _render_model_issue_details(
-    model_summaries: list[dict],
-    answer_rows: list[dict],
+def _render_evidence_index(
+    report: ConclusionReport,
+    selected_model: str,
 ) -> None:
-    render_html('<a id="fde-model-details"></a>')
+    render_html('<a id="fde-evidence-index"></a>')
     render_numbered_section(
         "02",
-        "模型回答明细",
-        "点击 01 表格行切换模型，查看该模型在各样本上的回答。",
+        "证据索引",
+        "从模型判断进入代表样本，查看专业标准答案、模型回答和评分理由。",
     )
-
-    if not model_summaries:
-        st.caption("暂无模型详情。请先完成评测。")
+    if not selected_model:
         return
+    items = tuple(report.evidence_by_model.get(selected_model, ()))
+    if not items:
+        st.caption("当前模型暂无代表样本证据。")
+        return
+    for item in items:
+        record_key = _stable_key(item.run_id, item.case_id, item.model_name)
+        with st.container(key=f"conclusion_evidence_record_{record_key}"):
+            render_html(evidence_index_html([item], include_full_details=False))
+            with st.container(key=f"conclusion_evidence_actions_{record_key}"):
+                action_columns = st.columns(3, gap="small")
+                with action_columns[0]:
+                    if st.button(
+                        "查看专业标准答案",
+                        key=f"conclusion_evidence_gold_{record_key}",
+                        type="tertiary",
+                        use_container_width=True,
+                    ):
+                        _render_gold_evidence_dialog(item)
+                with action_columns[1]:
+                    if st.button(
+                        "查看模型回答全文",
+                        key=f"conclusion_evidence_answer_{record_key}",
+                        type="tertiary",
+                        use_container_width=True,
+                    ):
+                        _render_answer_evidence_dialog(item)
+                with action_columns[2]:
+                    if st.button(
+                        "查看评分理由",
+                        key=f"conclusion_evidence_rationale_{record_key}",
+                        type="tertiary",
+                        use_container_width=True,
+                    ):
+                        _render_rationale_evidence_dialog(item)
 
-    selected = model_summaries[0]
-    if len(model_summaries) > 1:
-        options = {
-            str(item.get("display_name") or item.get("model_name") or "未标注模型"): item
-            for item in model_summaries
-        }
-        chosen = st.session_state.get("conclusion_selected_model")
-        if chosen in options:
-            selected = options[chosen]
 
-    _render_issue_markdown(selected)
-    _render_model_answer_details(selected, answer_rows)
+@st.dialog("专业标准答案", width="large")
+def _render_gold_evidence_dialog(item: EvidenceItem) -> None:
+    render_html(render_markdown_block(_gold_evidence_markdown(item)))
 
 
-def _render_issue_markdown(item: dict) -> None:
-    display = str(item.get("display_name") or item.get("model_name") or "未标注模型")
-    judgment = _current_judgment(item)
-    usage = str(item.get("usage_advice") or "请结合评分依据和业务边界判断。")
-    render_html(
-        '<div class="model-boundary-line">'
-        f"<strong>{escape(display)}</strong>"
-        f"{render_badge(judgment, _judgment_tone(judgment))}"
-        f'<span class="model-boundary-usage">使用边界：{escape(usage)}</span>'
-        "</div>"
-    )
+@st.dialog("模型回答全文", width="large")
+def _render_answer_evidence_dialog(item: EvidenceItem) -> None:
+    render_html(render_markdown_block(_answer_evidence_markdown(item)))
 
 
-def _render_model_answer_details(
-    selected_model: dict,
-    answer_rows: list[dict],
+@st.dialog("评分理由", width="large")
+def _render_rationale_evidence_dialog(item: EvidenceItem) -> None:
+    render_html(render_markdown_block(_rationale_evidence_markdown(item)))
+
+
+def _gold_evidence_markdown(item: EvidenceItem) -> str:
+    return _structured_markdown(item.gold_answer)
+
+
+def _answer_evidence_markdown(item: EvidenceItem) -> str:
+    return str(item.answer_text or "")
+
+
+def _rationale_evidence_markdown(item: EvidenceItem) -> str:
+    rationale = _structured_markdown(item.rationale)
+    review_note = str(item.review_note or "—")
+    return f"**评分理由**\n\n{rationale}\n\n**审阅备注**\n\n{review_note}"
+
+
+def _structured_markdown(value: object) -> str:
+    if isinstance(value, Mapping) or (isinstance(value, Sequence) and not isinstance(value, (str, bytes))):
+        serialized = json.dumps(value, ensure_ascii=False, indent=2, default=str)
+        return f"```json\n{serialized}\n```"
+    return str(value or "")
+
+
+# --------------------------------------------------------------------------- #
+# 全部正式评测记录
+# --------------------------------------------------------------------------- #
+def _render_all_records(
+    report: ConclusionReport,
+    formal_scores: pd.DataFrame | None = None,
+    formal_responses: pd.DataFrame | None = None,
 ) -> None:
-    model_name = str(selected_model.get("model_name") or "")
-    rows = [
-        row
-        for row in answer_rows
-        if str(row.get("model_name") or "") == model_name
+    with st.expander("查看全部评测记录", expanded=False):
+        score_frame = report.formal_scores if formal_scores is None else formal_scores
+        response_frame = report.formal_responses if formal_responses is None else formal_responses
+        score_rows = score_frame.to_dict("records")
+        response_rows = response_frame.to_dict("records")
+        if not score_rows:
+            st.caption("当前没有可查看的正式评测记录。")
+            return
+        response_by_key = {
+            (
+                str(row.get("run_id") or ""),
+                str(row.get("case_id") or ""),
+                str(row.get("model_name") or ""),
+            ): row
+            for row in response_rows
+        }
+        selected_index = st.selectbox(
+            "选择评测记录",
+            options=list(range(len(score_rows))),
+            format_func=lambda index: _formal_record_label(score_rows[index]),
+            key="conclusion_all_records_select",
+        )
+        score = score_rows[int(selected_index)]
+        key = (
+            str(score.get("run_id") or ""),
+            str(score.get("case_id") or ""),
+            str(score.get("eval_model") or ""),
+        )
+        response = response_by_key.get(key, {})
+        answer_text = str(response.get("answer_text") or "")
+        render_markdown_detail_panel(
+            "模型回答",
+            answer_text or "暂无模型回答。",
+            meta=f"{key[1]}｜{key[2]}",
+        )
+        render_markdown_detail_panel(
+            "评分维度与理由",
+            _formal_score_markdown(score),
+            meta=f"总分：{score.get('total_score') if score.get('total_score') is not None else '—'}",
+        )
+
+
+def _formal_record_label(row: Mapping[str, object]) -> str:
+    return f"{row.get('case_id') or '—'}｜{row.get('eval_model') or '—'}"
+
+
+def _formal_score_markdown(row: Mapping[str, object]) -> str:
+    dimension_lines = [
+        f"- {field}：{value}"
+        for field, value in row.items()
+        if str(field).endswith("_score") and field != "total_score"
     ]
-    if not rows:
-        st.caption("当前模型暂无可查看的回答记录。")
-        return
-
-    selected_index = st.selectbox(
-        "选择样本查看回答",
-        options=list(range(len(rows))),
-        format_func=lambda index: (
-            f"{rows[index]['case_id']}｜{_answer_score_label(rows[index])}"
-        ),
-        key=f"conclusion_answer_select_{_safe_key(model_name)}",
-    )
-    row = rows[int(selected_index)]
-    answer_text = str(row.get("answer_text") or "").strip()
-    render_markdown_detail_panel(
-        title=f"{row['case_id']}｜{row['display_name']}",
-        meta=f"运行批次：{row['run_id']}",
-        markdown_text=(
-            f"**模型回答**\n\n{answer_text}"
-            if answer_text
-            else "**模型回答**\n\n暂无模型回答。"
-        ),
-    )
+    rationale = _structured_markdown(row.get("rationale"))
+    review_note = str(row.get("review_note") or "—")
+    dimensions = "\n".join(dimension_lines) or "—"
+    return f"{dimensions}\n\n**评分理由**\n\n{rationale}\n\n**审阅备注**\n\n{review_note}"
 
 
-def _answer_score_label(row: dict) -> str:
-    value = row.get("total_score")
-    return "未评分" if value is None else f"{float(value):.0f}分"
-
-
-def _safe_key(value: object) -> str:
-    text = str(value or "")
-    return "".join(char if char.isalnum() else "_" for char in text)
+def _stable_key(*values: object) -> str:
+    payload = "\x1f".join(str(value or "") for value in values)
+    return sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
 def _current_judgment(item: dict) -> str:

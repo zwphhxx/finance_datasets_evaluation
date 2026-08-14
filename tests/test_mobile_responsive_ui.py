@@ -73,6 +73,20 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         )
         self.assertIn("overflow-y: auto", mobile_css)
 
+    def test_mobile_report_masthead_keeps_the_first_judgment_in_reach(self):
+        from src.ui.report_styles import REPORT_STYLE_CSS
+
+        mobile_css = REPORT_STYLE_CSS.split("@media (max-width: 760px)", 1)[1]
+        masthead_rule = mobile_css.split(".report-masthead {", 1)[1].split("}", 1)[0]
+        title_rule = mobile_css.split(
+            '[data-testid="stMarkdownContainer"] .report-masthead-title {', 1
+        )[1].split("}", 1)[0]
+
+        self.assertIn("padding: 0.85rem 0 0.95rem", masthead_rule)
+        self.assertIn("margin: 0.4rem 0 1rem", masthead_rule)
+        self.assertIn("font-size: 1.8rem !important", title_rule)
+        self.assertIn("padding: 0 !important", title_rule)
+
     def test_consulting_report_regions_adapt_on_mobile(self):
         css = self._responsive_css()
         mobile_css = css.split(
@@ -265,16 +279,19 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         )
         self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", mobile_css)
 
-    def test_mobile_model_metadata_is_two_columns_and_clamps_basis(self):
-        css = self._responsive_css()
-        source = (PROJECT_ROOT / "src" / "ui" / "conclusions.py").read_text(encoding="utf-8")
+    def test_mobile_model_index_reflows_the_same_semantic_rows(self):
+        from src.ui.report_styles import REPORT_STYLE_CSS
 
-        self.assertIn("mobile-select-card-meta-model", source)
-        self.assertIn("mobile-select-card-count", source)
-        self.assertIn("mobile-select-card-basis", source)
-        self.assertIn(".mobile-select-card-meta-model", css)
-        self.assertIn("white-space: nowrap", css)
-        self.assertIn("-webkit-line-clamp: 2", css)
+        source = (PROJECT_ROOT / "src" / "ui" / "conclusions.py").read_text(encoding="utf-8")
+        mobile_css = REPORT_STYLE_CSS.split("@media (max-width: 760px)", 1)[1]
+
+        self.assertIn("report_index_row_html", source)
+        self.assertNotIn("_render_mobile_model_cards", source)
+        self.assertNotIn("mobile-select-card", source)
+        self.assertIn(".conclusion-model-index .report-index-row", mobile_css)
+        self.assertIn(".report-index-cell::before", mobile_css)
+        self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", mobile_css)
+        self.assertNotIn("min-width: 44rem", mobile_css)
 
     def test_mobile_popover_triggers_are_real_44px_touch_targets(self):
         css = self._responsive_css()

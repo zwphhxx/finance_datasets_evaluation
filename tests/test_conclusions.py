@@ -17,9 +17,9 @@ from unittest.mock import patch
 
 import pandas as pd
 
+from app.persistence.result_store import ResultStoreError
 from app.services import conclusions as cc
 from app.services.conclusion_read_model import build_conclusion_report
-from app.persistence.result_store import ResultStoreError
 from src.data_service import load_all_data
 from src.ui.navigation import PAGES
 from src.ui.page_config import PAGE_CONFIG_BY_KEY
@@ -478,17 +478,14 @@ class AnswerDetailJoinTests(unittest.TestCase):
             source.index("def render_conclusions_page"):
             source.index("# --------------------------------------------------------------------------- #")
         ]
-        detail_source = source[
-            source.index("def _render_model_issue_details"):
-        ]
+        detail_source = source[source.index("def _render_all_records"):]
 
         self.assertIn("cd.load_conclusion_source(", render_source)
-        self.assertIn("formal_responses", render_source)
-        self.assertIn("cc.build_answer_detail_rows", render_source)
-        self.assertIn("answer_rows", render_source)
-        self.assertIn('"选择样本查看回答"', detail_source)
+        self.assertIn("report.formal_responses", detail_source)
+        self.assertIn("report.formal_scores", detail_source)
+        self.assertIn('"查看全部评测记录"', detail_source)
         self.assertIn("render_markdown_detail_panel", detail_source)
-        self.assertIn('row.get("answer_text")', detail_source)
+        self.assertIn("answer_text", detail_source)
 
     def test_conclusion_page_displays_persistence_outage(self):
         source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
@@ -500,7 +497,7 @@ class AnswerDetailJoinTests(unittest.TestCase):
         self.assertIn("if not source.available:", render_source)
         self.assertIn("source.message", render_source)
         self.assertIn("render_persistence_status", render_source)
-        self.assertIn('st.spinner("正在汇总 AI 评分结果…")', render_source)
+        self.assertNotIn('st.spinner("正在汇总 AI 评分结果…")', render_source)
         self.assertNotIn("首次加载可能需要半分钟", render_source)
 
 
@@ -603,7 +600,11 @@ class RenderTests(unittest.TestCase):
         )
         self.assertLess(
             page_source.index("_render_model_recommendations"),
-            page_source.index("_render_model_issue_details"),
+            page_source.index("_render_evidence_index"),
+        )
+        self.assertLess(
+            page_source.index("_render_evidence_index"),
+            page_source.index("_render_all_records"),
         )
 
     def test_executive_conclusion_reuses_existing_model_judgment(self):

@@ -299,7 +299,10 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertNotIn("status-badge", source)
         self.assertNotIn("review-risk-note", source)
         self.assertNotIn("render_evidence_panel", source)
-        self.assertNotIn("st.expander", source)
+        self.assertEqual(1, source.count("st.expander("))
+        all_records = source[source.index("def _render_all_records"):]
+        self.assertIn('st.expander("查看全部评测记录"', all_records)
+        self.assertNotIn("_render_model_issue_details", source)
 
     def test_review_uses_current_component_surface(self):
         import src.ui.components as components

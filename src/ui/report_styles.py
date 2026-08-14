@@ -9,8 +9,11 @@ REPORT_STYLE_CSS = r"""
     border-bottom: 1px solid var(--fde-line-strong);
     border-top: 2px solid var(--fde-ink);
     color: var(--fde-ink);
+    display: block !important;
+    height: auto !important;
     margin: 0.75rem 0 1.5rem;
     padding: 1.25rem 0 1.35rem;
+    visibility: visible !important;
 }
 .report-eyebrow {
     color: var(--fde-gold);
@@ -20,15 +23,17 @@ REPORT_STYLE_CSS = r"""
     line-height: 1.4;
     margin: 0 0 0.48rem;
 }
-.report-masthead-title {
+.report-masthead-title,
+[data-testid="stMarkdownContainer"] .report-masthead-title {
     color: var(--fde-ink);
     font-family: var(--fde-serif);
-    font-size: clamp(2rem, 4.5vw, 3.8rem);
+    font-size: clamp(2rem, 4.5vw, 3.8rem) !important;
     font-weight: 650;
     letter-spacing: -0.025em;
-    line-height: 1.13;
+    line-height: 1.13 !important;
     margin: 0;
     max-width: 52rem;
+    padding: 0 !important;
 }
 .report-masthead-description {
     color: var(--fde-muted);
@@ -81,11 +86,13 @@ REPORT_STYLE_CSS = r"""
     padding: 1.25rem 0 0;
 }
 .report-section-heading {
-    display: grid;
+    display: grid !important;
     gap: 1rem;
     grid-template-columns: 3.8rem minmax(0, 1fr);
+    height: auto !important;
     margin-bottom: 1.05rem;
     min-width: 0;
+    visibility: visible !important;
 }
 .report-section-index {
     color: var(--fde-gold);
@@ -102,13 +109,15 @@ REPORT_STYLE_CSS = r"""
     line-height: 1.4;
     margin: 0 0 0.22rem;
 }
-.report-section-title {
+.report-section-title,
+[data-testid="stMarkdownContainer"] .report-section-title {
     color: var(--fde-ink);
     font-family: var(--fde-serif);
     font-size: 1.55rem;
     font-weight: 650;
     line-height: 1.28;
     margin: 0;
+    padding: 0 !important;
 }
 .report-section-body {
     color: var(--fde-text);
@@ -147,6 +156,27 @@ REPORT_STYLE_CSS = r"""
 }
 .report-index-cell:last-child {
     padding-right: 0;
+}
+.report-index-cell::before {
+    display: none;
+}
+.conclusion-model-index .report-index-row {
+    grid-auto-flow: initial;
+    grid-template-columns:
+        minmax(0, 1.05fr)
+        minmax(0, 0.82fr)
+        minmax(0, 1.2fr)
+        minmax(0, 2fr);
+}
+.st-key-conclusion_model_index [class*="st-key-conclusion_model_action_"] {
+    border-bottom: 1px solid var(--fde-line);
+    display: flex;
+    justify-content: flex-end;
+    padding: 0.25rem 0 0.6rem;
+}
+.st-key-conclusion_model_index [class*="st-key-conclusion_model_action_"] .stButton > button {
+    min-height: 2.25rem;
+    width: auto;
 }
 .evidence-index {
     border-top: 1px solid var(--fde-line-strong);
@@ -249,10 +279,38 @@ REPORT_STYLE_CSS = r"""
     min-width: 0;
     overflow-wrap: anywhere;
 }
+[class*="st-key-conclusion_evidence_actions_"] [data-testid="stHorizontalBlock"] {
+    display: grid;
+    gap: 0.45rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+[class*="st-key-conclusion_evidence_actions_"] [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+    min-width: 0;
+    width: auto !important;
+}
+[class*="st-key-conclusion_evidence_actions_"] .stButton > button {
+    min-height: 44px;
+    white-space: normal;
+}
 @media (max-width: 760px) {
     .stApp .block-container {
         min-width: 0;
         padding-bottom: max(5.5rem, env(safe-area-inset-bottom));
+    }
+    .report-masthead {
+        margin: 0.4rem 0 1rem;
+        padding: 0.85rem 0 0.95rem;
+    }
+    .report-masthead-title,
+    [data-testid="stMarkdownContainer"] .report-masthead-title {
+        font-size: 1.8rem !important;
+        line-height: 1.16 !important;
+        padding: 0 !important;
+    }
+    .report-masthead-description {
+        font-size: 0.92rem;
+        line-height: 1.55;
+        margin-top: 0.55rem;
     }
     .report-masthead,
     .report-ledger,
@@ -294,8 +352,20 @@ REPORT_STYLE_CSS = r"""
         grid-auto-flow: row;
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+    .conclusion-model-index .report-index-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
     .report-index-cell {
         padding: 0.55rem 0.45rem;
+    }
+    .report-index-cell::before {
+        color: var(--fde-muted);
+        content: attr(data-label);
+        display: block;
+        font-size: 0.68rem;
+        letter-spacing: 0.04em;
+        line-height: 1.35;
+        margin-bottom: 0.12rem;
     }
     .report-index-cell:nth-child(odd) {
         padding-left: 0;
