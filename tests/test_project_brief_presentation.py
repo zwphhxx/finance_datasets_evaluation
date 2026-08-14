@@ -92,7 +92,7 @@ class CaseStudyPresentationTests(unittest.TestCase):
         original = components.render_html
         try:
             components.render_html = lambda html, container=None: captured.append(str(html))
-            components.render_section_heading("02", "样本列表", "展示当前查询结果。", variant="page")
+            components.render_section_heading("02", "样本列表", "展示当前查询结果。")
         finally:
             components.render_html = original
 

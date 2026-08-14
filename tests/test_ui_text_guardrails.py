@@ -31,7 +31,7 @@ VISIBLE_UI_FILES = [
     Path("src/ui/evaluation_results.py"),
 ]
 
-_VISIBLE_TEXT_CALLS = {
+_STREAMLIT_VISIBLE_METHODS = {
     "button",
     "caption",
     "markdown",
@@ -54,6 +54,8 @@ _VISIBLE_TEXT_CALLS = {
     "header",
     "subheader",
     "title",
+}
+_CUSTOM_VISIBLE_FUNCTIONS = {
     "render_empty_state",
     "render_persistence_status",
     "render_inline_status",
@@ -62,6 +64,24 @@ _VISIBLE_TEXT_CALLS = {
     "render_executive_takeaway",
     "render_report_masthead",
     "render_scope_ledger",
+}
+_KNOWN_CUSTOM_IMPORT_PATHS = {
+    f"src.ui.components.{name}"
+    for name in _CUSTOM_VISIBLE_FUNCTIONS
+} | {
+    f"src.ui.report_components.{name}"
+    for name in _CUSTOM_VISIBLE_FUNCTIONS
+}
+_STREAMLIT_CONTAINER_FACTORIES = {
+    "columns",
+    "container",
+    "dialog",
+    "empty",
+    "expander",
+    "form",
+    "popover",
+    "status",
+    "tabs",
 }
 
 _VISIBLE_POSITIONAL_LIMITS: dict[str, int | None] = {
@@ -90,60 +110,267 @@ _VISIBLE_TEXT_KEYWORDS = {
 }
 
 
-def _call_name(node: ast.Call) -> str:
-    if isinstance(node.func, ast.Name):
-        return node.func.id
-    if isinstance(node.func, ast.Attribute):
-        return node.func.attr
-    return ""
-
-
 def _rendered_ui_text(path: Path) -> str:
     """Collect literal text passed to user-visible Streamlit/UI calls."""
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    fragments: list[str] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        call_name = _call_name(node)
-        if call_name not in _VISIBLE_TEXT_CALLS:
-            continue
-        limit = _VISIBLE_POSITIONAL_LIMITS.get(call_name, 1)
-        positional = node.args if limit is None else node.args[:limit]
-        visible_keywords = [
-            item.value
-            for item in node.keywords
-            if item.arg in _VISIBLE_TEXT_KEYWORDS
-        ]
-        for argument in [*positional, *visible_keywords]:
-            fragments.extend(_literal_text_fragments(argument))
-    return "\n".join(fragments)
+    collector = _VisibleTextCollector()
+    collector.visit(tree)
+    return "\n".join(collector.fragments)
 
 
-def _literal_text_fragments(node: ast.AST) -> list[str]:
-    if isinstance(node, ast.Constant):
-        return [node.value] if isinstance(node.value, str) else []
-    if isinstance(node, ast.JoinedStr):
-        return [
-            fragment
-            for value in node.values
-            for fragment in _literal_text_fragments(value)
-        ]
-    if isinstance(node, ast.FormattedValue):
-        return _literal_text_fragments(node.value)
-    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
-        return [
-            fragment
-            for element in node.elts
-            for fragment in _literal_text_fragments(element)
-        ]
-    if isinstance(node, ast.Dict):
-        return [
-            fragment
-            for value in node.values
-            for fragment in _literal_text_fragments(value)
-        ]
+class _StaticScope:
+    def __init__(self) -> None:
+        self.bindings: dict[str, ast.AST | None] = {}
+        self.streamlit_aliases: set[str] = set()
+        self.imports: dict[str, str] = {}
+
+
+def _attribute_parts(node: ast.AST) -> list[str]:
+    parts: list[str] = []
+    current = node
+    while isinstance(current, ast.Attribute):
+        parts.append(current.attr)
+        current = current.value
+    if isinstance(current, ast.Name):
+        parts.append(current.id)
+        return list(reversed(parts))
     return []
+
+
+def _target_names(node: ast.AST) -> list[str]:
+    if isinstance(node, ast.Name):
+        return [node.id]
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return [name for element in node.elts for name in _target_names(element)]
+    return []
+
+
+def _is_static_text_expression(node: ast.AST) -> bool:
+    if isinstance(node, ast.Constant):
+        return isinstance(node.value, str)
+    if isinstance(node, ast.Name):
+        return True
+    if isinstance(node, ast.FormattedValue):
+        return _is_static_text_expression(node.value)
+    if isinstance(node, ast.JoinedStr):
+        return all(_is_static_text_expression(value) for value in node.values)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return _is_static_text_expression(node.left) and _is_static_text_expression(node.right)
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return all(_is_static_text_expression(element) for element in node.elts)
+    if isinstance(node, ast.Dict):
+        return all(_is_static_text_expression(value) for value in node.values)
+    return False
+
+
+class _ScopeBindingCollector(ast.NodeVisitor):
+    def __init__(self, scope: _StaticScope, parent_aliases: set[str]) -> None:
+        self.scope = scope
+        self.parent_aliases = parent_aliases
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        return
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        return
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        return
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        return
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for item in node.names:
+            local_name = item.asname or item.name.split(".", 1)[0]
+            self.scope.imports[local_name] = item.name if item.asname else local_name
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        module = str(node.module or "")
+        for item in node.names:
+            local_name = item.asname or item.name
+            self.scope.imports[local_name] = f"{module}.{item.name}".strip(".")
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        for target in node.targets:
+            self._record_assignment(target, node.value)
+        self.visit(node.value)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if node.value is not None:
+            self._record_assignment(node.target, node.value)
+            self.visit(node.value)
+
+    def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
+        self._record_assignment(node.target, node.value)
+        self.visit(node.value)
+
+    def visit_With(self, node: ast.With) -> None:
+        for item in node.items:
+            if item.optional_vars is not None and self._factory_method(item.context_expr):
+                self.scope.streamlit_aliases.update(_target_names(item.optional_vars))
+            self.visit(item.context_expr)
+        for statement in node.body:
+            self.visit(statement)
+
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
+        self.visit_With(node)
+
+    def _record_assignment(self, target: ast.AST, value: ast.AST) -> None:
+        names = _target_names(target)
+        binding = value if _is_static_text_expression(value) else None
+        for name in names:
+            self.scope.bindings[name] = binding
+
+        factory = self._factory_method(value)
+        if factory in {"columns", "tabs"} and not isinstance(target, (ast.List, ast.Tuple)):
+            return
+        if factory:
+            self.scope.streamlit_aliases.update(names)
+
+    def _factory_method(self, node: ast.AST) -> str:
+        current = node
+        while isinstance(current, ast.Subscript):
+            current = current.value
+        if not isinstance(current, ast.Call):
+            return ""
+        parts = _attribute_parts(current.func)
+        if len(parts) < 2 or parts[-1] not in _STREAMLIT_CONTAINER_FACTORIES:
+            return ""
+        if parts[0] == "st" or parts[0] in self.scope.streamlit_aliases | self.parent_aliases:
+            return parts[-1]
+        return ""
+
+
+class _VisibleTextCollector(ast.NodeVisitor):
+    def __init__(self) -> None:
+        self.fragments: list[str] = []
+        self.scopes: list[_StaticScope] = []
+
+    def visit_Module(self, node: ast.Module) -> None:
+        self._visit_scope(node.body)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_scope(node.body, parameters=_parameter_names(node.args))
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_scope(node.body, parameters=_parameter_names(node.args))
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self._visit_scope(node.body)
+
+    def visit_Call(self, node: ast.Call) -> None:
+        call_name = self._visible_call_name(node.func)
+        if call_name:
+            limit = _VISIBLE_POSITIONAL_LIMITS.get(call_name, 1)
+            positional = node.args if limit is None else node.args[:limit]
+            visible_keywords = [
+                item.value
+                for item in node.keywords
+                if item.arg in _VISIBLE_TEXT_KEYWORDS
+            ]
+            for argument in [*positional, *visible_keywords]:
+                self.fragments.extend(self._static_text_values(argument, set()))
+        self.generic_visit(node)
+
+    def _visit_scope(self, body: list[ast.stmt], parameters: list[str] | None = None) -> None:
+        scope = _StaticScope()
+        for parameter in parameters or []:
+            scope.bindings[parameter] = None
+        parent_aliases = {
+            alias for outer in self.scopes for alias in outer.streamlit_aliases
+        }
+        binding_collector = _ScopeBindingCollector(scope, parent_aliases)
+        for statement in body:
+            binding_collector.visit(statement)
+        self.scopes.append(scope)
+        for statement in body:
+            self.visit(statement)
+        self.scopes.pop()
+
+    def _visible_call_name(self, func: ast.AST) -> str:
+        if isinstance(func, ast.Name):
+            imported = self._lookup_import(func.id)
+            if imported in _KNOWN_CUSTOM_IMPORT_PATHS:
+                return imported.rsplit(".", 1)[-1]
+            return func.id if func.id in _CUSTOM_VISIBLE_FUNCTIONS else ""
+
+        parts = _attribute_parts(func)
+        if len(parts) < 2:
+            return ""
+        method = parts[-1]
+        if method in _STREAMLIT_VISIBLE_METHODS and (
+            parts[0] == "st" or self._is_streamlit_alias(parts[0])
+        ):
+            return method
+        imported_root = self._lookup_import(parts[0])
+        if imported_root:
+            qualified = ".".join([imported_root, *parts[1:]])
+            if qualified in _KNOWN_CUSTOM_IMPORT_PATHS:
+                return method
+        return ""
+
+    def _static_text_values(self, node: ast.AST, seen: set[str]) -> list[str]:
+        if isinstance(node, ast.Constant):
+            return [node.value] if isinstance(node.value, str) else []
+        if isinstance(node, ast.Name):
+            if node.id in seen:
+                return []
+            binding = self._lookup_binding(node.id)
+            return [] if binding is None else self._static_text_values(binding, seen | {node.id})
+        if isinstance(node, ast.FormattedValue):
+            values = self._static_text_values(node.value, seen)
+            return values or [""]
+        if isinstance(node, ast.JoinedStr):
+            return self._join_static_parts(node.values, seen)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            return self._join_static_parts([node.left, node.right], seen)
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+            return [
+                value
+                for element in node.elts
+                for value in self._static_text_values(element, seen)
+            ]
+        if isinstance(node, ast.Dict):
+            return [
+                text
+                for value in node.values
+                for text in self._static_text_values(value, seen)
+            ]
+        return []
+
+    def _join_static_parts(self, parts: list[ast.AST], seen: set[str]) -> list[str]:
+        combined = [""]
+        for part in parts:
+            values = self._static_text_values(part, seen) or [""]
+            combined = [prefix + suffix for prefix in combined for suffix in values]
+        return combined
+
+    def _lookup_binding(self, name: str) -> ast.AST | None:
+        for scope in reversed(self.scopes):
+            if name in scope.bindings:
+                return scope.bindings[name]
+        return None
+
+    def _lookup_import(self, name: str) -> str:
+        for scope in reversed(self.scopes):
+            if name in scope.imports:
+                return scope.imports[name]
+        return ""
+
+    def _is_streamlit_alias(self, name: str) -> bool:
+        return any(name in scope.streamlit_aliases for scope in reversed(self.scopes))
+
+
+def _parameter_names(arguments: ast.arguments) -> list[str]:
+    return [
+        argument.arg
+        for argument in [
+            *arguments.posonlyargs,
+            *arguments.args,
+            *arguments.kwonlyargs,
+        ]
+    ]
 
 
 def _product_ui_text(paths: list[Path] | tuple[Path, ...] = VISIBLE_UI_FILES) -> str:
@@ -263,6 +490,7 @@ class VisibleTextGuardrailTests(unittest.TestCase):
         ]:
             self.assertIn(phrase, text)
         self.assertNotIn("从演示结果文件恢复", text)
+        self.assertNotIn("假标题不可见", text)
 
     def test_ast_guard_excludes_case_study_fixture(self):
         text = _product_ui_text(

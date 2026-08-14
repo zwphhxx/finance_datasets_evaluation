@@ -888,12 +888,8 @@ def _section_heading_html(
     title: str,
     lead: str | None = None,
     *,
-    variant: str = "page",
     badge: tuple[str, str] | None = None,
 ) -> str:
-    normalized = str(variant or "page").strip().lower()
-    if normalized not in {"home", "page"}:
-        normalized = "page"
     lead_html = (
         f'<div class="section-heading-lead">{escape(str(lead))}</div>'
         if str(lead or "").strip()
@@ -901,7 +897,7 @@ def _section_heading_html(
     )
     badge_html = render_badge(badge[0], badge[1]) if badge else ""
     return f"""
-        <div class="section-heading section-heading-{normalized}">
+        <div class="section-heading section-heading-page">
             <span class="section-heading-number">{escape(str(number))}</span>
             <div class="section-heading-main">
                 <h2 class="section-heading-title">{escape(str(title))}{badge_html}</h2>
@@ -916,10 +912,9 @@ def render_section_heading(
     title: str,
     lead: str | None = None,
     *,
-    variant: str = "page",
     badge: tuple[str, str] | None = None,
 ) -> None:
-    render_html(_section_heading_html(number, title, lead, variant=variant, badge=badge))
+    render_html(_section_heading_html(number, title, lead, badge=badge))
 
 
 def render_numbered_section(
@@ -929,7 +924,7 @@ def render_numbered_section(
     *,
     badge: tuple[str, str] | None = None,
 ) -> None:
-    render_section_heading(index, title, caption, variant="page", badge=badge)
+    render_section_heading(index, title, caption, badge=badge)
 
 
 _BADGE_TONES = {"neutral", "success", "warning"}

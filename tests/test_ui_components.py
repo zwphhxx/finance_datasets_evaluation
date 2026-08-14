@@ -180,6 +180,11 @@ class UIComponentsTests(unittest.TestCase):
             for parameter_name in parameter_names:
                 self.assertIn(parameter_name, actual.parameters, function_name)
 
+        self.assertNotIn(
+            "variant",
+            inspect.signature(components.render_section_heading).parameters,
+        )
+
     def test_document_reading_components_use_shared_long_text_classes(self):
         import src.ui.components as components
 
