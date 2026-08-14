@@ -130,8 +130,11 @@ def test_readme_documents_only_the_real_durable_evaluation_flow() -> None:
         "不会调用模型服务",
         "开始评测按钮保持禁用",
         "真实模型密钥",
+        "只导入评分行",
+        "目标环境已存在相同运行批次、样本和模型的正式回答",
     ]:
         assert phrase in readme
+    assert "迁移已校验记录" not in readme
     assert "## 演示与恢复" not in readme
 
 

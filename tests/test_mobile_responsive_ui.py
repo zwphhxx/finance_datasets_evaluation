@@ -95,7 +95,6 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         )[1].split("@media (max-width: 480px)", 1)[0]
 
         for selector in [
-            ".brief-facts",
             ".executive-takeaway",
             ".st-key-samples_filter_region",
             ".st-key-test_run_stage_configuration",
@@ -112,6 +111,17 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             ".st-key-conclusion_desktop_judgment",
             ".st-key-test_run_stage_scores",
             ".st-key-test_run_score_action",
+        ]:
+            self.assertNotIn(selector, css)
+
+        for selector in [
+            ".brief-intro",
+            ".brief-title",
+            ".brief-facts",
+            ".home-section",
+            ".process-line",
+            ".table-selection-echo",
+            ".section-heading-home",
         ]:
             self.assertNotIn(selector, css)
 
@@ -161,7 +171,6 @@ class MobileResponsiveUIContracts(unittest.TestCase):
 
         for selector in [
             '[data-testid="stMarkdownContainer"] .page-title-heading',
-            '[data-testid="stMarkdownContainer"] .brief-title',
             '[data-testid="stMarkdownContainer"] .section-heading-title',
         ]:
             declarations = _declarations_for_selector(STYLE_CSS, selector)
@@ -177,7 +186,6 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         )[1].split("@media (max-width: 480px)", 1)[0]
         expected_mobile_sizes = {
             '[data-testid="stMarkdownContainer"] .page-title-heading': "1.3rem",
-            '[data-testid="stMarkdownContainer"] .brief-title': "1.78rem",
         }
         for selector, expected_size in expected_mobile_sizes.items():
             self.assertTrue(
@@ -190,25 +198,6 @@ class MobileResponsiveUIContracts(unittest.TestCase):
                 ),
                 selector,
             )
-
-    def test_mobile_home_page_uses_compact_section_rhythm(self):
-        mobile_css = self._responsive_css().split(
-            "@media (max-width: 760px)",
-            1,
-        )[1].split("@media (max-width: 480px)", 1)[0]
-
-        self.assertTrue(
-            any(
-                re.search(r"margin-top\s*:\s*1\.75rem\s*;", rule)
-                for rule in _declarations_for_selector(mobile_css, ".home-section")
-            )
-        )
-        self.assertTrue(
-            any(
-                re.search(r"margin-top\s*:\s*1\.25rem\s*;", rule)
-                for rule in _declarations_for_selector(mobile_css, ".home-section-first")
-            )
-        )
 
     def test_mobile_columns_dialogs_and_tables_fit_the_viewport(self):
         css = self._responsive_css()

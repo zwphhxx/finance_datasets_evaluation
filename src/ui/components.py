@@ -168,73 +168,6 @@ header,
     gap: 0.5rem;
     flex-shrink: 0;
 }
-.brief-intro {
-    margin: 0.65rem 0 2rem;
-    padding: 2.45rem 0 1.75rem;
-    border-bottom: 1px solid var(--fde-line);
-}
-.brief-title,
-[data-testid="stMarkdownContainer"] .brief-title {
-    color: var(--fde-ink);
-    font-family: var(--fde-serif);
-    font-size: clamp(2.6rem, 5vw, 4.65rem);
-    font-weight: 650;
-    line-height: 1.08;
-    letter-spacing: -0.035em;
-    margin: 0;
-    max-width: 58rem;
-    padding: 0;
-}
-.process-line {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.58rem;
-    margin: 0.95rem 0 0.25rem 0;
-    color: var(--fde-ink);
-    font-size: 0.94rem;
-    font-weight: 700;
-}
-.process-line-separator {
-    width: 2.2rem;
-    height: 1px;
-    background: var(--fde-line-strong);
-    flex: 0 0 auto;
-}
-.brief-note {
-    border-left: 2px solid var(--fde-gold);
-    color: var(--fde-ink);
-    font-size: 1rem;
-    line-height: 1.65;
-    margin: 1.25rem 0 0;
-    max-width: 50rem;
-    padding-left: 0.85rem;
-}
-.brief-facts {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 1.25rem;
-    margin-top: 2rem;
-    max-width: 48rem;
-}
-.brief-fact {
-    border-top: 1px solid var(--fde-line-strong);
-    padding-top: 0.7rem;
-}
-.brief-fact-label {
-    color: var(--fde-muted);
-    display: block;
-    font-size: 0.76rem;
-    letter-spacing: 0.08em;
-}
-.brief-fact-value {
-    color: var(--fde-ink);
-    display: block;
-    font-family: var(--fde-serif);
-    font-size: 1.55rem;
-    line-height: 1.3;
-    margin-top: 0.18rem;
-}
 .executive-takeaway {
     border-left: 2px solid var(--fde-gold);
     color: var(--fde-ink);
@@ -244,15 +177,6 @@ header,
     margin: 0.75rem 0 1.35rem;
     max-width: 54rem;
     padding: 0.25rem 0 0.25rem 1rem;
-}
-.home-section {
-    margin: 2.25rem 0 0 0;
-    padding: 1.55rem 0 0 0;
-    border-top: 1px solid var(--fde-line-strong);
-}
-.home-section-first {
-    border-top: 0;
-    padding-top: 0;
 }
 .section-heading {
     display: grid;
@@ -281,23 +205,6 @@ header,
     line-height: 1.55;
     margin-top: 0.32rem;
 }
-.section-heading-home {
-    grid-template-columns: 4.8rem minmax(0, 1fr);
-    column-gap: 1.25rem;
-    margin-bottom: 0.9rem;
-}
-.section-heading-home .section-heading-number {
-    font-size: 2.05rem;
-}
-.section-heading-home .section-heading-title {
-    font-size: 1.62rem;
-}
-.section-heading-home .section-heading-lead {
-    color: var(--fde-text);
-    font-size: 1.03rem;
-    font-weight: 680;
-    margin-top: 0.48rem;
-}
 .section-heading-page {
     grid-template-columns: 3.4rem minmax(0, 1fr);
     column-gap: 1rem;
@@ -314,16 +221,6 @@ header,
 .section-heading-page .section-heading-lead {
     font-size: 0.94rem;
     font-weight: 400;
-}
-.home-section-body {
-    margin-left: 0;
-}
-.home-section-body p {
-    color: var(--fde-text);
-    font-size: 0.96rem;
-    font-weight: 400;
-    line-height: 1.72;
-    margin: 0 0 0.72rem 0;
 }
 .st-key-samples_filter_region,
 .st-key-samples_list_region,
@@ -381,16 +278,6 @@ header,
     color: var(--fde-ink);
     font-size: 0.91rem;
     line-height: 1.55;
-}
-.table-selection-echo {
-    color: var(--fde-muted);
-    font-size: 0.86rem;
-    margin: 0.35rem 0 0.75rem;
-}
-.table-selection-echo a {
-    color: var(--fde-accent);
-    font-weight: 650;
-    text-decoration: none;
 }
 .fde-badge {
     border-radius: 999px;
@@ -932,17 +819,10 @@ div[data-testid="stDialog"] {
         margin-top: 0.75rem;
     }
     .section-heading,
-    .section-heading-home,
     .section-heading-page {
         grid-template-columns: 1fr;
         gap: 0.35rem;
         align-items: start;
-    }
-    .brief-title {
-        font-size: 1.78rem;
-    }
-    .process-line-separator {
-        width: 1.2rem;
     }
     .stage-jump-nav {
         gap: 0;
@@ -955,20 +835,11 @@ div[data-testid="stDialog"] {
         display: inline-flex;
         padding: 0 0.35rem;
     }
-    .section-heading-home .section-heading-number {
-        font-size: 1.55rem;
-    }
-    .section-heading-home .section-heading-title {
-        font-size: 1.34rem;
-    }
     .section-heading-page .section-heading-number {
         font-size: 0.98rem;
     }
     .section-heading-page .section-heading-title {
         font-size: 1.16rem;
-    }
-    .home-section-body {
-        margin-left: 0;
     }
 }
 """
@@ -1008,73 +879,8 @@ def render_page_heading(title: str, description: str | None = None) -> None:
     )
 
 
-def render_brief_intro(
-    title: str,
-    note: str,
-    facts: list[tuple[str, str]] | None = None,
-) -> None:
-    facts_html = _fact_strip_html(facts or [])
-    render_html(
-        f"""
-        <div class="brief-intro">
-            <h1 class="brief-title">{escape(str(title))}</h1>
-            <p class="brief-note">{escape(str(note))}</p>
-            {facts_html}
-        </div>
-        """
-    )
-
-
-def _fact_strip_html(facts: list[tuple[str, str]]) -> str:
-    items = "".join(
-        '<div class="brief-fact">'
-        f'<span class="brief-fact-label">{escape(str(label))}</span>'
-        f'<strong class="brief-fact-value">{escape(str(value))}</strong>'
-        "</div>"
-        for label, value in facts
-    )
-    return f'<div class="brief-facts">{items}</div>' if items else ""
-
-
-def render_fact_strip(facts: list[tuple[str, str]]) -> None:
-    render_html(_fact_strip_html(facts))
-
-
 def render_executive_takeaway(text: str) -> None:
     render_html(f'<div class="executive-takeaway">{escape(str(text))}</div>')
-
-
-def render_home_section(
-    number: str,
-    title: str,
-    lead: str,
-    body: list[str],
-    *,
-    first: bool = False,
-    process_steps: list[str] | None = None,
-) -> None:
-    body_html = "".join(f"<p>{escape(str(paragraph))}</p>" for paragraph in body if str(paragraph).strip())
-    if process_steps:
-        body_html += _process_line_html(process_steps)
-    section_class = "home-section home-section-first" if first else "home-section"
-    heading_html = _section_heading_html(number, title, lead, variant="home")
-    render_html(
-        f"""
-        <section class="{section_class}">
-            {heading_html}
-            <div class="home-section-body">{body_html}</div>
-        </section>
-        """
-    )
-
-
-def _process_line_html(steps: list[str]) -> str:
-    parts: list[str] = []
-    for index, step in enumerate(steps):
-        if index:
-            parts.append('<span class="process-line-separator"></span>')
-        parts.append(f'<span>{escape(str(step))}</span>')
-    return f'<div class="process-line">{"".join(parts)}</div>'
 
 
 def _section_heading_html(
@@ -1135,21 +941,6 @@ def render_badge(text: str, tone: str = "neutral") -> str:
     if normalized not in _BADGE_TONES:
         normalized = "neutral"
     return f'<span class="fde-badge fde-badge-{normalized}">{escape(str(text))}</span>'
-
-
-def render_selection_echo(
-    text: str,
-    anchor_href: str | None = None,
-    anchor_label: str | None = None,
-) -> None:
-    """Render the muted current-selection line shown under a selectable table."""
-    link = ""
-    if anchor_href and anchor_label:
-        link = (
-            f' · <a href="{escape(str(anchor_href), quote=True)}">'
-            f"{escape(str(anchor_label))}</a>"
-        )
-    render_html(f'<div class="table-selection-echo">{escape(str(text))}{link}</div>')
 
 
 def render_empty_state(message: str) -> None:

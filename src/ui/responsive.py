@@ -31,16 +31,6 @@ MOBILE_RESPONSIVE_CSS = r"""
         padding-right: 0.875rem;
         padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
     }
-    .brief-intro {
-        margin-bottom: 1.35rem;
-        padding-bottom: 1.2rem;
-        padding-top: 0.65rem;
-    }
-    .brief-facts {
-        gap: 0.85rem 1rem;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        margin-top: 1.35rem;
-    }
     .executive-takeaway {
         font-size: 1.05rem;
         margin-bottom: 1rem;
@@ -195,9 +185,6 @@ MOBILE_RESPONSIVE_CSS = r"""
     [data-testid="stMarkdownContainer"] .page-title-heading {
         font-size: 1.3rem;
     }
-    [data-testid="stMarkdownContainer"] .brief-title {
-        font-size: 1.78rem;
-    }
     .page-title-copy {
         font-size: 0.9rem;
     }
@@ -210,14 +197,6 @@ MOBILE_RESPONSIVE_CSS = r"""
     }
     [id^="fde-"] {
         scroll-margin-top: 5.75rem;
-    }
-    .home-section {
-        margin-top: 1.75rem;
-        padding-top: 1.2rem;
-    }
-    .home-section-first {
-        margin-top: 1.25rem;
-        padding-top: 0;
     }
     .detail-panel-body,
     .sample-detail-panel-body {
@@ -397,9 +376,6 @@ MOBILE_RESPONSIVE_CSS = r"""
     [data-testid="stHorizontalBlock"]:has(.top-nav-brand) .st-key-top_nav_operation_region .stButton > button {
         font-size: 0.78rem;
         font-weight: 500;
-    }
-    [data-testid="stMarkdownContainer"] .brief-title {
-        font-size: 1.6rem;
     }
     .section-heading-page .section-heading-title {
         font-size: 1.08rem;

@@ -53,11 +53,6 @@ class UIComponentsTests(unittest.TestCase):
             components.STYLE_CSS.index("</style>"),
         )
 
-    def test_brief_intro_supports_derived_facts(self):
-        import src.ui.components as components
-
-        self.assertIn("facts", inspect.signature(components.render_brief_intro).parameters)
-
     def test_top_navigation_styles_current_button_without_a_layout_marker(self):
         source = Path("src/ui/navigation.py").read_text(encoding="utf-8")
         css = Path("src/ui/components.py").read_text(encoding="utf-8")
@@ -99,6 +94,10 @@ class UIComponentsTests(unittest.TestCase):
             "render_evidence_panel",
             "render_status_summary",
             "render_model_answer_card",
+            "render_brief_intro",
+            "render_fact_strip",
+            "render_home_section",
+            "render_selection_echo",
         ]
         for name in removed_functions:
             self.assertFalse(hasattr(components, name), name)
@@ -112,6 +111,14 @@ class UIComponentsTests(unittest.TestCase):
             ".verdict-card",
             ".review-risk-note",
             ".portfolio-hero",
+            ".brief-intro",
+            ".brief-title",
+            ".brief-note",
+            ".brief-fact",
+            ".process-line",
+            ".home-section",
+            ".table-selection-echo",
+            ".section-heading-home",
         ]:
             self.assertNotIn(selector, components.STYLE_CSS)
 

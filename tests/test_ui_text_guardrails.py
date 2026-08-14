@@ -32,20 +32,69 @@ VISIBLE_UI_FILES = [
 ]
 
 _VISIBLE_TEXT_CALLS = {
-    "st.button",
-    "st.caption",
-    "st.radio",
-    "st.selectbox",
+    "button",
+    "caption",
+    "markdown",
+    "write",
+    "info",
+    "warning",
+    "error",
+    "success",
+    "toast",
+    "download_button",
+    "file_uploader",
+    "text_input",
+    "text_area",
+    "radio",
+    "selectbox",
+    "multiselect",
+    "tabs",
+    "popover",
+    "expander",
+    "header",
+    "subheader",
+    "title",
     "render_empty_state",
     "render_persistence_status",
+    "render_inline_status",
+    "render_page_heading",
+    "render_numbered_section",
+    "render_executive_takeaway",
+    "render_report_masthead",
+    "render_scope_ledger",
+}
+
+_VISIBLE_POSITIONAL_LIMITS: dict[str, int | None] = {
+    "write": None,
+    "radio": 2,
+    "selectbox": 2,
+    "multiselect": 2,
+    "render_page_heading": 2,
+    "render_numbered_section": 3,
+    "render_report_masthead": 2,
+}
+_VISIBLE_TEXT_KEYWORDS = {
+    "body",
+    "caption",
+    "description",
+    "help",
+    "items",
+    "label",
+    "message",
+    "options",
+    "placeholder",
+    "tabs",
+    "text",
+    "title",
+    "value",
 }
 
 
 def _call_name(node: ast.Call) -> str:
     if isinstance(node.func, ast.Name):
         return node.func.id
-    if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
-        return f"{node.func.value.id}.{node.func.attr}"
+    if isinstance(node.func, ast.Attribute):
+        return node.func.attr
     return ""
 
 
@@ -54,15 +103,53 @@ def _rendered_ui_text(path: Path) -> str:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     fragments: list[str] = []
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Call) or _call_name(node) not in _VISIBLE_TEXT_CALLS:
+        if not isinstance(node, ast.Call):
             continue
-        for argument in [*node.args, *(item.value for item in node.keywords)]:
-            fragments.extend(
-                child.value
-                for child in ast.walk(argument)
-                if isinstance(child, ast.Constant) and isinstance(child.value, str)
-            )
+        call_name = _call_name(node)
+        if call_name not in _VISIBLE_TEXT_CALLS:
+            continue
+        limit = _VISIBLE_POSITIONAL_LIMITS.get(call_name, 1)
+        positional = node.args if limit is None else node.args[:limit]
+        visible_keywords = [
+            item.value
+            for item in node.keywords
+            if item.arg in _VISIBLE_TEXT_KEYWORDS
+        ]
+        for argument in [*positional, *visible_keywords]:
+            fragments.extend(_literal_text_fragments(argument))
     return "\n".join(fragments)
+
+
+def _literal_text_fragments(node: ast.AST) -> list[str]:
+    if isinstance(node, ast.Constant):
+        return [node.value] if isinstance(node.value, str) else []
+    if isinstance(node, ast.JoinedStr):
+        return [
+            fragment
+            for value in node.values
+            for fragment in _literal_text_fragments(value)
+        ]
+    if isinstance(node, ast.FormattedValue):
+        return _literal_text_fragments(node.value)
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return [
+            fragment
+            for element in node.elts
+            for fragment in _literal_text_fragments(element)
+        ]
+    if isinstance(node, ast.Dict):
+        return [
+            fragment
+            for value in node.values
+            for fragment in _literal_text_fragments(value)
+        ]
+    return []
+
+
+def _product_ui_text(paths: list[Path] | tuple[Path, ...] = VISIBLE_UI_FILES) -> str:
+    return "\n".join(
+        _rendered_ui_text(path) for path in paths if path.name != "case_study.py"
+    )
 
 
 class ReadmeCurrentFlowTests(unittest.TestCase):
@@ -145,11 +232,7 @@ class NavigationAndPageConfigGuardrailTests(unittest.TestCase):
 
 class VisibleTextGuardrailTests(unittest.TestCase):
     def test_product_ui_has_no_demo_mode_or_manual_score_action(self):
-        text = "\n".join(
-            _rendered_ui_text(path)
-            for path in VISIBLE_UI_FILES
-            if path.name != "case_study.py"
-        )
+        text = _product_ui_text()
         for phrase in ["演示模式", "演示恢复", "生成 AI 评分", "从演示结果文件恢复"]:
             self.assertNotIn(phrase, text)
 
@@ -167,6 +250,26 @@ class VisibleTextGuardrailTests(unittest.TestCase):
             ".st-key-test_run_score_action",
         ]:
             self.assertNotIn(selector, text)
+
+    def test_ast_guard_recognizes_container_controls_and_visible_keywords_only(self):
+        text = _rendered_ui_text(Path("tests/fixtures/ui_visible_text_calls.py"))
+
+        for phrase in [
+            "演示模式",
+            "生成 AI 评分",
+            "演示恢复",
+            "可见章节",
+            "可见说明",
+        ]:
+            self.assertIn(phrase, text)
+        self.assertNotIn("从演示结果文件恢复", text)
+
+    def test_ast_guard_excludes_case_study_fixture(self):
+        text = _product_ui_text(
+            [Path("tests/fixtures/excluded/case_study.py")]
+        )
+
+        self.assertNotIn("从演示结果文件恢复", text)
 
     def test_visible_ui_and_readme_text_do_not_use_retired_or_promotional_terms(self):
         paths = [Path("README.md"), *VISIBLE_UI_FILES]

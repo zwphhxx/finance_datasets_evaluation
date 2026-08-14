@@ -85,98 +85,18 @@ class CaseStudyPresentationTests(unittest.TestCase):
         ]:
             self.assertIn(snippet, css)
 
-    def test_brief_intro_outputs_title_note_and_facts(self):
+    def test_section_heading_renders_current_page_variant(self):
         import src.ui.components as components
 
         captured = []
         original = components.render_html
         try:
             components.render_html = lambda html, container=None: captured.append(str(html))
-            components.render_brief_intro(
-                title=components.PROJECT_DISPLAY_NAME,
-                note=(
-                    "本项目评估大模型在财务、法律、投行等专业任务中的回答质量，"
-                    "并在当前样本范围内识别模型的主要问题和使用边界。"
-                ),
-                facts=[("当前样本", "13"), ("评分总分", "100")],
-            )
-        finally:
-            components.render_html = original
-
-        html = "".join(captured)
-        self.assertIn("brief-intro", html)
-        self.assertIn("<h1", html)
-        self.assertIn(components.PROJECT_DISPLAY_NAME, html)
-        self.assertIn("brief-note", html)
-        self.assertIn("brief-facts", html)
-        self.assertIn("当前样本", html)
-        self.assertNotIn("brief-subtitle", html)
-        self.assertNotIn("brief-meta", html)
-
-    def test_home_section_html_groups_number_title_lead_and_body(self):
-        import src.ui.components as components
-
-        captured = []
-        original = components.render_html
-        try:
-            components.render_html = lambda html, container=None: captured.append(str(html))
-            components.render_home_section(
-                number="01",
-                title="项目定位",
-                lead="评估模型在财务、法律、投行场景中的回答质量。",
-                body=["正文"],
-                first=True,
-            )
-        finally:
-            components.render_html = original
-
-        html = "".join(captured)
-        self.assertIn('class="home-section home-section-first"', html)
-        self.assertIn('class="section-heading section-heading-home"', html)
-        self.assertIn("section-heading-main", html)
-        self.assertIn('<span class="section-heading-number">01</span>', html)
-        self.assertNotIn("home-section-heading", html)
-        self.assertIn("home-section-body", html)
-        self.assertLess(html.index("section-heading"), html.index("home-section-body"))
-
-    def test_home_section_process_line_is_inside_body_column(self):
-        import src.ui.components as components
-
-        captured = []
-        original = components.render_html
-        try:
-            components.render_html = lambda html, container=None: captured.append(str(html))
-            components.render_home_section(
-                number="02",
-                title="评测流程",
-                lead="从专业样本到 AI 评分后的评测结论。",
-                body=["正文"],
-                process_steps=["人工录入样本库", "发起模型评测"],
-            )
-        finally:
-            components.render_html = original
-
-        html = "".join(captured)
-        body_start = html.index('<div class="home-section-body">')
-        body_end = html.index("</div>", body_start)
-        process_index = html.index('class="process-line"')
-        self.assertGreater(process_index, body_start)
-        self.assertLess(process_index, body_end)
-
-    def test_section_heading_renders_home_and_page_variants(self):
-        import src.ui.components as components
-
-        captured = []
-        original = components.render_html
-        try:
-            components.render_html = lambda html, container=None: captured.append(str(html))
-            components.render_section_heading("01", "项目定位", "评估模型回答质量。", variant="home")
             components.render_section_heading("02", "样本列表", "展示当前查询结果。", variant="page")
         finally:
             components.render_html = original
 
         html = "".join(captured)
-        self.assertIn('class="section-heading section-heading-home"', html)
         self.assertIn('class="section-heading section-heading-page"', html)
         self.assertIn("section-heading-number", html)
         self.assertIn("section-heading-title", html)
