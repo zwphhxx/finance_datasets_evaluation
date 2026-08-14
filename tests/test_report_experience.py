@@ -11,7 +11,7 @@ import pandas as pd
 
 from app.services.conclusion_read_model import ConclusionReport, ReportScope
 from app.services.evidence_index import EvidenceItem
-from src.ui import navigation
+from src.ui import components, navigation
 from src.ui import report_components as rc
 from src.ui.page_config import DEFAULT_PAGE_KEY
 from src.ui.report_styles import REPORT_STYLE_CSS
@@ -41,6 +41,32 @@ def test_report_semantic_headers_override_hidden_streamlit_chrome():
     assert "height: auto !important" in section_heading_rule
     assert '[data-testid="stMarkdownContainer"] .report-masthead-title' in REPORT_STYLE_CSS
     assert '[data-testid="stMarkdownContainer"] .report-section-title' in REPORT_STYLE_CSS
+
+
+def test_trusted_markdown_renderer_preserves_document_structure_and_escapes_dynamic_html(
+    monkeypatch,
+):
+    captured: list[tuple[str, bool]] = []
+    monkeypatch.setattr(
+        components.st,
+        "markdown",
+        lambda body, unsafe_allow_html=False: captured.append((body, unsafe_allow_html)),
+    )
+    markdown = (
+        "第一段。\n\n第二段。\n\n"
+        "```python\ndef evaluate():\n    return '<script>alert(1)</script>'\n```\n\n"
+        "| 维度 | 分数 |\n| --- | --- |\n| 准确性 | 8 |"
+    )
+
+    components.render_trusted_markdown_html(markdown)
+
+    rendered, unsafe = captured[0]
+    assert unsafe is True
+    assert "<p>第一段。</p>\n<p>第二段。</p>" in rendered
+    assert "def evaluate():\n    return" in rendered
+    assert '<table class="markdown-detail-table">' in rendered
+    assert "<script>" not in rendered
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered
 
 
 def test_report_primitives_escape_every_dynamic_value_except_trusted_body_html():
@@ -151,6 +177,36 @@ def test_report_primitives_keep_one_semantic_dom_for_report_rows():
     assert 'class="evidence-index"' in rc.evidence_index_html([])
 
 
+def test_report_index_rows_expose_table_semantics_and_selected_state():
+    header = rc.report_index_row_html(["模型", "判断"], header=True)
+    inactive = rc.report_index_row_html(["provider/model-a", "谨慎"], active=False)
+    active = rc.report_index_row_html(["provider/model-b", "可作为"], active=True)
+
+    for html in [header, inactive, active]:
+        assert 'role="table"' in html
+        assert 'aria-label="模型评测结论"' in html
+        assert 'role="row"' in html
+    assert header.count('role="columnheader"') == 2
+    assert 'aria-selected=' not in header
+    assert inactive.count('role="cell"') == 2
+    assert 'aria-label="模型：provider/model-a"' in inactive
+    assert 'aria-selected="false"' in inactive
+    assert 'aria-selected="true"' in active
+
+
+def test_model_evidence_action_names_distinguish_raw_model_ids():
+    from src.ui import conclusions as ui
+
+    first = ui._model_evidence_action_label("provider/model-a")
+    second = ui._model_evidence_action_label("provider/model-b")
+
+    assert first == "查看证据：provider/model-a"
+    assert second == "查看证据：provider/model-b"
+    assert first != second
+    source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
+    assert "_model_evidence_action_label(raw_model_id)" in source
+
+
 def test_conclusion_page_is_report_first_and_never_surfaces_excluded_count():
     source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
     page = source[
@@ -221,6 +277,12 @@ def test_each_evidence_item_exposes_three_full_record_dialogs():
         assert label in source
     assert "[:900]" not in source
     assert "[: 900]" not in source
+    dialog_source = source[
+        source.index('@st.dialog("专业标准答案"'):
+        source.index("def _gold_evidence_markdown")
+    ]
+    assert dialog_source.count("render_trusted_markdown_html(") == 3
+    assert "render_html(render_markdown_block" not in dialog_source
 
 
 def test_evidence_dialog_markdown_preserves_full_source_values():
@@ -288,6 +350,89 @@ def test_evidence_summary_hides_full_documents_until_dialog_opened():
     assert "仅弹层回答" not in html
     assert "标准答案" not in html
     assert "仅弹层备注" not in html
+
+
+def test_all_records_defers_full_response_rendering_until_explicit_action(monkeypatch):
+    from src.ui import conclusions as ui
+
+    class DeferredResponses:
+        def to_dict(self, *_args, **_kwargs):
+            raise AssertionError("完整回答不应在索引阶段读取")
+
+    scores = pd.DataFrame([
+        {"run_id": "R1", "case_id": "C1", "eval_model": "M1", "total_score": 70},
+        {"run_id": "R1", "case_id": "C2", "eval_model": "M1", "total_score": 80},
+    ])
+    report = ConclusionReport(
+        scope=ReportScope(sample_count=2, model_count=1, formal_score_count=2),
+        formal_scores=scores,
+        formal_responses=DeferredResponses(),
+        model_summaries=(),
+        evidence_by_model={},
+    )
+    selected_options: list[int] = []
+    full_render_calls: list[object] = []
+    monkeypatch.setattr(ui.st, "expander", lambda *_args, **_kwargs: nullcontext())
+    monkeypatch.setattr(
+        ui.st,
+        "selectbox",
+        lambda _label, options, **_kwargs: selected_options.extend(options) or options[-1],
+    )
+    monkeypatch.setattr(ui.st, "button", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(ui, "render_inline_status", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        ui,
+        "render_trusted_markdown_html",
+        lambda *_args, **_kwargs: full_render_calls.append((_args, _kwargs)),
+    )
+
+    ui._render_all_records(report)
+
+    assert selected_options == [0, 1]
+    assert full_render_calls == []
+
+
+def test_full_record_dialog_renders_only_the_selected_formal_record(monkeypatch):
+    from src.ui import conclusions as ui
+
+    score = {
+        "run_id": "R1",
+        "case_id": "C2",
+        "eval_model": "M1",
+        "total_score": 80,
+        "accuracy_score": 9,
+        "rationale": {"accuracy_score": "第二条评分理由"},
+        "review_note": "第二条审阅备注",
+    }
+    report = ConclusionReport(
+        scope=ReportScope(sample_count=2, model_count=1, formal_score_count=2),
+        formal_scores=pd.DataFrame([score]),
+        formal_responses=pd.DataFrame([
+            {"run_id": "R1", "case_id": "C1", "model_name": "M1", "answer_text": "第一条回答"},
+            {"run_id": "R1", "case_id": "C2", "model_name": "M1", "answer_text": "第二条回答全文"},
+        ]),
+        model_summaries=(),
+        evidence_by_model={},
+    )
+    rendered: list[str] = []
+    monkeypatch.setattr(ui.st, "caption", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(ui.st, "markdown", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(ui, "render_trusted_markdown_html", rendered.append)
+
+    ui._render_formal_record_dialog.__wrapped__(report, score)
+
+    assert rendered[0] == "第二条回答全文"
+    assert "第二条评分理由" in rendered[1]
+    assert "第二条审阅备注" in rendered[1]
+    assert all("第一条回答" not in value for value in rendered)
+
+
+def test_conclusion_records_use_one_report_boundary_without_dead_judgment_tone():
+    from src.ui import conclusions as ui
+
+    assert list(signature(ui._render_all_records).parameters) == ["report"]
+    source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
+    assert "def _judgment_tone(" not in source
 
 
 def test_evaluation_page_has_one_product_pipeline_and_no_demo_or_score_action():

@@ -484,7 +484,9 @@ class AnswerDetailJoinTests(unittest.TestCase):
         self.assertIn("report.formal_responses", detail_source)
         self.assertIn("report.formal_scores", detail_source)
         self.assertIn('"查看全部评测记录"', detail_source)
-        self.assertIn("render_markdown_detail_panel", detail_source)
+        self.assertIn('"查看完整记录"', detail_source)
+        self.assertIn("_render_formal_record_dialog", detail_source)
+        self.assertIn("render_trusted_markdown_html", detail_source)
         self.assertIn("answer_text", detail_source)
 
     def test_conclusion_page_displays_persistence_outage(self):

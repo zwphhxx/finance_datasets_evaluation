@@ -77,8 +77,8 @@ class ConclusionSourceDisplayTests(unittest.TestCase):
 
         self.assertIn("当前结论", source)
         self.assertIn("cd.load_conclusion_source(", source)
-        self.assertIn("formal_scores = report.formal_scores", source)
         self.assertIn("model_summaries = report.model_summaries", source)
+        self.assertIn("_render_all_records(report)", source)
         self.assertNotIn("Model_A_baseline", source)
 
 

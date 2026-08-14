@@ -24,10 +24,9 @@ from src.ui.components import (
     render_executive_takeaway,
     render_html,
     render_inline_status,
-    render_markdown_block,
-    render_markdown_detail_panel,
     render_numbered_section,
     render_persistence_status,
+    render_trusted_markdown_html,
 )
 from src.ui.page_config import get_page_config
 from src.ui.report_components import (
@@ -79,8 +78,6 @@ def render_conclusions_page(data_bundle: dict) -> None:
     if report is None:
         render_persistence_status(source.message)
         return
-    formal_scores = report.formal_scores
-    formal_responses = report.formal_responses
     model_summaries = report.model_summaries
 
     render_scope_ledger(
@@ -94,7 +91,7 @@ def render_conclusions_page(data_bundle: dict) -> None:
     _render_executive_conclusion(model_summaries)
     selected_model = _render_model_recommendations(model_summaries)
     _render_evidence_index(report, selected_model)
-    _render_all_records(report, formal_scores, formal_responses)
+    _render_all_records(report)
     _render_data_source_notice(report.scope)
 
 
@@ -236,7 +233,7 @@ def _render_model_recommendations(
             )
             with st.container(key=f"conclusion_model_action_{_stable_key(raw_model_id)}"):
                 if st.button(
-                    "查看证据",
+                    _model_evidence_action_label(raw_model_id),
                     key=f"conclusion_select_model_{_stable_key(raw_model_id)}",
                     type="tertiary",
                 ):
@@ -248,6 +245,10 @@ def _render_model_recommendations(
 def _select_model_evidence(model_id: str) -> None:
     st.session_state["conclusion_selected_model_id"] = str(model_id)
     request_scroll("#fde-evidence-index")
+
+
+def _model_evidence_action_label(model_id: str) -> str:
+    return f"查看证据：{model_id}"
 
 
 def _recommendation_row(item: Mapping[str, object]) -> dict[str, object]:
@@ -313,17 +314,17 @@ def _render_evidence_index(
 
 @st.dialog("专业标准答案", width="large")
 def _render_gold_evidence_dialog(item: EvidenceItem) -> None:
-    render_html(render_markdown_block(_gold_evidence_markdown(item)))
+    render_trusted_markdown_html(_gold_evidence_markdown(item))
 
 
 @st.dialog("模型回答全文", width="large")
 def _render_answer_evidence_dialog(item: EvidenceItem) -> None:
-    render_html(render_markdown_block(_answer_evidence_markdown(item)))
+    render_trusted_markdown_html(_answer_evidence_markdown(item))
 
 
 @st.dialog("评分理由", width="large")
 def _render_rationale_evidence_dialog(item: EvidenceItem) -> None:
-    render_html(render_markdown_block(_rationale_evidence_markdown(item)))
+    render_trusted_markdown_html(_rationale_evidence_markdown(item))
 
 
 def _gold_evidence_markdown(item: EvidenceItem) -> str:
@@ -350,27 +351,12 @@ def _structured_markdown(value: object) -> str:
 # --------------------------------------------------------------------------- #
 # 全部正式评测记录
 # --------------------------------------------------------------------------- #
-def _render_all_records(
-    report: ConclusionReport,
-    formal_scores: pd.DataFrame | None = None,
-    formal_responses: pd.DataFrame | None = None,
-) -> None:
+def _render_all_records(report: ConclusionReport) -> None:
     with st.expander("查看全部评测记录", expanded=False):
-        score_frame = report.formal_scores if formal_scores is None else formal_scores
-        response_frame = report.formal_responses if formal_responses is None else formal_responses
-        score_rows = score_frame.to_dict("records")
-        response_rows = response_frame.to_dict("records")
+        score_rows = report.formal_scores.to_dict("records")
         if not score_rows:
             st.caption("当前没有可查看的正式评测记录。")
             return
-        response_by_key = {
-            (
-                str(row.get("run_id") or ""),
-                str(row.get("case_id") or ""),
-                str(row.get("model_name") or ""),
-            ): row
-            for row in response_rows
-        }
         selected_index = st.selectbox(
             "选择评测记录",
             options=list(range(len(score_rows))),
@@ -378,23 +364,54 @@ def _render_all_records(
             key="conclusion_all_records_select",
         )
         score = score_rows[int(selected_index)]
+        render_inline_status(
+            [
+                ("样本", str(score.get("case_id") or "—")),
+                ("模型", str(score.get("eval_model") or "—")),
+                ("总分", str(score.get("total_score") if score.get("total_score") is not None else "—")),
+            ]
+        )
+        if st.button(
+            "查看完整记录",
+            key=f"conclusion_all_records_open_{_stable_key(score.get('run_id'), score.get('case_id'), score.get('eval_model'))}",
+            type="tertiary",
+        ):
+            _render_formal_record_dialog(report, score)
+
+
+@st.dialog("完整评测记录", width="large")
+def _render_formal_record_dialog(
+    report: ConclusionReport,
+    score: Mapping[str, object],
+) -> None:
+    response = _formal_response_for_score(report.formal_responses, score)
+    case_id = str(score.get("case_id") or "—")
+    model_id = str(score.get("eval_model") or "—")
+    st.caption(f"{case_id}｜{model_id}")
+    st.markdown("**模型回答**")
+    render_trusted_markdown_html(str(response.get("answer_text") or "暂无模型回答。"))
+    st.markdown("**评分维度与理由**")
+    render_trusted_markdown_html(_formal_score_markdown(score))
+
+
+def _formal_response_for_score(
+    responses: pd.DataFrame,
+    score: Mapping[str, object],
+) -> Mapping[str, object]:
+    target = (
+        str(score.get("run_id") or ""),
+        str(score.get("case_id") or ""),
+        str(score.get("eval_model") or ""),
+    )
+    for row in responses.to_dict("records"):
         key = (
-            str(score.get("run_id") or ""),
-            str(score.get("case_id") or ""),
-            str(score.get("eval_model") or ""),
+            str(row.get("run_id") or ""),
+            str(row.get("case_id") or ""),
+            str(row.get("model_name") or ""),
         )
-        response = response_by_key.get(key, {})
-        answer_text = str(response.get("answer_text") or "")
-        render_markdown_detail_panel(
-            "模型回答",
-            answer_text or "暂无模型回答。",
-            meta=f"{key[1]}｜{key[2]}",
-        )
-        render_markdown_detail_panel(
-            "评分维度与理由",
-            _formal_score_markdown(score),
-            meta=f"总分：{score.get('total_score') if score.get('total_score') is not None else '—'}",
-        )
+        if key == target:
+            return row
+    return {}
 
 
 def _formal_record_label(row: Mapping[str, object]) -> str:
@@ -431,14 +448,6 @@ def _judgment_symbol(judgment: str) -> str:
     if "可作为" in judgment:
         return "✓ "
     return ""
-
-
-def _judgment_tone(judgment: str) -> str:
-    if "谨慎" in judgment or "不建议" in judgment:
-        return "warning"
-    if "可作为" in judgment:
-        return "success"
-    return "neutral"
 
 
 def _primary_basis(item: dict) -> str:

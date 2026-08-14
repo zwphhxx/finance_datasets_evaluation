@@ -175,7 +175,10 @@ REPORT_STYLE_CSS = r"""
     padding: 0.25rem 0 0.6rem;
 }
 .st-key-conclusion_model_index [class*="st-key-conclusion_model_action_"] .stButton > button {
+    max-width: 100%;
     min-height: 2.25rem;
+    overflow-wrap: anywhere;
+    white-space: normal;
     width: auto;
 }
 .evidence-index {

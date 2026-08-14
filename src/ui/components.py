@@ -1246,6 +1246,12 @@ def render_markdown_block(markdown_text: str) -> str:
     return f'<div class="markdown-detail-body document-markdown">{markdown_detail_html(markdown_text)}</div>'
 
 
+def render_trusted_markdown_html(markdown_text: str, container=None) -> None:
+    """Render escaped Markdown HTML without normalizing document whitespace."""
+    target = container or st
+    target.markdown(render_markdown_block(markdown_text), unsafe_allow_html=True)
+
+
 def document_section_html(title: str, content_html: str) -> str:
     title_html = ""
     if str(title).strip():

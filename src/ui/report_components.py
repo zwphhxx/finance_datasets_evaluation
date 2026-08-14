@@ -67,8 +67,9 @@ def report_index_row_html(
     class_name = " ".join(classes)
     values = tuple(cells)
     cell_labels = tuple(labels or ())
+    cell_role = "columnheader" if header else "cell"
     cell_html = "".join(
-        '<div class="report-index-cell"'
+        f'<div class="report-index-cell" role="{cell_role}"'
         + (
             f' data-label="{_escaped(cell_labels[index])}"'
             if index < len(cell_labels) and str(cell_labels[index]).strip()
@@ -77,7 +78,12 @@ def report_index_row_html(
         + f">{_escaped(cell)}</div>"
         for index, cell in enumerate(values)
     )
-    return f'<div class="{class_name}">{cell_html}</div>'
+    row_state = "" if header else f' aria-label="模型：{_escaped(values[0] if values else "—")}" aria-selected="{str(active).lower()}"'
+    return (
+        '<div class="report-index-table" role="table" aria-label="模型评测结论">'
+        f'<div class="{class_name}" role="row"{row_state}>{cell_html}</div>'
+        "</div>"
+    )
 
 
 def evidence_index_html(
