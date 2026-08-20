@@ -405,7 +405,7 @@ REPORT_STYLE_CSS = r"""
 .evidence-index-dimensions {
     display: grid;
     gap: 0.35rem 0.75rem;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     list-style: none;
     margin: 0;
     padding: 0;

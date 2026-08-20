@@ -244,6 +244,28 @@ def test_evidence_index_uses_domain_labels_full_marks_and_clear_model_scope():
         assert internal_name not in html
 
 
+def test_evidence_selection_reason_translates_internal_dimension_field():
+    html = rc.evidence_index_html([
+        EvidenceItem(
+            run_id="R1",
+            case_id="CM-003",
+            model_name="deepseek-ai/DeepSeek-V4-Pro",
+            title="控制权变更核查",
+            total_score=93.0,
+            selection_reason="最弱维度：coverage_score",
+            weakest_dimension="coverage_score",
+            dimension_scores={"coverage_score": 15.0},
+            rationale={},
+            review_note="",
+            answer_text="回答",
+            gold_answer={},
+        )
+    ])
+
+    assert "最弱维度：风险覆盖" in html
+    assert "coverage_score" not in html
+
+
 def test_evidence_index_typography_prioritizes_decision_facts_over_technical_metadata():
     title_selector = '[data-testid="stMarkdownContainer"] .evidence-index-title {'
     assert title_selector in REPORT_STYLE_CSS
@@ -264,6 +286,10 @@ def test_evidence_index_typography_prioritizes_decision_facts_over_technical_met
     assert "font-size: 1rem" in value_rule
     assert ".evidence-index-total-value" in REPORT_STYLE_CSS
     assert ".evidence-index-weakest-value" in REPORT_STYLE_CSS
+    dimension_rule = REPORT_STYLE_CSS.split(
+        ".evidence-index-dimensions {", 1
+    )[1].split("}", 1)[0]
+    assert "grid-template-columns: repeat(3, minmax(0, 1fr))" in dimension_rule
 
 
 def test_report_primitives_keep_one_semantic_dom_for_report_rows():

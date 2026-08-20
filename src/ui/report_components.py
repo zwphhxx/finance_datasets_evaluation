@@ -191,7 +191,7 @@ def _evidence_item_html(
         f'<span class="evidence-index-case">{_escaped(item.case_id)}</span>'
         f'<span class="evidence-index-model">{_escaped(model_name)}</span>'
         f"{model_id_html}"
-        f'<span class="evidence-index-reason">{_escaped(item.selection_reason)}</span>'
+        f'<span class="evidence-index-reason">{_escaped(_selection_reason_text(item.selection_reason))}</span>'
         "</div>"
         f'<h3 class="evidence-index-title">{_escaped(item.title)}</h3>'
         f'<dl class="evidence-index-details">{details}</dl>'
@@ -242,6 +242,15 @@ def _dimension_score_text(field: object, score: object) -> str:
 def _dimension_label(field: object) -> str:
     field_name = str(field)
     return _DIMENSION_LABELS.get(field_name, field_name)
+
+
+def _selection_reason_text(reason: object) -> str:
+    text = str(reason)
+    prefix = "最弱维度："
+    if not text.startswith(prefix):
+        return text
+    field_name = text[len(prefix) :].strip()
+    return prefix + _dimension_label(field_name)
 
 
 def _score_text(value: object) -> str:
