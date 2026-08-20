@@ -1,8 +1,12 @@
 # 审计后续修复 Implementation Plan
 
-> **Status:** In progress
+> **Status:** Completed
 >
 > **Started on:** 2026-08-20
+>
+> **Completed on:** 2026-08-20
+>
+> **Implementation branch:** `codex/audit-followup-fixes`
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -98,25 +102,25 @@ Expected: PASS。
 - Verify: `src/ui/report_styles.py`
 - Git metadata only for cleanup
 
-- [ ] **Step 1: 启动只读本地应用**
+- [x] **Step 1: 启动只读本地应用**
 
 使用当前 Supabase 只读展示启动 Streamlit；不得点击评测、导入、删除或保存。
 
-- [ ] **Step 2: Ego Browser 回归**
+- [x] **Step 2: Ego Browser 回归**
 
 在 1710×1009、390×844、320×844 检查计算字号、中文维度、无页面横向溢出和三个操作按钮可达。
 
-- [ ] **Step 3: 全量验证与提交**
+- [x] **Step 3: 全量验证与提交**
 
 Run: `PYTHONPATH=. pytest -q`, `ruff check .`, `python -m py_compile ...`, `git diff --check`。
 
 Expected: 全部 exit 0。
 
-- [ ] **Step 4: 安全清理 Git 遗留**
+- [x] **Step 4: 安全清理 Git 遗留**
 
 为 `290b3c6` 创建 `archive/portfolio-style-experiment-2026-07-03` tag；随后删除其干净 worktree/分支。移除其余干净且已合并 worktree，删除已合并本地分支，检查并删除过时 stash，执行 `git worktree prune`。不删除当前实现分支和 `.claude/` 用户内容。
 
-- [ ] **Step 5: 复核**
+- [x] **Step 5: 复核**
 
 Run: `git worktree list --porcelain`, `git branch --merged main`, `git stash list`, `git status --short`。
 
