@@ -753,5 +753,9 @@ REPORT_STYLE_CSS = r"""
         max-height: calc(100dvh - 5.5rem - env(safe-area-inset-bottom));
         overflow-y: auto;
     }
+    [data-testid="stDialog"] [role="tab"],
+    [data-testid="stDialog"] [data-baseweb="tab"] {
+        min-height: 44px !important;
+    }
 }
 """

@@ -87,6 +87,26 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         self.assertIn("font-size: 1.35rem !important", title_rule)
         self.assertIn("grid-template-columns: minmax(0, 1fr)", dimensions_rule)
 
+    def test_mobile_full_evidence_dialog_tabs_keep_touch_height(self):
+        from src.ui.report_styles import REPORT_STYLE_CSS
+
+        mobile_css = REPORT_STYLE_CSS.split("@media (max-width: 760px)", 1)[1]
+        for selector in [
+            '[data-testid="stDialog"] [role="tab"]',
+            '[data-testid="stDialog"] [data-baseweb="tab"]',
+        ]:
+            rules = _declarations_for_selector(mobile_css, selector)
+            self.assertTrue(
+                any(
+                    re.search(
+                        r"min-height\s*:\s*44px\s*!important\s*;",
+                        rule,
+                    )
+                    for rule in rules
+                ),
+                selector,
+            )
+
     def test_evidence_review_uses_editorial_desktop_navigation_and_mobile_select(self):
         from src.ui.report_styles import REPORT_STYLE_CSS
 
