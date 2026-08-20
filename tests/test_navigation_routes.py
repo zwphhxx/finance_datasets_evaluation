@@ -108,7 +108,7 @@ class TopNavTests(unittest.TestCase):
         labels = [label for label, _ in PRIMARY_NAV_ITEMS]
         expected = ["评测结论", "项目说明", "样本库"]
         self.assertEqual(labels, expected)
-        self.assertEqual(("评测操作", "test_run"), OPERATION_NAV_ITEM)
+        self.assertEqual(("发起评测", "test_run"), OPERATION_NAV_ITEM)
         self.assertNotIn("评分" + "确认", labels)
 
     def test_navigation_route_keys_match_pages(self):

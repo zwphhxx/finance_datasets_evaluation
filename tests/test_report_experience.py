@@ -28,6 +28,22 @@ def test_project_method_copy_is_preserved_verbatim():
     assert "PROCESS_STEPS" not in getsource(professional_copy_snapshot)
 
 
+def test_project_method_sections_do_not_repeat_the_page_level_appendix_label(monkeypatch):
+    from src.ui import case_study
+
+    rendered: list[str] = []
+    monkeypatch.setattr(case_study, "render_report_masthead", lambda *args: None)
+    monkeypatch.setattr(case_study, "render_scope_ledger", lambda *args: None)
+    monkeypatch.setattr(case_study, "render_report_contents", lambda *args: None)
+    monkeypatch.setattr(case_study, "render_html", rendered.append)
+    monkeypatch.setattr(case_study, "_section_body_html", lambda *args: "<p>正文</p>")
+
+    case_study.render_case_study_page({"data": SimpleNamespace(), "base": SimpleNamespace()})
+
+    assert len(rendered) == len(case_study.CASE_STUDY_SECTIONS)
+    assert all("report-section-label" not in html for html in rendered)
+
+
 def test_samples_use_one_index_renderer_and_archive_tabs():
     source = Path("src/ui/samples.py").read_text(encoding="utf-8")
 
@@ -129,6 +145,31 @@ def test_report_primitives_escape_every_dynamic_value_except_trusted_body_html()
         assert unsafe not in html
     assert "<strong>可信正文</strong>" in section
     assert f'data-label="{escaped}"' in index_row
+
+
+def test_report_section_can_omit_a_repeated_label_and_index_values_have_a_stable_wrapper():
+    section = rc.report_section_html("01", "", "项目定位", "<p>正文</p>")
+    row = rc.report_index_row_html(["模型甲"], labels=["模型"])
+
+    assert "report-section-label" not in section
+    assert '<span class="report-index-value">模型甲</span>' in row
+
+
+def test_model_evidence_actions_use_friendly_names_and_disambiguate_duplicates():
+    from src.ui.conclusions import _model_evidence_action_labels
+
+    labels = _model_evidence_action_labels([
+        {"model_name": "vendor-a/model-x", "display_name": "Model X"},
+        {"model_name": "vendor-b/model-x", "display_name": "Model X"},
+        {"model_name": "vendor-c/model-y", "display_name": "Model Y"},
+    ])
+
+    assert labels == {
+        "vendor-a/model-x": "查看 Model X 证据（1）",
+        "vendor-b/model-x": "查看 Model X 证据（2）",
+        "vendor-c/model-y": "查看 Model Y 证据",
+    }
+    assert all("vendor-" not in label for label in labels.values())
 
 
 def test_evidence_index_escapes_each_displayed_field_and_omits_technical_run_id():
@@ -331,17 +372,20 @@ def test_report_index_rows_expose_independent_review_group_semantics():
     assert 'data-label="样本数／平均分"' in active
 
 
-def test_model_evidence_action_names_distinguish_raw_model_ids():
+def test_model_evidence_action_names_are_unique_without_exposing_raw_model_ids():
     from src.ui import conclusions as ui
 
-    first = ui._model_evidence_action_label("provider/model-a")
-    second = ui._model_evidence_action_label("provider/model-b")
+    labels = ui._model_evidence_action_labels([
+        {"model_name": "provider/model-a", "display_name": "模型甲"},
+        {"model_name": "provider/model-b", "display_name": "模型乙"},
+    ])
 
-    assert first == "查看证据：provider/model-a"
-    assert second == "查看证据：provider/model-b"
-    assert first != second
+    assert labels == {
+        "provider/model-a": "查看 模型甲 证据",
+        "provider/model-b": "查看 模型乙 证据",
+    }
     source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
-    assert "_model_evidence_action_label(raw_model_id)" in source
+    assert "action_labels[raw_model_id]" in source
 
 
 def test_model_review_group_label_uses_unique_raw_model_id():
@@ -627,7 +671,7 @@ def test_conclusions_are_default_and_operation_is_secondary():
         ("项目说明", "case_study"),
         ("样本库", "samples"),
     ]
-    assert navigation.OPERATION_NAV_ITEM == ("评测操作", "test_run")
+    assert navigation.OPERATION_NAV_ITEM == ("发起评测", "test_run")
     assert set(navigation.PAGES) == {"conclusions", "case_study", "samples", "test_run"}
 
 

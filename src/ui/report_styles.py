@@ -471,6 +471,10 @@ REPORT_STYLE_CSS = r"""
     .report-ledger-item:nth-child(-n + 2) {
         border-top: 0;
     }
+    .report-section {
+        margin-top: 1.2rem;
+        padding-top: 0.9rem;
+    }
     .report-section-heading {
         gap: 0.3rem;
         grid-template-columns: minmax(0, 1fr);
@@ -556,17 +560,34 @@ REPORT_STYLE_CSS = r"""
         white-space: normal;
         width: 100%;
     }
+    .conclusion-model-index .report-index-cell:nth-child(4) .report-index-value {
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        display: -webkit-box;
+        overflow: hidden;
+    }
     .report-index-cell {
-        padding: 0.55rem 0.45rem;
+        padding: 0.3rem 0.35rem;
     }
     .report-index-cell::before {
         color: var(--fde-muted);
         content: attr(data-label);
         display: block;
-        font-size: 0.68rem;
-        letter-spacing: 0.04em;
+        font-size: 0.75rem;
+        letter-spacing: 0.02em;
         line-height: 1.35;
         margin-bottom: 0.12rem;
+    }
+    .sample-report-index .report-index-cell {
+        padding: 0.1rem 0.35rem;
+    }
+    .sample-report-index .report-index-cell::before {
+        line-height: 1.2;
+        margin-bottom: 0;
+    }
+    .sample-report-index .report-index-value {
+        font-size: 0.9rem;
+        line-height: 1.3;
     }
     .report-index-cell:nth-child(odd) {
         padding-left: 0;

@@ -219,11 +219,11 @@ class AssetSectionTests(unittest.TestCase):
         from src.ui import samples as sample_ui
 
         raw_and_expected = [
-            ("CM-001", r"查看详情：CM\-001"),
-            ("<raw>", r"查看详情：\<raw\>"),
-            ("**A**", r"查看详情：\*\*A\*\*"),
-            ("[A](url)", r"查看详情：\[A\]\(url\)"),
-            (r"`A`\B", r"查看详情：\`A\`\\B"),
+            ("CM-001", r"查看 CM\-001"),
+            ("<raw>", r"查看 \<raw\>"),
+            ("**A**", r"查看 \*\*A\*\*"),
+            ("[A](url)", r"查看 \[A\]\(url\)"),
+            (r"`A`\B", r"查看 \`A\`\\B"),
         ]
         labels = [sample_ui._sample_detail_action_label(raw) for raw, _ in raw_and_expected]
 
@@ -427,7 +427,7 @@ class AssetSectionTests(unittest.TestCase):
             sample_ui._render_sample_index([sample], {}, [])
 
         build_rows.assert_called_once_with([sample], {}, [])
-        self.assertEqual(r"查看详情：LEGAL\/01 \<raw\>", button.call_args.args[0])
+        self.assertEqual(r"查看 LEGAL\/01 \<raw\>", button.call_args.args[0])
         select_sample.assert_called_once_with(sample.sample_id)
         scroll.assert_called_once_with("#fde-current-sample")
         html = "".join(rendered)

@@ -71,7 +71,7 @@ class WorkflowNavTests(unittest.TestCase):
     def test_navigation_groups_three_review_items_and_one_operation(self):
         self.assertEqual(3, len(PRIMARY_NAV_ITEMS))
         labels = [label for label, _ in [*PRIMARY_NAV_ITEMS, OPERATION_NAV_ITEM]]
-        self.assertEqual(["评测结论", "项目说明", "样本库", "评测操作"], labels)
+        self.assertEqual(["评测结论", "项目说明", "样本库", "发起评测"], labels)
 
 
 class PageRenderSmokeTests(unittest.TestCase):

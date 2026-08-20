@@ -49,12 +49,17 @@ def report_section_html(
 ) -> str:
     """Return one report section; only ``body_html`` is an already-trusted slot."""
     anchor = f' id="{_escaped(anchor_id)}"' if str(anchor_id).strip() else ""
+    label_html = (
+        f'<p class="report-section-label">{_escaped(label)}</p>'
+        if str(label).strip()
+        else ""
+    )
     return (
         f'<section class="report-section"{anchor}>'
         '<header class="report-section-heading">'
         f'<div class="report-section-index">{_escaped(index)}</div>'
         "<div>"
-        f'<p class="report-section-label">{_escaped(label)}</p>'
+        f"{label_html}"
         f'<h2 class="report-section-title">{_escaped(title)}</h2>'
         "</div>"
         "</header>"
@@ -104,7 +109,7 @@ def report_index_row_html(
             if index < len(cell_labels) and str(cell_labels[index]).strip()
             else ""
         )
-        + f">{_escaped(cell)}</div>"
+        + f'><span class="report-index-value">{_escaped(cell)}</span></div>'
         for index, cell in enumerate(values)
     )
     if header:

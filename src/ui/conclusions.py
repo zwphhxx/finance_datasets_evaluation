@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from hashlib import sha256
@@ -219,8 +220,8 @@ def _render_model_recommendations(
     )
 
     if not model_summaries:
-        render_empty_state("暂无模型判断。请先在评测操作页运行评测。")
-        if st.button("评测操作", key="conclusion_goto_test_run_models", type="secondary"):
+        render_empty_state("暂无模型判断。请先在发起评测页运行评测。")
+        if st.button("发起评测", key="conclusion_goto_test_run_models", type="secondary"):
             st.session_state.current_page = "test_run"
             st.rerun()
         return ""
@@ -228,6 +229,7 @@ def _render_model_recommendations(
     raw_ids = tuple(str(item.get("model_name") or "") for item in model_summaries)
     current = str(st.session_state.get("conclusion_selected_model_id") or "")
     selected_model = current if current in raw_ids else raw_ids[0]
+    action_labels = _model_evidence_action_labels(model_summaries)
     labels = ("模型", "样本数／平均分", "当前判断", "主要依据")
     st.caption("选择模型，在下方证据索引中查证代表样本。")
     with st.container(key="conclusion_model_index"):
@@ -253,7 +255,7 @@ def _render_model_recommendations(
             )
             with st.container(key=f"conclusion_model_action_{_stable_key(raw_model_id)}"):
                 if st.button(
-                    _model_evidence_action_label(raw_model_id),
+                    action_labels[raw_model_id],
                     key=f"conclusion_select_model_{_stable_key(raw_model_id)}",
                     type="tertiary",
                 ):
@@ -267,8 +269,22 @@ def _select_model_evidence(model_id: str) -> None:
     request_scroll("#fde-evidence-index")
 
 
-def _model_evidence_action_label(model_id: str) -> str:
-    return f"查看证据：{model_id}"
+def _model_evidence_action_labels(
+    model_summaries: Sequence[Mapping[str, object]],
+) -> dict[str, str]:
+    names = [
+        str(item.get("display_name") or item.get("model_name") or "未标注模型")
+        for item in model_summaries
+    ]
+    totals = Counter(names)
+    occurrences: Counter[str] = Counter()
+    labels: dict[str, str] = {}
+    for item, display_name in zip(model_summaries, names):
+        raw_model_id = str(item.get("model_name") or "")
+        occurrences[display_name] += 1
+        suffix = f"（{occurrences[display_name]}）" if totals[display_name] > 1 else ""
+        labels[raw_model_id] = f"查看 {display_name} 证据{suffix}"
+    return labels
 
 
 def _model_review_accessible_label(

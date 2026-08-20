@@ -290,22 +290,15 @@ def current_provider_name(provider_name: str) -> str:
     return provider_name
 
 
-def ensure_default_selected_cases(sample_options: list[dict]) -> None:
+def normalize_selected_cases(sample_options: list[dict]) -> None:
+    """Keep only explicit, still-valid sample choices without selecting a default."""
     option_ids = [item["case_id"] for item in sample_options]
     current = [
         case_id
         for case_id in st.session_state.get("test_run_selected_cases", [])
         if case_id in option_ids
     ]
-    if "test_run_selected_cases" in st.session_state:
-        st.session_state["test_run_selected_cases"] = current
-        return
-    default_cases = [
-        str(row.get("case_id"))
-        for row in er.default_task_selection([item["task"] for item in sample_options])
-        if str(row.get("case_id")) in option_ids
-    ]
-    st.session_state["test_run_selected_cases"] = default_cases[:1] if default_cases else option_ids[:1]
+    st.session_state["test_run_selected_cases"] = current
 
 
 def selected_tasks_from_state(sample_options: list[dict]) -> list[dict]:
@@ -336,9 +329,19 @@ def render_evaluation_scope(
         _status_row("计划评测", f"{run_plan['planned_responses']} 项", warn=not run_plan["planned_responses"]),
     ])
     with st.container(key="test_run_scope_actions"):
-        if st.button("选择样本", key="test_run_open_samples", type="secondary"):
+        if st.button(
+            "选择样本",
+            key="test_run_open_samples",
+            type="secondary",
+            use_container_width=True,
+        ):
             _open_sample_dialog(sample_options)
-        if st.button("选择模型", key="test_run_open_models", type="secondary"):
+        if st.button(
+            "选择模型",
+            key="test_run_open_models",
+            type="secondary",
+            use_container_width=True,
+        ):
             _open_model_dialog()
     if selected_tasks and st.button(
         "查看发送给被测模型的提示词",

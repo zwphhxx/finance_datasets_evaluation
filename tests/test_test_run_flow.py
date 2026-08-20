@@ -135,6 +135,42 @@ def test_run_plan_and_queue_are_deduplicated_and_deterministic():
     ]
 
 
+def test_sample_selection_starts_empty_and_preserves_only_explicit_valid_choices(monkeypatch):
+    session_state: dict[str, object] = {}
+    monkeypatch.setattr(ec.st, "session_state", session_state)
+    options = [{"case_id": "C1"}, {"case_id": "C2"}]
+
+    ec.normalize_selected_cases(options)
+    assert session_state["test_run_selected_cases"] == []
+
+    session_state["test_run_selected_cases"] = ["C2", "missing"]
+    ec.normalize_selected_cases(options)
+    assert session_state["test_run_selected_cases"] == ["C2"]
+
+
+def test_disabled_evaluation_action_explains_the_first_missing_requirement():
+    assert tr._evaluation_action_disabled_message(
+        {"sample_count": 0, "model_count": 0, "planned_responses": 0, "can_run": False},
+        store_available=True,
+        service_configured=True,
+    ) == "请先选择至少一个样本。"
+    assert tr._evaluation_action_disabled_message(
+        {"sample_count": 1, "model_count": 0, "planned_responses": 0, "can_run": False},
+        store_available=True,
+        service_configured=True,
+    ) == "请先选择至少一个模型。"
+    assert tr._evaluation_action_disabled_message(
+        {"sample_count": 1, "model_count": 1, "planned_responses": 1, "can_run": True},
+        store_available=False,
+        service_configured=True,
+    ) == "评测结果数据库恢复后才能开始评测。"
+    assert tr._evaluation_action_disabled_message(
+        {"sample_count": 1, "model_count": 1, "planned_responses": 1, "can_run": True},
+        store_available=True,
+        service_configured=False,
+    ) == "当前未配置模型服务密钥，暂不能发起真实调用。"
+
+
 def test_model_search_uses_id_owner_and_metadata_without_duplicates():
     models = [
         ModelInfo("vendor/model-a", "vendor", "model", "vendor", raw={"display_name": "Alpha"}),

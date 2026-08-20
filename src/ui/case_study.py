@@ -161,7 +161,7 @@ def render_case_study_page(data_bundle: dict) -> None:
         render_html(
             report_section_html(
                 str(section["number"]),
-                "方法附录",
+                "",
                 str(section["title"]),
                 _section_body_html(section, base),
                 anchor_id=str(section["anchor"]),

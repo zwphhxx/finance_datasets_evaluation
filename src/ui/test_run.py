@@ -45,7 +45,10 @@ from src.ui.evaluation_config import (
     build_sample_options,
     eligible_case_ids,  # noqa: F401 - compatibility import for existing callers
 )
-from src.ui.evaluation_results import render_evaluation_status, render_run_record
+from src.ui.evaluation_results import (
+    render_evaluation_records_dialog,
+    render_evaluation_status,
+)
 from src.ui.page_config import get_page_config
 from src.ui.scroll import request_scroll
 
@@ -84,6 +87,23 @@ def _require_persistence_preflight(store, provider_name: str) -> None:
         )
 
 
+def _evaluation_action_disabled_message(
+    run_plan: dict[str, int | bool],
+    *,
+    store_available: bool,
+    service_configured: bool,
+) -> str:
+    if not int(run_plan["sample_count"]):
+        return "请先选择至少一个样本。"
+    if not int(run_plan["model_count"]):
+        return "请先选择至少一个模型。"
+    if not store_available:
+        return "评测结果数据库恢复后才能开始评测。"
+    if not service_configured:
+        return "当前未配置模型服务密钥，暂不能发起真实调用。"
+    return ""
+
+
 def render_test_run_page(
     data_bundle: dict,
     *,
@@ -108,7 +128,7 @@ def render_test_run_page(
     testable_dimensions = ds.get_testable_rubric_dimensions()
     sample_title_map = {s.sample_id: s.title for s in sr.load_samples() if s.title}
     sample_options = build_sample_options(task_records, gold_map, testable_dimensions, title_map=sample_title_map)
-    ec.ensure_default_selected_cases(sample_options)
+    ec.normalize_selected_cases(sample_options)
     provider_name = ec.current_provider_name(sf.PROVIDER_NAME)
     selected_tasks = ec.selected_tasks_from_state(sample_options)
     model_ids = ec.selected_model_ids_from_state()
@@ -164,8 +184,6 @@ def render_test_run_page(
                 "评测结果数据库暂不可用，已禁用开始与继续评测。请在数据库恢复后重试。"
             )
 
-    render_numbered_section("02", "评测进度")
-    status_region = st.empty()
     display_status = status
 
     def stopped_status(message: str) -> EvaluationRunStatus:
@@ -183,9 +201,6 @@ def render_test_run_page(
         )
 
     service_ready = bool(store_available and sf.is_configured())
-    if not sf.is_configured():
-        st.caption("当前未配置模型服务密钥，暂不能发起真实调用。")
-
     terminal = status is not None and status.state in {COMPLETED, PARTIAL, FAILED}
     can_start = status is None or terminal
     if can_start:
@@ -197,6 +212,13 @@ def render_test_run_page(
                 disabled=not bool(run_plan["can_run"]) or not service_ready,
                 use_container_width=True,
             )
+        disabled_message = _evaluation_action_disabled_message(
+            run_plan,
+            store_available=store_available,
+            service_configured=sf.is_configured(),
+        )
+        if disabled_message:
+            st.caption(disabled_message)
         if start_clicked:
             try:
                 require_preflight(result_store, provider_name)
@@ -242,6 +264,8 @@ def render_test_run_page(
                 disabled=checkpoint_config is None or not service_ready,
                 use_container_width=True,
             )
+        if checkpoint_config is None:
+            st.caption("旧批次通过一致性校验且数据库可用后才能继续评测。")
         if continue_clicked:
             try:
                 require_preflight(result_store, provider_name)
@@ -267,13 +291,16 @@ def render_test_run_page(
             else:
                 cd.clear_conclusions_caches()
                 st.rerun()
-    with status_region.container():
-        if display_status is None:
-            st.caption("当前没有进行中的评测批次。")
-        else:
-            render_evaluation_status(display_status)
-            if status is not None:
-                _render_persisted_evaluation_records(result_store, status)
+    render_numbered_section("02", "当前进度")
+    if display_status is None:
+        st.caption("当前没有进行中的评测批次。")
+    else:
+        render_evaluation_status(display_status)
+        if status is not None:
+            _render_persisted_evaluation_records_entry(
+                result_store if store_available else None,
+                status,
+            )
 
     _render_evaluation_maintenance(result_store if store_available else None, status)
     dialog_name = ec.pending_dialog_name()
@@ -356,14 +383,18 @@ def build_evaluation_config(
         dimensions=tuple(ds.get_rubric_dimensions()),
     )
 
-def _render_persisted_evaluation_records(store, status: EvaluationRunStatus) -> None:
-    try:
-        answers = store.list_rows("live_run_responses", run_id=status.run_id)
-        scores = store.list_rows("live_run_scores", score_run_id=status.score_run_id)
-    except (ResultStoreError, ResultStoreUnavailableError):
-        render_persistence_status("评测记录暂时无法读取。")
-        return
-    render_run_record(answers, scores, ds.get_rubric_dimensions())
+def _render_persisted_evaluation_records_entry(
+    store,
+    status: EvaluationRunStatus,
+) -> None:
+    record_count = max(0, int(status.succeeded) + int(status.failed))
+    if st.button(
+        f"查看本批次记录（{record_count}）",
+        key=f"test_run_open_records_{_safe_key(status.run_id)}",
+        type="tertiary",
+        disabled=store is None,
+    ):
+        render_evaluation_records_dialog(store, status, ds.get_rubric_dimensions())
 
 
 def _render_evaluation_maintenance(store=None, status: EvaluationRunStatus | None = None) -> None:

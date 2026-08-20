@@ -872,7 +872,7 @@ def _select_sample(sample_id: str) -> None:
 def _sample_detail_action_label(sample_id: str) -> str:
     """返回可唯一识别的样本详情动作名。"""
     escaped_id = _STREAMLIT_MARKDOWN_PUNCTUATION_RE.sub(r"\\\1", str(sample_id))
-    return f"查看详情：{escaped_id}"
+    return f"查看 {escaped_id}"
 
 
 def _format_source_status_caption(status: dict) -> str:
@@ -948,7 +948,7 @@ def _render_samples_title_bar(config) -> None:
         with col1:
             render_page_heading(config.title, config.question)
         with col2:
-            with st.popover("样本维护", type="tertiary", width="stretch"):
+            with st.popover("样本维护", type="tertiary", width="content"):
                 st.caption("新增样本或批量导入样本数据。")
                 if st.button("新增样本", key="samples_create_open", type="secondary", use_container_width=True):
                     _open_create_dialog()

@@ -28,7 +28,7 @@ PRIMARY_NAV_ITEMS = [
     ("项目说明", "case_study"),
     ("样本库", "samples"),
 ]
-OPERATION_NAV_ITEM = ("评测操作", "test_run")
+OPERATION_NAV_ITEM = ("发起评测", "test_run")
 
 
 def _render_navigation_button(label: str, page_key: str, current: str, *, key: str) -> None:

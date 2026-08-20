@@ -17,7 +17,7 @@ def test_primary_navigation_prioritizes_conclusions_without_marker_spacer():
         "case_study",
         "samples",
     ]
-    assert OPERATION_NAV_ITEM == ("评测操作", "test_run")
+    assert OPERATION_NAV_ITEM == ("发起评测", "test_run")
     navigation = _source("src/ui/navigation.py")
     components = _source("src/ui/components.py")
     assert "top-nav-current-marker" not in navigation

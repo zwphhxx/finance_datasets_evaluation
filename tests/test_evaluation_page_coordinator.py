@@ -20,6 +20,7 @@ from app.services.evaluation_workflow import (
     WorkflowStopped,
 )
 from src.ui import evaluation_config as ec
+from src.ui import evaluation_results as er_ui
 from src.ui import test_run as tr
 
 
@@ -37,6 +38,7 @@ class FakeStreamlit:
         self.buttons: list[dict] = []
         self.messages: list[str] = []
         self.popovers: list[dict] = []
+        self.sequence: list[str] = []
 
     def container(self, *args, **kwargs):
         return nullcontext()
@@ -49,6 +51,7 @@ class FakeStreamlit:
         return nullcontext()
 
     def button(self, label, *, key, disabled=False, **kwargs):
+        self.sequence.append(f"button:{key}")
         self.buttons.append(
             {"label": label, "key": key, "disabled": disabled, "type": kwargs.get("type")}
         )
@@ -175,12 +178,21 @@ def _render(
     monkeypatch.setattr(tr, "st", fake_st)
     monkeypatch.setattr(ec, "st", fake_st)
     monkeypatch.setattr(tr, "render_page_heading", lambda *args, **kwargs: None)
-    monkeypatch.setattr(tr, "render_numbered_section", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        tr,
+        "render_numbered_section",
+        lambda number, *args, **kwargs: fake_st.sequence.append(f"section:{number}"),
+    )
     monkeypatch.setattr(ec, "render_evaluation_scope", lambda *args, **kwargs: None)
     monkeypatch.setattr(ec, "render_pending_dialogs", lambda *args, **kwargs: None)
     monkeypatch.setattr(tr, "render_persistence_status", lambda value: fake_st.messages.append(value))
     monkeypatch.setattr(tr, "render_evaluation_status", lambda status: events.append(f"status:{status.state}"))
-    monkeypatch.setattr(tr, "render_run_record", lambda *args: events.append("records"))
+    monkeypatch.setattr(
+        tr,
+        "render_evaluation_records_dialog",
+        lambda *args: events.append("records-dialog"),
+        raising=False,
+    )
     monkeypatch.setattr(tr.sr, "load_samples", lambda: [])
     monkeypatch.setattr(tr.ds, "get_testable_rubric_dimensions", lambda: [])
     monkeypatch.setattr(tr.ds, "get_rubric_dimensions", lambda: [{"field": "accuracy_score"}])
@@ -245,13 +257,52 @@ def _render(
 
 
 @pytest.mark.parametrize("state", [COMPLETED, PARTIAL, FAILED])
-def test_terminal_runs_show_records_and_allow_a_new_batch(monkeypatch, state):
-    ui, _store, events = _render(monkeypatch, state)
+def test_terminal_runs_offer_lazy_records_and_allow_a_new_batch(monkeypatch, state):
+    ui, store, events = _render(monkeypatch, state)
 
-    assert "records" in events
+    assert not any(
+        call[:2] in {
+            ("list_rows", "live_run_responses"),
+            ("list_rows", "live_run_scores"),
+        }
+        for call in store.calls
+    )
+    assert any(button["key"] == "test_run_open_records_RUN_1" for button in ui.buttons)
     assert [(button["key"], button["disabled"]) for button in ui.buttons if "evaluation" in button["key"]] == [
         ("test_run_start_evaluation", False)
     ]
+
+
+def test_primary_action_is_rendered_before_progress_and_history(monkeypatch):
+    ui, _store, _events = _render(monkeypatch, COMPLETED)
+
+    assert ui.sequence.index("button:test_run_start_evaluation") < ui.sequence.index("section:02")
+    assert ui.sequence.index("section:02") < ui.sequence.index("button:test_run_open_records_RUN_1")
+
+
+def test_history_button_opens_the_target_batch_dialog(monkeypatch):
+    _ui, _store, events = _render(
+        monkeypatch,
+        COMPLETED,
+        click_key="test_run_open_records_RUN_1",
+    )
+
+    assert events.count("records-dialog") == 1
+
+
+def test_lazy_record_loader_uses_exact_run_and_score_batch_filters():
+    store = FakeStore(has_run=True)
+
+    answers, scores = er_ui.load_evaluation_records(store, _status(COMPLETED))
+
+    assert answers == []
+    assert scores == []
+    assert ("list_rows", "live_run_responses", {"run_id": "RUN-1"}) in store.calls
+    assert (
+        "list_rows",
+        "live_run_scores",
+        {"score_run_id": "SCORE-1"},
+    ) in store.calls
 
 
 @pytest.mark.parametrize(

@@ -537,7 +537,7 @@ class NavigationAndPageConfigGuardrailTests(unittest.TestCase):
     def test_navigation_only_exposes_current_four_pages(self):
         self.assertEqual(MAIN_PAGE_KEYS, list(PAGES.keys()))
         self.assertEqual(list(zip(MAIN_NAV_LABELS, MAIN_NAV_PAGE_KEYS)), PRIMARY_NAV_ITEMS)
-        self.assertEqual(("评测操作", "test_run"), OPERATION_NAV_ITEM)
+        self.assertEqual(("发起评测", "test_run"), OPERATION_NAV_ITEM)
 
     def test_page_config_only_contains_current_four_pages(self):
         self.assertEqual(PAGE_CONFIG_KEYS, [config.page_key for config in PAGE_CONFIGS])
@@ -746,7 +746,7 @@ class FormalConclusionStatusGuardrailTests(unittest.TestCase):
         text = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
         for phrase in [
             "暂无模型判断",
-            "评测操作",
+            "发起评测",
         ]:
             self.assertIn(phrase, text)
 

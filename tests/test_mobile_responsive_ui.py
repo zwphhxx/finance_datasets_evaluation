@@ -199,7 +199,7 @@ class MobileResponsiveUIContracts(unittest.TestCase):
             1,
         )[1].split("@media (max-width: 480px)", 1)[0]
         expected_mobile_sizes = {
-            '[data-testid="stMarkdownContainer"] .page-title-heading': "1.3rem",
+            '[data-testid="stMarkdownContainer"] .page-title-heading': "1.5rem",
         }
         for selector, expected_size in expected_mobile_sizes.items():
             self.assertTrue(
@@ -307,6 +307,14 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         self.assertIn(".report-index-cell::before", mobile_css)
         self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", mobile_css)
         self.assertNotIn("min-width: 44rem", mobile_css)
+        basis_selector = (
+            ".conclusion-model-index .report-index-cell:nth-child(4) "
+            ".report-index-value"
+        )
+        self.assertIn(basis_selector + " {", mobile_css)
+        basis_rule = mobile_css.split(basis_selector + " {", 1)[1].split("}", 1)[0]
+        self.assertIn("-webkit-line-clamp: 2", basis_rule)
+        self.assertIn("overflow: hidden", basis_rule)
 
     def test_mobile_sample_index_reflows_the_same_semantic_rows(self):
         from src.ui.report_styles import REPORT_STYLE_CSS
@@ -332,6 +340,61 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         action_rule = mobile_css.split(action_selector + " {", 1)[1].split("}", 1)[0]
         self.assertIn("min-height: 44px", action_rule)
         self.assertIn("overflow-wrap: anywhere", action_rule)
+        self.assertIn("padding: 0.3rem 0.35rem", mobile_css)
+
+        sample_cell_rule = mobile_css.split(
+            ".sample-report-index .report-index-cell {", 1
+        )[1].split("}", 1)[0]
+        sample_label_rule = mobile_css.split(
+            ".sample-report-index .report-index-cell::before {", 1
+        )[1].split("}", 1)[0]
+        sample_value_rule = mobile_css.split(
+            ".sample-report-index .report-index-value {", 1
+        )[1].split("}", 1)[0]
+        self.assertIn("padding: 0.1rem 0.35rem", sample_cell_rule)
+        self.assertIn("line-height: 1.2", sample_label_rule)
+        self.assertIn("margin-bottom: 0", sample_label_rule)
+        self.assertIn("font-size: 0.9rem", sample_value_rule)
+        self.assertIn("line-height: 1.3", sample_value_rule)
+
+    def test_mobile_type_scale_scope_actions_and_appendix_spacing_are_coordinated(self):
+        from src.ui.report_styles import REPORT_STYLE_CSS
+
+        responsive_mobile = self._responsive_css().split(
+            "@media (max-width: 760px)", 1
+        )[1].split("@media (max-width: 480px)", 1)[0]
+        report_mobile = REPORT_STYLE_CSS.split("@media (max-width: 760px)", 1)[1]
+
+        title_rule = responsive_mobile.split(
+            '[data-testid="stMarkdownContainer"] .page-title-heading {', 1
+        )[1].split("}", 1)[0]
+        scope_rule = responsive_mobile.rsplit(
+            ".st-key-test_run_scope_actions {", 1
+        )[1].split("}", 1)[0]
+        label_rule = report_mobile.split(".report-index-cell::before {", 1)[1].split("}", 1)[0]
+        section_rule = report_mobile.split(".report-section {", 1)[1].split("}", 1)[0]
+
+        self.assertIn("font-size: 1.5rem", title_rule)
+        self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", scope_rule)
+        self.assertIn("font-size: 0.75rem", label_rule)
+        self.assertIn("letter-spacing: 0.02em", label_rule)
+        self.assertIn("margin-top: 1.2rem", section_rule)
+        self.assertIn("padding-top: 0.9rem", section_rule)
+
+    def test_mobile_sample_maintenance_is_a_right_aligned_tertiary_action(self):
+        source = SAMPLES_PATH.read_text(encoding="utf-8")
+        responsive_mobile = self._responsive_css().split(
+            "@media (max-width: 760px)", 1
+        )[1].split("@media (max-width: 480px)", 1)[0]
+
+        self.assertIn('st.popover("样本维护", type="tertiary", width="content")', source)
+        second_column = (
+            '.st-key-samples_title_bar [data-testid="stHorizontalBlock"] '
+            '> [data-testid="stColumn"]:nth-child(2)'
+        )
+        self.assertIn(second_column + " {", responsive_mobile)
+        rule = responsive_mobile.split(second_column + " {", 1)[1].split("}", 1)[0]
+        self.assertIn("justify-self: end", rule)
 
     def test_mobile_model_evidence_actions_are_full_width_touch_targets(self):
         from src.ui.report_styles import REPORT_STYLE_CSS
@@ -594,7 +657,7 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         self.assertIn('key="test_run_open_models"', source)
         self.assertNotIn("st.columns(", source)
 
-    def test_run_action_group_uses_desktop_grid_and_mobile_stack(self):
+    def test_run_action_group_uses_equal_two_column_grid_on_desktop_and_mobile(self):
         css = self._responsive_css()
         desktop_css, mobile_and_below = css.split("@media (max-width: 760px)", 1)
         mobile_css = mobile_and_below.split("@media (max-width: 480px)", 1)[0]
@@ -613,10 +676,24 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         )
         self.assertTrue(
             any(
-                re.search(r"grid-template-columns\s*:\s*1fr\s*;", rule)
+                re.search(
+                    r"grid-template-columns\s*:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)\s*;",
+                    rule,
+                )
                 for rule in mobile_rules
             )
         )
+
+    def test_mobile_scope_choice_buttons_fill_their_equal_grid_tracks(self):
+        import inspect
+
+        from src.ui.evaluation_config import render_evaluation_scope
+
+        source = inspect.getsource(render_evaluation_scope)
+        action_source = source.split('with st.container(key="test_run_scope_actions"):', 1)[1]
+        action_source = action_source.split("if selected_tasks", 1)[0]
+
+        self.assertEqual(2, action_source.count("use_container_width=True"))
 
     def test_sample_title_actions_use_bottom_alignment_without_blank_rows(self):
         import inspect
