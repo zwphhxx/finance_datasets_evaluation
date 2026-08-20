@@ -191,10 +191,79 @@ def test_evidence_dimension_scores_are_a_valid_styled_list_without_raw_html_flag
     ])
 
     assert '<ul class="evidence-index-dimensions">' in html
-    assert "<li>准确性：3.0</li>" in html
-    assert "<li>覆盖度：4.0</li>" in html
+    assert "<li>准确性 3</li>" in html
+    assert "<li>覆盖度 4</li>" in html
     assert "</li></ul>" in html
     assert "trusted" not in signature(rc._detail_html).parameters
+
+
+def test_evidence_index_uses_domain_labels_full_marks_and_clear_model_scope():
+    html = rc.evidence_index_html([
+        EvidenceItem(
+            run_id="R1",
+            case_id="CM-001",
+            model_name="deepseek-ai/DeepSeek-V4-Pro",
+            title="重大资产重组判断",
+            total_score=75.0,
+            selection_reason="最低总分",
+            weakest_dimension="coverage_score",
+            dimension_scores={
+                "accuracy_score": 20.0,
+                "reasoning_score": 16.0,
+                "coverage_score": 14.0,
+                "evidence_score": 13.0,
+                "expression_score": 12.0,
+            },
+            rationale={},
+            review_note="",
+            answer_text="回答",
+            gold_answer={},
+        )
+    ])
+
+    assert "DeepSeek-V4-Pro" in html
+    assert "deepseek-ai/DeepSeek-V4-Pro" in html
+    assert "模型整体最弱维度" in html
+    assert "风险覆盖" in html
+    assert "75 / 100" in html
+    for value in [
+        "专业准确性 20 / 30",
+        "推理与场景适配 16 / 20",
+        "风险覆盖 14 / 20",
+        "依据可靠性 13 / 15",
+        "专业表达 12 / 15",
+    ]:
+        assert value in html
+    for internal_name in [
+        "accuracy_score",
+        "reasoning_score",
+        "coverage_score",
+        "evidence_score",
+        "expression_score",
+    ]:
+        assert internal_name not in html
+
+
+def test_evidence_index_typography_prioritizes_decision_facts_over_technical_metadata():
+    title_selector = '[data-testid="stMarkdownContainer"] .evidence-index-title {'
+    assert title_selector in REPORT_STYLE_CSS
+    title_rule = REPORT_STYLE_CSS.split(title_selector, 1)[1].split("}", 1)[0]
+    metadata_rule = REPORT_STYLE_CSS.split(
+        ".evidence-index-case,", 1
+    )[1].split("}", 1)[0]
+    label_rule = REPORT_STYLE_CSS.split(
+        ".evidence-index-details dt {", 1
+    )[1].split("}", 1)[0]
+    value_rule = REPORT_STYLE_CSS.rsplit(
+        ".evidence-index-details dd {", 1
+    )[1].split("}", 1)[0]
+
+    assert "font-size: 1.45rem !important" in title_rule
+    assert "font-size: 0.95rem" in metadata_rule
+    assert "font-size: 0.82rem" in label_rule
+    assert "font-size: 1rem" in value_rule
+    assert ".evidence-index-total-value" in REPORT_STYLE_CSS
+    assert ".evidence-index-weakest-value" in REPORT_STYLE_CSS
 
 
 def test_report_primitives_keep_one_semantic_dom_for_report_rows():

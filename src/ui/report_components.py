@@ -7,7 +7,11 @@ from collections.abc import Iterable, Mapping, Sequence
 from html import escape
 
 from app.services.evidence_index import EvidenceItem
+from app.services.model_display import display_model_detail, display_model_name
+from src.metrics import SCORE_DIMENSION_FULL_MARKS, SCORE_DIMENSIONS
 from src.ui.components import render_html
+
+_DIMENSION_LABELS = dict(SCORE_DIMENSIONS)
 
 
 def report_masthead_html(title: str, description: str, eyebrow: str = "") -> str:
@@ -150,9 +154,26 @@ def _evidence_item_html(
     *,
     include_full_details: bool = True,
 ) -> str:
+    model_name = display_model_name(item.model_name, source="live")
+    model_id = display_model_detail(item.model_name)
+    model_id_html = (
+        f'<span class="evidence-index-model-id">{_escaped(model_id)}</span>'
+        if model_id != model_name
+        else ""
+    )
     details = (
-        _detail_html("总分", item.total_score)
-        + _detail_html("最弱维度", item.weakest_dimension)
+        _detail_html(
+            "总分",
+            f"{_score_text(item.total_score)} / 100",
+            wrapper_class="evidence-index-total",
+            value_class="evidence-index-total-value",
+        )
+        + _detail_html(
+            "模型整体最弱维度",
+            _dimension_label(item.weakest_dimension),
+            wrapper_class="evidence-index-weakest",
+            value_class="evidence-index-weakest-value",
+        )
         + _dimension_detail_html(item.dimension_scores)
     )
     if include_full_details:
@@ -168,7 +189,8 @@ def _evidence_item_html(
         '<div class="evidence-index-content">'
         '<div class="evidence-index-head">'
         f'<span class="evidence-index-case">{_escaped(item.case_id)}</span>'
-        f'<span class="evidence-index-model">{_escaped(item.model_name)}</span>'
+        f'<span class="evidence-index-model">{_escaped(model_name)}</span>'
+        f"{model_id_html}"
         f'<span class="evidence-index-reason">{_escaped(item.selection_reason)}</span>'
         "</div>"
         f'<h3 class="evidence-index-title">{_escaped(item.title)}</h3>'
@@ -178,13 +200,24 @@ def _evidence_item_html(
     )
 
 
-def _detail_html(label: object, value: object) -> str:
-    return f"<div><dt>{_escaped(label)}</dt><dd>{_escaped(value)}</dd></div>"
+def _detail_html(
+    label: object,
+    value: object,
+    *,
+    wrapper_class: str = "",
+    value_class: str = "",
+) -> str:
+    wrapper_attr = f' class="{wrapper_class}"' if wrapper_class else ""
+    value_attr = f' class="{value_class}"' if value_class else ""
+    return (
+        f"<div{wrapper_attr}><dt>{_escaped(label)}</dt>"
+        f"<dd{value_attr}>{_escaped(value)}</dd></div>"
+    )
 
 
 def _dimension_detail_html(scores: Mapping[object, object]) -> str:
     return (
-        f"<div><dt>{_escaped('维度得分')}</dt><dd>"
+        f'<div class="evidence-index-dimension-detail"><dt>{_escaped("维度得分")}</dt><dd>'
         f"{_escaped_dimension_list_html(scores)}"
         "</dd></div>"
     )
@@ -192,10 +225,33 @@ def _dimension_detail_html(scores: Mapping[object, object]) -> str:
 
 def _escaped_dimension_list_html(scores: Mapping[object, object]) -> str:
     rows = "".join(
-        f"<li>{_escaped(field)}：{_escaped(score)}</li>"
+        f"<li>{_escaped(_dimension_score_text(field, score))}</li>"
         for field, score in scores.items()
     )
     return f'<ul class="evidence-index-dimensions">{rows}</ul>'
+
+
+def _dimension_score_text(field: object, score: object) -> str:
+    field_name = str(field)
+    label = _dimension_label(field_name)
+    full_mark = SCORE_DIMENSION_FULL_MARKS.get(field_name)
+    score_text = _score_text(score)
+    return f"{label} {score_text} / {full_mark}" if full_mark is not None else f"{label} {score_text}"
+
+
+def _dimension_label(field: object) -> str:
+    field_name = str(field)
+    return _DIMENSION_LABELS.get(field_name, field_name)
+
+
+def _score_text(value: object) -> str:
+    if value is None:
+        return "—"
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return _display(value)
+    return f"{number:g}"
 
 
 def _escaped(value: object) -> str:

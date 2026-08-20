@@ -324,7 +324,7 @@ REPORT_STYLE_CSS = r"""
 .evidence-index-case,
 .evidence-index-model,
 .evidence-index-reason {
-    font-size: 0.78rem;
+    font-size: 0.95rem;
     line-height: 1.45;
     overflow-wrap: anywhere;
 }
@@ -334,20 +334,29 @@ REPORT_STYLE_CSS = r"""
     font-weight: 700;
 }
 .evidence-index-model {
+    color: var(--fde-ink);
+    font-weight: 600;
+}
+.evidence-index-model-id {
     color: var(--fde-muted);
+    font-size: 0.78rem;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
 }
 .evidence-index-reason {
     color: var(--fde-ink);
     font-weight: 650;
 }
-.evidence-index-title {
+.evidence-index-title,
+[data-testid="stMarkdownContainer"] .evidence-index-title {
     color: var(--fde-ink);
     font-family: var(--fde-serif);
-    font-size: 1.15rem;
+    font-size: 1.45rem !important;
     font-weight: 650;
-    line-height: 1.4;
-    margin: 0.38rem 0 0;
+    line-height: 1.38 !important;
+    margin: 0.5rem 0 0;
     overflow-wrap: anywhere;
+    padding: 0 !important;
 }
 .evidence-index-details {
     display: grid;
@@ -367,26 +376,43 @@ REPORT_STYLE_CSS = r"""
 }
 .evidence-index-details dt {
     color: var(--fde-muted);
-    font-size: 0.7rem;
+    font-size: 0.82rem;
     line-height: 1.4;
 }
 .evidence-index-details dd {
     color: var(--fde-text);
-    font-size: 0.86rem;
+    font-size: 1rem;
     line-height: 1.55;
     margin-top: 0.12rem;
     overflow-wrap: anywhere;
     white-space: pre-wrap;
 }
+.evidence-index-total-value {
+    color: var(--fde-ink) !important;
+    font-family: var(--fde-serif);
+    font-size: 1.45rem !important;
+    font-weight: 650;
+    line-height: 1.3 !important;
+}
+.evidence-index-weakest-value {
+    color: var(--fde-ink) !important;
+    font-size: 1.08rem !important;
+    font-weight: 650;
+}
+.evidence-index-dimension-detail {
+    grid-column: 1 / -1;
+}
 .evidence-index-dimensions {
     display: grid;
-    gap: 0.12rem 0.65rem;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.35rem 0.75rem;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     list-style: none;
     margin: 0;
     padding: 0;
 }
 .evidence-index-dimensions li {
+    font-size: 0.98rem;
+    line-height: 1.5;
     min-width: 0;
     overflow-wrap: anywhere;
 }
@@ -548,6 +574,11 @@ REPORT_STYLE_CSS = r"""
     .evidence-index-item {
         gap: 0.55rem;
         grid-template-columns: 0.45rem minmax(0, 1fr);
+    }
+    .evidence-index-title,
+    [data-testid="stMarkdownContainer"] .evidence-index-title {
+        font-size: 1.35rem !important;
+        line-height: 1.38 !important;
     }
     .evidence-index-head,
     .evidence-index-details,

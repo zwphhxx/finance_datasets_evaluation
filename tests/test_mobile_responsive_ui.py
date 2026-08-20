@@ -73,6 +73,20 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         )
         self.assertIn("overflow-y: auto", mobile_css)
 
+    def test_mobile_evidence_title_and_dimension_facts_keep_readable_hierarchy(self):
+        from src.ui.report_styles import REPORT_STYLE_CSS
+
+        mobile_css = REPORT_STYLE_CSS.split("@media (max-width: 760px)", 1)[1]
+        title_selector = '[data-testid="stMarkdownContainer"] .evidence-index-title {'
+        self.assertIn(title_selector, mobile_css)
+        title_rule = mobile_css.split(title_selector, 1)[1].split("}", 1)[0]
+        dimensions_rule = mobile_css.rsplit(
+            ".evidence-index-dimensions {", 1
+        )[1].split("}", 1)[0]
+
+        self.assertIn("font-size: 1.35rem !important", title_rule)
+        self.assertIn("grid-template-columns: minmax(0, 1fr)", dimensions_rule)
+
     def test_mobile_report_masthead_keeps_the_first_judgment_in_reach(self):
         from src.ui.report_styles import REPORT_STYLE_CSS
 
