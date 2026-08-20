@@ -1,5 +1,13 @@
 # 精品咨询报告视觉升级 Implementation Plan
 
+> **Status:** Completed
+>
+> **Completed on:** 2026-08-20
+>
+> **Implementation baseline:** 已合并到 `main`，截至 `0c69946`。
+>
+> 下列复选框保留为实施过程清单，不再代表当前项目进度。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 将四页 Streamlit 评测项目升级为 B2/T2 精品咨询报告视觉，并让 Supabase 暂停或配置失效时在 3–5 秒内明确失败、停止重复连接且禁止真实模型调用。

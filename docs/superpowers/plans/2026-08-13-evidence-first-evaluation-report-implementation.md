@@ -1,5 +1,13 @@
 # 证据优先的专业模型评测报告 Implementation Plan
 
+> **Status:** Completed
+>
+> **Completed on:** 2026-08-20
+>
+> **Implementation baseline:** 已合并到 `main`，截至 `0c69946`。
+>
+> 下列复选框保留为实施过程清单，不再代表当前项目进度。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 将现有四页 Streamlit 项目改造成结论默认、证据可追溯的专业评测报告，并把回答与评分合并为一次可持久化、可安全续跑的真实评测。
