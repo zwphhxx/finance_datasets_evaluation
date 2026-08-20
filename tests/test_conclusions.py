@@ -16,7 +16,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
+import pytest
 
+from app.persistence import get_result_store
 from app.persistence.result_store import ResultStoreError
 from app.services import conclusions as cc
 from app.services.conclusion_read_model import build_conclusion_report
@@ -629,9 +631,11 @@ class RenderTests(unittest.TestCase):
 
         self.assertEqual(["模型甲：样本不足，暂不形成判断"], captured)
 
+    @pytest.mark.usefixtures("isolated_app_database")
     def test_page_renders_without_exception(self):
         from streamlit.testing.v1 import AppTest
 
+        self.assertEqual(get_result_store().engine.url.get_backend_name(), "sqlite")
         at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
         at.session_state["current_page"] = "conclusions"
         at.run(timeout=30)

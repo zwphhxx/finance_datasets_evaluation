@@ -19,6 +19,23 @@ from app.persistence.config import (
 )
 
 
+def test_full_app_render_tests_declare_isolated_runtime_database():
+    root = Path(__file__).resolve().parents[1]
+    for relative_path in (
+        "tests/test_conclusions.py",
+        "tests/test_recoverable_evaluation_queue.py",
+    ):
+        source = (root / relative_path).read_text(encoding="utf-8")
+        assert 'pytest.mark.usefixtures("isolated_app_database")' in source
+        assert 'get_backend_name(), "sqlite"' in source
+
+    multi_page_source = (
+        root / "tests/test_recoverable_evaluation_queue.py"
+    ).read_text(encoding="utf-8")
+    assert 'mock.patch.dict(os.environ, {"DATABASE_URL": database_url}' in multi_page_source
+    assert "self._render(page_key, database_url=database_url" in multi_page_source
+
+
 def test_database_url_wins_and_uses_psycopg():
     settings = resolve_result_store_settings(
         db_path=None,

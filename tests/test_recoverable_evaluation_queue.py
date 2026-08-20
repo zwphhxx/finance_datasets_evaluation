@@ -7,12 +7,16 @@ and the Mock provider only — no test performs a real outbound API call, and no
 test fabricates judge scores beyond what the adapter is explicitly handed.
 """
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 from app.models.registry import get_provider
+from app.persistence import get_result_store
 from app.services import dataset_service as ds
 from app.services import eval_runner as er
 from app.services.live_results import (
@@ -177,24 +181,37 @@ class AppRenderTests(unittest.TestCase):
         "conclusions",
     ]
 
-    def _render(self, page_key, run_result=None):
+    def _render(self, page_key, *, database_url, run_result=None):
         from streamlit.testing.v1 import AppTest
 
-        at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
-        if run_result is not None:
-            at.session_state["live_eval_last_run"] = run_result
-        at.session_state["current_page"] = page_key
-        at.run(timeout=30)
-        self.assertEqual(list(at.exception), [], page_key)
+        # AppTest restores its own environment snapshot after each run. Reapply the
+        # isolated URL for every page so a multi-page test can never fall through
+        # to the developer machine's Streamlit secrets.
+        with mock.patch.dict(os.environ, {"DATABASE_URL": database_url}, clear=False):
+            self.assertEqual(
+                get_result_store().engine.url.get_backend_name(), "sqlite"
+            )
+            at = AppTest.from_file(
+                str(Path(__file__).resolve().parents[1] / "app.py")
+            )
+            if run_result is not None:
+                at.session_state["live_eval_last_run"] = run_result
+            at.session_state["current_page"] = page_key
+            at.run(timeout=30)
+            self.assertEqual(list(at.exception), [], page_key)
 
+    @pytest.mark.usefixtures("isolated_app_database")
     def test_pages_render_without_run(self):
+        database_url = os.environ["DATABASE_URL"]
         for page_key in self._PAGES:
-            self._render(page_key)
+            self._render(page_key, database_url=database_url)
 
+    @pytest.mark.usefixtures("isolated_app_database")
     def test_pages_render_with_live_run(self):
+        database_url = os.environ["DATABASE_URL"]
         run = _run(2)
         for page_key in self._PAGES:
-            self._render(page_key, run_result=run)
+            self._render(page_key, database_url=database_url, run_result=run)
 
 
 class FormalRecoveryTests(unittest.TestCase):
