@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from datetime import datetime
@@ -24,6 +25,7 @@ from app.services import dataset_service as ds
 from app.services import scorer as sc
 from app.services.conclusion_read_model import ConclusionReport
 from app.services.evidence_index import EvidenceItem
+from app.services.model_display import display_model_name
 from src.ui import conclusions_data as cd
 from src.ui.components import (
     PROJECT_DISPLAY_NAME,
@@ -38,11 +40,17 @@ from src.ui.components import (
 from src.ui.page_config import get_page_config
 from src.ui.report_components import (
     evidence_index_html,
+    evidence_model_context_html,
+    evidence_selection_reason_label,
+    evidence_selector_item_html,
     render_report_masthead,
     render_scope_ledger,
     report_index_row_html,
 )
-from src.ui.scroll import request_scroll
+
+_STREAMLIT_MARKDOWN_PUNCTUATION_RE = re.compile(
+    r"([!\"#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~])"
+)
 
 
 def render_conclusions_page(data_bundle: dict) -> None:
@@ -96,8 +104,8 @@ def render_conclusions_page(data_bundle: dict) -> None:
         ]
     )
     _render_executive_conclusion(model_summaries)
-    selected_model = _render_model_recommendations(model_summaries)
-    _render_evidence_index(report, selected_model)
+    _render_model_recommendations(model_summaries)
+    _render_evidence_review(report, model_summaries)
     _render_all_records(report)
     try:
         result_store = get_result_store()
@@ -212,7 +220,7 @@ def _record_score_io_message(result: dict) -> None:
 # --------------------------------------------------------------------------- #
 def _render_model_recommendations(
     model_summaries: Sequence[Mapping[str, object]],
-) -> str:
+) -> None:
     render_numbered_section(
         "01",
         "模型当前判断",
@@ -224,14 +232,10 @@ def _render_model_recommendations(
         if st.button("发起评测", key="conclusion_goto_test_run_models", type="secondary"):
             st.session_state.current_page = "test_run"
             st.rerun()
-        return ""
+        return
 
-    raw_ids = tuple(str(item.get("model_name") or "") for item in model_summaries)
-    current = str(st.session_state.get("conclusion_selected_model_id") or "")
-    selected_model = current if current in raw_ids else raw_ids[0]
-    action_labels = _model_evidence_action_labels(model_summaries)
     labels = ("模型", "样本数／平均分", "当前判断", "主要依据")
-    st.caption("选择模型，在下方证据索引中查证代表样本。")
+    st.caption("按正式评分样本对比各模型的当前判断与主要依据。")
     with st.container(key="conclusion_model_index"):
         render_html('<div class="conclusion-model-index">' + report_index_row_html(labels, header=True) + "</div>")
         for item in model_summaries:
@@ -249,27 +253,12 @@ def _render_model_recommendations(
                     values,
                     labels=labels,
                     accessible_label=_model_review_accessible_label(raw_model_id, values),
-                    active=raw_model_id == selected_model,
                 )
                 + "</div>"
             )
-            with st.container(key=f"conclusion_model_action_{_stable_key(raw_model_id)}"):
-                if st.button(
-                    action_labels[raw_model_id],
-                    key=f"conclusion_select_model_{_stable_key(raw_model_id)}",
-                    type="tertiary",
-                ):
-                    _select_model_evidence(raw_model_id)
-                    st.rerun()
-    return selected_model
 
 
-def _select_model_evidence(model_id: str) -> None:
-    st.session_state["conclusion_selected_model_id"] = str(model_id)
-    request_scroll("#fde-evidence-index")
-
-
-def _model_evidence_action_labels(
+def _model_selector_labels(
     model_summaries: Sequence[Mapping[str, object]],
 ) -> dict[str, str]:
     names = [
@@ -283,8 +272,44 @@ def _model_evidence_action_labels(
         raw_model_id = str(item.get("model_name") or "")
         occurrences[display_name] += 1
         suffix = f"（{occurrences[display_name]}）" if totals[display_name] > 1 else ""
-        labels[raw_model_id] = f"查看 {display_name} 证据{suffix}"
+        labels[raw_model_id] = f"{display_name}{suffix}"
     return labels
+
+
+def _select_conclusion_model(model_id: str) -> None:
+    st.session_state["conclusion_selected_model_id"] = str(model_id)
+    st.session_state.pop("conclusion_selected_evidence_key", None)
+
+
+def _evidence_identity(item: EvidenceItem) -> tuple[str, str, str]:
+    return (str(item.run_id), str(item.case_id), str(item.model_name))
+
+
+def _resolve_review_selection(
+    model_summaries: Sequence[Mapping[str, object]],
+    evidence_by_model: Mapping[str, Sequence[EvidenceItem]],
+    *,
+    requested_model: object,
+    requested_evidence_key: object,
+) -> tuple[str, tuple[EvidenceItem, ...], EvidenceItem | None]:
+    model_ids = tuple(str(item.get("model_name") or "") for item in model_summaries)
+    requested_model_id = str(requested_model or "")
+    selected_model = (
+        requested_model_id
+        if requested_model_id in model_ids
+        else (model_ids[0] if model_ids else "")
+    )
+    items = tuple(evidence_by_model.get(selected_model, ()))
+    requested_key = (
+        tuple(str(part) for part in requested_evidence_key)
+        if isinstance(requested_evidence_key, (tuple, list)) and len(requested_evidence_key) == 3
+        else ()
+    )
+    selected = next(
+        (item for item in items if _evidence_identity(item) == requested_key),
+        items[0] if items else None,
+    )
+    return selected_model, items, selected
 
 
 def _model_review_accessible_label(
@@ -307,67 +332,190 @@ def _recommendation_row(item: Mapping[str, object]) -> dict[str, object]:
 # --------------------------------------------------------------------------- #
 # 02 证据索引
 # --------------------------------------------------------------------------- #
-def _render_evidence_index(
+def _render_evidence_review(
     report: ConclusionReport,
-    selected_model: str,
+    model_summaries: Sequence[Mapping[str, object]],
 ) -> None:
-    render_html('<a id="fde-evidence-index"></a>')
+    selected_model, items, selected_item = _resolve_review_selection(
+        model_summaries,
+        report.evidence_by_model,
+        requested_model=st.session_state.get("conclusion_selected_model_id"),
+        requested_evidence_key=st.session_state.get("conclusion_selected_evidence_key"),
+    )
+    if selected_model:
+        st.session_state["conclusion_selected_model_id"] = selected_model
+    if selected_item is not None:
+        st.session_state["conclusion_selected_evidence_key"] = _evidence_identity(selected_item)
+    else:
+        st.session_state.pop("conclusion_selected_evidence_key", None)
+
+    render_html('<a id="fde-evidence-review"></a>')
     render_numbered_section(
         "02",
-        "证据索引",
-        "从模型判断进入代表样本，查看专业标准答案、模型回答和评分理由。",
+        "证据审阅",
+        "选择模型和代表样本，核对评分理由、专业标准答案和模型回答。",
     )
     if not selected_model:
         return
-    items = tuple(report.evidence_by_model.get(selected_model, ()))
+
+    _render_model_selector(model_summaries, selected_model)
     if not items:
         st.caption("当前模型暂无代表样本证据。")
         return
-    for item in items:
-        record_key = _stable_key(item.run_id, item.case_id, item.model_name)
-        with st.container(key=f"conclusion_evidence_record_{record_key}"):
-            render_html(evidence_index_html([item], include_full_details=False))
-            with st.container(key=f"conclusion_evidence_actions_{record_key}"):
-                action_columns = st.columns(3, gap="small")
-                with action_columns[0]:
+
+    _render_evidence_selector(items, selected_item)
+    if selected_item is not None:
+        _render_selected_evidence(selected_item)
+
+
+def _render_model_selector(
+    model_summaries: Sequence[Mapping[str, object]],
+    selected_model: str,
+) -> None:
+    model_ids = tuple(str(item.get("model_name") or "") for item in model_summaries)
+    if not model_ids:
+        return
+    labels = _model_selector_labels(model_summaries)
+    _sync_model_selector_widgets(selected_model)
+
+    with st.container(key="conclusion_model_selector_desktop_region"):
+        st.radio(
+            "当前模型",
+            options=model_ids,
+            format_func=lambda model_id: labels[model_id],
+            horizontal=True,
+            label_visibility="collapsed",
+            key="conclusion_model_selector_desktop",
+            on_change=_apply_model_selector_change,
+            args=("conclusion_model_selector_desktop",),
+        )
+    with st.container(key="conclusion_model_selector_mobile_region"):
+        st.selectbox(
+            "当前模型",
+            options=model_ids,
+            format_func=lambda model_id: labels[model_id],
+            key="conclusion_model_selector_mobile",
+            on_change=_apply_model_selector_change,
+            args=("conclusion_model_selector_mobile",),
+        )
+
+    summary = next(
+        (item for item in model_summaries if str(item.get("model_name") or "") == selected_model),
+        {},
+    )
+    row = _recommendation_row(summary)
+    render_html(
+        evidence_model_context_html(
+            model_id=selected_model,
+            display_name=labels[selected_model],
+            sample_count=row["AI 评分样本数"],
+            average_score=f"{float(row['平均分']):.1f}",
+            judgment=row["当前判断"],
+        )
+    )
+
+
+def _sync_model_selector_widgets(selected_model: str) -> None:
+    st.session_state["conclusion_model_selector_desktop"] = str(selected_model)
+    st.session_state["conclusion_model_selector_mobile"] = str(selected_model)
+
+
+def _apply_model_selector_change(widget_key: str) -> None:
+    _select_conclusion_model(str(st.session_state.get(widget_key) or ""))
+
+
+def _render_evidence_selector(
+    items: Sequence[EvidenceItem],
+    selected_item: EvidenceItem | None,
+) -> None:
+    selected_key = _evidence_identity(selected_item) if selected_item is not None else None
+    with st.container(key="conclusion_evidence_selector"):
+        columns = st.columns(len(items), gap="small")
+        for column, item in zip(columns, items):
+            identity = _evidence_identity(item)
+            record_key = _stable_key(*identity)
+            with column:
+                with st.container(key=f"conclusion_evidence_choice_{record_key}"):
+                    render_html(
+                        evidence_selector_item_html(item, active=identity == selected_key)
+                    )
                     if st.button(
-                        "查看专业标准答案",
-                        key=f"conclusion_evidence_gold_{record_key}",
+                        _evidence_action_label(item),
+                        key=f"conclusion_select_evidence_{record_key}",
                         type="tertiary",
                         use_container_width=True,
                     ):
-                        _render_gold_evidence_dialog(item)
-                with action_columns[1]:
-                    if st.button(
-                        "查看模型回答全文",
-                        key=f"conclusion_evidence_answer_{record_key}",
-                        type="tertiary",
-                        use_container_width=True,
-                    ):
-                        _render_answer_evidence_dialog(item)
-                with action_columns[2]:
-                    if st.button(
-                        "查看评分理由",
-                        key=f"conclusion_evidence_rationale_{record_key}",
-                        type="tertiary",
-                        use_container_width=True,
-                    ):
-                        _render_rationale_evidence_dialog(item)
+                        _select_conclusion_evidence(item)
+                        st.rerun()
 
 
-@st.dialog("专业标准答案", width="large")
-def _render_gold_evidence_dialog(item: EvidenceItem) -> None:
-    render_trusted_markdown_html(_gold_evidence_markdown(item))
+def _select_conclusion_evidence(item: EvidenceItem) -> None:
+    st.session_state["conclusion_selected_evidence_key"] = _evidence_identity(item)
 
 
-@st.dialog("模型回答全文", width="large")
-def _render_answer_evidence_dialog(item: EvidenceItem) -> None:
-    render_trusted_markdown_html(_answer_evidence_markdown(item))
+def _escape_streamlit_markdown_label(value: object) -> str:
+    return _STREAMLIT_MARKDOWN_PUNCTUATION_RE.sub(r"\\\1", str(value))
 
 
-@st.dialog("评分理由", width="large")
-def _render_rationale_evidence_dialog(item: EvidenceItem) -> None:
-    render_trusted_markdown_html(_rationale_evidence_markdown(item))
+def _evidence_action_label(item: EvidenceItem) -> str:
+    case_id = _escape_streamlit_markdown_label(item.case_id)
+    reason = _escape_streamlit_markdown_label(
+        evidence_selection_reason_label(item.selection_reason)
+    )
+    return f"审阅 {case_id}（{reason}）"
+
+
+def _render_selected_evidence(item: EvidenceItem) -> None:
+    record_key = _stable_key(*_evidence_identity(item))
+    with st.container(key=f"conclusion_selected_evidence_{record_key}"):
+        render_html(evidence_index_html([item], include_full_details=False))
+        with st.container(key="conclusion_evidence_open_action"):
+            if st.button(
+                "打开完整证据",
+                key=f"conclusion_evidence_open_{record_key}",
+                type="tertiary",
+            ):
+                _render_full_evidence_dialog(item)
+
+
+def _full_evidence_tab_labels() -> tuple[str, str, str]:
+    return ("评分理由", "专业标准答案", "模型回答")
+
+
+def _full_evidence_dialog_title(item: EvidenceItem, model_name: str) -> str:
+    return (
+        f"{_escape_streamlit_markdown_label(item.case_id)}｜"
+        f"{_escape_streamlit_markdown_label(model_name)}"
+    )
+
+
+def _render_full_evidence_dialog(item: EvidenceItem) -> None:
+    model_name = display_model_name(item.model_name, source="live")
+
+    @st.dialog(_full_evidence_dialog_title(item, model_name), width="large")
+    def _dialog() -> None:
+        rationale_tab, gold_tab, answer_tab = st.tabs(_full_evidence_tab_labels())
+        with rationale_tab:
+            render_trusted_markdown_html(_rationale_evidence_markdown(item))
+        with gold_tab:
+            render_trusted_markdown_html(_gold_evidence_markdown(item))
+        with answer_tab:
+            render_trusted_markdown_html(_answer_evidence_markdown(item))
+        with st.expander("技术明细", expanded=False):
+            st.code(
+                json.dumps(
+                    {
+                        "run_id": item.run_id,
+                        "case_id": item.case_id,
+                        "model_id": item.model_name,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                language="json",
+            )
+
+    _dialog()
 
 
 def _gold_evidence_markdown(item: EvidenceItem) -> str:

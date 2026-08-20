@@ -87,6 +87,21 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         self.assertIn("font-size: 1.35rem !important", title_rule)
         self.assertIn("grid-template-columns: minmax(0, 1fr)", dimensions_rule)
 
+    def test_evidence_review_uses_editorial_desktop_navigation_and_mobile_select(self):
+        from src.ui.report_styles import REPORT_STYLE_CSS
+
+        source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
+        mobile_css = REPORT_STYLE_CSS.split("@media (max-width: 760px)", 1)[1]
+
+        assert 'key="conclusion_model_selector_desktop"' in source
+        assert 'key="conclusion_model_selector_mobile"' in source
+        assert ".st-key-conclusion_model_selector_desktop" in REPORT_STYLE_CSS
+        assert ".st-key-conclusion_model_selector_mobile" in REPORT_STYLE_CSS
+        assert "display: none" in mobile_css
+        assert ".st-key-conclusion_evidence_selector" in mobile_css
+        assert "grid-template-columns: minmax(0, 1fr)" in mobile_css
+        assert "min-height: 44px" in mobile_css
+
     def test_mobile_report_masthead_keeps_the_first_judgment_in_reach(self):
         from src.ui.report_styles import REPORT_STYLE_CSS
 
@@ -396,20 +411,16 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         rule = responsive_mobile.split(second_column + " {", 1)[1].split("}", 1)[0]
         self.assertIn("justify-self: end", rule)
 
-    def test_mobile_model_evidence_actions_are_full_width_touch_targets(self):
+    def test_mobile_full_evidence_action_is_a_full_width_touch_target(self):
         from src.ui.report_styles import REPORT_STYLE_CSS
 
         mobile_css = REPORT_STYLE_CSS.split("@media (max-width: 760px)", 1)[1]
-        selector = (
-            '.st-key-conclusion_model_index [class*="st-key-conclusion_model_action_"] '
-            ".stButton > button"
-        )
+        selector = ".st-key-conclusion_evidence_open_action .stButton > button"
         self.assertIn(selector + " {", mobile_css)
         rule = mobile_css.split(selector + " {", 1)[1].split("}", 1)[0]
 
         self.assertIn("min-height: 44px", rule)
         self.assertIn("width: 100%", rule)
-        self.assertIn("white-space: normal", rule)
 
     def test_mobile_popover_triggers_are_real_44px_touch_targets(self):
         css = self._responsive_css()

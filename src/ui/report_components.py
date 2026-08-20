@@ -142,6 +142,55 @@ def evidence_index_html(
     )
 
 
+def evidence_selector_item_html(item: EvidenceItem, *, active: bool = False) -> str:
+    """Render one compact, escaped representative-evidence directory entry."""
+    classes = ["evidence-selector-item"]
+    if active:
+        classes.append("evidence-selector-item--active")
+    current = ' aria-current="true"' if active else ""
+    reason = _selection_reason_text(item.selection_reason)
+    accessible_label = (
+        f"代表证据：{item.case_id}；模型：{item.model_name}；"
+        f"选择原因：{reason}；总分：{_score_text(item.total_score)} / 100"
+    )
+    return (
+        f'<article class="{" ".join(classes)}" role="group" '
+        f'aria-label="{_escaped(accessible_label)}"{current}>'
+        f'<p class="evidence-selector-reason">{_escaped(reason)}</p>'
+        '<p class="evidence-selector-meta">'
+        f'<strong>{_escaped(item.case_id)}</strong>'
+        f'<span>{_escaped(f"{_score_text(item.total_score)} / 100")}</span>'
+        "</p>"
+        f'<p class="evidence-selector-title">{_escaped(item.title)}</p>'
+        "</article>"
+    )
+
+
+def evidence_model_context_html(
+    *,
+    model_id: object,
+    display_name: object,
+    sample_count: object,
+    average_score: object,
+    judgment: object,
+) -> str:
+    """Render the selected model as a quiet editorial review context line."""
+    accessible = f"当前模型：{model_id}；样本数：{sample_count}；当前判断：{judgment}"
+    return (
+        '<div class="evidence-review-context" role="status" aria-current="true" '
+        f'aria-label="{_escaped(accessible)}">'
+        '<span class="evidence-review-context-label">当前模型</span>'
+        f'<strong>{_escaped(display_name)}</strong>'
+        f'<span>{_escaped(f"{sample_count} 个样本／平均 {average_score} 分")}</span>'
+        f'<span>{_escaped(judgment)}</span>'
+        "</div>"
+    )
+
+
+def evidence_selection_reason_label(value: object) -> str:
+    return _selection_reason_text(value)
+
+
 def render_report_masthead(title: str, description: str, eyebrow: str = "") -> None:
     render_html(report_masthead_html(title, description, eyebrow))
 
@@ -161,11 +210,6 @@ def _evidence_item_html(
 ) -> str:
     model_name = display_model_name(item.model_name, source="live")
     model_id = display_model_detail(item.model_name)
-    model_id_html = (
-        f'<span class="evidence-index-model-id">{_escaped(model_id)}</span>'
-        if model_id != model_name
-        else ""
-    )
     details = (
         _detail_html(
             "总分",
@@ -189,13 +233,13 @@ def _evidence_item_html(
             + _detail_html("专业标准答案", item.gold_answer)
         )
     return (
-        '<li class="evidence-index-item">'
+        '<li class="evidence-index-item" '
+        f'aria-label="{_escaped(f"代表证据：{item.case_id}；模型：{model_id}")}">'
         '<span class="evidence-index-rail" aria-hidden="true"></span>'
         '<div class="evidence-index-content">'
         '<div class="evidence-index-head">'
         f'<span class="evidence-index-case">{_escaped(item.case_id)}</span>'
         f'<span class="evidence-index-model">{_escaped(model_name)}</span>'
-        f"{model_id_html}"
         f'<span class="evidence-index-reason">{_escaped(_selection_reason_text(item.selection_reason))}</span>'
         "</div>"
         f'<h3 class="evidence-index-title">{_escaped(item.title)}</h3>'

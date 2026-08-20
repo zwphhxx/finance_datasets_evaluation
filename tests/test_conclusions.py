@@ -605,10 +605,10 @@ class RenderTests(unittest.TestCase):
         )
         self.assertLess(
             page_source.index("_render_model_recommendations"),
-            page_source.index("_render_evidence_index"),
+            page_source.index("_render_evidence_review"),
         )
         self.assertLess(
-            page_source.index("_render_evidence_index"),
+            page_source.index("_render_evidence_review"),
             page_source.index("_render_all_records"),
         )
 

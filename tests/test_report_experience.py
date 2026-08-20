@@ -155,19 +155,19 @@ def test_report_section_can_omit_a_repeated_label_and_index_values_have_a_stable
     assert '<span class="report-index-value">模型甲</span>' in row
 
 
-def test_model_evidence_actions_use_friendly_names_and_disambiguate_duplicates():
-    from src.ui.conclusions import _model_evidence_action_labels
+def test_model_selector_labels_use_friendly_names_and_disambiguate_duplicates():
+    from src.ui.conclusions import _model_selector_labels
 
-    labels = _model_evidence_action_labels([
+    labels = _model_selector_labels([
         {"model_name": "vendor-a/model-x", "display_name": "Model X"},
         {"model_name": "vendor-b/model-x", "display_name": "Model X"},
         {"model_name": "vendor-c/model-y", "display_name": "Model Y"},
     ])
 
     assert labels == {
-        "vendor-a/model-x": "查看 Model X 证据（1）",
-        "vendor-b/model-x": "查看 Model X 证据（2）",
-        "vendor-c/model-y": "查看 Model Y 证据",
+        "vendor-a/model-x": "Model X（1）",
+        "vendor-b/model-x": "Model X（2）",
+        "vendor-c/model-y": "Model Y",
     }
     assert all("vendor-" not in label for label in labels.values())
 
@@ -263,7 +263,8 @@ def test_evidence_index_uses_domain_labels_full_marks_and_clear_model_scope():
     ])
 
     assert "DeepSeek-V4-Pro" in html
-    assert "deepseek-ai/DeepSeek-V4-Pro" in html
+    assert ">deepseek-ai/DeepSeek-V4-Pro<" not in html
+    assert "deepseek-ai/DeepSeek-V4-Pro" in html  # 仅保留在无障碍说明中
     assert "模型整体最弱维度" in html
     assert "风险覆盖" in html
     assert "75 / 100" in html
@@ -372,20 +373,26 @@ def test_report_index_rows_expose_independent_review_group_semantics():
     assert 'data-label="样本数／平均分"' in active
 
 
-def test_model_evidence_action_names_are_unique_without_exposing_raw_model_ids():
+def test_model_selector_names_are_unique_without_exposing_raw_model_ids():
     from src.ui import conclusions as ui
 
-    labels = ui._model_evidence_action_labels([
+    labels = ui._model_selector_labels([
         {"model_name": "provider/model-a", "display_name": "模型甲"},
         {"model_name": "provider/model-b", "display_name": "模型乙"},
     ])
 
     assert labels == {
-        "provider/model-a": "查看 模型甲 证据",
-        "provider/model-b": "查看 模型乙 证据",
+        "provider/model-a": "模型甲",
+        "provider/model-b": "模型乙",
     }
     source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
-    assert "action_labels[raw_model_id]" in source
+    comparison = source[
+        source.index("def _render_model_recommendations"):
+        source.index("def _model_selector_labels")
+    ]
+    assert "conclusion_select_model_" not in comparison
+    assert "action_labels" not in comparison
+    assert "查看 {display_name} 证据" not in source
 
 
 def test_model_review_group_label_uses_unique_raw_model_id():
@@ -417,8 +424,8 @@ def test_conclusion_page_is_report_first_and_never_surfaces_excluded_count():
     assert page.index("render_report_masthead") < page.index("render_scope_ledger")
     assert page.index("render_scope_ledger") < page.index("_render_executive_conclusion")
     assert page.index("_render_executive_conclusion") < page.index("_render_model_recommendations")
-    assert page.index("_render_model_recommendations") < page.index("_render_evidence_index")
-    assert page.index("_render_evidence_index") < page.index("_render_all_records")
+    assert page.index("_render_model_recommendations") < page.index("_render_evidence_review")
+    assert page.index("_render_evidence_review") < page.index("_render_all_records")
     assert "排除项" not in source
     assert "_render_mobile_model_cards" not in source
 
@@ -440,8 +447,8 @@ def test_available_conclusion_report_renders_one_ordered_review_flow(monkeypatch
     monkeypatch.setattr(ui, "render_report_masthead", lambda *_args: events.append("masthead"))
     monkeypatch.setattr(ui, "render_scope_ledger", lambda *_args: events.append("scope"))
     monkeypatch.setattr(ui, "_render_executive_conclusion", lambda *_args: events.append("executive"))
-    monkeypatch.setattr(ui, "_render_model_recommendations", lambda *_args: events.append("models") or "")
-    monkeypatch.setattr(ui, "_render_evidence_index", lambda *_args: events.append("evidence"))
+    monkeypatch.setattr(ui, "_render_model_recommendations", lambda *_args: events.append("models"))
+    monkeypatch.setattr(ui, "_render_evidence_review", lambda *_args: events.append("evidence"))
     monkeypatch.setattr(ui, "_render_all_records", lambda *_args: events.append("records"))
     monkeypatch.setattr(ui, "_render_data_source_notice", lambda *_args: None)
 
@@ -470,19 +477,29 @@ def test_unavailable_conclusion_source_does_not_render_empty_database_state(monk
     assert events == ["masthead", "unavailable:offline"]
 
 
-def test_each_evidence_item_exposes_three_full_record_dialogs():
+def test_selected_evidence_exposes_one_dialog_with_decision_first_tabs():
+    from src.ui import conclusions as ui
+
     source = Path("src/ui/conclusions.py").read_text(encoding="utf-8")
 
-    for label in ["查看专业标准答案", "查看模型回答全文", "查看评分理由"]:
-        assert label in source
+    assert ui._full_evidence_tab_labels() == (
+        "评分理由",
+        "专业标准答案",
+        "模型回答",
+    )
+    assert source.count("打开完整证据") == 1
+    for retired_key in [
+        "conclusion_evidence_gold_",
+        "conclusion_evidence_answer_",
+        "conclusion_evidence_rationale_",
+    ]:
+        assert retired_key not in source
     assert "[:900]" not in source
     assert "[: 900]" not in source
-    dialog_source = source[
-        source.index('@st.dialog("专业标准答案"'):
-        source.index("def _gold_evidence_markdown")
-    ]
-    assert dialog_source.count("render_trusted_markdown_html(") == 3
-    assert "render_html(render_markdown_block" not in dialog_source
+    assert "def _render_full_evidence_dialog" in source
+    assert "def _render_gold_evidence_dialog" not in source
+    assert "def _render_answer_evidence_dialog" not in source
+    assert "def _render_rationale_evidence_dialog" not in source
 
 
 def test_evidence_dialog_markdown_preserves_full_source_values():
@@ -513,18 +530,176 @@ def test_evidence_dialog_markdown_preserves_full_source_values():
     assert len(ui._answer_evidence_markdown(item)) == len(long_answer)
 
 
-def test_model_evidence_selection_keeps_raw_id_and_requests_evidence_anchor(monkeypatch):
+def test_model_selection_keeps_raw_id_resets_evidence_and_does_not_scroll(monkeypatch):
+    from src.ui import conclusions as ui
+
+    state: dict[str, object] = {"conclusion_selected_evidence_key": ("R1", "C1", "old")}
+    monkeypatch.setattr(ui.st, "session_state", state)
+
+    ui._select_conclusion_model("provider/raw-model")
+
+    assert state["conclusion_selected_model_id"] == "provider/raw-model"
+    assert "conclusion_selected_evidence_key" not in state
+
+
+def test_review_selection_uses_exact_composite_key_and_falls_back_safely():
+    from src.ui import conclusions as ui
+
+    model_a_items = (
+        _evidence_item("R1", "C-low", "vendor/a", "最低总分", 61),
+        _evidence_item("R1", "C-high", "vendor/a", "最高总分", 98),
+    )
+    model_b_items = (_evidence_item("R2", "C-low", "vendor/b", "最低总分", 70),)
+    summaries = (
+        {"model_name": "vendor/a", "display_name": "模型 A"},
+        {"model_name": "vendor/b", "display_name": "模型 B"},
+    )
+    evidence = {"vendor/a": model_a_items, "vendor/b": model_b_items}
+
+    selected_model, items, selected = ui._resolve_review_selection(
+        summaries,
+        evidence,
+        requested_model="vendor/a",
+        requested_evidence_key=ui._evidence_identity(model_a_items[1]),
+    )
+    assert selected_model == "vendor/a"
+    assert items == model_a_items
+    assert selected is model_a_items[1]
+
+    selected_model, items, selected = ui._resolve_review_selection(
+        summaries,
+        evidence,
+        requested_model="missing",
+        requested_evidence_key=("R2", "C-low", "vendor/b"),
+    )
+    assert selected_model == "vendor/a"
+    assert items == model_a_items
+    assert selected is model_a_items[0]
+
+
+def test_desktop_and_mobile_model_controls_share_one_canonical_selection(monkeypatch):
     from src.ui import conclusions as ui
 
     state: dict[str, object] = {}
-    targets: list[str] = []
     monkeypatch.setattr(ui.st, "session_state", state)
-    monkeypatch.setattr(ui, "request_scroll", targets.append)
 
-    ui._select_model_evidence("provider/raw-model")
+    ui._sync_model_selector_widgets("vendor/a")
+    assert state["conclusion_model_selector_desktop"] == "vendor/a"
+    assert state["conclusion_model_selector_mobile"] == "vendor/a"
 
-    assert state["conclusion_selected_model_id"] == "provider/raw-model"
-    assert targets == ["#fde-evidence-index"]
+    state["conclusion_model_selector_mobile"] = "vendor/b"
+    state["conclusion_selected_evidence_key"] = ("R1", "C1", "vendor/a")
+    ui._apply_model_selector_change("conclusion_model_selector_mobile")
+    assert state["conclusion_selected_model_id"] == "vendor/b"
+    assert "conclusion_selected_evidence_key" not in state
+
+
+def test_evidence_review_routes_only_the_selected_record_to_detail(monkeypatch):
+    from src.ui import conclusions as ui
+
+    first = _evidence_item("R1", "C-low", "vendor/a", "最低总分", 61)
+    second = _evidence_item("R1", "C-high", "vendor/a", "最高总分", 98)
+    report = ConclusionReport(
+        scope=ReportScope(sample_count=2, model_count=1, formal_score_count=2),
+        formal_scores=pd.DataFrame(),
+        formal_responses=pd.DataFrame(),
+        model_summaries=({"model_name": "vendor/a", "display_name": "模型 A"},),
+        evidence_by_model={"vendor/a": (first, second)},
+    )
+    state: dict[str, object] = {
+        "conclusion_selected_model_id": "vendor/a",
+        "conclusion_selected_evidence_key": ui._evidence_identity(second),
+    }
+    events: list[object] = []
+    monkeypatch.setattr(ui.st, "session_state", state)
+    monkeypatch.setattr(ui, "render_html", lambda *_args: None)
+    monkeypatch.setattr(ui, "render_numbered_section", lambda *_args: None)
+    monkeypatch.setattr(ui, "_render_model_selector", lambda *_args: events.append("models"))
+    monkeypatch.setattr(ui, "_render_evidence_selector", lambda items, selected: events.append((items, selected)))
+    monkeypatch.setattr(ui, "_render_selected_evidence", lambda item: events.append(("detail", item)))
+
+    ui._render_evidence_review(report, report.model_summaries)
+
+    assert events == ["models", ((first, second), second), ("detail", second)]
+    assert state["conclusion_selected_evidence_key"] == ui._evidence_identity(second)
+
+
+def test_evidence_directory_item_is_compact_escaped_and_keeps_raw_id_accessible_only():
+    item = _evidence_item(
+        "RUN/<unsafe>",
+        "CM-<unsafe>",
+        "provider/<unsafe>",
+        "最低总分",
+        72,
+        title="完整任务标题 <script>",
+    )
+
+    html = rc.evidence_selector_item_html(item, active=True)
+
+    assert 'class="evidence-selector-item evidence-selector-item--active"' in html
+    assert 'aria-current="true"' in html
+    assert "最低总分" in html
+    assert "72 / 100" in html
+    assert "完整任务标题 &lt;script&gt;" in html
+    assert ">provider/&lt;unsafe&gt;<" not in html
+    assert "provider/&lt;unsafe&gt;" in html
+
+
+def test_evidence_directory_keeps_the_full_task_title_visible():
+    selector = ".evidence-selector-title {\n    color"
+    rule = REPORT_STYLE_CSS.split(selector, 1)[1].split("}", 1)[0]
+
+    assert "-webkit-line-clamp" not in rule
+    assert "overflow: hidden" not in rule
+
+
+def test_full_evidence_dialog_title_escapes_streamlit_markdown_punctuation():
+    from src.ui import conclusions as ui
+
+    item = _evidence_item(
+        "R1",
+        "CM-<raw> **A**",
+        "provider/model",
+        "最低总分",
+        72,
+    )
+
+    title = ui._full_evidence_dialog_title(item, "模型 [A](url)")
+
+    assert title == r"CM\-\<raw\> \*\*A\*\*｜模型 \[A\]\(url\)"
+
+
+def test_desktop_model_navigation_stays_on_one_editorial_line():
+    selector = '.st-key-conclusion_model_selector_desktop [role="radiogroup"] {'
+    rule = REPORT_STYLE_CSS.split(selector, 1)[1].split("}", 1)[0]
+
+    assert "flex-wrap: nowrap" in rule
+    assert "overflow-x: auto" in rule
+
+
+def _evidence_item(
+    run_id: str,
+    case_id: str,
+    model_name: str,
+    reason: str,
+    total: float,
+    *,
+    title: str = "专业任务",
+) -> EvidenceItem:
+    return EvidenceItem(
+        run_id=run_id,
+        case_id=case_id,
+        model_name=model_name,
+        title=title,
+        total_score=total,
+        selection_reason=reason,
+        weakest_dimension="coverage_score",
+        dimension_scores={"coverage_score": 12},
+        rationale={"coverage_score": "理由"},
+        review_note="备注",
+        answer_text="模型回答",
+        gold_answer={"core_conclusion": "标准答案"},
+    )
 
 
 def test_evidence_summary_hides_full_documents_until_dialog_opened():

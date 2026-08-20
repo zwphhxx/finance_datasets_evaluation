@@ -320,7 +320,9 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertNotIn("status-badge", source)
         self.assertNotIn("review-risk-note", source)
         self.assertNotIn("render_evidence_panel", source)
-        self.assertEqual(1, source.count("st.expander("))
+        self.assertEqual(2, source.count("st.expander("))
+        self.assertIn('st.expander("查看全部评测记录"', source)
+        self.assertIn('st.expander("技术明细"', source)
         all_records = source[source.index("def _render_all_records"):]
         self.assertIn('st.expander("查看全部评测记录"', all_records)
         self.assertNotIn("_render_model_issue_details", source)
