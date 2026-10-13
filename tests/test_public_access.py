@@ -16,7 +16,7 @@ from src.ui.navigation import render_sidebar_navigation
 render_sidebar_navigation()
 ''').run()
     assert not at.exception
-    assert not at.button
+    assert [b.label for b in at.button] == ['评测结果', '评测流程', '样本库']
     assert [e.proto.label for e in at.get('link_button')] == ['GitHub 源码']
     assert not at.get('popover')
 
@@ -206,7 +206,7 @@ def test_public_cold_start_without_runtime_database_has_empty_state_and_no_write
     assert any('任务设计示例，尚无完整实测记录' in e.value for e in at.caption)
     assert not isolated_app_database.exists()
     assert not [b for b in at.button if b.key and str(b.key).startswith('top_nav_')]
-    assert [b.label for b in at.button] == ['体验评测流程', '查看样本库', '查看完整案例']
+    assert [b.label for b in at.button] == ['评测结果', '评测流程', '样本库', '查看完整案例']
     assert not at.metric and not at.multiselect
     calls.assert_not_called()
 

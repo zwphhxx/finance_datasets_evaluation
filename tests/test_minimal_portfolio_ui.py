@@ -15,12 +15,12 @@ def test_public_home_has_one_reading_path_without_dashboard(review_app):  # noqa
     at, _ = review_app
     at.run()
     assert not at.exception
-    assert '让AI回答，经得起专业检验。' in [e.value for e in at.title]
+    assert '评测结果' in [e.value for e in at.title]
     assert '2个专业任务' in visible(at)
     assert not at.metric and not at.multiselect and not at.dataframe
     assert [s.label for s in at.selectbox] == ['专业案例', '模型与测试日期']
     assert not [b for b in at.button if str(b.key).startswith('top_nav_')]
-    assert [b.label for b in at.button] == ['体验评测流程', '查看样本库', '查看完整案例']
+    assert [b.label for b in at.button] == ['评测结果', '评测流程', '样本库', '查看完整案例']
     assert not at.expander
     assert '当前任务设计' in visible(at)
     assert '历史回答节选' in visible(at)
@@ -57,7 +57,7 @@ def test_legacy_public_result_and_method_links_open_the_portfolio(review_app, pa
     at.run()
     assert not at.exception
     assert at.query_params['page'] == ['conclusions']
-    assert [e.value for e in at.title] == ['让AI回答，经得起专业检验。']
+    assert [e.value for e in at.title] == ['评测结果']
     assert len(at.selectbox) == 2 and not at.metric
 
 
@@ -70,7 +70,7 @@ def test_invalid_legacy_case_link_has_no_unrelated_answer(review_app, change):  
     assert not at.exception
     assert any('无法定位' in e.value for e in at.error)
     assert '原始回答' not in visible(at)
-    assert at.button(key='portfolio_return_home').label == '← 返回作品首页'
+    assert at.button(key='portfolio_return_home').label == '← 返回评测结果'
 
 
 def test_ambiguous_case_only_link_requires_exact_record(review_app):  # noqa: F811

@@ -188,17 +188,15 @@ def render_portfolio_home(data_bundle):
         rows = []
     score = None
     with st.container(key="portfolio_home"):
-        st.title("让AI回答，经得起专业检验。")
-        st.markdown("将财务、法律及投行业务中的专业判断，转化为可检查的模型评价任务。")
+        st.title("评测结果")
+        st.markdown("查看财务、法律及投行专业任务中的历史模型回答与AI评分。")
         domains = list(dict.fromkeys(display_label(str(t["domain"]), DOMAIN_LABELS).removesuffix("场景")
                                     for t in tasks if t.get("domain")))
         st.caption(f"{len(tasks)}个专业任务 · {'/'.join(domains) or '领域未记录'} · AI自动评分原型")
-        from src.ui.public_preview import navigate_preview
-        with st.container(horizontal=True):
-            st.button("体验评测流程", key="portfolio_evaluation_preview", on_click=navigate_preview, args=("evaluation_preview",))
-            st.button("查看样本库", key="portfolio_sample_preview", on_click=navigate_preview, args=("sample_preview",), type="tertiary")
         render_html('<div id="fde-featured-case"></div>')
         with st.container(key="portfolio_featured"):
+            if rows:
+                st.caption("选择已评分案例和模型，查看对应回答、评分反馈及完整评价依据。")
             if rows or any(st.query_params.get(f) for f in ROUTE_FIELDS):
                 case_id, score = _render_home_selection(report, rows, task_map)
             if case_id is not None:
@@ -290,7 +288,7 @@ def _render_home_excerpt(report, source, task_map, case_id, score, responses):
 def render_portfolio_case(data_bundle):
     base = data_bundle.get("base") or data_bundle["data"]
     with st.container(key="portfolio_case"):
-        st.button("← 返回评测体验" if st.query_params.get("origin") == "evaluation_preview" else "← 返回作品首页",
+        st.button("← 返回评测流程" if st.query_params.get("origin") == "evaluation_preview" else "← 返回评测结果",
                   key="portfolio_return_home", type="tertiary", on_click=_return_home)
         source = workbench.load_workbench_source(base)
         report = source.report if source.available else None

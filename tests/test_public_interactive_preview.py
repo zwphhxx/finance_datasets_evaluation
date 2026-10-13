@@ -34,12 +34,91 @@ def test_home_exposes_product_operations_without_dashboard(preview_app):
     at,_=preview_app
     at.run()
     assert not at.exception
-    assert {'体验评测流程','查看样本库'} <= {b.label for b in at.button}
+    assert {'评测结果','评测流程','样本库'} <= {b.label for b in at.button}
+    assert not {'体验评测流程','查看样本库'} & {b.label for b in at.button}
     assert not at.metric and not at.dataframe
-    at.button(key='portfolio_evaluation_preview').click().run()
+    at.button(key='public_nav_evaluation_preview').click().run()
     assert not at.exception
     assert at.query_params['page'] == ['evaluation_preview']
     assert {'配置评测','历史运行','查看结果'} == set(at.radio(key='preview_stage').options)
+    assert not [b for b in at.button if b.key=='preview_home']
+    at.button(key='public_nav_sample_preview').click().run()
+    assert at.query_params['page']==['sample_preview']
+    assert not [b for b in at.button if b.key=='sample_preview_home']
+
+
+def test_public_navigation_preserves_each_pages_record_and_refresh(preview_app):
+    at,_=preview_app
+    at.run()
+    at.selectbox(key='portfolio_home_case').set_value('TEST-2').run()
+    at.selectbox(key='portfolio_home_record').set_value(('test-r1','model-b','s4')).run()
+    at.button(key='public_nav_evaluation_preview').click().run()
+    at.radio(key='preview_stage').set_value('查看结果').run()
+    at.selectbox(key='preview_history_run').set_value('test-r2').run()
+    at.selectbox(key='preview_history_record').set_value(('test-r2','model-a','s5','TEST-1')).run()
+    at.button(key='public_nav_sample_preview').click().run()
+    at.button(key='public_nav_conclusions').click().run()
+    assert not at.exception
+    assert at.query_params['score']==['s4']
+    assert '原始回答 s4' in visible(at)
+    fresh=AppTest.from_file(at._script_path)
+    fresh.query_params.update(dict(at.query_params))
+    fresh.run()
+    assert '原始回答 s4' in visible(fresh)
+    at.button(key='public_nav_evaluation_preview').click().run()
+    assert at.radio(key='preview_stage').value=='查看结果'
+    assert at.selectbox(key='preview_history_run').value=='test-r2'
+    assert at.selectbox(key='preview_history_record').value==('test-r2','model-a','s5','TEST-1')
+
+
+def test_case_detail_stays_in_parent_navigation_and_returns_exact_record(preview_app):
+    at,_=preview_app
+    at.query_params.update(page='evaluation_preview',stage='results',history='test-r2')
+    at.run()
+    at.button(key='preview_review_record').click().run()
+    assert at.button(key='public_nav_evaluation_preview').proto.type=='secondary'
+    at.button(key='public_nav_evaluation_preview').click().run()
+    assert not at.exception
+    assert at.query_params['score']==['s5']
+    assert at.selectbox(key='preview_history_record').value==('test-r2','model-a','s5','TEST-1')
+
+
+def test_navigation_does_not_erase_invalid_result_link(preview_app):
+    at,_=preview_app
+    at.query_params.update(page='conclusions',case='TEST-1',run='test-r2',model='model-a',score='missing')
+    at.run()
+    at.button(key='public_nav_sample_preview').click().run()
+    at.button(key='public_nav_conclusions').click().run()
+    assert any('无法定位' in e.value for e in at.error)
+    assert '原始回答' not in visible(at)
+
+
+def test_navigation_keeps_evaluation_config_when_visiting_library(preview_app):
+    at,_=preview_app
+    at.query_params['page']='evaluation_preview'
+    at.run()
+    at.multiselect(key='preview_models').set_value(['model-b']).run()
+    at.multiselect(key='preview_cases').set_value(['TEST-2']).run()
+    at.number_input(key='preview_temperature').set_value(0.4).run()
+    at.button(key='public_nav_sample_preview').click().run()
+    at.button(key='public_nav_evaluation_preview').click().run()
+    assert not at.exception
+    assert at.multiselect(key='preview_models').value==['model-b']
+    assert at.multiselect(key='preview_cases').value==['TEST-2']
+    assert at.number_input(key='preview_temperature').value==0.4
+    assert at.button(key='preview_real_start').disabled
+
+
+def test_result_detail_navigation_retains_selected_score(preview_app):
+    at,_=preview_app
+    at.query_params.update(page='conclusions',case='TEST-2',run='test-r1',model='model-b',score='s4')
+    at.run()
+    at.button(key='portfolio_open_case').click().run()
+    assert at.button(key='public_nav_conclusions').proto.type=='secondary'
+    at.button(key='public_nav_conclusions').click().run()
+    assert not at.exception
+    assert at.query_params['score']==['s4']
+    assert '原始回答 s4' in visible(at)
 
 
 def test_config_plan_changes_without_calling_model_or_saving(preview_app):
@@ -151,7 +230,7 @@ def test_history_case_returns_to_the_selected_run(preview_app):
     at.run()
     at.selectbox(key='preview_history_run').set_value('test-r2').run()
     at.button(key='preview_review_record').click().run()
-    assert at.button(key='portfolio_return_home').label=='← 返回评测体验'
+    assert at.button(key='portfolio_return_home').label=='← 返回评测流程'
     at.button(key='portfolio_return_home').click().run()
     assert not at.exception
     assert at.query_params['page']==['evaluation_preview']

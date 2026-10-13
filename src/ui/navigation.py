@@ -8,7 +8,7 @@ from src.ui.components import render_html
 from src.ui.conclusions import render_conclusions_page
 from src.ui.management import render_management_page
 from src.ui.page_config import DEFAULT_PAGE_KEY, PAGE_CONFIG_BY_KEY
-from src.ui.public_preview import render_evaluation_preview, render_sample_preview
+from src.ui.public_preview import STAGES, render_evaluation_preview, render_sample_preview
 from src.ui.review import ROUTE_FIELDS, render_review_page
 from src.ui.scroll import request_scroll
 from src.ui.test_run import render_test_run_page
@@ -27,7 +27,14 @@ PAGES = {
 }
 
 
-# Retained administration destinations. Public visitors have no peer nav.
+# Public product destinations; case review remains a child of its source page.
+PUBLIC_NAV_ITEMS = [
+    ("评测结果", "conclusions"),
+    ("评测流程", "evaluation_preview"),
+    ("样本库", "sample_preview"),
+]
+
+# Retained administration destinations.
 PRIMARY_NAV_ITEMS = [
     ("评测结果", "conclusions"),
     ("案例分析", "review"),
@@ -54,6 +61,37 @@ def _navigate(page_key: str) -> None:
     request_scroll("top")
 
 
+def _public_parent(page_key: str) -> str:
+    if page_key == "review":
+        return "evaluation_preview" if st.query_params.get("origin") == "evaluation_preview" else "conclusions"
+    return page_key
+
+
+def _navigate_public(page_key: str) -> None:
+    """Preserve each page's reading route without mixing its record selection."""
+    current = st.session_state.get("current_page", DEFAULT_PAGE_KEY)
+    parent = _public_parent(current)
+    fields = (*ROUTE_FIELDS, "stage", "history")
+    routes = dict(st.session_state.get("public_page_routes", {}))
+    if parent in {key for _, key in PUBLIC_NAV_ITEMS}:
+        route = {field: st.query_params[field] for field in fields if field in st.query_params}
+        if current == "review" and parent == "evaluation_preview":
+            route.update(stage="results", history=st.query_params.get("run", ""))
+        routes[parent] = route
+    st.session_state.public_page_routes = routes
+    for field in (*fields, "origin"):
+        st.query_params.pop(field, None)
+    target = routes.get(page_key, {})
+    st.query_params.update(target, page=page_key)
+    if page_key == "evaluation_preview":
+        st.session_state.preview_stage = STAGES.get(target.get("stage"), STAGES["config"])
+        # URL selection owns restored history, including an invalid link.
+        st.session_state.pop("preview_history_run", None)
+        st.session_state.pop("preview_history_record", None)
+    st.session_state.current_page = page_key
+    request_scroll("top")
+
+
 def render_top_navigation() -> None:
     """Render review navigation separately from the evaluation operation."""
     current = st.session_state.get("current_page", DEFAULT_PAGE_KEY)
@@ -66,6 +104,12 @@ def render_top_navigation() -> None:
             with source:
                 with st.container(horizontal=True, horizontal_alignment="right"):
                     st.link_button("GitHub 源码", "https://github.com/zwphhxx/finance_datasets_evaluation", type="tertiary")
+            with st.container(key="portfolio_public_links"):
+                for column, (label, page_key) in zip(st.columns(3, gap="small"), PUBLIC_NAV_ITEMS):
+                    with column:
+                        st.button(label, key=f"public_nav_{page_key}",
+                                  type="secondary" if _public_parent(current) == page_key else "tertiary",
+                                  width="stretch", on_click=_navigate_public, args=(page_key,))
         return
     columns = st.columns([3.1, 2.6, 0.9] if admin else [1.4, 2.6], gap="medium")
     brand_column, review_column = columns[:2]
@@ -111,7 +155,7 @@ def render_sidebar_navigation() -> str:
 
 def get_primary_nav_items() -> list[tuple[str, str]]:
     """Return the primary navigation items (label, page_key)."""
-    return PRIMARY_NAV_ITEMS[:] if management_enabled() else []
+    return (PRIMARY_NAV_ITEMS if management_enabled() else PUBLIC_NAV_ITEMS)[:]
 
 
 def get_operation_nav_item() -> tuple[str, str]:

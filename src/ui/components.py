@@ -14,7 +14,7 @@ PROJECT_DISPLAY_NAME = "财务/法律/投行场景大模型对比评测"
 
 STYLE_CSS = """
 <style>
-/* findueval-build: coordinated-controls-20261013-v1 */
+/* findueval-build: public-navigation-20261013-v1 */
 :root {
     --fde-paper: #F8FAFC;
     --fde-surface: #FFFFFF;
@@ -52,6 +52,29 @@ STYLE_CSS = """
 .st-key-portfolio_nav [data-testid="stColumn"] { min-width: 0; }
 .st-key-portfolio_nav [data-testid="stColumn"]:last-child { text-align: right; }
 .st-key-portfolio_nav [data-testid="stLinkButton"] { display: flex; justify-content: flex-end; }
+.st-key-portfolio_public_links {
+    margin-top: 0.65rem;
+    border-bottom: 1px solid var(--fde-line);
+}
+.st-key-portfolio_public_links [data-testid="stButton"] > button[kind] {
+    border: 0 !important;
+    border-bottom: 2px solid transparent !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    color: var(--fde-muted) !important;
+    padding: 0.6rem 0.35rem;
+}
+.st-key-portfolio_public_links [data-testid="stButton"] > button[kind="secondary"],
+.st-key-portfolio_public_links [data-testid="stButton"] > button[kind="secondary"]:hover {
+    background: transparent !important;
+    border-bottom-color: var(--fde-accent) !important;
+    color: var(--fde-accent) !important;
+    font-weight: 650 !important;
+}
+.st-key-portfolio_public_links [data-testid="stButton"] > button:hover {
+    background: var(--fde-accent-soft) !important;
+    color: var(--fde-accent) !important;
+}
 .portfolio-brand { font-size: 1rem; font-weight: 650; color: var(--fde-ink); }
 .st-key-portfolio_home h1, .st-key-portfolio_case h1, .st-key-portfolio_preview h1 {
     font-size: clamp(1.6rem, 3vw, 2rem);

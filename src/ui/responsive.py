@@ -477,6 +477,13 @@ MOBILE_RESPONSIVE_CSS = r"""
         min-width: 0;
         width: auto !important;
     }
+    .st-key-portfolio_public_links [data-testid="stButton"] > button {
+        padding: 0.5rem 0.15rem;
+    }
+    .st-key-portfolio_public_links [data-testid="stButton"] p {
+        font-size: 0.875rem;
+        white-space: nowrap;
+    }
     .st-key-portfolio_featured { padding: 1rem; }
     .st-key-portfolio_featured h3 { font-size: 1.05rem; text-wrap: balance; }
     .st-key-portfolio_nav { padding-bottom: 0.8rem; }

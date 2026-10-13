@@ -13,7 +13,7 @@ def test_public_results_use_plain_copy_and_keep_exact_case_path(review_app,monke
     text=visible(at)
     for term in ['当前任务设计','历史回答节选','完整评价证据','评测方法']:
         assert term in text
-    assert [e.value for e in at.title] == ['让AI回答，经得起专业检验。']
+    assert [e.value for e in at.title] == ['评测结果']
     assert '管理' not in [b.label for b in at.button]
     at.button(key='portfolio_open_case').click().run()
     assert not at.exception

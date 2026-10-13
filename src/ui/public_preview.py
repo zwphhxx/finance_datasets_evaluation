@@ -21,18 +21,6 @@ from src.ui.trust_details import render_reference_standard
 STAGES = {'config': '配置评测', 'history': '历史运行', 'results': '查看结果'}
 
 
-def navigate_preview(page):
-    for field in (*ROUTE_FIELDS, 'stage', 'origin', 'history'):
-        st.query_params.pop(field, None)
-    st.query_params['page'] = page
-    st.session_state.current_page = page
-    request_scroll('top')
-
-
-def _back_home():
-    navigate_preview('conclusions')
-
-
 def _remember_config():
     st.session_state['public_preview_config'] = {
         name: st.session_state['preview_'+name]
@@ -49,16 +37,15 @@ def _change_stage():
 def render_evaluation_preview(data_bundle):
     base = data_bundle.get('base') or data_bundle['data']
     with st.container(key='portfolio_preview'):
-        st.button('← 返回作品首页', type='tertiary', key='preview_home', on_click=_back_home)
-        st.title('评测体验')
+        st.title('评测流程')
         st.caption('可配置评测、查看真实历史运行和评分；公开环境不会发起模型调用或保存数据。')
         stage = st.query_params.get('stage', 'config')
         if stage not in STAGES:
             stage = 'config'
         if 'preview_stage' not in st.session_state:
             st.session_state.preview_stage = STAGES[stage]
-        selected = st.radio('评测流程', list(STAGES.values()), index=None,
-                            horizontal=True, key='preview_stage', on_change=_change_stage)
+        selected = st.radio('评测阶段', list(STAGES.values()), index=None,
+                            horizontal=True, label_visibility='collapsed', key='preview_stage', on_change=_change_stage)
         source = workbench.load_workbench_source(base)
         report = source.report if source.available else None
         if selected == STAGES['config']:
@@ -229,7 +216,6 @@ def _go_results():
 def render_sample_preview(data_bundle):
     base = data_bundle.get('base') or data_bundle['data']
     with st.container(key='portfolio_preview'):
-        st.button('← 返回作品首页',type='tertiary',key='sample_preview_home',on_click=_back_home)
         st.title('样本库')
         st.caption('当前题库的任务与评价标准；不作为旧运行批次的输入或评分依据。')
         mode = st.radio('样本操作',['浏览样本','新增样本预览'],horizontal=True,key='preview_sample_mode')
