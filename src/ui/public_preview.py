@@ -130,6 +130,8 @@ def _open_record(row):
 
 
 def _remember_run():
+    for field in ROUTE_FIELDS:
+        st.query_params.pop(field, None)
     selected = st.session_state.get('preview_history_run')
     if selected:
         st.query_params['history'] = selected
@@ -199,12 +201,18 @@ def _render_history(report, *, results):
         identities = {_record_identity(r)+(str(r['case_id']),):r for r in rows}
         default = next((i for i,k in enumerate(identities) if k[3] == 'FD-001'), 0)
         saved = st.session_state.get('public_preview_record')
+        if any(st.query_params.get(f) for f in ROUTE_FIELDS):
+            saved = tuple(st.query_params.get(f, '') for f in ('run', 'model', 'score', 'case'))
+            if saved not in identities:
+                st.warning('无法定位链接中的评分记录，请重新选择历史批次。')
+                return
         if saved in identities:
             default = list(identities).index(saved)
         identity = st.selectbox('查看评分依据', list(identities),
             format_func=lambda k:k[3]+' · '+display_model_name(k[1],source='live')+' · '+str(identities[k].get('total_score')),
             index=default, key='preview_history_record')
         st.session_state['public_preview_record'] = identity
+        st.query_params.update(run=identity[0], model=identity[1], score=identity[2], case=identity[3])
         st.button('查看该案例', key='preview_review_record',type='primary',on_click=_open_record,args=(identities[identity],))
     else:
         st.info('该历史运行尚无有效评分记录，可在历史运行中查看失败或未完成状态。')

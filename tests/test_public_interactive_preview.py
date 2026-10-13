@@ -222,3 +222,17 @@ _open_record(dict(run_id='previous-run',eval_model='previous-model',score_run_id
 ''').run()
     assert not at.exception
     assert calls==[('latest-case','latest-model','latest-run','latest-score')]
+
+
+@pytest.mark.parametrize('missing',[False,True])
+def test_full_reload_locates_exact_score_or_reports_missing(preview_app,missing):
+    at,_=preview_app
+    at.query_params.update(page='evaluation_preview',stage='results',history='test-r1',
+        run='test-r1',model='model-b',score='missing' if missing else 's4',case='TEST-2')
+    at.run()
+    assert not at.exception
+    if missing:
+        assert any('无法定位链接中的评分记录' in e.value for e in at.warning)
+        assert not any(b.key=='preview_review_record' for b in at.button)
+    else:
+        assert at.selectbox(key='preview_history_record').value==('test-r1','model-b','s4','TEST-2')
