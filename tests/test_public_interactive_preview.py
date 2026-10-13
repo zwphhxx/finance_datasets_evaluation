@@ -207,3 +207,18 @@ def test_return_keeps_the_exact_selected_score_not_the_default_case(preview_app,
     at.button(key='portfolio_return_home').click().run()
     assert not at.exception
     assert at.selectbox(key='preview_history_record').value==identity
+
+
+def test_case_action_reads_latest_widget_selection_before_rerender(monkeypatch):
+    from src.ui import public_preview
+    calls=[]
+    monkeypatch.setattr(public_preview,'open_case_review',lambda *args:calls.append(args))
+    at=AppTest.from_string('''
+import streamlit as st
+from src.ui.public_preview import _open_record
+st.session_state.preview_history_run='latest-run'
+st.session_state.preview_history_record=('latest-run','latest-model','latest-score','latest-case')
+_open_record(dict(run_id='previous-run',eval_model='previous-model',score_run_id='previous-score',case_id='previous-case'))
+''').run()
+    assert not at.exception
+    assert calls==[('latest-case','latest-model','latest-run','latest-score')]

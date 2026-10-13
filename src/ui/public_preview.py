@@ -116,9 +116,16 @@ def _go_history():
 
 
 def _open_record(row):
-    run, model, score = _record_identity(row)
-    st.session_state['public_preview_record'] = (run, model, score, str(row['case_id']))
-    open_case_review(str(row['case_id']), model, run, score)
+    # Callbacks can run before the page has rebound row after a selection change.
+    selected = st.session_state.get('preview_history_record')
+    if selected is None:
+        selected = _record_identity(row) + (str(row['case_id']),)
+    run, model, score, case = selected
+    if run != st.session_state.get('preview_history_run', run):
+        st.warning('历史批次已切换，请重新选择评分记录。')
+        return
+    st.session_state['public_preview_record'] = (run, model, score, case)
+    open_case_review(case, model, run, score)
     st.query_params['origin'] = 'evaluation_preview'
 
 
