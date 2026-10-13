@@ -8,6 +8,7 @@ from src.ui.components import render_html
 from src.ui.conclusions import render_conclusions_page
 from src.ui.management import render_management_page
 from src.ui.page_config import DEFAULT_PAGE_KEY, PAGE_CONFIG_BY_KEY
+from src.ui.public_preview import render_evaluation_preview, render_sample_preview
 from src.ui.review import ROUTE_FIELDS, render_review_page
 from src.ui.scroll import request_scroll
 from src.ui.test_run import render_test_run_page
@@ -21,6 +22,8 @@ PAGES = {
     "case_study": render_case_study_page,
     "samples": render_management_page,
     "test_run": render_test_run_page,
+    "evaluation_preview": render_evaluation_preview,
+    "sample_preview": render_sample_preview,
 }
 
 

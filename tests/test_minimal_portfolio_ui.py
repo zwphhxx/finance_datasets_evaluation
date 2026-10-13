@@ -19,7 +19,7 @@ def test_public_home_has_one_reading_path_without_dashboard(review_app):  # noqa
     assert '2个专业任务' in visible(at)
     assert not at.metric and not at.selectbox and not at.multiselect and not at.dataframe
     assert not [b for b in at.button if str(b.key).startswith('top_nav_')]
-    assert [b.label for b in at.button] == ['查看完整案例']
+    assert [b.label for b in at.button] == ['体验评测流程', '查看样本库', '查看完整案例']
     assert not at.expander
     assert '当前任务设计' in visible(at)
     assert '历史回答节选' in visible(at)

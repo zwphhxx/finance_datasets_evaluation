@@ -36,11 +36,11 @@ from src.ui.page_config import PAGE_CONFIG_BY_KEY
 class PagesDictTests(unittest.TestCase):
     def test_pages_has_exactly_four_keys(self):
         """PAGES dict must expose exactly 4 user-facing entries."""
-        self.assertEqual(5, len(PAGES))
+        self.assertEqual(7, len(PAGES))
 
     def test_pages_keys_are_expected(self):
         """PAGES keys must match the simplified evaluation workflow."""
-        expected = ["conclusions", "review", "case_study", "samples", "test_run"]
+        expected = ["conclusions", "review", "case_study", "samples", "test_run", "evaluation_preview", "sample_preview"]
         self.assertEqual(sorted(expected), sorted(PAGES.keys()))
         self.assertIn("review", PAGES)
 
@@ -86,7 +86,7 @@ class PagesDictTests(unittest.TestCase):
 class PageConfigTests(unittest.TestCase):
     def test_page_config_has_exactly_four_entries(self):
         """PAGE_CONFIG_BY_KEY must have exactly 4 user-facing entries."""
-        self.assertEqual(5, len(PAGE_CONFIG_BY_KEY))
+        self.assertEqual(7, len(PAGE_CONFIG_BY_KEY))
 
     def test_page_config_keys_match_pages(self):
         """PAGE_CONFIG_BY_KEY keys must match PAGES keys."""
@@ -115,7 +115,7 @@ class TopNavTests(unittest.TestCase):
         """Primary and operation navigation together cover the four routes."""
         nav_keys = {key for _, key in PRIMARY_NAV_ITEMS}
         nav_keys.update({OPERATION_NAV_ITEM[1], "samples"})
-        self.assertEqual(nav_keys, set(PAGES.keys()))
+        self.assertEqual(nav_keys, set(PAGES.keys()) - {"evaluation_preview", "sample_preview"})
 
     def test_get_primary_nav_items_returns_only_review_items(self):
         """The primary accessor cannot accidentally expose the operation item."""
@@ -140,7 +140,7 @@ class SidebarTests(unittest.TestCase):
 
     def test_all_page_configs_are_four_pages(self):
         """All page configs must be one of the 4 core pages."""
-        expected_keys = {"case_study", "review", "samples", "test_run", "conclusions"}
+        expected_keys = {"case_study", "review", "samples", "test_run", "conclusions", "evaluation_preview", "sample_preview"}
         self.assertEqual(expected_keys, set(PAGE_CONFIG_BY_KEY.keys()))
 
 

@@ -15,8 +15,8 @@ from src.ui.navigation import PROJECT_DISPLAY_NAME as NAV_PROJECT_NAME
 from src.ui.page_config import PAGE_CONFIG_BY_KEY, PAGE_CONFIGS
 
 PROJECT_NAME = "财务/法律/投行场景大模型对比评测"
-MAIN_PAGE_KEYS = ["conclusions", "review", "case_study", "samples", "test_run"]
-PAGE_CONFIG_KEYS = ["review", "conclusions", "case_study", "samples", "test_run"]
+MAIN_PAGE_KEYS = ["conclusions", "review", "case_study", "samples", "test_run", "evaluation_preview", "sample_preview"]
+PAGE_CONFIG_KEYS = ["review", "conclusions", "case_study", "samples", "test_run", "evaluation_preview", "sample_preview"]
 MAIN_NAV_PAGE_KEYS = ["conclusions", "review", "case_study"]
 MAIN_NAV_LABELS = ["评测结果", "案例分析", "评测方法"]
 VISIBLE_UI_FILES = [

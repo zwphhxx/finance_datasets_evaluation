@@ -32,6 +32,8 @@ PAGE_CONFIGS = [
         title="发起评测",
         question="选择样本和模型，运行评测并自动完成评分。",
     ),
+    PageConfig("evaluation_preview", "评测体验", "配置评测，追溯真实历史运行与评分。"),
+    PageConfig("sample_preview", "样本库", "查看专业任务与评价标准，预览新增样本。"),
 ]
 
 PAGE_CONFIG_BY_KEY = {config.page_key: config for config in PAGE_CONFIGS}

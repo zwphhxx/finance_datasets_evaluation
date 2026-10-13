@@ -81,7 +81,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
 
         self.assertEqual(3, len(PRIMARY_NAV_ITEMS))
         nav_items = [*PRIMARY_NAV_ITEMS, *MANAGEMENT_NAV_ITEMS]
-        self.assertEqual(sorted([key for _, key in nav_items]), sorted(PAGES.keys()))
+        self.assertEqual(sorted([key for _, key in nav_items]), sorted(set(PAGES.keys()) - {"evaluation_preview", "sample_preview"}))
         self.assertIn(".top-nav-brand", components.STYLE_CSS)
 
         navigation_source = Path("src/ui/navigation.py").read_text(encoding="utf-8")

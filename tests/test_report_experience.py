@@ -855,7 +855,7 @@ def test_conclusions_are_default_and_operation_is_secondary():
         ("评测方法", "case_study"),
     ]
     assert navigation.OPERATION_NAV_ITEM == ("运行评测", "test_run")
-    assert set(navigation.PAGES) == {"conclusions", "review", "case_study", "samples", "test_run"}
+    assert set(navigation.PAGES) == {"conclusions", "review", "case_study", "samples", "test_run", "evaluation_preview", "sample_preview"}
 
 
 def test_navigation_click_uses_stable_key_and_queues_top_scroll():

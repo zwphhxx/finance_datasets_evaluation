@@ -55,11 +55,11 @@ class ComponentRenderTests(unittest.TestCase):
 class WorkflowNavTests(unittest.TestCase):
     def test_nav_items_cover_every_page(self):
         nav_keys = [page_key for _, page_key in [*PRIMARY_NAV_ITEMS, *MANAGEMENT_NAV_ITEMS]]
-        self.assertEqual(sorted(nav_keys), sorted(PAGES.keys()))
+        self.assertEqual(sorted(nav_keys), sorted(set(PAGES.keys()) - {"evaluation_preview", "sample_preview"}))
         self.assertEqual(len(nav_keys), len(set(nav_keys)))
 
     def test_current_pages_are_registered(self):
-        self.assertEqual(["conclusions", "review", "case_study", "samples", "test_run"], list(PAGES.keys()))
+        self.assertEqual(["conclusions", "review", "case_study", "samples", "test_run", "evaluation_preview", "sample_preview"], list(PAGES.keys()))
         self.assertEqual(
             ["conclusions", "review", "case_study", "test_run", "samples"],
             [page_key for _, page_key in [*PRIMARY_NAV_ITEMS, *MANAGEMENT_NAV_ITEMS]],

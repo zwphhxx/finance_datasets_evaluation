@@ -1,0 +1,262 @@
+"""Interactive public projections; never instantiate a workflow or write a dataset."""
+from __future__ import annotations
+
+import pandas as pd
+import streamlit as st
+
+from app.services import dataset_service as ds
+from app.services.comparison import runtime_counts
+from app.services.formal_records import formal_recovery_run_eligible
+from app.services.model_display import display_model_name
+from app.services.snapshot import _safe
+from src.ui import workbench
+from src.ui.evaluation_config import build_run_plan_summary, build_sample_options
+from src.ui.labels import DOMAIN_LABELS, display_label
+from src.ui.portfolio import _render_task, _tasks
+from src.ui.review import ROUTE_FIELDS, _record_identity, _review_records, open_case_review
+from src.ui.samples import PROFESSIONAL_SCENE_OPTIONS, _build_gold_answer_json, _domain_from_professional_scene
+from src.ui.scroll import request_scroll
+from src.ui.trust_details import render_reference_standard
+
+STAGES = {'config': '配置评测', 'history': '历史运行', 'results': '查看结果'}
+
+
+def navigate_preview(page):
+    for field in (*ROUTE_FIELDS, 'stage', 'origin', 'history'):
+        st.query_params.pop(field, None)
+    st.query_params['page'] = page
+    st.session_state.current_page = page
+    request_scroll('top')
+
+
+def _back_home():
+    navigate_preview('conclusions')
+
+
+def _remember_config():
+    st.session_state['public_preview_config'] = {
+        name: st.session_state['preview_'+name]
+        for name in ('models', 'cases', 'temperature', 'max_tokens') if 'preview_'+name in st.session_state
+    }
+
+
+def _change_stage():
+    stage = next(k for k,v in STAGES.items() if v == st.session_state.preview_stage)
+    st.query_params['stage'] = stage
+    request_scroll('top')
+
+
+def render_evaluation_preview(data_bundle):
+    base = data_bundle.get('base') or data_bundle['data']
+    with st.container(key='portfolio_preview'):
+        st.button('← 返回作品首页', type='tertiary', key='preview_home', on_click=_back_home)
+        st.title('评测体验')
+        st.caption('可配置评测、查看真实历史运行和评分；公开环境不会发起模型调用或保存数据。')
+        stage = st.query_params.get('stage', 'config')
+        if stage not in STAGES:
+            stage = 'config'
+        if 'preview_stage' not in st.session_state:
+            st.session_state.preview_stage = STAGES[stage]
+        selected = st.radio('评测流程', list(STAGES.values()), index=None,
+                            horizontal=True, key='preview_stage', on_change=_change_stage)
+        source = workbench.load_workbench_source(base)
+        report = source.report if source.available else None
+        if selected == STAGES['config']:
+            _render_config(base, report)
+        else:
+            _render_history(report, results=selected == STAGES['results'])
+
+
+def _render_config(base, report):
+    tasks = _tasks(base)
+    gold = getattr(base, 'gold_answer_map', {}) or {}
+    dimensions = ds.get_testable_rubric_dimensions()
+    options = build_sample_options(tasks, gold, dimensions,
+        title_map={str(t['case_id']): str(t.get('title') or t.get('scenario') or t.get('question') or t['case_id']) for t in tasks})
+    cases = {str(r['case_id']): r for r in options}
+    models = sorted(set(str(r['eval_model']) for r in _review_records(report)[0]))
+    saved = st.session_state.get('public_preview_config', {})
+    names = [display_model_name(m, source='live') for m in models]
+    def model_label(model):
+        label = display_model_name(model, source='live')
+        return label+' · '+model if names.count(label) > 1 else label
+    chosen_models = st.multiselect('被评测模型', models,
+        default=[m for m in saved.get('models', models[:2]) if m in models], format_func=model_label,
+        key='preview_models', on_change=_remember_config)
+    st.caption('模型选项来自正式历史记录；不查询在线服务列表，也不表示当前可调用。')
+    chosen_cases = st.multiselect('专业样本', list(cases),
+        default=[c for c in saved.get('cases', ['FD-001'] if 'FD-001' in cases else list(cases)[:1]) if c in cases],
+        format_func=lambda c: c+' · '+str(cases[c]['title']).split('——',1)[-1], key='preview_cases', on_change=_remember_config)
+    if not cases:
+        st.caption('当前没有通过既有完整度检查的样本；可在样本库查看任务与标准。')
+    st.caption('此处配置使用当前题库；下面的历史运行使用当时保存的记录，两者不会互相替换。')
+    with st.expander('生成参数与评分标准'):
+        st.number_input('Temperature', min_value=0.0, max_value=2.0, value=float(saved.get('temperature',0.0)),
+                        step=0.1, key='preview_temperature', on_change=_remember_config)
+        st.number_input('最大输出 Token', min_value=128, max_value=32768, value=int(saved.get('max_tokens',4096)),
+                        step=128, key='preview_max_tokens', on_change=_remember_config)
+        if dimensions:
+            st.dataframe(_safe([{'评分维度':d.get('name') or d.get('field'),'满分':d.get('full_mark')} for d in dimensions]),
+                         hide_index=True, width='stretch')
+        else:
+            st.caption('当前评分维度未配置。')
+        st.caption('模型作答后由裁判按专业标准评分，再核对评价点与原文证据。')
+    _remember_config()
+    plan = build_run_plan_summary(chosen_models, [cases[c] for c in chosen_cases])
+    st.markdown(f"**{plan['sample_count']}个样本 × {plan['model_count']}个模型 = {plan['planned_responses']}个回答任务**")
+    st.button('开始真实评测', disabled=True, key='preview_real_start', type='primary')
+    st.caption('真实调用与中断恢复仅在受控管理环境开放；这里不会生成新回答或评分。')
+    st.button('查看真实历史运行', key='preview_to_history', on_click=_go_history)
+
+
+def _go_history():
+    st.session_state.preview_stage = STAGES['history']
+    st.query_params['stage'] = 'history'
+    request_scroll('top')
+
+
+def _open_record(row):
+    run, model, score = _record_identity(row)
+    open_case_review(str(row['case_id']), model, run, score)
+    st.query_params['origin'] = 'evaluation_preview'
+
+
+def _remember_run():
+    selected = st.session_state.get('preview_history_run')
+    if selected:
+        st.query_params['history'] = selected
+        st.session_state['public_preview_run'] = selected
+
+
+def _render_history(report, *, results):
+    records, _ = _review_records(report)
+    runs = report.runtime_tables.get('live_evaluation_runs', []) if report else []
+    runs = [r for r in runs if formal_recovery_run_eligible(r,
+        [q for q in report.runtime_tables.get('live_run_queue', []) if str(q.get('run_id')) == str(r['run_id'])])]
+    if not runs:
+        st.info('暂无可读取的正式历史运行。可先配置评测或查看样本，不展示模拟结果。')
+        return
+    by_run = {str(r['run_id']): r for r in runs}
+    labels = {}
+    for run in by_run:
+        row = by_run[run]
+        models = sorted({display_model_name(str(r['eval_model']),source='live') for r in records if str(r['run_id']) == run})
+        if not models:
+            models = sorted({display_model_name(str(q.get('model_id') or q.get('model_name')),source='live')
+                             for q in report.runtime_tables.get('live_run_queue',[]) if str(q.get('run_id')) == run})
+        labels[run] = str(row.get('created_at') or '日期未记录')[:10]+' · '+ ('、'.join(models) or '模型未记录')
+    names = list(labels.values())
+    labels = {run: str(_safe(label+' · '+str(by_run[run].get('provider') or '服务未记录')+' · '+run if names.count(label)>1 else label))
+              for run,label in labels.items()}
+    previous = st.query_params.get('history') or st.session_state.get('public_preview_run')
+    invalid = bool(previous and previous not in by_run)
+    if invalid:
+        st.warning('无法定位链接中的历史批次，请重新选择。')
+        st.session_state.pop('preview_history_run',None)
+    index = None if invalid else list(by_run).index(previous) if previous in by_run else 0
+    selected = st.selectbox('历史测试', list(by_run), index=index,
+                            format_func=labels.get, key='preview_history_run', on_change=_remember_run)
+    if selected is None:
+        return
+    st.query_params['history'] = selected
+    st.session_state['public_preview_run'] = selected
+    rows = sorted((r for r in records if str(r['run_id']) == selected),
+                  key=lambda r: (str(r['case_id']), str(r['eval_model']), _record_identity(r)[2]))
+    run = by_run[selected]
+    st.caption('已保存的历史记录，未按上方配置重新运行。服务：'+str(_safe(run.get('provider') or '未记录'))+
+               ' · 端点：'+str(_safe(run.get('service_endpoint') or '未记录')))
+    if not results:
+        tables = {name:[r for r in values if str(r.get('run_id')) == selected] for name,values in report.runtime_tables.items()}
+        counts = runtime_counts(tables.get('live_run_queue',[]), tables.get('live_run_responses',[]), tables.get('live_run_scores',[]))
+        if counts:
+            fields = {'model_id':'模型','planned':'计划任务','answer_success':'回答成功','answer_failed':'回答失败',
+                      'judge_success':'评分成功','judge_failed':'评分失败','unfinished':'未完成'}
+            frame = pd.DataFrame(counts)[list(fields)].rename(columns=fields)
+            frame['模型'] = frame['模型'].map(lambda m:display_model_name(str(m),source='live'))
+            st.dataframe(_safe(frame.to_dict('records')),hide_index=True,width='stretch')
+        else:
+            st.caption('该批次未保存完整进度状态，不推算执行进度。')
+        failures = [dict(样本=r.get('case_id'),模型=r.get('model_name') or r.get('eval_model'),原因=r.get('error_message') or r.get('error_code') or '未保存原因')
+                    for name,field in [('live_run_responses','run_status'),('live_run_scores','judge_status')]
+                    for r in tables.get(name,[]) if r.get(field) == 'failed']
+        if failures:
+            st.warning('该历史运行存在失败记录；失败项不计入评分结果。')
+            st.dataframe(_safe(failures),hide_index=True,width='stretch')
+        st.caption('运行状态来自保存的队列与响应；恢复任务不会在公开环境执行。')
+        st.button('查看该批次评分', key='preview_to_results', on_click=_go_results)
+    elif rows:
+        st.dataframe(_safe([{'样本':r['case_id'],'模型':display_model_name(str(r['eval_model']),source='live'),
+                            'AI评分':r.get('total_score')} for r in rows]),hide_index=True,width='stretch')
+        st.caption('单题历史AI评分；评分满分及证据缺失情况请进入对应案例核对，不作模型整体排名。')
+        identities = {_record_identity(r)+(str(r['case_id']),):r for r in rows}
+        default = next((i for i,k in enumerate(identities) if k[3] == 'FD-001'), 0)
+        identity = st.selectbox('查看评分依据', list(identities),
+            format_func=lambda k:k[3]+' · '+display_model_name(k[1],source='live')+' · '+str(identities[k].get('total_score')),
+            index=default, key='preview_history_record')
+        st.button('查看该案例', key='preview_review_record',type='primary',on_click=_open_record,args=(identities[identity],))
+    else:
+        st.info('该历史运行尚无有效评分记录，可在历史运行中查看失败或未完成状态。')
+    with st.expander('本次测试配置'):
+        st.json(_safe(run),expanded=False)
+
+
+def _go_results():
+    st.session_state.preview_stage = STAGES['results']
+    st.query_params['stage'] = 'results'
+    request_scroll('top')
+
+
+def render_sample_preview(data_bundle):
+    base = data_bundle.get('base') or data_bundle['data']
+    with st.container(key='portfolio_preview'):
+        st.button('← 返回作品首页',type='tertiary',key='sample_preview_home',on_click=_back_home)
+        st.title('样本库')
+        st.caption('当前题库的任务与评价标准；不作为旧运行批次的输入或评分依据。')
+        mode = st.radio('样本操作',['浏览样本','新增样本预览'],horizontal=True,key='preview_sample_mode')
+        if mode == '新增样本预览':
+            _render_draft()
+            return
+        tasks = _tasks(base)
+        domains = list(dict.fromkeys(str(r['domain']) for r in tasks if r.get('domain')))
+        domain = st.selectbox('专业场景',['全部',*domains],format_func=lambda d:display_label(d,DOMAIN_LABELS),key='preview_sample_domain')
+        filtered = [r for r in tasks if domain == '全部' or str(r.get('domain')) == domain]
+        if not filtered:
+            st.info('暂无匹配的专业任务。可以查看新增样本表单，了解任务设计要求。')
+            return
+        by_case = {str(r['case_id']):r for r in filtered}
+        case = st.selectbox('专业任务',list(by_case),format_func=lambda c:str(by_case[c].get('title') or by_case[c].get('scenario') or '专业任务')+' · '+c,key='preview_sample_case')
+        st.subheader(str(_safe(by_case[case].get('title') or by_case[case].get('scenario') or '专业任务'))+' · '+case)
+        _render_task(by_case[case],historical=False)
+        with st.expander('当前参考答案与评价标准',expanded=True):
+            render_reference_standard((getattr(base,'gold_answer_map',{}) or {}).get(case),historical=False)
+
+
+def _render_draft():
+    st.caption('填写新增样本并预览结构。内容仅保留在本次会话，不加入正式题库。')
+    with st.form('public_sample_preview_form'):
+        case = st.text_input('样本编号',key='preview_draft_id')
+        title = st.text_input('样本标题',key='preview_draft_title')
+        scene = st.selectbox('专业场景',PROFESSIONAL_SCENE_OPTIONS,key='preview_draft_scene')
+        question = st.text_area('任务题',key='preview_draft_question')
+        context = st.text_area('业务背景',key='preview_draft_context')
+        output = st.text_area('输出要求',key='preview_draft_output')
+        core = st.text_area('参考判断',key='preview_draft_core')
+        evidence = st.text_area('关键依据',key='preview_draft_evidence')
+        must = st.text_area('必须覆盖点（每行一条）',key='preview_draft_must')
+        forbidden = st.text_area('不可接受错误（每行一条）',key='preview_draft_forbidden')
+        boundary = st.text_area('适用边界',key='preview_draft_boundary')
+        submitted = st.form_submit_button('预览任务与标准',key='preview_draft_submit',type='primary')
+        st.form_submit_button('保存到样本库',key='preview_save_sample',disabled=True)
+    if submitted:
+        task = dict(case_id=case.strip(),title=title,domain=_domain_from_professional_scene(scene),scenario=title,
+                    question=question,context=context,output_requirement=output,status='draft')
+        gold = _build_gold_answer_json(sample_id=case,core_conclusion=core,key_evidence=evidence,must_have_points=must,
+                                      unacceptable_errors=forbidden,boundary_conditions=boundary,manual_review_notes='')
+        st.session_state['public_sample_draft'] = dict(task=task,gold=gold)
+    st.caption('实际新增、导入与维护在受控管理环境完成；公开页面无法保存。')
+    draft = st.session_state.get('public_sample_draft')
+    if draft:
+        st.subheader('新增样本预览 · 未保存')
+        st.text(str(_safe(draft['task'].get('title') or '标题未填写'))+' · '+str(_safe(draft['task'].get('case_id') or '编号未填写')))
+        _render_task(draft['task'],historical=False)
+        render_reference_standard(draft['gold'],historical=False)

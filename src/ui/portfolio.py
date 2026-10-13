@@ -52,6 +52,11 @@ def featured_record(report, case_id):
 def _return_home():
     for field in ROUTE_FIELDS:
         st.query_params.pop(field, None)
+    if st.query_params.pop("origin", None) == "evaluation_preview":
+        st.query_params.update(page="evaluation_preview", stage="results")
+        st.session_state.current_page = "evaluation_preview"
+        request_scroll("top")
+        return
     st.query_params["page"] = "conclusions"
     st.session_state.current_page = "conclusions"
     request_scroll("#fde-featured-case")
@@ -74,6 +79,10 @@ def render_portfolio_home(data_bundle):
         domains = list(dict.fromkeys(display_label(str(t["domain"]), DOMAIN_LABELS).removesuffix("场景")
                                     for t in tasks if t.get("domain")))
         st.caption(f"{len(tasks)}个专业任务 · {'/'.join(domains) or '领域未记录'} · AI自动评分原型")
+        from src.ui.public_preview import navigate_preview
+        with st.container(horizontal=True):
+            st.button("体验评测流程", key="portfolio_evaluation_preview", on_click=navigate_preview, args=("evaluation_preview",))
+            st.button("查看样本库", key="portfolio_sample_preview", on_click=navigate_preview, args=("sample_preview",), type="tertiary")
         render_html('<div id="fde-featured-case"></div>')
         with st.container(key="portfolio_featured"):
             st.subheader("收入增长，但回款是否正常？" if case_id == "FD-001" else
@@ -121,7 +130,8 @@ def render_portfolio_home(data_bundle):
 def render_portfolio_case(data_bundle):
     base = data_bundle.get("base") or data_bundle["data"]
     with st.container(key="portfolio_case"):
-        st.button("← 返回作品首页", key="portfolio_return_home", type="tertiary", on_click=_return_home)
+        st.button("← 返回评测体验" if st.query_params.get("origin") == "evaluation_preview" else "← 返回作品首页",
+                  key="portfolio_return_home", type="tertiary", on_click=_return_home)
         source = workbench.load_workbench_source(base)
         report = source.report if source.available else None
         rows, responses = _review_records(report)
