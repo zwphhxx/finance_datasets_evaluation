@@ -10,7 +10,14 @@ from src.ui import workbench
 from src.ui.components import render_html
 from src.ui.conclusions import _formal_response_for_score
 from src.ui.labels import DOMAIN_LABELS, display_label
-from src.ui.review import ROUTE_FIELDS, _record_identity, _review_records, historical_task, open_case_review
+from src.ui.review import (
+    ROUTE_FIELDS,
+    _record_identity,
+    _record_labels,
+    _review_records,
+    historical_task,
+    open_case_review,
+)
 from src.ui.scroll import request_scroll
 from src.ui.trust_details import _task_fields, evidence_gaps, render_portfolio_evaluation
 
@@ -50,13 +57,15 @@ def featured_record(report, case_id):
 
 
 def _return_home():
-    if st.query_params.get("origin") == "evaluation_preview":
+    origin = st.query_params.pop("origin", None)
+    if origin == "evaluation_preview":
         st.session_state["public_preview_record"] = tuple(st.query_params.get(f, "") for f in ("run", "model", "score", "case"))
         if st.query_params.get("run"):
             st.query_params["history"] = st.query_params["run"]
-    for field in ROUTE_FIELDS:
-        st.query_params.pop(field, None)
-    if st.query_params.pop("origin", None) == "evaluation_preview":
+    if origin != "portfolio_home":
+        for field in ROUTE_FIELDS:
+            st.query_params.pop(field, None)
+    if origin == "evaluation_preview":
         st.query_params.update(page="evaluation_preview", stage="results")
         st.session_state.current_page = "evaluation_preview"
         request_scroll("top")
@@ -66,6 +75,98 @@ def _return_home():
     request_scroll("#fde-featured-case")
 
 
+def _reset_home_selection():
+    for field in (*ROUTE_FIELDS, "origin"):
+        st.query_params.pop(field, None)
+    for key in ("portfolio_home_case", "portfolio_home_record"):
+        st.session_state.pop(key, None)
+
+
+def _home_case_changed():
+    if st.session_state.portfolio_home_case:
+        st.query_params["case"] = st.session_state.portfolio_home_case
+    else:
+        st.query_params.pop("case", None)
+    for field in ("run", "model", "score"):
+        st.query_params.pop(field, None)
+    st.session_state.pop("portfolio_home_record", None)
+
+
+def _home_record_changed():
+    if st.session_state.portfolio_home_record is None:
+        for field in ("run", "model", "score"):
+            st.query_params.pop(field, None)
+        return
+    run, model, score = st.session_state.portfolio_home_record
+    st.query_params.update(case=st.session_state.portfolio_home_case, run=run, model=model, score=score)
+
+
+def _open_home_case(fallback):
+    case, run, model, score = fallback
+    if st.session_state.get("portfolio_home_record"):
+        case = st.session_state.portfolio_home_case
+        run, model, score = st.session_state.portfolio_home_record
+    elif "portfolio_home_record" in st.session_state or st.session_state.get("portfolio_home_case", case) != case:
+        st.warning("案例正在切换，请稍后再打开。")
+        return
+    open_case_review(case, model, run, score)
+    st.query_params["origin"] = "portfolio_home"
+
+
+def _render_home_selection(report, rows, task_map):
+    """Only select formal saved records; query links override existing widgets."""
+    cases = sorted({str(r["case_id"]) for r in rows})
+    requested = st.query_params.get("case")
+    exact = any(st.query_params.get(f) for f in ("run", "model", "score"))
+    candidates = [r for r in rows if str(r["case_id"]) == requested and
+                  _record_identity(r) == tuple(st.query_params.get(f, "") for f in ("run", "model", "score"))]
+    if (requested and requested not in cases) or (exact and len(candidates) != 1):
+        st.error("无法定位该案例评分记录，请重新选择案例。")
+        st.button("重新选择案例", key="portfolio_reset_selection", on_click=_reset_home_selection)
+        return None, None
+    if not cases:
+        return None, None
+    labels = {}
+    for case in cases:
+        representative = featured_record(report, case)
+        task, _, _ = historical_task(report, case, str(representative["run_id"]))
+        title = task.get("title") or task.get("scenario") or task_map.get(case, {}).get("title") or task_map.get(case, {}).get("scenario")
+        labels[case] = str(_safe(f"{title} · {case}" if title else f"历史案例 · {case}"))
+    default_case = requested or st.session_state.get("portfolio_home_case")
+    if default_case not in cases:
+        default_case = "FD-001" if "FD-001" in cases else cases[0]
+    if requested or "portfolio_home_case" not in st.session_state or st.session_state.portfolio_home_case not in (*cases, None):
+        st.session_state.portfolio_home_case = default_case
+    with st.container(key="portfolio_home_selectors"):
+        left, right = st.columns([1, 1], gap="small")
+        with left:
+            case = st.selectbox("专业案例", cases, index=None, format_func=labels.get,
+                                key="portfolio_home_case", on_change=_home_case_changed)
+        if case is None:
+            with right:
+                st.selectbox("模型与测试日期", [], index=None, disabled=True)
+            st.caption("请选择专业案例。")
+            return None, None
+        case_rows = sorted((r for r in rows if str(r["case_id"]) == case), key=_record_identity)
+        identities = {_record_identity(r): r for r in case_rows}
+        metadata = {str(r["run_id"]): r for r in report.runtime_tables.get("live_evaluation_runs", [])}
+        record_labels = _record_labels(case_rows, metadata)
+        selected = _record_identity(candidates[0]) if exact else st.session_state.get("portfolio_home_record")
+        if selected not in identities and ("portfolio_home_record" not in st.session_state or selected is not None):
+            selected = _record_identity(featured_record(report, case))
+        st.session_state.portfolio_home_record = selected
+        with right:
+            identity = st.selectbox("模型与测试日期", list(identities), index=None, format_func=record_labels.get,
+                                    key="portfolio_home_record", on_change=_home_record_changed)
+    if identity is None:
+        st.caption("请选择模型与测试日期。")
+        return None, None
+    st.query_params.update(case=case, run=identity[0], model=identity[1], score=identity[2])
+    # Native selectboxes may truncate long selected labels on a narrow viewport.
+    st.caption(record_labels[identity])
+    return case, identities[identity]
+
+
 def render_portfolio_home(data_bundle):
     base = data_bundle.get("base") or data_bundle["data"]
     tasks = _tasks(base)
@@ -73,10 +174,10 @@ def render_portfolio_home(data_bundle):
     case_id = "FD-001" if "FD-001" in task_map else next(iter(sorted(task_map)), "")
     source = workbench.load_workbench_source(base)
     report = source.report if source.available else None
-    if not case_id and report is not None:
-        case_id = next(iter(sorted(set(report.formal_scores.get("case_id", [])))), "")
-    design = task_map.get(case_id, {})
-    score = featured_record(report, case_id)
+    rows, responses = _review_records(report)
+    if report is None or not report.scope.formal_score_count:
+        rows = []
+    score = None
     with st.container(key="portfolio_home"):
         st.title("让AI回答，经得起专业检验。")
         st.markdown("将财务、法律及投行业务中的专业判断，转化为可检查的模型评价任务。")
@@ -89,46 +190,54 @@ def render_portfolio_home(data_bundle):
             st.button("查看样本库", key="portfolio_sample_preview", on_click=navigate_preview, args=("sample_preview",), type="tertiary")
         render_html('<div id="fde-featured-case"></div>')
         with st.container(key="portfolio_featured"):
-            st.subheader("收入增长，但回款是否正常？" if case_id == "FD-001" else
-                         str(_safe(design.get("title") or design.get("scenario") or (f"专业案例 · {case_id}" if case_id else "专业任务"))))
-            if design:
-                st.caption(f"当前任务设计 · {case_id}")
-                fields = list(_task_fields(design))
-                background = next((v for label, v in fields if label in {"业务背景", "背景", "材料"}), "")
-                question = next((v for label, v in fields if label == "任务"), "")
-                if background:
-                    st.text(_excerpt(background, 145))
-                if question:
-                    st.markdown("**评测目标**")
-                    requirement = next((v for label, v in fields if label == "输出要求"), question)
-                    st.text(_excerpt(requirement.split("。")[0] + "。", 120))
-            if score is not None:
-                rows, responses = _review_records(report)
-                answer = _formal_response_for_score(responses, score).get("answer_text") or ""
-                task, gold, _ = historical_task(report, case_id, str(score["run_id"]))
-                model = display_model_name(str(score["eval_model"]), source="live")
-                st.markdown(f"**历史回答节选 · {str(_safe(model))}**")
-                gaps = evidence_gaps(task, gold, score, answer)
-                if gaps:
-                    st.caption("该记录尚不具备完整评价证据：缺少" + "、".join(gaps) + "。上方当前任务设计不代表当时输入。")
-                st.text(_excerpt(answer, 120))
-                if score.get("review_note"):
-                    st.caption("原始评价摘录")
-                    st.text(_excerpt(score["review_note"], 160))
-                st.button("查看完整案例", key="portfolio_open_case", type="primary", on_click=open_case_review,
-                          args=(case_id, str(score["eval_model"]), str(score["run_id"]), _record_identity(score)[2]))
-            elif case_id:
-                st.caption("任务设计示例，尚无完整实测记录。")
-                if not source.available:
-                    st.caption("历史结果暂不可读取，可先查看任务与评价标准。")
-                st.button("查看完整案例", key="portfolio_open_case", type="primary", on_click=open_case_review,
-                          args=(case_id, "", ""))
-            else:
-                st.caption("暂无可读取的专业任务，请稍后查看。")
+            if rows or any(st.query_params.get(f) for f in ROUTE_FIELDS):
+                case_id, score = _render_home_selection(report, rows, task_map)
+            if case_id is not None:
+                _render_home_excerpt(report, source, task_map, case_id, score, responses)
         render_html('<div id="fde-method"></div>')
         st.markdown("**评测方法**")
         st.markdown("项目通过专业任务、参考答案及评价标准，对模型回答进行自动评分和分析。结果仅反映当前样本与测试条件，不构成模型整体能力排名。")
         st.link_button("查看方法与技术说明", REPOSITORY_URL + "#评测边界", type="tertiary")
+
+
+def _render_home_excerpt(report, source, task_map, case_id, score, responses):
+    design = task_map.get(case_id, {})
+    st.subheader("收入增长，但回款是否正常？" if case_id == "FD-001" else
+                 str(_safe(design.get("title") or design.get("scenario") or (f"专业案例 · {case_id}" if case_id else "专业任务"))))
+    if design:
+        st.caption(f"当前任务设计 · {case_id}")
+        fields = list(_task_fields(design))
+        background = next((v for label, v in fields if label in {"业务背景", "背景", "材料"}), "")
+        question = next((v for label, v in fields if label == "任务"), "")
+        if background:
+            st.text(_excerpt(background, 145))
+        if question:
+            st.markdown("**评测目标**")
+            requirement = next((v for label, v in fields if label == "输出要求"), question)
+            st.text(_excerpt(requirement.split("。")[0] + "。", 120))
+    if score is not None:
+        answer = _formal_response_for_score(responses, score).get("answer_text") or ""
+        task, gold, _ = historical_task(report, case_id, str(score["run_id"]))
+        model = display_model_name(str(score["eval_model"]), source="live")
+        st.markdown(f"**历史回答节选 · {str(_safe(model))}**")
+        gaps = evidence_gaps(task, gold, score, answer)
+        if gaps:
+            st.caption("该记录尚不具备完整评价证据：缺少" + "、".join(gaps) + "。" +
+                       ("上方当前任务设计不代表当时输入。" if design else "不使用当前题库补造历史材料。"))
+        st.text(_excerpt(answer, 120))
+        if score.get("review_note"):
+            st.caption("原始评价摘录")
+            st.text(_excerpt(score["review_note"], 160))
+        st.button("查看完整案例", key="portfolio_open_case", type="primary", on_click=_open_home_case,
+                  args=((case_id, *_record_identity(score)),))
+    elif case_id:
+        st.caption("任务设计示例，尚无完整实测记录。")
+        if not source.available:
+            st.caption("历史结果暂不可读取，可先查看任务与评价标准。")
+        st.button("查看完整案例", key="portfolio_open_case", type="primary", on_click=open_case_review,
+                  args=(case_id, "", ""))
+    else:
+        st.caption("暂无可读取的专业任务，请稍后查看。")
 
 
 def render_portfolio_case(data_bundle):

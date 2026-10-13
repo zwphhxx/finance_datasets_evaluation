@@ -449,6 +449,15 @@ MOBILE_RESPONSIVE_CSS = r"""
 
 /* Public reading view uses its own stable container keys, not dashboard nav. */
 @media (max-width: 760px) {
+    .st-key-portfolio_home_selectors [data-testid="stHorizontalBlock"] {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    .st-key-portfolio_home_selectors [data-testid="stColumn"] {
+        width: 100% !important;
+        flex: 1 1 100% !important;
+        min-width: 0;
+    }
     .st-key-portfolio_nav [data-testid="stHorizontalBlock"] {
         flex-direction: row !important;
         flex-wrap: nowrap !important;

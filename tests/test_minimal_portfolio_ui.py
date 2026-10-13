@@ -17,7 +17,8 @@ def test_public_home_has_one_reading_path_without_dashboard(review_app):  # noqa
     assert not at.exception
     assert '让AI回答，经得起专业检验。' in [e.value for e in at.title]
     assert '2个专业任务' in visible(at)
-    assert not at.metric and not at.selectbox and not at.multiselect and not at.dataframe
+    assert not at.metric and not at.multiselect and not at.dataframe
+    assert [s.label for s in at.selectbox] == ['专业案例', '模型与测试日期']
     assert not [b for b in at.button if str(b.key).startswith('top_nav_')]
     assert [b.label for b in at.button] == ['体验评测流程', '查看样本库', '查看完整案例']
     assert not at.expander
@@ -44,7 +45,7 @@ def test_featured_link_retains_exact_identity_and_returns_to_case_anchor(review_
     assert '不得冒充历史的当前标准' not in visible(at)
     at.button(key='portfolio_return_home').click().run()
     assert at.query_params['page'] == ['conclusions']
-    assert 'score' not in at.query_params
+    assert at.query_params['score'] == [score_id]
     assert '_fde_scroll_request_sequence' in at.session_state
     assert at.session_state['_fde_pending_scroll_target']['target'] == '#fde-featured-case'
 
@@ -57,7 +58,7 @@ def test_legacy_public_result_and_method_links_open_the_portfolio(review_app, pa
     assert not at.exception
     assert at.query_params['page'] == ['conclusions']
     assert [e.value for e in at.title] == ['让AI回答，经得起专业检验。']
-    assert not at.selectbox and not at.metric
+    assert len(at.selectbox) == 2 and not at.metric
 
 
 @pytest.mark.parametrize('change', [{'case': 'missing'}, {'model': 'missing'}, {'run': 'missing'}, {'score': 'missing'}])
