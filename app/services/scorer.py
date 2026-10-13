@@ -27,7 +27,7 @@ from typing import Any, Callable, Collection, Mapping, Sequence
 
 import pandas as pd
 
-from app.access import management_operation
+from app.access import evaluation_operation, management_operation
 from app.models.base import STATUS_FAILED, STATUS_MOCK, STATUS_SUCCESS, ModelProvider
 from app.services import formal_records as formal
 from app.services import model_display as md
@@ -295,7 +295,7 @@ def parse_judge_output(text: str, dimensions: Sequence[Mapping[str, Any]]) -> _J
     return _JudgeParse(True, scores, total, rationale, review_note)
 
 
-@management_operation
+@evaluation_operation
 def score_single(
     provider: ModelProvider,
     judge_model_id: str,

@@ -25,17 +25,18 @@ def test_home_problem_then_answer_then_rating_and_collapsed_selection(home_app):
     assert at.button(key='portfolio_open_case').label=='查看完整案例 →'
 
 
-def test_demo_has_real_history_action_and_no_disabled_run(preview_app):  # noqa: F811
+def test_flow_has_explicit_run_and_secondary_history_action(preview_app):  # noqa: F811
     at,_=preview_app
     at.query_params['page']='evaluation_preview'
-    at.session_state['preview_stage']='配置评测'  # old bookmarked session
+    at.session_state['preview_stage']='配置示例'  # old bookmarked session
     at.run()
     assert not at.exception
-    assert at.title[0].value=='评测流程演示'
-    assert at.radio(key='preview_stage').value=='配置示例'
+    assert at.title[0].value=='评测流程'
+    assert at.radio(key='preview_stage').value=='配置评测'
     assert not [b for b in at.button if b.key=='preview_real_start']
-    assert at.button(key='preview_to_history').proto.type=='primary'
-    assert '不会生成新回答或重新计算历史评分' in visible(at)
+    assert at.button(key='preview_to_history').proto.type=='secondary'
+    assert at.button(key='public_start_evaluation').proto.type=='primary'
+    assert '修改配置不会重算历史结果' in visible(at)
     at.number_input(key='preview_temperature').set_value(0.4).run()
     at.button(key='preview_to_history').click().run()
     assert at.radio(key='preview_stage').value=='历史运行'

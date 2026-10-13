@@ -1,7 +1,7 @@
-"""Server-owned deployment policy. Public is read-only; management is opt-in.
+"""Server-owned policy: public browsing is read-only; budgeted runs are scoped.
 
-This is deployment separation, not a login system. Never enable admin mode on an
-unrestricted public deployment. Query parameters and session state are ignored.
+Management remains opt-in deployment separation, not a login system. Never
+enable admin mode on an unrestricted deployment. Frontend flags cannot grant it.
 """
 from __future__ import annotations
 
@@ -31,4 +31,21 @@ def management_operation(function):
     def guarded(*args, **kwargs):
         require_management()
         return function(*args, **kwargs)
+    return guarded
+
+
+def evaluation_writes_enabled() -> bool:
+    from app.services.public_execution import current_execution
+    return management_enabled() or current_execution() is not None
+
+
+def evaluation_operation(function):
+    """Allow only a server-reserved public job, never general management."""
+    @wraps(function)
+    def guarded(*args, **kwargs):
+        if management_enabled():
+            return function(*args, **kwargs)
+        from app.services.public_execution import authorized_operation
+        with authorized_operation(function, args, kwargs):
+            return function(*args, **kwargs)
     return guarded

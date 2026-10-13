@@ -7,7 +7,7 @@ import uuid
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
-from app.access import management_operation
+from app.access import evaluation_operation
 
 
 def endpoint_identity(provider):
@@ -19,7 +19,7 @@ def endpoint_identity(provider):
     )
 
 
-@management_operation
+@evaluation_operation
 def request(provider, model_id, messages, *, phase, attempts, callback=None, **kwargs):
     row = {
         "attempt_id": uuid.uuid4().hex,

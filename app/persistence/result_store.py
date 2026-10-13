@@ -12,7 +12,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Connection, Engine, make_url
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.access import management_enabled, management_operation
+from app.access import evaluation_operation, evaluation_writes_enabled, management_enabled, management_operation
 
 from .config import resolve_database_connect_timeout
 from .schema import (
@@ -49,7 +49,10 @@ def _begin_read_only(connection: Connection) -> None:
 class ResultStore:
     """Store runtime queues and outcomes with transaction-level consistency."""
 
-    def __init__(self, url: str):
+    def __init__(self, url: str, *, evaluation_writable: bool = False):
+        writable = management_enabled() or (evaluation_writable and evaluation_writes_enabled())
+        if evaluation_writable and not writable:
+            raise PermissionError('evaluation storage requires a reserved execution scope')
         normalized = self._normalize_url(str(url or "").strip())
         self._missing_public_sqlite = False
         engine_kwargs: dict[str, Any] = {"pool_pre_ping": True, "future": True}
@@ -57,16 +60,16 @@ class ResultStore:
             engine_kwargs["connect_args"] = {
                 "connect_timeout": resolve_database_connect_timeout()
             }
-            if not management_enabled():
+            if not writable:
                 engine_kwargs["connect_args"]["options"] = "-c default_transaction_read_only=on"
-        elif normalized.startswith("sqlite:") and not management_enabled():
+        elif normalized.startswith("sqlite:") and not writable:
             database = make_url(normalized).database
             # mode=ro also prevents a missing runtime DB being created on browse.
             self._missing_public_sqlite = not Path(database).is_file()
             normalized = "sqlite:///" + Path(database).resolve().as_uri() + "?mode=ro&uri=true"
         try:
             self.engine: Engine = create_engine(normalized, **engine_kwargs)
-            if normalized.startswith("postgresql+psycopg://") and not management_enabled():
+            if normalized.startswith("postgresql+psycopg://") and not writable:
                 # Transaction poolers may reset session-level connection options.
                 # Set the current transaction before its first caller statement.
                 event.listen(self.engine, "begin", _begin_read_only)
@@ -117,7 +120,7 @@ class ResultStore:
         existing = set(inspect(self.engine).get_table_names())
         return sorted(existing.intersection(RUNTIME_TABLES))
 
-    @management_operation
+    @evaluation_operation
     def save_request_attempt(self, row: Mapping[str, Any]) -> bool:
         attempt = self._validated(row, "request_attempts", ("attempt_id", "phase", "model_id"))
         try:
@@ -153,7 +156,7 @@ class ResultStore:
         except SQLAlchemyError as exc:
             raise ResultStoreError("could not initialize runtime queue") from exc
 
-    @management_operation
+    @evaluation_operation
     def initialize_evaluation(
         self,
         run: Mapping[str, Any],
@@ -191,7 +194,7 @@ class ResultStore:
         except SQLAlchemyError as exc:
             raise ResultStoreError("could not initialize evaluation queues") from exc
 
-    @management_operation
+    @evaluation_operation
     def mark_run_item_running(
         self,
         run_id: str,
@@ -224,7 +227,7 @@ class ResultStore:
         except SQLAlchemyError as exc:
             raise ResultStoreError("could not mark runtime queue item") from exc
 
-    @management_operation
+    @evaluation_operation
     def save_run_outcome(
         self,
         row: Mapping[str, Any],
@@ -304,7 +307,7 @@ class ResultStore:
         except SQLAlchemyError as exc:
             raise ResultStoreError("could not initialize score queue") from exc
 
-    @management_operation
+    @evaluation_operation
     def mark_score_item_running(self, score_run_id: str, case_id: str, eval_model: str) -> bool:
         try:
             with self.engine.begin() as connection:
@@ -330,7 +333,7 @@ class ResultStore:
         except SQLAlchemyError as exc:
             raise ResultStoreError("could not mark score queue item") from exc
 
-    @management_operation
+    @evaluation_operation
     def mark_score_item_skipped(
         self,
         score_run_id: str,
@@ -358,7 +361,7 @@ class ResultStore:
         except SQLAlchemyError as exc:
             raise ResultStoreError("could not skip score queue item") from exc
 
-    @management_operation
+    @evaluation_operation
     def save_score_outcome(self, row: Mapping[str, Any], *, queue_status: str) -> bool:
         score = self._validated(
             row,
@@ -515,7 +518,7 @@ class ResultStore:
             .values(status="running", last_persistence_error=None, updated_at=func.now())
         )
 
-    @management_operation
+    @evaluation_operation
     def claim_run(self, run_id: str, stale_before: Any) -> bool:
         """Atomically claim an interrupted, stopped, or stale-running evaluation."""
         try:
@@ -525,7 +528,7 @@ class ResultStore:
         except SQLAlchemyError as exc:
             raise ResultStoreError("could not claim evaluation run") from exc
 
-    @management_operation
+    @evaluation_operation
     def mark_run_stopped(self, run_id: str, message: str) -> bool:
         try:
             with self.engine.begin() as connection:

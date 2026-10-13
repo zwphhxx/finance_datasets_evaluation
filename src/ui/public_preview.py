@@ -1,4 +1,4 @@
-"""Interactive public projections; never instantiate a workflow or write a dataset."""
+"""Public configuration and history; only explicit actions may start a bounded run."""
 from __future__ import annotations
 
 import pandas as pd
@@ -19,7 +19,7 @@ from src.ui.samples import PROFESSIONAL_SCENE_OPTIONS, _build_gold_answer_json, 
 from src.ui.scroll import request_scroll
 from src.ui.trust_details import render_reference_standard
 
-STAGES = {'config': '配置示例', 'history': '历史运行', 'results': '查看结果'}
+STAGES = {'config': '配置评测', 'history': '历史运行', 'results': '查看结果'}
 
 
 def _remember_config():
@@ -38,8 +38,8 @@ def _change_stage():
 def render_evaluation_preview(data_bundle):
     base = data_bundle.get('base') or data_bundle['data']
     with st.container(key='portfolio_preview'):
-        st.title('评测流程演示')
-        st.caption('了解专业评测如何配置，并查看已保存的真实历史运行与评分结果。公开只读，不会发起模型调用或保存数据。')
+        st.title('评测流程')
+        st.caption('选择专业样本和模型，明确开始后生成回答并自动评分；也可直接浏览历史结果。无需登录。')
         stage = st.query_params.get('stage', 'config')
         if stage not in STAGES:
             stage = 'config'
@@ -50,7 +50,9 @@ def render_evaluation_preview(data_bundle):
         source = workbench.load_workbench_source(base)
         report = source.report if source.available else None
         if selected == STAGES['config']:
-            _render_config(base, report)
+            from src.ui.public_run import render_owned_job
+            if not render_owned_job(base):
+                _render_config(base, report)
         else:
             _render_history(report, results=selected == STAGES['results'])
 
@@ -68,20 +70,22 @@ def _render_config(base, report):
     def model_label(model):
         label = display_model_name(model, source='live')
         return label+' · '+model if names.count(label) > 1 else label
-    chosen_models = st.multiselect('示例模型', models,
+    chosen_models = st.multiselect('被评测模型', models,
         default=[m for m in saved.get('models', models[:2]) if m in models], format_func=model_label,
         key='preview_models', on_change=_remember_config)
-    st.caption('模型选项来自已有正式历史测试，仅用于配置示例。')
+    st.caption('选项来自正式历史测试；当前可用性由模型服务返回。')
     chosen_cases = st.multiselect('专业样本', list(cases),
         default=[c for c in saved.get('cases', ['FD-001'] if 'FD-001' in cases else list(cases)[:1]) if c in cases],
         format_func=lambda c: c+' · '+str(cases[c]['title']).split('——',1)[-1], key='preview_cases', on_change=_remember_config)
     if not cases:
         st.caption('当前没有通过既有完整度检查的样本；可在样本库查看任务与标准。')
-    st.caption('配置示例使用当前题库；修改配置不会生成新回答或重新计算历史评分。')
+    st.caption('新评测使用当前题库与标准；修改配置不会重算历史结果。')
+    if 'preview_max_tokens' in st.session_state and not 128<=int(st.session_state.preview_max_tokens)<=4096:
+        saved=dict(saved,max_tokens=max(128,min(4096,int(st.session_state.pop('preview_max_tokens')))))
     with st.expander('生成参数与评分标准'):
         st.number_input('Temperature', min_value=0.0, max_value=2.0, value=float(saved.get('temperature',0.0)),
                         step=0.1, key='preview_temperature', on_change=_remember_config)
-        st.number_input('最大输出 Token', min_value=128, max_value=32768, value=int(saved.get('max_tokens',4096)),
+        st.number_input('最大输出 Token', min_value=128, max_value=4096, value=max(128,min(4096,int(saved.get('max_tokens',4096)))),
                         step=128, key='preview_max_tokens', on_change=_remember_config)
         if dimensions:
             st.dataframe(_safe([{'评分维度':d.get('name') or d.get('field'),'满分':d.get('full_mark')} for d in dimensions]),
@@ -89,10 +93,13 @@ def _render_config(base, report):
         else:
             st.caption('当前评分维度未配置。')
         st.caption('模型作答后由裁判按专业标准评分，再核对评价点与原文证据。')
+        st.caption('回答最多4096 Token；裁判最多3072 Token。')
     _remember_config()
     plan = build_run_plan_summary(chosen_models, [cases[c] for c in chosen_cases])
     st.markdown(f"**{plan['sample_count']}个样本 × {plan['model_count']}个模型 = {plan['planned_responses']}个回答任务**")
-    st.button('查看真实历史运行 →', key='preview_to_history', type='primary', on_click=_go_history)
+    from src.ui.public_run import render_start_action
+    render_start_action(base,chosen_cases,chosen_models)
+    st.button('查看真实历史运行 →', key='preview_to_history', type='secondary', on_click=_go_history)
 
 
 def _go_history():
@@ -159,7 +166,7 @@ def _render_history(report, *, results):
     rows = sorted((r for r in records if str(r['run_id']) == selected),
                   key=lambda r: (str(r['case_id']), str(r['eval_model']), _record_identity(r)[2]))
     run = by_run[selected]
-    st.caption('已保存的历史记录，未按配置示例重新运行。')
+    st.caption('已保存的历史记录，未按当前配置重新运行。')
     if not results:
         tables = {name:[r for r in values if str(r.get('run_id')) == selected] for name,values in report.runtime_tables.items()}
         counts = runtime_counts(tables.get('live_run_queue',[]), tables.get('live_run_responses',[]), tables.get('live_run_scores',[]))

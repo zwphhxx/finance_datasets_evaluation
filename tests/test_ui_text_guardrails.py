@@ -476,7 +476,7 @@ class ReadmeCurrentFlowTests(unittest.TestCase):
 
         self.assertIn(f"# {PROJECT_NAME}", text)
         self.assertIn("## 主流程", text)
-        self.assertIn("**作品首页 → 查看完整案例 → 查看完整评价依据 → 返回作品首页。**", text)
+        self.assertIn("**评测结果 → 查看完整案例 → 查看完整评价依据 → 返回评测结果。**", text)
         self.assertIn("旧案例链接继续使用case/model/run/score精确定位", text)
         self.assertIn("独立受控管理环境", text)
 

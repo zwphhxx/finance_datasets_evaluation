@@ -9,7 +9,7 @@ from typing import Any, Callable, Mapping
 
 import pandas as pd
 
-from app.access import management_operation
+from app.access import evaluation_operation
 from app.services import eval_runner as er
 from app.services import formal_records as formal
 from app.services import scorer as sc
@@ -193,7 +193,7 @@ class EvaluationWorkflow:
         self._session_stopped_run_ids: set[str] = set()
         self._owned_run_ids: set[str] = set()
 
-    @management_operation
+    @evaluation_operation
     def start_evaluation(self, config: EvaluationConfig) -> EvaluationRunRef:
         judge_model = self._validate_config(config)
         run_id = er.generate_run_id()
@@ -247,7 +247,7 @@ class EvaluationWorkflow:
             owned=run_id in self._owned_run_ids,
         )
 
-    @management_operation
+    @evaluation_operation
     def continue_evaluation(self, run_id: str, config: EvaluationConfig) -> EvaluationRunStatus:
         """Claim a compatible persisted run and execute only its unfinished pairs."""
         judge_model = self._validate_config(config)
@@ -270,7 +270,7 @@ class EvaluationWorkflow:
             self._owned_run_ids.discard(run_id)
         return self.load_evaluation_status(run_id)
 
-    @management_operation
+    @evaluation_operation
     def _execute_items(
         self,
         ref: EvaluationRunRef,
@@ -340,7 +340,7 @@ class EvaluationWorkflow:
         if len(configured) != len(set(configured)) or set(configured) != set(persisted):
             raise WorkflowCheckpointError("evaluation checkpoint does not match current queue")
 
-    @management_operation
+    @evaluation_operation
     def _execute_item(
         self,
         ref: EvaluationRunRef,

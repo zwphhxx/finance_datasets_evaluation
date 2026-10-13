@@ -20,7 +20,7 @@ from typing import Any, Callable, Collection, Mapping, Sequence
 
 import pandas as pd
 
-from app.access import management_operation
+from app.access import evaluation_operation, management_operation
 from app.models.base import (
     ERROR_EMPTY_RESPONSE,
     ERROR_INCOMPLETE_RESPONSE,
@@ -192,7 +192,7 @@ def build_messages(task: Mapping[str, Any], *, compact: bool = False) -> list[di
     ]
 
 
-@management_operation
+@evaluation_operation
 def run_single(
     provider: ModelProvider,
     model_id: str,
