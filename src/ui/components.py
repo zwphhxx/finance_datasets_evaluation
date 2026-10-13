@@ -15,29 +15,31 @@ PROJECT_DISPLAY_NAME = "财务/法律/投行场景大模型对比评测"
 STYLE_CSS = """
 <style>
 :root {
-    --fde-paper: #F7F5F0;
+    --fde-paper: #F8FAFC;
     --fde-surface: #FFFFFF;
-    --fde-surface-subtle: #F1EEE7;
-    --fde-ink: #252621;
-    --fde-text: #252621;
-    --fde-muted: #6F6B62;
-    --fde-line: #D9D4C9;
-    --fde-line-strong: #C6BFAF;
-    --fde-gold: #9A7435;
-    --fde-accent: var(--fde-gold);
-    --fde-accent-soft: #EEE8DC;
+    --fde-surface-subtle: #F1F5F9;
+    --fde-ink: #0F172A;
+    --fde-text: #0F172A;
+    --fde-muted: #64748B;
+    --fde-line: #E2E8F0;
+    --fde-line-strong: #CBD5E1;
+    --fde-accent: #2563EB;
+    --fde-accent-soft: #EFF6FF;
     --fde-bg: var(--fde-paper);
-    --fde-serif: ui-serif, "Songti SC", "STSong", "Noto Serif CJK SC", serif;
     --fde-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
-    --fde-success-bg: var(--fde-accent-soft);
-    --fde-success-text: var(--fde-accent);
-    --fde-warning-bg: var(--fde-surface);
-    --fde-warning-text: var(--fde-ink);
-    --fde-danger-bg: var(--fde-accent-soft);
-    --fde-danger-text: var(--fde-ink);
-    --fde-radius: 5px;
-    --fde-max-width: 1080px;
+    --fde-success-bg: #F0FDF4;
+    --fde-success-text: #166534;
+    --fde-warning-bg: #FFFBEB;
+    --fde-warning-text: #92400E;
+    --fde-danger-bg: #FEF2F2;
+    --fde-danger-text: #991B1B;
+    --fde-radius: 8px;
+    --fde-max-width: 1180px;
 }
+.stApp h3 { font-size: 1.18rem; line-height: 1.5; }
+.stApp [data-testid="stText"] { font-family: var(--fde-sans); overflow-wrap: anywhere; }
+.st-key-overview_task, .st-key-samples_filter_region, .st-key-workbench_filters,
+[class*="st-key-score_task_"], [class*="st-key-score_answer_"], [class*="st-key-score_review_"] { background: var(--fde-surface); border-color: var(--fde-line); }
 .stApp {
     background: var(--fde-bg);
     color: var(--fde-text);
@@ -67,14 +69,14 @@ header,
     min-height: 56px;
     align-items: center;
     padding: 0.72rem 0 0.68rem;
-    margin: 0 0 2rem;
+    margin: 0 0 1.2rem;
     border-bottom: 1px solid var(--fde-line);
     background: transparent;
 }
 .top-nav-brand {
     color: var(--fde-ink);
     font-size: 1.02rem;
-    font-family: var(--fde-serif);
+    font-family: var(--fde-sans);
     font-weight: 650;
     line-height: 1.35;
     letter-spacing: 0;
@@ -86,7 +88,6 @@ header,
 [data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton > button {
     min-height: 2.25rem;
     padding: 0.3rem 0.35rem;
-    border: 0;
     border: 0 !important;
     border-radius: 3px;
     background: transparent !important;
@@ -102,7 +103,7 @@ header,
     font-weight: 650;
 }
 [data-testid="stHorizontalBlock"]:has(.top-nav-brand) .stButton > button[kind="secondary"]::after {
-    background: var(--fde-gold);
+    background: var(--fde-accent);
     bottom: -0.7rem;
     content: "";
     height: 2px;
@@ -148,7 +149,7 @@ header,
 .page-title-heading,
 [data-testid="stMarkdownContainer"] .page-title-heading {
     color: var(--fde-ink);
-    font-family: var(--fde-serif);
+    font-family: var(--fde-sans);
     font-size: 1.72rem;
     font-weight: 650;
     line-height: 1.24;
@@ -169,9 +170,9 @@ header,
     flex-shrink: 0;
 }
 .executive-takeaway {
-    border-left: 2px solid var(--fde-gold);
+    border-left: 2px solid var(--fde-accent);
     color: var(--fde-ink);
-    font-family: var(--fde-serif);
+    font-family: var(--fde-sans);
     font-size: 1.22rem;
     line-height: 1.65;
     margin: 0.75rem 0 1.35rem;
@@ -180,13 +181,13 @@ header,
 }
 .section-heading {
     display: grid;
-    grid-template-columns: 4.2rem minmax(0, 1fr);
+    grid-template-columns: 2rem minmax(0, 1fr);
     column-gap: 1rem;
     align-items: baseline;
 }
 .section-heading-number {
-    color: var(--fde-gold);
-    font-family: var(--fde-serif);
+    color: var(--fde-accent);
+    font-family: var(--fde-sans);
     font-weight: 600;
     line-height: 1;
     letter-spacing: 0;
@@ -194,7 +195,7 @@ header,
 .section-heading-title,
 [data-testid="stMarkdownContainer"] .section-heading-title {
     color: var(--fde-ink);
-    font-family: var(--fde-serif);
+    font-family: var(--fde-sans);
     font-weight: 650;
     line-height: 1.16;
     margin: 0;
@@ -206,7 +207,7 @@ header,
     margin-top: 0.32rem;
 }
 .section-heading-page {
-    grid-template-columns: 3.4rem minmax(0, 1fr);
+    grid-template-columns: 2rem minmax(0, 1fr);
     column-gap: 1rem;
     margin: 1.9rem 0 0.95rem 0;
     padding-top: 1rem;
@@ -335,27 +336,6 @@ header,
         font-size: 0.8rem;
         margin: 0.25rem 0 0.5rem;
     }
-}
-.stage-jump-nav {
-    align-items: center;
-    border-bottom: 1px solid var(--fde-line);
-    display: flex;
-    gap: 1.2rem;
-    margin: -0.15rem 0 0.75rem;
-    padding: 0 0 0.7rem;
-}
-.stage-jump-nav a {
-    color: var(--fde-muted);
-    font-size: 0.86rem;
-    font-weight: 650;
-    text-decoration: none;
-}
-.stage-jump-nav a:hover,
-.stage-jump-nav a:focus-visible {
-    color: var(--fde-ink);
-    text-decoration: underline;
-    text-decoration-color: var(--fde-gold);
-    text-underline-offset: 0.3rem;
 }
 .st-key-conclusion_maintenance_entry {
     margin: -0.45rem 0 0.7rem;
@@ -750,14 +730,14 @@ header,
     font-weight: 720;
 }
 .stButton > button {
-    border-radius: 6px !important;
+    border-radius: var(--fde-radius) !important;
     box-shadow: none !important;
     font-weight: 650 !important;
     transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
 }
 .stButton > button[kind="primary"] {
-    background: var(--fde-ink) !important;
-    border: 1px solid var(--fde-ink) !important;
+    background: var(--fde-accent) !important;
+    border: 1px solid var(--fde-accent) !important;
     color: #ffffff !important;
 }
 .stButton > button[kind="primary"]:disabled {
@@ -823,17 +803,6 @@ div[data-testid="stDialog"] {
         grid-template-columns: 1fr;
         gap: 0.35rem;
         align-items: start;
-    }
-    .stage-jump-nav {
-        gap: 0;
-        justify-content: space-between;
-        margin-bottom: 0.35rem;
-    }
-    .stage-jump-nav a {
-        min-height: 44px;
-        align-items: center;
-        display: inline-flex;
-        padding: 0 0.35rem;
     }
     .section-heading-page .section-heading-number {
         font-size: 0.98rem;

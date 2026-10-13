@@ -18,7 +18,7 @@ PAGE_CONFIGS = [
     ),
     PageConfig(
         page_key="case_study",
-        title="项目说明",
+        title="评测概览",
         question="评估模型在财务、法律、投行等专业场景中的回答质量、主要问题和使用边界。",
     ),
     PageConfig(
@@ -34,7 +34,7 @@ PAGE_CONFIGS = [
 ]
 
 PAGE_CONFIG_BY_KEY = {config.page_key: config for config in PAGE_CONFIGS}
-DEFAULT_PAGE_KEY = "conclusions"
+DEFAULT_PAGE_KEY = "case_study"
 
 
 def get_page_config(page_key: str) -> PageConfig:

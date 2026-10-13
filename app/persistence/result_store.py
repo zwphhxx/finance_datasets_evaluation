@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from .config import resolve_database_connect_timeout
 from .schema import (
+    ADDITIVE_COLUMNS,
     RUNTIME_TABLES,
     live_evaluation_runs,
     live_run_queue,
@@ -20,6 +21,7 @@ from .schema import (
     live_run_scores,
     live_score_queue,
     metadata,
+    request_attempts,
 )
 
 
@@ -28,6 +30,7 @@ class ResultStoreError(RuntimeError):
 
 
 _CONFLICT_COLUMNS = {
+    "request_attempts": ("attempt_id",),
     "live_evaluation_runs": ("run_id",),
     "live_run_responses": ("run_id", "case_id", "model_name"),
     "live_run_queue": ("run_id", "case_id", "model_id"),
@@ -67,6 +70,13 @@ class ResultStore:
         try:
             metadata.create_all(self.engine, checkfirst=True)
             with self.engine.begin() as connection:
+                for table_name, names in ADDITIVE_COLUMNS.items():
+                    existing = {column["name"] for column in inspect(connection).get_columns(table_name)}
+                    for name in names:
+                        if name not in existing:
+                            # Identifiers come only from this fixed application-owned schema.
+                            column_type = RUNTIME_TABLES[table_name].c[name].type.compile(dialect=self.engine.dialect)
+                            connection.exec_driver_sql(f'ALTER TABLE "{table_name}" ADD COLUMN "{name}" {column_type}')
                 for table in RUNTIME_TABLES.values():
                     for index in table.indexes:
                         index.create(connection, checkfirst=True)
@@ -84,6 +94,15 @@ class ResultStore:
     def table_names(self) -> list[str]:
         existing = set(inspect(self.engine).get_table_names())
         return sorted(existing.intersection(RUNTIME_TABLES))
+
+    def save_request_attempt(self, row: Mapping[str, Any]) -> bool:
+        attempt = self._validated(row, "request_attempts", ("attempt_id", "phase", "model_id"))
+        try:
+            with self.engine.begin() as connection:
+                self._upsert(connection, request_attempts, attempt)
+            return True
+        except SQLAlchemyError as exc:
+            raise ResultStoreError("could not persist request attempt") from exc
 
     def initialize_run(self, run: Mapping[str, Any], queue_rows: Iterable[Mapping[str, Any]]) -> bool:
         run_row = self._validated(run, "live_evaluation_runs", ("run_id", "provider", "dataset_hash", "prompt_hash"))
@@ -194,6 +213,8 @@ class ResultStore:
         run_id = str(response["run_id"])
         try:
             with self.engine.begin() as connection:
+                for attempt in row.get("_request_attempts") or []:
+                    self._upsert(connection, request_attempts, attempt)
                 self._upsert(connection, live_run_responses, response)
                 result = connection.execute(
                     update(live_run_queue)
@@ -322,6 +343,8 @@ class ResultStore:
                     str(score["eval_model"]),
                 )
                 score["run_id"] = run_id
+                for attempt in row.get("_request_attempts") or []:
+                    self._upsert(connection, request_attempts, attempt)
                 self._upsert(connection, live_run_scores, score)
                 result = connection.execute(
                     update(live_score_queue)
@@ -426,6 +449,22 @@ class ResultStore:
         ).scalar_one_or_none()
         if response_id is None:
             return "matching formal response does not exist"
+        if score.get("evidence_status") == "invalid":
+            return "invalid score evidence"
+        if score.get("evidence_status") == "verified_quotes":
+            import json
+
+            from app.services.score_evidence import validate_checks
+            from src.metrics import SCORE_DIMENSION_FULL_MARKS
+            answer = connection.execute(select(live_run_responses.c.answer_text).where(live_run_responses.c.id == response_id)).scalar_one()
+            raw_context = connection.execute(select(live_evaluation_runs.c.evaluation_context_json).where(live_evaluation_runs.c.run_id == run_id)).scalar_one()
+            try:
+                context = json.loads(raw_context or "{}")
+                gold = next(r["record"] for r in context["gold"] if r["case_id"] == score["case_id"])
+                dimensions = [{"field": k, "full_mark": v} for k,v in SCORE_DIMENSION_FULL_MARKS.items()]
+                validate_checks(json.loads(score.get("checks_json") or "null"), gold, answer, dimensions)
+            except (ValueError,TypeError,KeyError,StopIteration):
+                return "score quotations or original standards cannot be verified"
         return ""
 
     def _claim_run_statement(self, run_id: str, stale_before: Any):
@@ -476,7 +515,7 @@ class ResultStore:
             if name not in target.c:
                 raise ResultStoreError("unknown runtime result filter")
             statement = statement.where(target.c[name] == value)
-        order = target.c.id if "id" in target.c else target.c.created_at
+        order = target.c.requested_at if table == "request_attempts" else target.c.id if "id" in target.c else target.c.created_at
         statement = statement.order_by(order)
         try:
             with self.engine.connect() as connection:

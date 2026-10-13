@@ -1,6 +1,25 @@
 """Shared responsive styles for the Streamlit user interface."""
 
 MOBILE_RESPONSIVE_CSS = r"""
+/* Keep the native dialog frame and close control visible while its body scrolls.
+   Use semantic attributes rather than Streamlit's generated class names. */
+[data-testid="stDialog"] [role="dialog"] {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100dvh - 6rem - env(safe-area-inset-bottom));
+    overflow: hidden;
+}
+[data-testid="stDialog"] [role="dialog"] > div:has(> [data-testid="stVerticalBlock"]) {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+[data-testid="stDialog"] [role="dialog"] > button[aria-label="Close"] {
+    min-width: 44px;
+    min-height: 44px;
+    top: 0.75rem;
+    right: 0.75rem;
+}
 .st-key-test_run_scope_actions {
     display: grid;
     gap: 1rem;
@@ -242,9 +261,11 @@ MOBILE_RESPONSIVE_CSS = r"""
         max-height: calc(100dvh - 5.5rem - env(safe-area-inset-bottom));
         max-width: calc(100vw - 24px);
         overflow-x: hidden;
-        overflow-y: auto;
-        padding-bottom: calc(5.25rem + env(safe-area-inset-bottom));
+        overflow-y: hidden;
         width: calc(100vw - 24px);
+    }
+    [data-testid="stDialog"] [role="dialog"] > div:has(> [data-testid="stVerticalBlock"]) {
+        padding-bottom: calc(5.25rem + env(safe-area-inset-bottom));
     }
     [data-testid="stDialog"] [role="dialog"] [data-testid="stHorizontalBlock"] {
         align-items: stretch;
@@ -391,5 +412,24 @@ MOBILE_RESPONSIVE_CSS = r"""
     .inline-status {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+}
+
+/* Owned container keys isolate the evidence layout from unrelated controls. */
+[class*="st-key-score_detail_"] { min-width: 0; }
+[class*="st-key-score_detail_"] [data-testid="stText"] {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    line-height: 1.7;
+}
+[data-testid="stMetricValue"], .report-ledger dd { font-variant-numeric: tabular-nums; }
+.run-stages { display: flex; gap: 0.6rem; padding: 0; margin: 1rem 0; list-style: none; }
+.run-stages li { flex: 1; border-bottom: 2px solid var(--fde-line); padding: 0.55rem 0; color: var(--fde-muted); font-size: 0.85rem; }
+.run-stages li[aria-current="step"] { color: var(--fde-accent); border-color: var(--fde-accent); font-weight: 650; }
+@media (max-width: 760px) {
+    [class*="st-key-score_detail_"] [data-testid="stHorizontalBlock"],
+    .st-key-workbench_filters [data-testid="stHorizontalBlock"] { flex-direction: column; gap: 1rem; }
+    [class*="st-key-score_detail_"] [data-testid="stColumn"],
+    .st-key-workbench_filters [data-testid="stColumn"] { width: 100% !important; flex: 1 1 100% !important; min-width: 0; }
+    .run-stages li { font-size: 0.78rem; overflow-wrap: anywhere; }
 }
 """

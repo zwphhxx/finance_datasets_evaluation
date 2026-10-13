@@ -12,6 +12,7 @@ import pandas as pd
 from app.services import eval_runner as er
 from app.services import formal_records as formal
 from app.services import scorer as sc
+from app.services.request_audit import endpoint_identity
 from app.services.run_checkpoint import build_run_metadata
 
 RUNNING = "running"
@@ -209,6 +210,7 @@ class EvaluationWorkflow:
             dimensions=config.dimensions,
         )
         try:
+            metadata["service_endpoint"] = endpoint_identity(self.answer_provider)
             self.store.initialize_evaluation(
                 metadata,
                 [answer_queue_row(run_id, item, config.provider_name) for item in config.queue_items],
@@ -306,6 +308,8 @@ class EvaluationWorkflow:
         return updated_at <= _naive_utc(self.now()) - timedelta(seconds=threshold)
 
     def _assert_checkpoint_matches(self, run: Mapping[str, Any], config: EvaluationConfig) -> None:
+        if run.get("service_endpoint") and run["service_endpoint"] != endpoint_identity(self.answer_provider):
+            raise WorkflowCheckpointError("evaluation service endpoint does not match saved configuration")
         current = build_run_metadata(
             run_id=_required_checkpoint_text(run.get("run_id")),
             provider=config.provider_name,
@@ -373,6 +377,8 @@ class EvaluationWorkflow:
                 task,
                 temperature=_number(config.generation_parameters.get("temperature"), 0.2),
                 max_tokens=_integer(config.generation_parameters.get("max_tokens"), 1024),
+                attempt_callback=lambda attempt: self.store.save_request_attempt(
+                    {**attempt, "run_id": ref.run_id, "case_id": case_id, "eval_model": model_id}),
             )
             self.store.save_run_outcome(
                 er.serialize_run_outcome(ref.run_id, "live", outcome),
@@ -398,6 +404,9 @@ class EvaluationWorkflow:
             eval_model=model_id,
             temperature=_number(config.judge_parameters.get("temperature"), 0.0),
             max_tokens=_integer(config.judge_parameters.get("max_tokens"), 1024),
+            attempt_callback=lambda attempt: self.store.save_request_attempt(
+                {**attempt, "run_id": ref.run_id, "score_run_id": ref.score_run_id,
+                 "case_id": case_id, "eval_model": model_id}),
         )
         self.store.save_score_outcome(
             sc.serialize_score_outcome(

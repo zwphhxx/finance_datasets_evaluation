@@ -13,7 +13,7 @@ Prompt 边界（重要）：
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Collection, Mapping, Sequence
@@ -29,6 +29,7 @@ from app.models.base import (
     ModelProvider,
 )
 from app.services import formal_records as formal
+from app.services.request_audit import request
 
 # 被评测模型可见的任务字段（白名单）。Gold Answer 相关字段一律不在其中。
 _VISIBLE_TASK_FIELDS = ("scenario", "question", "context", "output_requirement")
@@ -43,6 +44,7 @@ _SYSTEM_PROMPT = (
     "后续核查边界只说明仍需核实的材料，不得替代当前判断。"
     "每个小节最多 3 条，全文控制在 900 字以内；回答总长度不得超过 900 个中文字符，"
     "超过长度会被视为无效回答。不要输出“综上所述”后的重复总结，写完第四节后停止。"
+    "缺失必要条件时，应明确说明无法确定的部分，并对已能判断的事实给出判断；不强制确定性结论。"
     "不要对自己的回答进行打分或自评。"
 )
 
@@ -93,6 +95,7 @@ class RunOutcome:
     timeout_source: str | None = None
     max_tokens: int | None = None
     temperature: float | None = None
+    attempts: Sequence[Mapping[str, Any]] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -196,6 +199,7 @@ def run_single(
     temperature: float = 0.2,
     max_tokens: int = 1024,
     retry_max_tokens: int | None = None,
+    attempt_callback: Callable | None = None,
     **kwargs: Any,
 ) -> RunOutcome:
     """对单题运行一次模型调用，转为统一 RunOutcome（不抛异常给调用方）。"""
@@ -206,8 +210,8 @@ def run_single(
     if unavailable is not None:
         return unavailable
     messages = build_messages(task)
-    result = provider.generate_response(
-        model_id, messages, temperature=temperature, max_tokens=max_tokens, **kwargs
+    attempts: list[dict] = []
+    result = request(provider, model_id, messages, phase="answer", attempts=attempts, callback=attempt_callback, temperature=temperature, max_tokens=max_tokens, **kwargs
     )
     retry_count = 0
     first_finish_reason = result.finish_reason
@@ -223,14 +227,13 @@ def run_single(
             retry_kwargs["request_timeout_seconds"] = retry_timeout
         retry_messages = build_messages(task, compact=True) if (retry_compact or retry_bad_request) else messages
         final_max_tokens = _lower_retry_max_tokens(max_tokens) if retry_bad_request else max_tokens
-        result = provider.generate_response(
-            model_id,
-            retry_messages,
+        result = request(
+            provider, model_id, retry_messages, phase="answer", attempts=attempts, callback=attempt_callback,
             temperature=temperature,
             max_tokens=final_max_tokens,
             **retry_kwargs,
         )
-    return _run_outcome_from_generation_result(
+    return replace(_run_outcome_from_generation_result(
         result,
         model_id=model_id,
         task=task,
@@ -238,7 +241,7 @@ def run_single(
         first_finish_reason=first_finish_reason,
         temperature=temperature,
         max_tokens=final_max_tokens,
-    )
+    ), attempts=tuple(attempts))
 
 
 def _run_outcome_from_generation_result(
@@ -1016,6 +1019,7 @@ def serialize_run_outcome(run_id: str, mode: str, outcome: RunOutcome) -> dict[s
 
 def _run_outcome_row(run_id: str, mode: str, outcome: RunOutcome) -> dict[str, Any]:
     return {
+        "_request_attempts": [{**dict(a), "run_id": run_id, "case_id": outcome.case_id, "eval_model": outcome.model_id} for a in outcome.attempts],
         "run_id": run_id,
         "case_id": outcome.case_id,
         "task_type": outcome.task_type,

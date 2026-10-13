@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import json
+import math
 from typing import Any, Collection
 
 import pandas as pd
 
 from app.services.model_display import is_seed_model
+from src.metrics import SCORE_DIMENSION_FULL_MARKS
 
-_NON_FORMAL_MODES = {"mock", "demo"}
+_NON_FORMAL_MODES = {"mock", "demo", "selftest", "synthetic", "synthetic_judge_selftest"}
 
 
 def filter_formal_responses(
@@ -33,6 +36,7 @@ def formal_response_mask(
     live_mode = ~_text_series(responses, "run_mode", "live").str.lower().isin(_NON_FORMAL_MODES)
     live_provider = ~_text_series(responses, "provider", "").str.lower().isin(_NON_FORMAL_MODES)
     real_model = ~_model_series(responses, ("model_name", "eval_model")).map(is_seed_model)
+    real_model &= ~_model_series(responses, ("model_name", "eval_model")).str.lower().isin(_NON_FORMAL_MODES)
     has_run = _text_series(responses, "run_id", "") != ""
     has_answer = _text_series(responses, "answer_text", "") != ""
     return active & successful & live_mode & live_provider & real_model & has_run & has_answer & _scope_mask(
@@ -65,13 +69,59 @@ def formal_score_mask(
     live_provider = ~_text_series(scores, "judge_provider", "").str.lower().isin(_NON_FORMAL_MODES)
     included = _text_series(scores, "review_status", "ai_final").str.lower() != "skipped"
     real_model = ~_model_series(scores, ("eval_model", "model_name")).map(is_seed_model)
+    real_model &= ~_model_series(scores, ("eval_model", "model_name")).str.lower().isin(_NON_FORMAL_MODES)
     has_run = _text_series(scores, "run_id", "") != ""
     mask = active & successful & live_mode & live_provider & included & real_model & has_run & _scope_mask(
         scores, allowed_case_ids
     )
+    mask &= pd.Series([score_row_valid(r) for r in scores.to_dict("records")], index=scores.index, dtype=bool)
     if responses is not None:
+        mask &= _verified_quote_mask(scores, responses)
         mask &= _matching_formal_response_mask(scores, responses, allowed_case_ids)
     return mask
+
+
+def score_row_valid(row: dict) -> bool:
+    evidence_status = _text(row.get("evidence_status"))
+    if evidence_status not in {"", "legacy_unverified", "verified_quotes", "no_checkpoints"}:
+        return False
+    if evidence_status in {"verified_quotes", "no_checkpoints"}:
+        values = [row.get(k) for k in SCORE_DIMENSION_FULL_MARKS]
+        try:
+            if any(v is None or isinstance(v, bool) or pd.isna(v) for v in values) or sum(float(v) for v in values) != float(row.get("total_score")):
+                return False
+        except (ValueError, TypeError):
+            return False
+    for key, full_mark in {**SCORE_DIMENSION_FULL_MARKS, "total_score": 100}.items():
+        value = row.get(key)
+        if value is None or (not isinstance(value, (list, dict)) and pd.isna(value)):
+            continue  # Legacy incomplete rows stay unverified, never filled in.
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return False
+        if isinstance(value, bool) or not math.isfinite(number) or not number.is_integer() or not 0 <= number <= full_mark:
+            return False
+    return True
+
+
+def _verified_quote_mask(scores, responses):
+    answers = {(str(r.get("run_id")), str(r.get("case_id")), str(r.get("model_name"))):
+               str(r.get("answer_text") or "") for r in responses.to_dict("records")}
+    def eligible(row):
+        if _text(row.get("evidence_status")) != "verified_quotes":
+            return True
+        try:
+            checks = json.loads(row.get("checks_json") or "null")
+            answer = answers.get((str(row.get("run_id")), str(row.get("case_id")), str(row.get("eval_model"))), "")
+            return isinstance(checks, list) and bool(checks) and all(
+                isinstance(c, dict) and isinstance(c.get("quote"), str) and
+                (not c["quote"] or c["quote"] in answer) and
+                (c.get("status") not in {"met", "partial"} or bool(c["quote"].strip()))
+                for c in checks)
+        except (ValueError, TypeError):
+            return False
+    return pd.Series([eligible(r) for r in scores.to_dict("records")], index=scores.index, dtype=bool)
 
 
 def filter_formal_score_rows(

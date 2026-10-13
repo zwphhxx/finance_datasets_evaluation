@@ -27,6 +27,9 @@ live_evaluation_runs = Table(
     Column("model_ids_json", Text, nullable=False, server_default=text("'[]'")),
     Column("generation_parameters_json", Text, nullable=False, server_default=text("'{}'")),
     Column("judge_parameters_json", Text, nullable=False, server_default=text("'{}'")),
+    Column("service_endpoint", String),
+    Column("evaluation_context_json", Text),
+    Column("prompt_payload_json", Text),
     Column("dataset_version", String),
     Column("dataset_hash", String(64), nullable=False),
     Column("prompt_hash", String(64), nullable=False),
@@ -125,6 +128,10 @@ live_run_scores = Table(
     Column("evidence_score", Integer),
     Column("expression_score", Integer),
     Column("total_score", Integer),
+    Column("checks_json", Text),
+    Column("numeric_checks_json", Text),
+    Column("evidence_status", String),
+    Column("raw_responses_json", Text),
     Column("rationale", Text),
     Column("review_note", Text),
     Column("review_status", String, nullable=False, server_default=text("'ai_final'")),
@@ -175,9 +182,30 @@ Index(
 )
 
 
+request_attempts = Table(
+    "request_attempts", metadata,
+    Column("attempt_id", String, primary_key=True),
+    Column("run_id", String), Column("score_run_id", String),
+    Column("case_id", String), Column("eval_model", String),
+    Column("phase", String), Column("provider", String), Column("model_id", String), Column("service_endpoint", String),
+    Column("attempt_index", Integer), Column("requested_at", String), Column("finished_at", String),
+    Column("status", String), Column("error_code", String), Column("latency_ms", Integer),
+    Column("input_tokens", Integer), Column("output_tokens", Integer),
+    Column("temperature", Float), Column("max_tokens", Integer),
+    Column("created_at", DateTime, server_default=func.now()),
+)
+
+# Additive, nullable columns only: old rows remain readable and unverified.
+ADDITIVE_COLUMNS = {
+    "request_attempts": ("service_endpoint",),
+    "live_evaluation_runs": ("service_endpoint", "evaluation_context_json", "prompt_payload_json"),
+    "live_run_scores": ("checks_json", "numeric_checks_json", "evidence_status", "raw_responses_json"),
+}
+
 RUNTIME_TABLES = {
     table.name: table
     for table in (
+        request_attempts,
         live_evaluation_runs,
         live_run_responses,
         live_run_queue,

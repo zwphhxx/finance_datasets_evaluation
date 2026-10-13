@@ -92,10 +92,10 @@ class PageConfigTests(unittest.TestCase):
         """PAGE_CONFIG_BY_KEY keys must match PAGES keys."""
         self.assertEqual(set(PAGES.keys()), set(PAGE_CONFIG_BY_KEY.keys()))
 
-    def test_default_page_key_is_conclusions(self):
-        """Default page must be conclusions."""
-        self.assertEqual("conclusions", DEFAULT_PAGE_KEY)
-        self.assertEqual("conclusions", PC_DEFAULT_PAGE_KEY)
+    def test_default_page_key_is_overview(self):
+        """Default page must be overview."""
+        self.assertEqual("case_study", DEFAULT_PAGE_KEY)
+        self.assertEqual("case_study", PC_DEFAULT_PAGE_KEY)
 
 
 class TopNavTests(unittest.TestCase):
@@ -106,7 +106,7 @@ class TopNavTests(unittest.TestCase):
     def test_navigation_labels_are_grouped_by_review_and_operation(self):
         """Review destinations stay separate from the secondary operation entry."""
         labels = [label for label, _ in PRIMARY_NAV_ITEMS]
-        expected = ["评测结论", "项目说明", "样本库"]
+        expected = ["评测概览", "评测结论", "样本库"]
         self.assertEqual(labels, expected)
         self.assertEqual(("发起评测", "test_run"), OPERATION_NAV_ITEM)
         self.assertNotIn("评分" + "确认", labels)

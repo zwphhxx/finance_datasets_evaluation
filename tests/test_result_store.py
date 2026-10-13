@@ -172,6 +172,7 @@ def test_schema_contains_all_runtime_tables(tmp_path):
     store = sqlite_store(tmp_path)
 
     assert set(store.table_names()) == {
+        "request_attempts",
         "live_evaluation_runs",
         "live_run_queue",
         "live_run_responses",

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import pandas as pd
 
 from app.services import conclusions, evidence_index, formal_records
+from app.services.comparison import common_sample_comparison
 from app.services.evidence_index import EvidenceItem
 
 
@@ -27,6 +28,8 @@ class ConclusionReport:
     formal_responses: pd.DataFrame
     model_summaries: tuple[dict, ...]
     evidence_by_model: Mapping[str, tuple[EvidenceItem, ...]]
+    comparison: Mapping[str, Any] = field(default_factory=dict)
+    runtime_tables: Mapping[str, Any] = field(default_factory=dict)
 
 
 def build_conclusion_report(
@@ -36,13 +39,15 @@ def build_conclusion_report(
     tasks_df: object,
     gold_map: object,
     dimensions: object,
+    planned_models: object = None,
 ) -> ConclusionReport:
     """Build all conclusion inputs from one formal, current-sample cohort."""
     allowed_case_ids = _case_ids(tasks_df)
     formal_responses = formal_records.filter_formal_responses(responses_df, allowed_case_ids)
     formal_scores = formal_records.filter_formal_scores(scores_df, formal_responses, allowed_case_ids)
     tasks = tasks_df if isinstance(tasks_df, pd.DataFrame) else pd.DataFrame()
-    summaries = tuple(conclusions.build_model_issue_summaries(formal_scores, pd.DataFrame(), tasks))
+    summary_scores = formal_scores.drop_duplicates(["case_id", "eval_model"], keep="last") if not formal_scores.empty else formal_scores
+    summaries = tuple(conclusions.build_model_issue_summaries(summary_scores, pd.DataFrame(), tasks))
     evidence = {
         str(summary.get("model_name")): tuple(evidence_index.build_evidence_index(
             formal_scores,
@@ -63,7 +68,8 @@ def build_conclusion_report(
         ),
         formal_scores=formal_scores,
         formal_responses=formal_responses,
-        model_summaries=summaries,
+        model_summaries=tuple(sorted(summaries, key=lambda row: row["model_name"])),
+        comparison=common_sample_comparison(formal_scores, planned_models),
         evidence_by_model=evidence,
     )
 

@@ -142,16 +142,17 @@ def evidence_index_html(
     )
 
 
-def evidence_selector_item_html(item: EvidenceItem, *, active: bool = False) -> str:
+def evidence_selector_item_html(item: EvidenceItem, *, active: bool = False, full_mark: int | None = 100) -> str:
     """Render one compact, escaped representative-evidence directory entry."""
     classes = ["evidence-selector-item"]
     if active:
         classes.append("evidence-selector-item--active")
     current = ' aria-current="true"' if active else ""
     reason = _selection_reason_text(item.selection_reason)
+    score_text = _score_text(item.total_score) + (f" / {full_mark}" if full_mark is not None else "（满分未记录）")
     accessible_label = (
         f"代表证据：{item.case_id}；模型：{item.model_name}；"
-        f"选择原因：{reason}；总分：{_score_text(item.total_score)} / 100"
+        f"选择原因：{reason}；总分：{score_text}"
     )
     return (
         f'<article class="{" ".join(classes)}" role="group" '
@@ -159,7 +160,7 @@ def evidence_selector_item_html(item: EvidenceItem, *, active: bool = False) -> 
         f'<p class="evidence-selector-reason">{_escaped(reason)}</p>'
         '<p class="evidence-selector-meta">'
         f'<strong>{_escaped(item.case_id)}</strong>'
-        f'<span>{_escaped(f"{_score_text(item.total_score)} / 100")}</span>'
+        f'<span>{_escaped(score_text)}</span>'
         "</p>"
         f'<p class="evidence-selector-title">{_escaped(item.title)}</p>'
         "</article>"

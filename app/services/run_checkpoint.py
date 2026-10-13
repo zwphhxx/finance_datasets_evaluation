@@ -65,6 +65,8 @@ def build_run_metadata(
         "judge_parameters_json": json.dumps(
             dict(judge_parameters), ensure_ascii=False, sort_keys=True
         ),
+        "evaluation_context_json": json.dumps(dataset_payload if isinstance(dataset_payload, dict) else {"samples": samples, "gold": [], "dimensions": []}, ensure_ascii=False),
+        "prompt_payload_json": json.dumps(prompt_payload, ensure_ascii=False),
         "dataset_version": dataset_version,
         "dataset_hash": canonical_hash(dataset_payload),
         "prompt_hash": canonical_hash(prompt_payload),

@@ -975,7 +975,7 @@ def render_samples_page(data_bundle: dict) -> None:
     task_records, gold_map, rubric_dimensions = _page_readiness_inputs(data, samples)
     readiness_map = build_sample_readiness_map(samples, task_records, gold_map, rubric_dimensions)
 
-    with st.container(key="samples_filter_region"):
+    with st.container(key="samples_filter_region", border=True):
         render_numbered_section("01", "查询与筛选")
         keyword, domain, test_status, completeness = _render_filters(samples, task_records, readiness_map)
         filtered = _filter_samples_for_index(
@@ -993,7 +993,7 @@ def render_samples_page(data_bundle: dict) -> None:
         if not filtered:
             render_empty_state("没有符合当前条件的样本。")
         else:
-            st.caption("选择样本，在下方 03 区查看评测资产结构。")
+            st.caption(f"共 {len(filtered)} 条匹配样本；选择一条查看任务、背景与评价要求。")
             _render_sample_index(filtered, readiness_map, task_records)
 
     with st.container(key="samples_detail_region"):

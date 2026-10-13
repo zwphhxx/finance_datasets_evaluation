@@ -19,7 +19,8 @@ from app.services.evaluation_workflow import (
     EvaluationRunStatus,
 )
 from app.services.model_display import display_model_name
-from src.ui.components import render_markdown_detail_panel
+from app.services.snapshot import _safe
+from src.ui.trust_details import render_score_detail
 
 _STATUS_COPY = {
     RUNNING: ("评测进行中", "正在依次保存模型回答与评分记录。"),
@@ -78,6 +79,7 @@ def render_run_record(
     answer_rows: Sequence[Mapping[str, Any]],
     score_rows: Sequence[Mapping[str, Any]],
     dimensions: Sequence[Mapping[str, Any]],
+    *, tasks: Mapping[str, Any] | None = None,
 ) -> None:
     """Render persisted combined records without offering a second score action."""
     answers = {(str(row.get("case_id") or ""), str(row.get("model_name") or "")): row for row in answer_rows}
@@ -107,33 +109,20 @@ def render_run_record(
         range(len(pairs)),
         format_func=lambda index: f"{pairs[index][0]}｜{_live_model_name(pairs[index][1])}",
     )
-    _render_record_detail(answers.get(pairs[selected], {}), scores.get(pairs[selected], {}), dimensions)
+    _render_record_detail(answers.get(pairs[selected], {}), scores.get(pairs[selected], {}), dimensions, task=(tasks or {}).get(pairs[selected][0], {}))
 
 
 def _render_record_detail(
-    answer: Mapping[str, Any], score: Mapping[str, Any], dimensions: Sequence[Mapping[str, Any]]
+    answer: Mapping[str, Any], score: Mapping[str, Any], dimensions: Sequence[Mapping[str, Any]], *, task=None
 ) -> None:
-    if answer:
-        technical_clicked = render_markdown_detail_panel(
-            "模型回答",
-            str(answer.get("answer_text") or answer.get("error_message") or "暂无回答。"),
-            meta=f"模型 ID：{answer.get('model_name') or '—'}",
-            action_label="查看技术明细",
-            action_type="secondary",
-        )
-        if technical_clicked:
-            st.dataframe(build_technical_detail_rows(answer), use_container_width=True, hide_index=True)
-    if score:
-        score_detail = _score_detail_markdown(score, dimensions)
-        technical_clicked = render_markdown_detail_panel(
-            "评分维度与理由",
-            score_detail,
-            meta=f"裁判模型：{score.get('judge_model') or '—'}",
-            action_label="查看评分技术明细",
-            action_type="secondary",
-        )
-        if technical_clicked:
-            st.dataframe(build_technical_detail_rows(score), use_container_width=True, hide_index=True)
+    st.caption(f"模型 ID：{answer.get('model_name') or score.get('eval_model') or '—'}")
+    for row in (answer, score):
+        if row.get("error_message"):
+            st.warning(str(_safe(row["error_message"])))
+    render_score_detail(task=task, answer=answer.get("answer_text"), score=score,
+                        dimensions=dimensions, key="run_record")
+    with st.expander("回答技术明细"):
+        st.json(_safe(dict(answer)), expanded=False)
 
 
 def _score_detail_markdown(
@@ -203,7 +192,15 @@ def render_evaluation_records_dialog(
     except (ResultStoreError, ResultStoreUnavailableError):
         st.warning("评测记录暂时无法读取，请在数据库恢复后重试。")
         return
-    render_run_record(answers, scores, dimensions)
+    tasks = {}
+    try:
+        runs = store.list_rows("live_evaluation_runs", run_id=status.run_id)
+        context = json.loads(runs[0].get("evaluation_context_json") or "{}") if runs else {}
+        tasks = {str(item["case_id"]): item.get("task", {}) for item in context.get("samples", [])}
+        dimensions = context.get("dimensions") or []
+    except (ValueError, TypeError, KeyError, ResultStoreError, ResultStoreUnavailableError):
+        st.caption("历史任务与评分标准未保存或无法读取。")
+    render_run_record(answers, scores, dimensions, tasks=tasks)
 
 
 def build_technical_detail_rows(row: Mapping[str, Any]) -> list[dict[str, str]]:

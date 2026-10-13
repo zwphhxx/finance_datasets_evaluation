@@ -34,9 +34,9 @@ class UIComponentsTests(unittest.TestCase):
     def test_consulting_report_tokens_and_typography_are_centralized(self):
         import src.ui.components as components
 
-        for token in ["#F7F5F0", "#252621", "#6F6B62", "#D9D4C9", "#9A7435"]:
+        for token in ["#F8FAFC", "#0F172A", "#64748B", "#E2E8F0", "#2563EB"]:
             self.assertIn(token, components.STYLE_CSS)
-        self.assertIn('ui-serif, "Songti SC"', components.STYLE_CSS)
+        self.assertIn('"PingFang SC", "Microsoft YaHei"', components.STYLE_CSS)
         self.assertIn("executive-takeaway", components.STYLE_CSS)
         self.assertIn("transition", components.STYLE_CSS)
         self.assertIn("prefers-reduced-motion", components.STYLE_CSS)
@@ -154,7 +154,7 @@ class UIComponentsTests(unittest.TestCase):
         evaluation_config_source = Path("src/ui/evaluation_config.py").read_text(encoding="utf-8")
 
         for key in ["samples_filter_region", "samples_list_region", "samples_detail_region"]:
-            self.assertIn(f'with st.container(key="{key}"):', samples_source)
+            self.assertIn(f'with st.container(key="{key}"', samples_source)
         self.assertIn(
             'with st.container(key="test_run_scope_actions"):',
             evaluation_config_source,

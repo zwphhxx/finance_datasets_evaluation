@@ -208,13 +208,15 @@ def select_current_cohort_scores(
             successful.get("id", pd.Series(index=successful.index, dtype=float)),
             errors="coerce",
         )
+        service_units = {str(r["run_id"]): (str(r.get("provider") or ""), str(r.get("service_endpoint") or "")) for r in runs.to_dict("records")}
+        successful["_service_unit"] = successful["run_id"].map(lambda value: service_units.get(str(value), ("", "")))
         successful = successful.sort_values(
             ["_cohort_updated_order", "_cohort_created_order", "_cohort_id_order"],
             kind="mergesort",
             na_position="first",
-        ).drop_duplicates(["case_id", "eval_model"], keep="last")
+        ).drop_duplicates(["case_id", "eval_model", "_service_unit"], keep="last")
         successful = successful.drop(
-            columns=["_cohort_updated_order", "_cohort_created_order", "_cohort_id_order"]
+            columns=["_cohort_updated_order", "_cohort_created_order", "_cohort_id_order", "_service_unit"]
         )
 
     return successful.reset_index(drop=True)

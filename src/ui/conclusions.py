@@ -26,9 +26,9 @@ from app.services import scorer as sc
 from app.services.conclusion_read_model import ConclusionReport
 from app.services.evidence_index import EvidenceItem
 from app.services.model_display import display_model_name
+from app.services.snapshot import _safe
 from src.ui import conclusions_data as cd
 from src.ui.components import (
-    PROJECT_DISPLAY_NAME,
     render_empty_state,
     render_executive_takeaway,
     render_html,
@@ -37,15 +37,28 @@ from src.ui.components import (
     render_persistence_status,
     render_trusted_markdown_html,
 )
+from src.ui.history_view import (
+    render_attempts_and_costs,
+    render_comparison_and_runtime,
+    render_history_controls,
+    render_judge_selftest,
+    render_snapshot_export,
+)
 from src.ui.page_config import get_page_config
 from src.ui.report_components import (
-    evidence_index_html,
     evidence_model_context_html,
     evidence_selection_reason_label,
     evidence_selector_item_html,
     render_report_masthead,
     render_scope_ledger,
     report_index_row_html,
+)
+from src.ui.trust_details import render_score_detail
+from src.ui.workbench import (
+    has_multiple_endpoints,
+    historical_dimensions,
+    render_common_dimensions,
+    render_report_filters,
 )
 
 _STREAMLIT_MARKDOWN_PUNCTUATION_RE = re.compile(
@@ -77,22 +90,28 @@ def render_conclusions_page(data_bundle: dict) -> None:
     )) if isinstance(gold_map, Mapping) else ()
     dimensions = tuple(ds.get_rubric_dimensions())
 
-    source = cd.load_conclusion_source(
+    config = get_page_config("conclusions")
+    render_report_masthead(config.title, config.question)
+    st.caption(f"用可复核的专业标准观察财务、法律、投行任务的模型回答质量；当前题库 {len(task_records)} 条。历史记录可只读查看，无需API Key；评分证据仅展示已保存内容。")
+    replay_report = render_history_controls()
+    source = cd.ConclusionSource(True, replay_report) if replay_report is not None else cd.load_conclusion_source(
         allowed_case_ids,
         task_records,
         gold_records,
         dimensions,
     )
 
-    config = get_page_config("conclusions")
-    render_report_masthead(PROJECT_DISPLAY_NAME, config.question)
     if not source.available:
         render_persistence_status(source.message)
         return
-    report = source.report
+    report = replay_report or source.report
     if report is None:
         render_persistence_status(source.message)
         return
+    full_report = report
+    report = render_report_filters(report, task_records)
+    st.session_state["conclusion_historical_dimensions"] = historical_dimensions(report)
+    st.session_state["conclusion_multiple_endpoints"] = has_multiple_endpoints(report)
     model_summaries = report.model_summaries
 
     render_scope_ledger(
@@ -104,22 +123,36 @@ def render_conclusions_page(data_bundle: dict) -> None:
         ]
     )
     _render_executive_conclusion(model_summaries)
-    _render_model_recommendations(model_summaries)
+    render_comparison_and_runtime(report)
+    render_common_dimensions(report, historical_dimensions(report))
+    if not has_multiple_endpoints(report):
+        _render_model_recommendations(model_summaries)
+    else:
+        st.caption("同一模型包含多个服务配置；模型自身均分与综合判断不合并展示，请按上方独立服务配置核对。")
     _render_evidence_review(report, model_summaries)
     _render_all_records(report)
+    render_attempts_and_costs(report)
     try:
-        result_store = get_result_store()
+        result_store = None if replay_report is not None else get_result_store()
     except (PersistenceConfigurationError, ResultStoreUnavailableError, ResultStoreError):
         result_store = None
-    _render_data_source_notice(report.scope, result_store)
+    if not model_summaries:
+        if full_report.scope.formal_score_count:
+            st.info("当前筛选条件下没有有效正式评分。请调整专业场景、模型或任务筛选。")
+        else:
+            st.info("当前没有真实历史评测结果可供展示。可加载真实完整快照；人工自测及示例评分不进入正式结论。")
+    if replay_report is None:
+        _render_data_source_notice(report.scope, result_store)
+    else:
+        st.caption("当前来源：只读历史快照；上传文件的来源声明未经独立认证。")
+    render_snapshot_export(result_store)
+    render_judge_selftest(dimensions)
 
 
 def _render_executive_conclusion(model_summaries: Sequence[Mapping[str, object]]) -> None:
     if not model_summaries:
         return
-    item = model_summaries[0]
-    display = str(item.get("display_name") or item.get("model_name") or "未标注模型")
-    render_executive_takeaway(f"{display}：{_current_judgment(item)}")
+    render_executive_takeaway("先查看共同样本质量，再核对运行覆盖与逐条评分依据；当前结论仅代表样本内观察。")
 
 
 # --------------------------------------------------------------------------- #
@@ -235,7 +268,7 @@ def _render_model_recommendations(
         return
 
     labels = ("模型", "样本数／平均分", "当前判断", "主要依据")
-    st.caption("按正式评分样本对比各模型的当前判断与主要依据。")
+    st.caption("以下均分基于各模型自身有效样本，仅用于单模型观察；跨模型优劣请查看上方共同样本比较。")
     with st.container(key="conclusion_model_index"):
         render_html('<div class="conclusion-model-index">' + report_index_row_html(labels, header=True) + "</div>")
         for item in model_summaries:
@@ -399,6 +432,10 @@ def _render_model_selector(
             args=("conclusion_model_selector_mobile",),
         )
 
+    if st.session_state.get("conclusion_multiple_endpoints"):
+        st.caption("当前模型包含多个服务配置，按逐题运行批次核对；不展示跨端点综合判断。")
+        return
+
     summary = next(
         (item for item in model_summaries if str(item.get("model_name") or "") == selected_model),
         {},
@@ -437,7 +474,7 @@ def _render_evidence_selector(
             with column:
                 with st.container(key=f"conclusion_evidence_choice_{record_key}"):
                     render_html(
-                        evidence_selector_item_html(item, active=identity == selected_key)
+                        evidence_selector_item_html(item, full_mark=sum(d.get("full_mark", 0) for d in st.session_state.get("conclusion_historical_dimensions", [])) or None, active=identity == selected_key)
                     )
                     if st.button(
                         _evidence_action_label(item),
@@ -468,7 +505,9 @@ def _evidence_action_label(item: EvidenceItem) -> str:
 def _render_selected_evidence(item: EvidenceItem) -> None:
     record_key = _stable_key(*_evidence_identity(item))
     with st.container(key=f"conclusion_selected_evidence_{record_key}"):
-        render_html(evidence_index_html([item], include_full_details=False))
+        st.caption(f"{item.case_id} · {item.model_name} · {item.run_id} · {item.title}")
+        render_score_detail(task=item.task, answer=item.answer_text, score=item.score_record,
+                            dimensions=st.session_state.get("conclusion_historical_dimensions", []), key=f"conclusion_{record_key}")
         with st.container(key="conclusion_evidence_open_action"):
             if st.button(
                 "打开完整证据",
@@ -496,9 +535,12 @@ def _render_full_evidence_dialog(item: EvidenceItem) -> None:
     def _dialog() -> None:
         rationale_tab, gold_tab, answer_tab = st.tabs(_full_evidence_tab_labels())
         with rationale_tab:
-            render_trusted_markdown_html(_rationale_evidence_markdown(item))
+            render_score_detail(task=item.task, answer=item.answer_text, score=item.score_record,
+                                dimensions=st.session_state.get("conclusion_historical_dimensions", []), key="evidence_dialog")
         with gold_tab:
             render_trusted_markdown_html(_gold_evidence_markdown(item))
+            with st.expander("运行时任务与材料"):
+                st.json(_safe(dict(item.task)), expanded=True)
         with answer_tab:
             render_trusted_markdown_html(_answer_evidence_markdown(item))
         with st.expander("技术明细", expanded=False):
@@ -519,16 +561,18 @@ def _render_full_evidence_dialog(item: EvidenceItem) -> None:
 
 
 def _gold_evidence_markdown(item: EvidenceItem) -> str:
-    return _structured_markdown(item.gold_answer)
+    if not item.gold_answer:
+        return "历史记录未保存运行时专业标准答案；不使用当前题库补造评分依据。"
+    return _structured_markdown(_safe(dict(item.gold_answer)))
 
 
 def _answer_evidence_markdown(item: EvidenceItem) -> str:
-    return str(item.answer_text or "")
+    return _safe(str(item.answer_text or ""))
 
 
 def _rationale_evidence_markdown(item: EvidenceItem) -> str:
-    rationale = _structured_markdown(item.rationale)
-    review_note = str(item.review_note or "—")
+    rationale = _structured_markdown(_safe(item.rationale))
+    review_note = _safe(str(item.review_note or "—"))
     return f"**评分理由**\n\n{rationale}\n\n**审阅备注**\n\n{review_note}"
 
 
@@ -575,14 +619,29 @@ def _render_formal_record_dialog(
     report: ConclusionReport,
     score: Mapping[str, object],
 ) -> None:
-    response = _formal_response_for_score(report.formal_responses, score)
+    response = dict(_formal_response_for_score(report.formal_responses, score))
+    score = dict(score)
     case_id = str(score.get("case_id") or "—")
     model_id = str(score.get("eval_model") or "—")
     st.caption(f"{case_id}｜{model_id}")
-    st.markdown("**模型回答**")
-    render_trusted_markdown_html(str(response.get("answer_text") or "暂无模型回答。"))
-    st.markdown("**评分维度与理由**")
-    render_trusted_markdown_html(_formal_score_markdown(score))
+    task, context = {}, {}
+    with st.expander("运行时任务、版本与配置"):
+        run = next((r for r in report.runtime_tables.get("live_evaluation_runs", []) if str(r.get("run_id")) == str(score.get("run_id"))), {})
+        st.json(_safe({k: run.get(k) for k in ("run_id", "created_at", "provider", "service_endpoint", "dataset_version", "dataset_hash", "prompt_hash", "generation_parameters_json", "judge_parameters_json")}), expanded=False)
+        try:
+            context = json.loads(run.get("evaluation_context_json") or "{}")
+            task = next((r.get("task") for r in context.get("samples", []) if str(r.get("case_id")) == case_id), None)
+            gold = next((r.get("record") for r in context.get("gold", []) if str(r.get("case_id")) == case_id), None)
+            if task:
+                st.json(_safe(task), expanded=True)
+            else:
+                st.caption("历史任务正文未保存，不使用当前任务补造历史。")
+            if gold:
+                st.json(_safe(gold), expanded=False)
+        except (ValueError, TypeError, AttributeError):
+            st.caption("历史任务与标准无法解析。")
+    render_score_detail(task=task, answer=response.get("answer_text"), score=score,
+                        dimensions=context.get("dimensions") or [], key="formal_dialog")
 
 
 def _formal_response_for_score(

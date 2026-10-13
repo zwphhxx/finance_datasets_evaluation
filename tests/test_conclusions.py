@@ -489,7 +489,7 @@ class AnswerDetailJoinTests(unittest.TestCase):
         self.assertIn('"查看全部评测记录"', detail_source)
         self.assertIn('"查看完整记录"', detail_source)
         self.assertIn("_render_formal_record_dialog", detail_source)
-        self.assertIn("render_trusted_markdown_html", detail_source)
+        self.assertIn("render_score_detail", detail_source)
         self.assertIn("answer_text", detail_source)
 
     def test_conclusion_page_displays_persistence_outage(self):
@@ -612,7 +612,7 @@ class RenderTests(unittest.TestCase):
             page_source.index("_render_all_records"),
         )
 
-    def test_executive_conclusion_reuses_existing_model_judgment(self):
+    def test_executive_conclusion_does_not_choose_first_model_as_best(self):
         from src.ui import conclusions as ui
 
         captured = []
@@ -629,7 +629,7 @@ class RenderTests(unittest.TestCase):
         finally:
             ui.render_executive_takeaway = original
 
-        self.assertEqual(["模型甲：样本不足，暂不形成判断"], captured)
+        self.assertEqual(["先查看共同样本质量，再核对运行覆盖与逐条评分依据；当前结论仅代表样本内观察。"], captured)
 
     @pytest.mark.usefixtures("isolated_app_database")
     def test_page_renders_without_exception(self):

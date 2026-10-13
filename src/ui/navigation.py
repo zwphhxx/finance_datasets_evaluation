@@ -24,8 +24,8 @@ PAGES = {
 # Review destinations are peers. Evaluation remains reachable but deliberately
 # sits in a separate, lower-emphasis operation entry.
 PRIMARY_NAV_ITEMS = [
+    ("评测概览", "case_study"),
     ("评测结论", "conclusions"),
-    ("项目说明", "case_study"),
     ("样本库", "samples"),
 ]
 OPERATION_NAV_ITEM = ("发起评测", "test_run")
@@ -39,6 +39,7 @@ def _render_navigation_button(label: str, page_key: str, current: str, *, key: s
         use_container_width=False,
     ):
         st.session_state.current_page = page_key
+        st.query_params["page"] = page_key
         request_scroll("top")
         st.rerun()
 
@@ -69,7 +70,8 @@ def render_top_navigation() -> None:
 def render_sidebar_navigation() -> str:
     valid_page_keys = set(PAGE_CONFIG_BY_KEY)
     if st.session_state.get("current_page") not in valid_page_keys:
-        st.session_state.current_page = DEFAULT_PAGE_KEY
+        requested = st.query_params.get("page", DEFAULT_PAGE_KEY)
+        st.session_state.current_page = requested if requested in valid_page_keys else DEFAULT_PAGE_KEY
 
     # Single navigation: top bar only. Sidebar is intentionally empty.
     render_top_navigation()

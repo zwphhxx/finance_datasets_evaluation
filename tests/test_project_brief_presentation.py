@@ -26,7 +26,7 @@ class CaseStudyPresentationTests(unittest.TestCase):
         self.assertIn("专业任务中的回答质量", source)
         self.assertIn("识别模型的主要问题和使用边界", source)
         self.assertNotIn("subtitle=", source)
-        self.assertIn("render_scope_ledger(build_home_facts(base))", source)
+        self.assertIn("overview_facts(base, report)", source)
         self.assertNotIn("_build_home_stats", source)
         self.assertNotIn("当前样本 13 个", source)
         self.assertNotIn("覆盖专业场景", source)
@@ -60,7 +60,7 @@ class CaseStudyPresentationTests(unittest.TestCase):
             self.assertIn(f'"title": "{title}"', source)
             self.assertIn(f'"lead": "{lead}"', source)
         self.assertNotIn("render_numbered_section", source)
-        self.assertIn("render_report_contents", source)
+        self.assertIn("查看完整评测方法与数据范围", source)
 
     def test_case_study_keeps_process_line_only_in_flow_section(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")

@@ -16,3 +16,8 @@ __pycache__/
 # SQLite 数据层为构建产物，从 data/ 种子重新初始化，不纳入版本
 app/db/*.db
 *.sqlite3
+
+# Visual acceptance artifacts may contain historical answers and scores.
+# Keep them local; publish only after explicit disclosure authorization.
+/docs/ui/
+/docs/2026-10-13-real-history-visual-acceptance.md

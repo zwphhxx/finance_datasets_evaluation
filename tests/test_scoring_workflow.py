@@ -1,8 +1,8 @@
 """multi-model live eval comparison + LLM-as-judge scoring.
 
 Covers multi-model orchestration (run_models / CompareRunResult), the judge prompt
-boundary (judge SEES Gold, evaluated model never does), robust JSON parsing with
-clamping, mock judge fabricating nothing, persistence to the dedicated
+boundary (judge SEES Gold, evaluated model never does), strict JSON validation with
+range rejection, mock judge fabricating nothing, persistence to the dedicated
 live_run_scores table, human-review confirmation, and page wiring. No test performs
 a real outbound API call.
 """
@@ -68,7 +68,7 @@ def _valid_judge_json(scores):
     import json
 
     return json.dumps(
-        {"scores": scores, "rationale": {"accuracy_score": "依据充分"}, "review_note": "注意核实比例"},
+        {"scores": scores, "rationale": {key: "依据充分" for key in scores}, "review_note": "注意核实比例"},
         ensure_ascii=False,
     )
 
@@ -80,7 +80,7 @@ class _FakeJudge(ModelProvider):
 
     def __init__(self, scores=None):
         self._scores = scores or {
-            "accuracy_score": 40,  # over full_mark on purpose → must clamp to 30
+            "accuracy_score": 30,  # valid fixture; out-of-range rejection tested separately
             "reasoning_score": 18,
             "coverage_score": 15,
             "evidence_score": 12,
@@ -240,14 +240,14 @@ class JudgePromptBoundaryTests(unittest.TestCase):
 
 
 class JudgeParseTests(unittest.TestCase):
-    def test_valid_json_clamps_and_sums(self):
+    def test_out_of_range_json_rejected_without_clamping(self):
         parsed = sc.parse_judge_output(_valid_judge_json({
             "accuracy_score": 40, "reasoning_score": 18, "coverage_score": 15,
             "evidence_score": 12, "expression_score": 10,
         }), _DIMENSIONS)
-        self.assertTrue(parsed.ok)
-        self.assertEqual(parsed.scores["accuracy_score"], 30)  # clamped from 40
-        self.assertEqual(parsed.total, 30 + 18 + 15 + 12 + 10)
+        self.assertFalse(parsed.ok)
+        self.assertEqual(parsed.scores, {})
+        self.assertIsNone(parsed.total)
 
     def test_malformed_output_fails_without_fabrication(self):
         parsed = sc.parse_judge_output("完全不是 JSON 的文本", _DIMENSIONS)
@@ -279,7 +279,7 @@ class ScoreCompareTests(unittest.TestCase):
 
     def test_garbage_judge_marks_failed_no_fabrication(self):
         compare = self._compare()
-        result = sc.score_compare(_GarbageJudge(), compare, {}, {}, _DIMENSIONS, judge_model_id="judge/x")
+        result = sc.score_compare(_GarbageJudge(), compare, {}, {}, _DIMENSIONS, judge_model_id="judge/x", retry_delays=())
         for o in result.outcomes:
             self.assertEqual(o.judge_status, "failed")
             self.assertIsNone(o.total_score)
@@ -780,6 +780,8 @@ class ScorePersistenceTests(unittest.TestCase):
     def test_import_uses_explicit_runtime_result_store(self):
         row = {
             "score_run_id": "SCORE-IMPORT-STORE",
+            "accuracy_score": 25, "reasoning_score": 15, "coverage_score": 15,
+            "evidence_score": 10, "expression_score": 10,
             "run_id": "RUN-IMPORT-STORE",
             "case_id": "CM-001",
             "eval_model": "vendor/model-import",

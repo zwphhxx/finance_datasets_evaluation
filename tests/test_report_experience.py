@@ -34,9 +34,10 @@ def test_project_method_sections_do_not_repeat_the_page_level_appendix_label(mon
     rendered: list[str] = []
     monkeypatch.setattr(case_study, "render_report_masthead", lambda *args: None)
     monkeypatch.setattr(case_study, "render_scope_ledger", lambda *args: None)
-    monkeypatch.setattr(case_study, "render_report_contents", lambda *args: None)
     monkeypatch.setattr(case_study, "render_html", rendered.append)
     monkeypatch.setattr(case_study, "_section_body_html", lambda *args: "<p>正文</p>")
+    from src.ui import workbench
+    monkeypatch.setattr(workbench, "load_workbench_source", lambda *args: SimpleNamespace(available=True, report=None))
 
     case_study.render_case_study_page({"data": SimpleNamespace(), "base": SimpleNamespace()})
 
@@ -530,6 +531,16 @@ def test_evidence_dialog_markdown_preserves_full_source_values():
     assert len(ui._answer_evidence_markdown(item)) == len(long_answer)
 
 
+def test_missing_historical_gold_has_an_explicit_empty_state():
+    from types import SimpleNamespace
+
+    from src.ui import conclusions as ui
+
+    text = ui._gold_evidence_markdown(SimpleNamespace(gold_answer={}))
+    assert "历史记录未保存运行时专业标准答案" in text
+    assert "不使用当前题库补造" in text
+
+
 def test_model_selection_keeps_raw_id_resets_evidence_and_does_not_scroll(monkeypatch):
     from src.ui import conclusions as ui
 
@@ -792,7 +803,7 @@ def test_full_record_dialog_renders_only_the_selected_formal_record(monkeypatch)
     rendered: list[str] = []
     monkeypatch.setattr(ui.st, "caption", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(ui.st, "markdown", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(ui, "render_trusted_markdown_html", rendered.append)
+    monkeypatch.setattr(ui, "render_score_detail", lambda **kwargs: rendered.extend([kwargs["answer"], str(kwargs["score"])]))
 
     ui._render_formal_record_dialog.__wrapped__(report, score)
 
@@ -840,10 +851,10 @@ class _SessionState(dict):
 
 
 def test_conclusions_are_default_and_operation_is_secondary():
-    assert DEFAULT_PAGE_KEY == "conclusions"
+    assert DEFAULT_PAGE_KEY == "case_study"
     assert navigation.PRIMARY_NAV_ITEMS == [
+        ("评测概览", "case_study"),
         ("评测结论", "conclusions"),
-        ("项目说明", "case_study"),
         ("样本库", "samples"),
     ]
     assert navigation.OPERATION_NAV_ITEM == ("发起评测", "test_run")
@@ -869,8 +880,8 @@ def test_navigation_click_uses_stable_key_and_queues_top_scroll():
         navigation.render_top_navigation()
 
     assert button_keys == [
-        "top_nav_conclusions",
         "top_nav_case_study",
+        "top_nav_conclusions",
         "top_nav_samples",
         "top_nav_operation",
     ]

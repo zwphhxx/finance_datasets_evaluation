@@ -1,22 +1,22 @@
-"""Editorial report presentation rules shared by review pages.
+"""Workbench presentation rules shared by overview and evidence pages.
 
-The rules deliberately use the existing warm-paper tokens and report-like
+The rules deliberately use the central design tokens and quiet
 separators.  They contain no page data or Streamlit control flow.
 """
 
 REPORT_STYLE_CSS = r"""
 .report-masthead {
     border-bottom: 1px solid var(--fde-line-strong);
-    border-top: 2px solid var(--fde-ink);
+    border-top: 0;
     color: var(--fde-ink);
     display: block !important;
     height: auto !important;
-    margin: 0.75rem 0 1.5rem;
-    padding: 1.25rem 0 1.35rem;
+    margin: 0.4rem 0 1rem;
+    padding: 0.5rem 0 1rem;
     visibility: visible !important;
 }
 .report-eyebrow {
-    color: var(--fde-gold);
+    color: var(--fde-accent);
     font-size: 0.74rem;
     font-weight: 700;
     letter-spacing: 0.12em;
@@ -26,8 +26,8 @@ REPORT_STYLE_CSS = r"""
 .report-masthead-title,
 [data-testid="stMarkdownContainer"] .report-masthead-title {
     color: var(--fde-ink);
-    font-family: var(--fde-serif);
-    font-size: clamp(2rem, 4.5vw, 3.8rem) !important;
+    font-family: var(--fde-sans);
+    font-size: clamp(1.35rem, 2.3vw, 1.85rem) !important;
     font-weight: 650;
     letter-spacing: -0.025em;
     line-height: 1.13 !important;
@@ -47,8 +47,10 @@ REPORT_STYLE_CSS = r"""
     border-top: 1px solid var(--fde-line);
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    margin: 0 0 1.75rem;
+    margin: 0 0 1rem;
     padding: 0;
+    background: var(--fde-surface);
+    border-radius: var(--fde-radius);
 }
 .report-ledger-item {
     border-right: 1px solid var(--fde-line);
@@ -96,13 +98,13 @@ REPORT_STYLE_CSS = r"""
 }
 .report-contents-item a:hover,
 .report-contents-item a:focus-visible {
-    color: var(--fde-gold);
+    color: var(--fde-accent);
     text-decoration: underline;
     text-underline-offset: 0.2rem;
 }
 .report-contents-item span {
-    color: var(--fde-gold);
-    font-family: var(--fde-serif);
+    color: var(--fde-accent);
+    font-family: var(--fde-sans);
 }
 .report-ledger dt {
     color: var(--fde-muted);
@@ -112,8 +114,10 @@ REPORT_STYLE_CSS = r"""
 }
 .report-ledger dd {
     color: var(--fde-ink);
-    font-family: var(--fde-serif);
-    font-size: 1.12rem;
+    font-family: var(--fde-sans);
+    font-size: 1.35rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 650;
     line-height: 1.35;
     margin-top: 0.22rem;
     overflow-wrap: anywhere;
@@ -126,15 +130,15 @@ REPORT_STYLE_CSS = r"""
 .report-section-heading {
     display: grid !important;
     gap: 1rem;
-    grid-template-columns: 3.8rem minmax(0, 1fr);
+    grid-template-columns: 2rem minmax(0, 1fr);
     height: auto !important;
     margin-bottom: 1.05rem;
     min-width: 0;
     visibility: visible !important;
 }
 .report-section-index {
-    color: var(--fde-gold);
-    font-family: var(--fde-serif);
+    color: var(--fde-accent);
+    font-family: var(--fde-sans);
     font-size: 1.15rem;
     line-height: 1.2;
     padding-top: 0.08rem;
@@ -150,8 +154,8 @@ REPORT_STYLE_CSS = r"""
 .report-section-title,
 [data-testid="stMarkdownContainer"] .report-section-title {
     color: var(--fde-ink);
-    font-family: var(--fde-serif);
-    font-size: 1.55rem;
+    font-family: var(--fde-sans);
+    font-size: 1.2rem;
     font-weight: 650;
     line-height: 1.28;
     margin: 0;
@@ -159,7 +163,7 @@ REPORT_STYLE_CSS = r"""
 }
 .report-section-body {
     color: var(--fde-text);
-    margin-left: 4.8rem;
+    margin-left: 3rem;
     min-width: 0;
     overflow-wrap: anywhere;
 }
@@ -173,7 +177,7 @@ REPORT_STYLE_CSS = r"""
 }
 .report-method-copy .report-method-lead {
     color: var(--fde-ink);
-    font-family: var(--fde-serif);
+    font-family: var(--fde-sans);
     font-size: 1.04rem;
     font-weight: 650;
     line-height: 1.62;
@@ -216,7 +220,7 @@ REPORT_STYLE_CSS = r"""
     letter-spacing: 0.08em;
 }
 .report-index-row--active {
-    border-left: 2px solid var(--fde-gold);
+    border-left: 2px solid var(--fde-accent);
     color: var(--fde-ink);
 }
 .report-index-cell {
@@ -297,7 +301,7 @@ REPORT_STYLE_CSS = r"""
     padding: 0.72rem 0 0.55rem;
 }
 .st-key-conclusion_model_selector_desktop [data-baseweb="radio"]:has(input:checked) {
-    border-bottom-color: var(--fde-gold);
+    border-bottom-color: var(--fde-accent);
     color: var(--fde-ink);
     font-weight: 650;
 }
@@ -321,7 +325,7 @@ REPORT_STYLE_CSS = r"""
 }
 .evidence-review-context strong {
     color: var(--fde-ink);
-    font-family: var(--fde-serif);
+    font-family: var(--fde-sans);
     font-size: 1.1rem;
 }
 .evidence-review-context span:not(.evidence-review-context-label) {
@@ -344,7 +348,7 @@ REPORT_STYLE_CSS = r"""
     padding: 0.75rem 0.8rem 0.45rem;
 }
 [class*="st-key-conclusion_evidence_choice_"]:has(.evidence-selector-item--active) {
-    border-top: 2px solid var(--fde-gold);
+    border-top: 2px solid var(--fde-accent);
     padding-top: calc(0.75rem - 1px);
 }
 .evidence-selector-item {
@@ -357,7 +361,7 @@ REPORT_STYLE_CSS = r"""
     margin: 0;
 }
 .evidence-selector-reason {
-    color: var(--fde-gold);
+    color: var(--fde-accent);
     font-size: 0.75rem;
     font-weight: 700;
     letter-spacing: 0.05em;
@@ -371,7 +375,7 @@ REPORT_STYLE_CSS = r"""
 }
 .evidence-selector-meta strong {
     color: var(--fde-ink);
-    font-family: var(--fde-serif);
+    font-family: var(--fde-sans);
     font-size: 1rem;
 }
 .evidence-selector-meta span {
@@ -422,7 +426,7 @@ REPORT_STYLE_CSS = r"""
     padding: 1rem 0;
 }
 .evidence-index-rail {
-    background: var(--fde-gold);
+    background: var(--fde-accent);
     min-height: 100%;
     width: 1px;
 }
@@ -443,8 +447,8 @@ REPORT_STYLE_CSS = r"""
     overflow-wrap: anywhere;
 }
 .evidence-index-case {
-    color: var(--fde-gold);
-    font-family: var(--fde-serif);
+    color: var(--fde-accent);
+    font-family: var(--fde-sans);
     font-weight: 700;
 }
 .evidence-index-model {
@@ -458,7 +462,7 @@ REPORT_STYLE_CSS = r"""
 .evidence-index-title,
 [data-testid="stMarkdownContainer"] .evidence-index-title {
     color: var(--fde-ink);
-    font-family: var(--fde-serif);
+    font-family: var(--fde-sans);
     font-size: 1.45rem !important;
     font-weight: 650;
     line-height: 1.38 !important;
@@ -497,7 +501,7 @@ REPORT_STYLE_CSS = r"""
 }
 .evidence-index-total-value {
     color: var(--fde-ink) !important;
-    font-family: var(--fde-serif);
+    font-family: var(--fde-sans);
     font-size: 1.45rem !important;
     font-weight: 650;
     line-height: 1.3 !important;
@@ -535,7 +539,7 @@ REPORT_STYLE_CSS = r"""
     }
     .report-masthead-title,
     [data-testid="stMarkdownContainer"] .report-masthead-title {
-        font-size: 1.8rem !important;
+        font-size: 1.35rem !important;
         line-height: 1.16 !important;
         padding: 0 !important;
     }

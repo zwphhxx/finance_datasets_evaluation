@@ -66,6 +66,9 @@ class FakeStreamlit:
     def markdown(self, value, *args, **kwargs):
         self.messages.append(str(value))
 
+    def progress(self, value, **kwargs):
+        self.messages.append(str(value))
+
     def file_uploader(self, *args, **kwargs):
         return None
 

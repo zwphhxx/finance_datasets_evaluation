@@ -183,3 +183,48 @@ def test_clear_conclusions_caches_clears_report_source_cache():
     clear_scores.assert_called_once_with()
     clear_responses.assert_called_once_with()
     clear_source.assert_called_once_with()
+
+
+def test_database_report_uses_frozen_run_context_not_today_gold(monkeypatch):
+    import json
+
+    from src.ui import conclusions_data as cd
+
+    runs = pd.DataFrame(
+        [
+            dict(
+                run_id="r",
+                provider="p",
+                model_ids_json='["m"]',
+                dataset_version="v",
+                dataset_hash="d" * 64,
+                prompt_hash="p" * 64,
+                status="completed",
+                generation_parameters_json="{}",
+                judge_parameters_json="{}",
+                evaluation_context_json=json.dumps(
+                    {
+                        "samples": [{"case_id": "c", "task": {"question": "original task"}}],
+                        "gold": [{"case_id": "c", "record": {"core_conclusion": "original gold"}}],
+                        "dimensions": [],
+                    }
+                ),
+            )
+        ]
+    )
+    scores = pd.DataFrame([dict(run_id="r", case_id="c", eval_model="m", judge_status="success", total_score=80)])
+    responses = pd.DataFrame(
+        [dict(run_id="r", case_id="c", model_name="m", run_status="success", answer_text="answer")]
+    )
+    monkeypatch.setattr(cd.cc, "load_evaluation_runs", lambda **k: runs)
+    monkeypatch.setattr(cd.cc, "load_live_scores", lambda **k: scores)
+    monkeypatch.setattr(cd.cc, "load_live_responses", lambda **k: responses)
+    monkeypatch.setattr(cd.cc, "_load_live_table", lambda *a, **k: pd.DataFrame())
+    cd.load_conclusion_source.clear()
+    source = cd.load_conclusion_source(
+        ("c",), ({"case_id": "c", "question": "current task"},), {"c": {"core_conclusion": "current gold"}}, ()
+    )
+    item = source.report.evidence_by_model["m"][0]
+    assert item.title == "original task"
+    assert item.gold_answer["core_conclusion"] == "original gold"
+    cd.load_conclusion_source.clear()

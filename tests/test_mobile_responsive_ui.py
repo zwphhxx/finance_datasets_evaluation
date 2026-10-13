@@ -133,7 +133,7 @@ class MobileResponsiveUIContracts(unittest.TestCase):
 
         self.assertIn("padding: 0.85rem 0 0.95rem", masthead_rule)
         self.assertIn("margin: 0.4rem 0 1rem", masthead_rule)
-        self.assertIn("font-size: 1.8rem !important", title_rule)
+        self.assertIn("font-size: 1.35rem !important", title_rule)
         self.assertIn("padding: 0 !important", title_rule)
 
     def test_consulting_report_regions_adapt_on_mobile(self):
@@ -322,7 +322,7 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         )
         dialog_rules = _declarations_for_selector(
             mobile_css,
-            '[data-testid="stDialog"] [role="dialog"]',
+            '[data-testid="stDialog"] [role="dialog"] > div:has(> [data-testid="stVerticalBlock"])',
         )
         self.assertTrue(
             any(re.search(r"padding-bottom\s*:\s*calc\(", rule) for rule in dialog_rules)
@@ -642,7 +642,7 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         from src.ui.components import STYLE_CSS
 
         results_source = Path("src/ui/evaluation_results.py").read_text(encoding="utf-8")
-        self.assertIn("render_markdown_detail_panel(", results_source)
+        self.assertIn("render_score_detail(", results_source)
 
         normalized_css = re.sub(r"\s+", " ", STYLE_CSS)
         self.assertRegex(

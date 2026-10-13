@@ -1062,3 +1062,28 @@ def test_misaligned_queue_rejects_continue_before_claim_or_provider_calls(tmp_pa
 
     assert claims == []
     assert events == []
+
+
+def test_checkpoint_rejects_changed_service_endpoint_before_call(tmp_path):
+    from app.services.evaluation_workflow import WorkflowCheckpointError
+
+    store = sqlite_store(tmp_path)
+    answer = RecordingProvider()
+    answer.base_url = "https://endpoint-two.example/v1"
+    evaluation_config = config(item("c", "m"))
+    metadata = build_run_metadata(
+        run_id="r",
+        provider=evaluation_config.provider_name,
+        model_ids=evaluation_config.model_ids,
+        queue_items=evaluation_config.queue_items,
+        generation_parameters=evaluation_config.generation_parameters,
+        judge_parameters=evaluation_config.judge_parameters,
+        dataset_version=evaluation_config.dataset_version,
+        prompt_payload=evaluation_config.prompt_payload,
+        gold_map=evaluation_config.gold_map,
+        dimensions=evaluation_config.dimensions,
+    )
+    metadata["service_endpoint"] = "https://endpoint-one.example/v1"
+    with pytest.raises(WorkflowCheckpointError):
+        workflow(store, answer, RecordingProvider())._assert_checkpoint_matches(metadata, evaluation_config)
+    assert answer.events == []

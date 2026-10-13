@@ -9,12 +9,12 @@ def _source(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
-def test_primary_navigation_prioritizes_conclusions_without_marker_spacer():
+def test_primary_navigation_prioritizes_overview_without_marker_spacer():
     from src.ui.navigation import OPERATION_NAV_ITEM, PRIMARY_NAV_ITEMS
 
     assert [page_key for _, page_key in PRIMARY_NAV_ITEMS] == [
-        "conclusions",
         "case_study",
+        "conclusions",
         "samples",
     ]
     assert OPERATION_NAV_ITEM == ("发起评测", "test_run")

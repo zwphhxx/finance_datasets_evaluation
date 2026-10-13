@@ -17,8 +17,8 @@ from src.ui.page_config import PAGE_CONFIG_BY_KEY, PAGE_CONFIGS
 PROJECT_NAME = "财务/法律/投行场景大模型对比评测"
 MAIN_PAGE_KEYS = ["case_study", "samples", "test_run", "conclusions"]
 PAGE_CONFIG_KEYS = ["conclusions", "case_study", "samples", "test_run"]
-MAIN_NAV_PAGE_KEYS = ["conclusions", "case_study", "samples"]
-MAIN_NAV_LABELS = ["评测结论", "项目说明", "样本库"]
+MAIN_NAV_PAGE_KEYS = ["case_study", "conclusions", "samples"]
+MAIN_NAV_LABELS = ["评测概览", "评测结论", "样本库"]
 VISIBLE_UI_FILES = [
     Path("src/ui/case_study.py"),
     Path("src/ui/samples.py"),

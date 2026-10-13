@@ -6,6 +6,7 @@ import json
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from typing import Any
 
 import pandas as pd
@@ -25,6 +26,8 @@ class EvidenceItem:
     review_note: str
     answer_text: str
     gold_answer: Mapping[str, object]
+    task: Mapping[str, object] = dataclass_field(default_factory=dict)
+    score_record: Mapping[str, object] = dataclass_field(default_factory=dict)
 
 
 def build_evidence_index(
@@ -208,6 +211,8 @@ def _evidence_item(
         review_note=_text(row.get("review_note")),
         answer_text=_text(response.get("answer_text")),
         gold_answer=dict(gold) if isinstance(gold, Mapping) else {},
+        task=dict(task),
+        score_record=dict(row),
     )
 
 

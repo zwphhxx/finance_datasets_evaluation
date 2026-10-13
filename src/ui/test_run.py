@@ -34,6 +34,7 @@ from src.ui import conclusions_data as cd
 from src.ui import evaluation_config as ec
 from src.ui.components import (
     render_empty_state,
+    render_html,
     render_numbered_section,
     render_page_heading,
     render_persistence_status,
@@ -54,7 +55,7 @@ from src.ui.scroll import request_scroll
 
 _SILICONFLOW_LABEL = "硅基流动"
 _JUDGE_TEMPERATURE = 0.0
-_JUDGE_MAX_TOKENS = 2048
+_JUDGE_MAX_TOKENS = 3072
 _MAINTENANCE_EXPORT_KEY = "test_run_maintenance_export"
 
 # Compatibility re-exports for callers of the former configuration module surface.
@@ -118,6 +119,10 @@ def render_test_run_page(
     base = data_bundle["base"]
     config = get_page_config("test_run")
     render_page_heading(config.title, config.question)
+
+    stage_placeholder = st.empty()
+    if not sf.is_configured():
+        st.caption("未配置模型服务密钥：真实调用已禁用；仍可在评测结论中查看历史结果。")
 
     tasks_df = base.tasks
     if tasks_df is None or tasks_df.empty:
@@ -291,16 +296,28 @@ def render_test_run_page(
             else:
                 cd.clear_conclusions_caches()
                 st.rerun()
-    render_numbered_section("02", "当前进度")
+    stage = 1 if display_status is None else (3 if display_status.state in {COMPLETED, PARTIAL, FAILED} else 2)
+    # Render after reading the durable status: the highlighted phase reflects saved state.
+    with stage_placeholder.container():
+        render_html('<ol class="run-stages" aria-label="评测阶段">' + ''.join(
+            f'<li aria-current="{"step" if stage == i else "false"}">{i} · {label}</li>'
+            for i, label in enumerate(("配置评测", "运行与进度", "查看结果"), 1)
+        ) + '</ol>')
+    render_numbered_section("02", "运行与进度")
     if display_status is None:
         st.caption("当前没有进行中的评测批次。")
     else:
         render_evaluation_status(display_status)
-        if status is not None:
-            _render_persisted_evaluation_records_entry(
-                result_store if store_available else None,
-                status,
-            )
+        if display_status.total:
+            st.progress(min(1.0, max(0.0, (display_status.total - display_status.pending) / display_status.total)), text="已处理计划项（包含失败项）")
+    render_numbered_section("03", "查看结果")
+    if status is not None:
+        _render_persisted_evaluation_records_entry(
+            result_store if store_available else None,
+            status,
+        )
+    else:
+        st.caption("当前批次暂无结果。历史评测可从顶部评测结论入口查看。")
 
     _render_evaluation_maintenance(result_store if store_available else None, status)
     dialog_name = ec.pending_dialog_name()
