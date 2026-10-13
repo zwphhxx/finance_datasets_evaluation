@@ -44,4 +44,10 @@
 
 浏览器控制曾中断，恢复后完成上述Chrome实测。本次不包含真实iPhone Safari触摸、200%浏览器缩放、真实付费任务及生产恢复的实测；不能将Chrome视口检查视为这些环境已验收。
 
-发布标识：`public-limited-evaluation-20261014-v1`。线上需确认该标识及「配置评测」中的「开始评测」入口；本次验收不应点击生产开始按钮，以免产生费用。
+## 线上发布确认
+
+功能提交 `5fee7fdb80ebb82eeb5747b6a8bb6cbbc478a9dd` 已push至main；[对应CI](https://github.com/zwphhxx/finance_datasets_evaluation/actions/runs/38431615656)成功。
+
+在 `finance-model-eval.streamlit.app/?page=evaluation_preview` 实际读取到发布标识 `public-limited-evaluation-20261014-v1`，无需额外重启。开始按钮处于可用状态；选择FD-001、FD-002及Kimi-K2.6、Qwen3.6-35B-A3B后显示4个回答任务。未点击线上开始按钮。
+
+线上Chrome也检查了1440/768/390/320px，应用文档宽度与各视口一致。截图为本地 `docs/ui/public-limited-20261014/live-{width}.jpg`。后续用户实际启动的生成成功率、生产写入及服务费用不在本次无付费验收范围内。
