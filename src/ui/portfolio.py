@@ -4,6 +4,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from app.services.conclusions import _parse_rationale
 from app.services.model_display import display_model_name
 from app.services.snapshot import _safe
 from src.ui import workbench
@@ -19,7 +20,15 @@ from src.ui.review import (
     open_case_review,
 )
 from src.ui.scroll import request_scroll
-from src.ui.trust_details import _task_fields, evidence_gaps, render_portfolio_evaluation
+from src.ui.trust_details import (
+    _array,
+    _rationale,
+    _render_check,
+    _summary_checks,
+    _task_fields,
+    evidence_gaps,
+    render_portfolio_evaluation,
+)
 
 REPOSITORY_URL = "https://github.com/zwphhxx/finance_datasets_evaluation"
 
@@ -200,10 +209,57 @@ def render_portfolio_home(data_bundle):
         st.link_button("查看方法与技术说明", REPOSITORY_URL + "#评测边界", type="tertiary")
 
 
+def _render_home_rating(raw_score, dimensions, answer):
+    """Summarize saved deductions; legacy text is feedback, not a deduction map."""
+    score = _safe(dict(raw_score))
+    total = pd.to_numeric(score.get("total_score"), errors="coerce")
+    st.markdown(f"**AI评分：{total:g}**" if pd.notna(total) else "**AI评分：未记录**")
+    marks = {d.get("field"): pd.to_numeric(d.get("full_mark"), errors="coerce") for d in dimensions}
+    values = {k: pd.to_numeric(v, errors="coerce") for k, v in score.items()
+              if k.endswith("_score") and k != "total_score"}
+    complete = (bool(marks) and bool(values) and set(values) == set(marks)
+                and all(pd.notna(v) for v in [*marks.values(), *values.values(), total])
+                and abs(sum(values.values()) - total) < 1e-6 and total <= sum(marks.values()))
+    st.caption(f"满分 {sum(marks.values()):g} · AI自动评分，需人工核对。" if complete
+               else "历史满分未记录 · AI自动评分，需人工核对。")
+    saved_checks = [c for c in _array(raw_score, "checks_json") if isinstance(c, dict)]
+    checks = [c for c in saved_checks if c.get("status") in {"not_met", "partial"}]
+    if checks:
+        st.markdown("**关键扣分理由**")
+        for check in _summary_checks(checks):
+            _render_check(check, answer, summary=True)
+        return
+    reasons = _parse_rationale(score.get("rationale"))
+    deductions = {field: reasons[field] for field, mark in marks.items()
+                  if field in reasons and pd.notna(mark) and pd.notna(values.get(field))
+                  and values[field] < mark}
+    if deductions:
+        st.markdown("**关键扣分理由**")
+        _rationale(dict(score, rationale=deductions), dimensions, limit=3)
+        return
+    st.markdown("**原始评分反馈**")
+    st.caption("未保存逐项扣分对应关系；以下为原始评分意见，不推算扣分。" if not complete and not saved_checks
+               else "以下为原始评分意见，不额外推算扣分；未列出问题不代表证据完整。")
+    if score.get("review_note"):
+        st.text(_excerpt(score["review_note"], 200))
+    if score.get("rationale"):
+        _rationale(score, dimensions, limit=3)
+    if not score.get("review_note") and not score.get("rationale"):
+        st.caption("历史记录未保存评分理由，不能据此判断没有问题。")
+
+
 def _render_home_excerpt(report, source, task_map, case_id, score, responses):
     design = task_map.get(case_id, {})
     st.subheader("收入增长，但回款是否正常？" if case_id == "FD-001" else
                  str(_safe(design.get("title") or design.get("scenario") or (f"专业案例 · {case_id}" if case_id else "专业任务"))))
+    if score is not None:
+        answer = _formal_response_for_score(responses, score).get("answer_text") or ""
+        task, gold, dimensions = historical_task(report, case_id, str(score["run_id"]))
+        _render_home_rating(score, dimensions, answer)
+        gaps = evidence_gaps(task, gold, score, answer)
+        if gaps:
+            st.caption("该记录尚不具备完整评价证据：缺少" + "、".join(gaps) + "。" +
+                       ("下方当前任务设计不代表当时输入。" if design else "不使用当前题库补造历史材料。"))
     if design:
         st.caption(f"当前任务设计 · {case_id}")
         fields = list(_task_fields(design))
@@ -216,18 +272,9 @@ def _render_home_excerpt(report, source, task_map, case_id, score, responses):
             requirement = next((v for label, v in fields if label == "输出要求"), question)
             st.text(_excerpt(requirement.split("。")[0] + "。", 120))
     if score is not None:
-        answer = _formal_response_for_score(responses, score).get("answer_text") or ""
-        task, gold, _ = historical_task(report, case_id, str(score["run_id"]))
         model = display_model_name(str(score["eval_model"]), source="live")
         st.markdown(f"**历史回答节选 · {str(_safe(model))}**")
-        gaps = evidence_gaps(task, gold, score, answer)
-        if gaps:
-            st.caption("该记录尚不具备完整评价证据：缺少" + "、".join(gaps) + "。" +
-                       ("上方当前任务设计不代表当时输入。" if design else "不使用当前题库补造历史材料。"))
         st.text(_excerpt(answer, 120))
-        if score.get("review_note"):
-            st.caption("原始评价摘录")
-            st.text(_excerpt(score["review_note"], 160))
         st.button("查看完整案例", key="portfolio_open_case", type="primary", on_click=_open_home_case,
                   args=((case_id, *_record_identity(score)),))
     elif case_id:

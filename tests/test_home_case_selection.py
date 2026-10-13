@@ -179,3 +179,76 @@ def test_clearing_a_home_selector_is_safe_and_does_not_show_an_unrelated_answer(
     assert not at.exception
     assert '原始回答' not in visible(at)
     assert any('请选择' in e.value for e in at.caption)
+
+
+def test_home_score_follows_case_and_model_without_adding_rankings(home_app):
+    at,_=home_app
+    at.run()
+    assert 'AI评分：80' in visible(at)
+    at.selectbox(key='portfolio_home_case').set_value('TEST-2').run()
+    assert 'AI评分：75' in visible(at)
+    at.selectbox(key='portfolio_home_record').set_value(('test-r1','model-b','s4')).run()
+    assert 'AI评分：85' in visible(at)
+    assert '尚缺时间边界' in visible(at)
+    assert not at.dataframe and not at.metric
+    assert '排名' not in '\n'.join(e.value for e in at.subheader)
+
+
+def _rating_app(score,dimensions=None,answer='原文'):
+    return AppTest.from_string(f'''
+from src.ui.portfolio import _render_home_rating
+_render_home_rating({score!r}, {dimensions or []!r}, {answer!r})
+''').run()
+
+
+def test_home_rating_prioritizes_saved_deduction_dimensions():
+    import json
+    at=_rating_app(dict(total_score=45,accuracy_score=30,coverage_score=15,
+        rationale=json.dumps(dict(accuracy_score='数据计算准确。',coverage_score='未覆盖第三方回款核查。'),ensure_ascii=False)),
+        [dict(field='accuracy_score',name='准确性',full_mark=30),dict(field='coverage_score',name='覆盖度',full_mark=20)])
+    assert not at.exception
+    assert '关键扣分理由' in visible(at)
+    assert '覆盖度：未覆盖第三方回款核查' in visible(at)
+    assert '数据计算准确' not in visible(at)
+    assert '满分 50' in visible(at)
+
+
+def test_home_rating_keeps_every_saved_critical_error_and_quote_gap():
+    import json
+    checks=[dict(kind='forbidden',status='not_met',requirement=f'重大错误{i}',reason=f'原始影响{i}',quote='不匹配') for i in range(4)]
+    at=_rating_app(dict(total_score=12,review_note='总评较好但有错误',checks_json=json.dumps(checks,ensure_ascii=False)))
+    assert not at.exception
+    for i in range(4):
+        assert f'重大错误{i}' in visible(at) and f'原始影响{i}' in visible(at)
+    assert any('引用不在模型回答原文' in e.value for e in at.warning)
+    assert '历史满分未记录' in visible(at)
+
+
+def test_legacy_rating_shows_original_feedback_without_inventing_deductions():
+    import json
+    at=_rating_app(dict(total_score=93,review_note='结论方向正确，但遗漏独立财务顾问核查。',
+        rationale=json.dumps(dict(reasoning_score='初步结论表述过于绝对。',coverage_score='未提及详式权益变动报告书。'),ensure_ascii=False)))
+    assert not at.exception
+    text=visible(at)
+    assert 'AI评分：93' in text and '历史满分未记录' in text
+    assert '原始评分反馈' in text and '未保存逐项扣分对应关系' in text
+    assert '遗漏独立财务顾问核查' in text and '未提及详式权益变动报告书' in text
+    assert '扣7分' not in text and '未见突出问题' not in text
+
+
+@pytest.mark.parametrize('rationale',[None,'裁判原始文本：遗漏核查时间边界。'])
+def test_home_rating_retains_missing_reason_or_raw_rationale(rationale):
+    at=_rating_app(dict(total_score=40,rationale=rationale))
+    assert not at.exception
+    text=visible(at)
+    assert 'AI评分：40' in text
+    assert ('裁判原始文本：遗漏核查时间边界' if rationale else '历史记录未保存评分理由') in text
+
+
+def test_saved_full_score_is_feedback_not_a_missing_deduction_mapping():
+    at=_rating_app(dict(total_score=30,accuracy_score=30,rationale={'accuracy_score':'关键数据引用准确。'}),
+                   [dict(field='accuracy_score',name='准确性',full_mark=30)])
+    assert not at.exception
+    assert '满分 30' in visible(at)
+    assert '未保存逐项扣分对应关系' not in visible(at)
+    assert '关键数据引用准确' in visible(at)
