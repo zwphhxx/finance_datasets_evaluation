@@ -446,4 +446,22 @@ MOBILE_RESPONSIVE_CSS = r"""
     .st-key-review_filters [data-testid="stColumn"] { width: 100% !important; flex: 1 1 100% !important; min-width: 0; }
     .run-stages li { font-size: 0.78rem; overflow-wrap: anywhere; }
 }
+
+/* Public reading view uses its own stable container keys, not dashboard nav. */
+@media (max-width: 760px) {
+    .st-key-portfolio_nav [data-testid="stHorizontalBlock"] {
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 0.4rem;
+    }
+    .st-key-portfolio_nav [data-testid="stColumn"] {
+        flex: 1 1 0 !important;
+        min-width: 0;
+        width: auto !important;
+    }
+    .st-key-portfolio_featured { padding: 1rem; }
+    .st-key-portfolio_featured h3 { font-size: 1.05rem; text-wrap: balance; }
+    .st-key-portfolio_nav { padding-bottom: 0.8rem; }
+    .st-key-portfolio_case [data-testid="stExpander"] { min-width: 0; }
+}
 """

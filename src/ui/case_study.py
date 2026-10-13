@@ -127,6 +127,11 @@ def _section_body_html(section: dict, base) -> str:
 
 
 def render_case_study_page(data_bundle: dict) -> None:
+    from app.access import management_enabled
+    if not management_enabled():
+        from src.ui.portfolio import render_portfolio_home
+        render_portfolio_home(data_bundle)
+        return
     import streamlit as st
 
     base = data_bundle.get("base") or data_bundle["data"]

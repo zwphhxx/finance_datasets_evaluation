@@ -98,4 +98,4 @@ with ExitStack() as stack:
     button = at.button(key="results_review_case")
     button.click().run(timeout=30)
     assert not at.exception
-    assert any("历史任务正文未保存" in str(t.value) for t in at.text)
+    assert any("历史记录未保存任务正文；不使用当前题库补造运行时材料" in str(c.value) for c in at.caption)

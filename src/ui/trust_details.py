@@ -72,6 +72,7 @@ def _task_fields(task):
         ("business_background", "业务背景"), ("business_context", "业务背景"),
         ("background", "背景"), ("context", "材料"), ("material", "材料"),
         ("output_requirements", "输出要求"), ("expected_capability", "输出要求"),
+        ("output_requirement", "输出要求"),
     ]:
         value = task.get(field)
         if value and str(value) not in shown:
@@ -157,6 +158,108 @@ def render_reference_standard(value, *, historical=True):
             st.text(str(content))
 
 
+def _check_priority(check):
+    if check.get("kind") == "forbidden" and check.get("status") == "not_met":
+        return 0
+    return {"not_met": 1, "partial": 2, "unknown": 3, "met": 4}.get(check.get("status"), 3)
+
+
+def _summary_checks(checks):
+    ordered = sorted(checks, key=_check_priority)
+    return ordered[:max(3, sum(_check_priority(c) == 0 for c in ordered))]
+
+
+def _render_dimensions(score, dimensions):
+    rows = [{"维度": d.get("name", d.get("field")), "分数": score.get(d.get("field")),
+             "满分": d.get("full_mark") if d.get("full_mark") is not None else "未记录"} for d in dimensions]
+    if not dimensions:
+        rows = [{"维度字段": field, "分数": value, "满分": "未记录"}
+                for field, value in score.items() if field.endswith("_score") and field != "total_score"]
+        if rows:
+            st.caption("历史维度定义未保存；满分未知，仅展示原始字段与分数。")
+    if rows:
+        st.dataframe(rows, hide_index=True, width="stretch")
+    else:
+        st.caption("没有可读取的维度分数。")
+
+
+def evidence_gaps(task, gold, score, answer):
+    gaps = []
+    fields = list(_task_fields(task))
+    if not any(label == "任务" for label, _ in fields):
+        gaps.append("当时的任务材料")
+    elif not any(label in {"业务背景", "背景", "材料"} for label, _ in fields):
+        gaps.append("业务背景")
+    if not gold:
+        gaps.append("参考标准")
+    checks = [c for c in _array(score, "checks_json") if isinstance(c, dict)]
+    if not checks or not any(quote_matches(c.get("quote"), answer) for c in checks):
+        gaps.append("可核对的回答引文")
+    elif any(c.get("quote") and not quote_matches(c.get("quote"), answer) for c in checks):
+        gaps.append("部分引文无法核对")
+    if not score.get("rationale") and not score.get("review_note"):
+        gaps.append("评分理由")
+    return gaps
+
+
+def render_portfolio_evaluation(*, answer, score, dimensions, gold, metadata, historical=True):
+    """One-column reading with one evidence entry and one technical entry."""
+    raw_answer, raw_score = str(answer or ""), dict(score or {})
+    answer, score = str(_safe(raw_answer)), _safe(raw_score)
+    st.subheader("模型回答")
+    if answer:
+        if len(answer) > 3000:
+            st.text(answer[:1200] + "…")
+            with st.expander("展开完整回答"):
+                st.text(answer)
+        else:
+            st.text(answer)
+    else:
+        st.caption("尚无可读取的模型回答。")
+    st.subheader("专业评价")
+    if score:
+        st.metric("AI评分", "—" if score.get("total_score") is None else str(score["total_score"]))
+        marks = [d.get("full_mark") for d in dimensions]
+        st.caption(f"满分 {sum(marks):g} · AI自动评分，需人工核对。" if marks and all(isinstance(v, (int, float)) for v in marks)
+                   else "历史满分未记录 · AI自动评分，需人工核对。")
+    else:
+        st.caption("任务设计示例，尚无评分记录。")
+    checks = [c for c in _array(raw_score, "checks_json") if isinstance(c, dict)]
+    summaries = _summary_checks(checks)
+    for check in summaries:
+        _render_check(check, raw_answer, summary=True)
+    if not summaries:
+        if score.get("review_note"):
+            st.text(str(score["review_note"]))
+        elif score.get("rationale"):
+            _rationale(score, dimensions, limit=3)
+        elif score:
+            st.caption("缺少原始评价意见。")
+    with st.expander("查看完整评价依据"):
+        if score:
+            st.markdown("**各维度评分**")
+            _render_dimensions(score, dimensions)
+            st.markdown("**全部检查要点**")
+            if not checks:
+                st.caption("历史记录未保存检查要点与回答引文。")
+            for check in checks:
+                _render_check(check, raw_answer)
+            if _array(raw_score, "numeric_checks_json"):
+                st.markdown("**程序数值核查**")
+                st.dataframe(_safe(_array(raw_score, "numeric_checks_json")), hide_index=True, width="stretch")
+                st.caption("仅核对预设公式，不改变评分；未找到明确数值不等于错误。")
+            st.markdown("**评分理由**")
+            _rationale(score, dimensions)
+            if score.get("review_note"):
+                st.text(str(score["review_note"]))
+            if not score.get("rationale") and not score.get("review_note"):
+                st.caption("历史记录未保存评分理由。")
+        st.markdown("**参考答案与评价标准**" if historical else "**当前任务参考答案与评价标准**")
+        render_reference_standard(gold, historical=historical)
+    with st.expander("原始技术记录"):
+        st.json(_safe(dict(metadata, score=raw_score, reference_standard=gold, dimensions=dimensions)), expanded=False)
+
+
 def render_score_detail(*, task, answer, score, dimensions, key):
     """Case overview and a 60/40 reading view; summary first in the DOM for mobile."""
     raw_answer, raw_score = str(answer or ""), dict(score or {})
@@ -180,14 +283,8 @@ def render_score_detail(*, task, answer, score, dimensions, key):
     checks = [c for c in _array(raw_score, "checks_json") if isinstance(c, dict)]
     # Preserve the original sequence in the full inspector. Only the summary is
     # ordered by recorded status/kind, never inferred from answer prose.
-    def priority(check):
-        if check.get("kind") == "forbidden" and check.get("status") == "not_met":
-            return 0
-        return {"not_met": 1, "partial": 2, "unknown": 3, "met": 4}.get(check.get("status"), 3)
-    ordered = sorted(checks, key=priority)
-    critical_count = sum(priority(c) == 0 for c in ordered)
     # A recorded unacceptable error must never disappear behind the summary cap.
-    summary_checks = ordered[:max(3, critical_count)]
+    summary_checks = _summary_checks(checks)
     with st.container(key=f"score_detail_{key}"):
         right, left = st.columns([2, 3], gap="large")
         with right:
@@ -226,17 +323,7 @@ def render_score_detail(*, task, answer, score, dimensions, key):
                 else:
                     st.caption("没有成功回答可供核对。")
     with st.expander("完整评分维度"):
-        rows = [{"维度": d.get("name", d.get("field")), "分数": score.get(d.get("field")),
-                 "满分": d.get("full_mark") if d.get("full_mark") is not None else "未记录"} for d in dimensions]
-        if not dimensions:
-            rows = [{"维度字段": field, "分数": value, "满分": "未记录"}
-                    for field, value in score.items() if field.endswith("_score") and field != "total_score"]
-            if rows:
-                st.caption("历史维度定义未保存；满分未知，仅展示原始字段与分数。")
-        if rows:
-            st.dataframe(rows, hide_index=True, use_container_width=True)
-        else:
-            st.caption("没有可读取的维度分数。")
+        _render_dimensions(score, dimensions)
     with st.expander(f"全部检查要点 · {len(checks)} 项"):
         if not checks:
             st.caption("历史记录未保存结构化要点评价与回答引文。")

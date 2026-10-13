@@ -36,7 +36,11 @@ def _record_identity(row):
 def historical_task(report, case_id, run_id):
     runs = [r for r in report.runtime_tables.get("live_evaluation_runs", []) if str(r.get("run_id")) == run_id]
     tasks, gold, dimensions = restore_context(runs, [case_id])
-    return next((t for t in tasks if str(t.get("case_id")) == case_id), {}), gold.get(case_id), dimensions
+    task = next((t for t in tasks if str(t.get("case_id")) == case_id), {})
+    # restore_context has a legacy display placeholder. It is not saved input.
+    if task == {"case_id": case_id, "question": "历史任务正文未保存"}:
+        task = {}
+    return task, gold.get(case_id), dimensions
 
 
 def case_label(task, case_id):
@@ -104,6 +108,11 @@ def _record_labels(rows, metadata):
 
 
 def render_review_page(data_bundle: dict) -> None:
+    from app.access import management_enabled
+    if not management_enabled():
+        from src.ui.portfolio import render_portfolio_case
+        render_portfolio_case(data_bundle)
+        return
     from src.ui.workbench import load_workbench_source
 
     base = data_bundle.get("base") or data_bundle["data"]

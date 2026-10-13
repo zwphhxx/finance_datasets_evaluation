@@ -57,6 +57,10 @@ _STREAMLIT_MARKDOWN_PUNCTUATION_RE = re.compile(
 
 
 def render_conclusions_page(data_bundle: dict) -> None:
+    if not management_enabled():
+        from src.ui.portfolio import render_portfolio_home
+        render_portfolio_home(data_bundle)
+        return
     from src.ui.workbench import load_workbench_source, overview_facts
 
     base = data_bundle.get("base") or data_bundle["data"]

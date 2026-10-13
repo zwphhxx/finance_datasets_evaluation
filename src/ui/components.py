@@ -14,7 +14,7 @@ PROJECT_DISPLAY_NAME = "财务/法律/投行场景大模型对比评测"
 
 STYLE_CSS = """
 <style>
-/* findueval-build: public-final-acceptance-20261013-v1 */
+/* findueval-build: minimal-portfolio-20261013-v1 */
 :root {
     --fde-paper: #F8FAFC;
     --fde-surface: #FFFFFF;
@@ -38,6 +38,37 @@ STYLE_CSS = """
     --fde-max-width: 1180px;
 }
 .stApp h3 { font-size: 1.18rem; line-height: 1.5; }
+.st-key-portfolio_nav, .st-key-portfolio_home, .st-key-portfolio_case {
+    max-width: 840px;
+    margin-left: auto;
+    margin-right: auto;
+    min-width: 0;
+}
+.st-key-portfolio_nav { padding: 1rem 0 1.25rem; }
+.st-key-portfolio_nav [data-testid="stHorizontalBlock"] { flex-wrap: nowrap; }
+.st-key-portfolio_nav [data-testid="stColumn"] { min-width: 0; }
+.st-key-portfolio_nav [data-testid="stColumn"]:last-child { text-align: right; }
+.st-key-portfolio_nav [data-testid="stLinkButton"] { display: flex; justify-content: flex-end; }
+.portfolio-brand { font-size: 1rem; font-weight: 650; color: var(--fde-ink); }
+.st-key-portfolio_home h1, .st-key-portfolio_case h1 {
+    font-size: clamp(1.6rem, 3vw, 2rem);
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+    text-wrap: balance;
+    padding-top: 0.25rem;
+}
+.st-key-portfolio_featured {
+    background: var(--fde-surface);
+    border-radius: var(--fde-radius);
+    padding: 1.5rem;
+    margin: 0.5rem 0 1rem;
+}
+.st-key-portfolio_home [data-testid="stText"], .st-key-portfolio_case [data-testid="stText"] {
+    font-size: 1rem;
+    line-height: 1.8;
+    white-space: pre-wrap;
+}
+.st-key-portfolio_home button, .st-key-portfolio_case button { min-height: 44px; }
 .stApp [data-testid="stText"] { font-family: var(--fde-sans); overflow-wrap: anywhere; }
 .stApp [data-testid="stCaptionContainer"],
 [data-testid="stDialog"] [data-testid="stCaptionContainer"] {

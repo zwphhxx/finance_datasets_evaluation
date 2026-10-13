@@ -15,7 +15,7 @@ PAGE_CONFIGS = [
     PageConfig(
         page_key="conclusions",
         title="评测结果",
-        question="比较共同有效样本中的模型表现，并追溯到逐题评分依据。",
+        question="从一个专业任务，查看模型回答及评价依据。",
     ),
     PageConfig(
         page_key="case_study",

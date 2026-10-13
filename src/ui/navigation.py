@@ -8,7 +8,7 @@ from src.ui.components import render_html
 from src.ui.conclusions import render_conclusions_page
 from src.ui.management import render_management_page
 from src.ui.page_config import DEFAULT_PAGE_KEY, PAGE_CONFIG_BY_KEY
-from src.ui.review import render_review_page
+from src.ui.review import ROUTE_FIELDS, render_review_page
 from src.ui.scroll import request_scroll
 from src.ui.test_run import render_test_run_page
 
@@ -24,8 +24,7 @@ PAGES = {
 }
 
 
-# Review destinations are peers. Evaluation remains reachable but deliberately
-# sits in a separate, lower-emphasis operation entry.
+# Retained administration destinations. Public visitors have no peer nav.
 PRIMARY_NAV_ITEMS = [
     ("评测结果", "conclusions"),
     ("案例分析", "review"),
@@ -56,6 +55,15 @@ def render_top_navigation() -> None:
     """Render review navigation separately from the evaluation operation."""
     current = st.session_state.get("current_page", DEFAULT_PAGE_KEY)
     admin = management_enabled()
+    if not admin:
+        with st.container(key="portfolio_nav"):
+            brand, source = st.columns([2, 1], gap="small", vertical_alignment="center")
+            with brand:
+                render_html('<div class="portfolio-brand">专业模型评测</div>')
+            with source:
+                with st.container(horizontal=True, horizontal_alignment="right"):
+                    st.link_button("GitHub 源码", "https://github.com/zwphhxx/finance_datasets_evaluation", type="tertiary")
+        return
     columns = st.columns([3.1, 2.6, 0.9] if admin else [1.4, 2.6], gap="medium")
     brand_column, review_column = columns[:2]
     with brand_column:
@@ -82,6 +90,15 @@ def render_top_navigation() -> None:
 def render_sidebar_navigation() -> str:
     valid_page_keys = set(PAGE_CONFIG_BY_KEY)
     requested = st.query_params.get("page", DEFAULT_PAGE_KEY)
+    if not management_enabled() and not st.query_params.get("page") and any(st.query_params.get(f) for f in ROUTE_FIELDS):
+        requested = "review"
+        st.query_params["page"] = requested
+    if not management_enabled() and requested == "case_study":
+        requested = DEFAULT_PAGE_KEY
+        st.query_params["page"] = requested
+        request_scroll("#fde-method")
+    if not management_enabled() and requested == DEFAULT_PAGE_KEY:
+        st.query_params["page"] = DEFAULT_PAGE_KEY
     st.session_state.current_page = requested if requested in valid_page_keys else DEFAULT_PAGE_KEY
 
     # Single navigation: top bar only. Sidebar is intentionally empty.
@@ -91,7 +108,7 @@ def render_sidebar_navigation() -> str:
 
 def get_primary_nav_items() -> list[tuple[str, str]]:
     """Return the primary navigation items (label, page_key)."""
-    return PRIMARY_NAV_ITEMS[:]
+    return PRIMARY_NAV_ITEMS[:] if management_enabled() else []
 
 
 def get_operation_nav_item() -> tuple[str, str]:
