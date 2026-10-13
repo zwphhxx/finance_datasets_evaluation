@@ -152,7 +152,12 @@ def render_case_study_page(data_bundle: dict) -> None:
     import streamlit as st
 
     base = data_bundle.get("base") or data_bundle["data"]
+    from src.ui.report_components import render_scope_ledger
+
     render_report_masthead("评测方法", BRIEF_NOTE)
+    with st.container(key="method_scope"):
+        render_scope_ledger(build_home_facts(base))
+    st.caption("以上为当前题库与评分配置；历史评测以运行时保存的材料和标准为准。")
     for section in CASE_STUDY_SECTIONS:
         render_html(report_section_html("", "", str(section["title"]),
                                        _section_body_html(section, base), anchor_id=str(section["anchor"])))

@@ -42,9 +42,9 @@ from src.ui.report_components import (
     render_scope_ledger,
     report_index_row_html,
 )
+from src.ui.scroll import request_scroll
 from src.ui.trust_details import render_score_detail
 from src.ui.workbench import (
-    has_multiple_endpoints,
     historical_dimensions,
     render_common_dimensions,
     render_report_filters,
@@ -56,66 +56,89 @@ _STREAMLIT_MARKDOWN_PUNCTUATION_RE = re.compile(
 
 
 def render_conclusions_page(data_bundle: dict) -> None:
-    from src.ui.review import open_case_review
     from src.ui.workbench import load_workbench_source, overview_facts
 
     base = data_bundle.get("base") or data_bundle["data"]
-    render_report_masthead("评测结果", "财务、法律、投行场景的模型比较；从结果进入案例，核对回答与评分依据。")
+    render_report_masthead("评测结果", "财务 / 法律 / 投行场景大模型对比评测。查看共同任务中的结果，再核对具体案例。")
     source = load_workbench_source(base)
     full_report = source.report
-    facts = overview_facts(base, full_report)
-    render_scope_ledger([
-        ("评测样本", str(facts["samples"])), ("专业领域", str(facts["domains"])),
-        ("已评测模型", str(facts["models"]) if source.available else "—"),
-        ("有效评分", str(facts["scores"]) if source.available else "—"),
-    ])
     readonly = bool(st.session_state.get("readonly_evaluation_snapshot"))
-    st.caption("最新实际测试时间：" + str(facts["latest"] or ("暂无实际测试记录" if source.available else "当前不可读取"))
-               + " ｜ 来源：" + ("只读历史快照（来源声明未经独立认证）" if readonly else "当前数据库真实运行"))
     if not source.available:
+        with st.container(key="results_scope"):
+            render_scope_ledger([("比较模型 / 配置", "—"), ("共同有效任务", "—"), ("有效评分记录", "—")])
         render_persistence_status(source.message)
         return
     if full_report is None or not full_report.scope.formal_score_count:
-        st.info("尚无正式实测结果。可在案例审阅中查看专业任务，或在管理中只读加载完整历史快照。")
+        st.info("暂未发布评测结果。可以先查看专业任务与评价标准。")
+        if st.button("查看任务", key="results_view_tasks", type="primary"):
+            st.query_params["page"] = "review"
+            for field in ("case", "model", "run", "score"):
+                st.query_params.pop(field, None)
+            request_scroll("top")
+            st.rerun()
         return
     tasks = getattr(base, "tasks", pd.DataFrame())
     records = tasks.to_dict("records") if isinstance(tasks, pd.DataFrame) else []
     with st.expander("筛选专业场景、模型与任务"):
         report = render_report_filters(full_report, records)
+    with st.container(key="results_scope"):
+        render_scope_ledger([
+            ("比较模型 / 配置", str(len(report.comparison.get("models", [])))),
+            ("共同有效任务", str(report.comparison.get("common_count", 0))),
+            ("有效评分记录", str(report.scope.formal_score_count)),
+        ])
+    facts = overview_facts(base, full_report)
+    st.caption("范围：当前筛选；模型与服务配置分别比较。有效评分记录包含各自任务，均分仅使用共同有效任务。")
+    st.caption("最近运行（当前来源）：" + str(facts["latest"] or "时间未记录")
+               + " · 来源：" + ("只读历史快照（来源声明未经独立认证）" if readonly else "已保存的实测记录"))
     if not report.scope.formal_score_count:
-        st.info("当前筛选条件下没有有效正式评分。请调整专业场景、模型或任务。")
+        st.info("当前筛选没有有效评分记录。请调整筛选条件。")
     render_comparison_and_runtime(report, include_runtime=False)
     if report.scope.formal_score_count:
-        first = report.formal_scores.iloc[0]
-        if st.button("审阅一条案例及评分依据", key="results_review_case", type="primary"):
-            open_case_review(str(first["case_id"]), str(first["eval_model"]), str(first["run_id"]))
-        st.subheader("主要发现")
+        st.subheader("低分案例反馈")
         render_saved_observations(report)
         with st.expander("维度比较与使用边界"):
             render_common_dimensions(report, historical_dimensions(report))
-            if not has_multiple_endpoints(report):
-                _render_model_recommendations(report.model_summaries)
-            else:
-                st.caption("同一模型包含多个服务配置；请按独立配置核对，不合并模型均分。")
-
+            st.caption("小样本差异仅供观察，不代表模型整体能力。失败记录不参与均分。")
     render_runtime_details(report)
 
 
 def render_saved_observations(report) -> None:
+    from src.ui.review import case_label, historical_task, open_case_review
     from src.ui.workbench import overview_score_observation
 
-    if has_multiple_endpoints(report):
-        st.caption("同一模型包含多个服务配置；请进入案例审阅，按具体运行核对评分说明。")
-        return
-    st.caption("每个模型摘录有评分说明的最低分样本；这是单题反馈，不代表问题频率或模型整体能力。")
-    for summary in report.model_summaries:
-        name = str(summary.get("display_name") or summary.get("model_name"))
-        observation = overview_score_observation(report, summary.get("model_name"))
+    def open_feedback(row):
+        open_case_review(str(row["case_id"]), str(row["eval_model"]), str(row["run_id"]),
+                         str(row.get("score_run_id") or row.get("id") or ""))
+
+    st.caption("每个模型及服务配置摘录最低分的可读单题反馈，不代表整体表现。未保存结构化引文时，反馈仍需核对回答。")
+    metadata = {str(r["run_id"]): r for r in report.runtime_tables.get("live_evaluation_runs", [])}
+    groups = {}
+    for row in report.formal_scores.to_dict("records"):
+        run = metadata.get(str(row.get("run_id")), {})
+        unit = (str(row["eval_model"]), str(run.get("provider") or ""), str(run.get("service_endpoint") or ""))
+        groups.setdefault(unit, []).append(row)
+    model_counts = Counter(unit[0] for unit in groups)
+    for index, (unit, rows) in enumerate(sorted(groups.items())):
+        name = display_model_name(unit[0], source="live")
+        observation = overview_score_observation(report, unit[0], run_ids={str(r["run_id"]) for r in rows})
+        selected = min(rows, key=lambda r: float(r.get("total_score", 0)))
         if observation:
-            st.text(f"{name}｜{observation['case_id']}｜{observation['source']}：{observation['text']}")
-        else:
-            st.text(name + "：当前评分未形成稳定的问题归纳。未保存可展示的评分说明或维度理由，不能据此判断没有问题。")
-    st.caption("上述为自动评分记录的归纳；未保存结构化引文的历史记录仍需核对原始证据，不能作为已验证专业结论。")
+            selected = next(r for r in rows if str(r["run_id"]) == observation["run_id"] and str(r["case_id"]) == observation["case_id"]
+                            and str(r.get("score_run_id") or r.get("id") or "") == observation["score_run_id"])
+        task, _, _ = historical_task(report, str(selected["case_id"]), str(selected["run_id"]))
+        with st.container(key=f"feedback_{index}"):
+            st.markdown("**" + _escape_streamlit_markdown_label(name) + "**")
+            if model_counts[unit[0]] > 1:
+                st.caption(str(_safe(f"{unit[1] or '服务商未记录'} · {unit[2] or '端点未记录'}")))
+            st.text(case_label(task, str(selected["case_id"])))
+            if observation:
+                feedback = observation["text"]
+                st.text(f"{observation['source']}：" + feedback[:220] + ("…" if len(feedback) > 220 else ""))
+            else:
+                st.text("未保存可展示的评分说明或维度理由；不能据此判断没有问题。")
+            button_key = "results_review_case" if index == 0 else "feedback_case_" + _stable_key(selected.get("run_id"), selected.get("eval_model"), selected.get("case_id"), selected.get("score_run_id"))
+            st.button("查看该案例", key=button_key, on_click=open_feedback, args=(selected,))
 
 
 def _render_executive_conclusion(model_summaries: Sequence[Mapping[str, object]]) -> None:

@@ -36,7 +36,7 @@ class RegistrationTests(unittest.TestCase):
     def test_source_uses_current_shared_components_only(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         self.assertIn("render_report_masthead", source)
-        self.assertNotIn("render_scope_ledger", source)
+        self.assertIn("render_scope_ledger(build_home_facts(base))", source)
         self.assertIn("研究局限", source)
         self.assertIn("report_section_html", source)
         self.assertIn("_process_steps_html(PROCESS_STEPS)", source)

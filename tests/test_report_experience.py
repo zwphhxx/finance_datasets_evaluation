@@ -455,7 +455,7 @@ def test_available_conclusion_report_renders_one_ordered_review_flow(monkeypatch
         "base": SimpleNamespace(tasks=pd.DataFrame(), gold_answer_map={}),
     })
 
-    assert events == ["masthead", "scope"]
+    assert events == ["masthead"]  # Empty results show a task entry, not result statistics.
 
 
 def test_unavailable_conclusion_source_does_not_render_empty_database_state(monkeypatch):
@@ -865,10 +865,13 @@ def test_navigation_click_uses_stable_key_and_queues_top_scroll():
 
     def button(_label: str, *, key: str, **_kwargs: object) -> bool:
         button_keys.append(key)
+        if key == "top_nav_conclusions":
+            _kwargs["on_click"](*_kwargs["args"])
         return key == "top_nav_conclusions"
 
     with (
         patch.object(navigation.st, "session_state", session_state),
+        patch.object(navigation.st, "query_params", {}),
         patch.object(navigation.st, "columns", side_effect=lambda *_args, **_kwargs: [nullcontext()] * 3),
         patch.object(navigation.st, "button", side_effect=button),
         patch.object(navigation.st, "popover", side_effect=lambda *_args, **_kwargs: nullcontext()),
@@ -886,7 +889,7 @@ def test_navigation_click_uses_stable_key_and_queues_top_scroll():
     ]
     assert session_state["current_page"] == "conclusions"
     assert scroll_targets == ["top"]
-    rerun.assert_called_once_with()
+    rerun.assert_not_called()  # Streamlit reruns once after the navigation callback.
 
 
 def test_navigation_uses_no_separate_current_marker_or_placeholder():

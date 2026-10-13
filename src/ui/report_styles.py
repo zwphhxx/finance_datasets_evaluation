@@ -108,7 +108,7 @@ REPORT_STYLE_CSS = r"""
 }
 .report-ledger dt {
     color: var(--fde-muted);
-    font-size: 0.72rem;
+    font-size: 0.82rem;
     letter-spacing: 0.08em;
     line-height: 1.4;
 }
@@ -122,6 +122,25 @@ REPORT_STYLE_CSS = r"""
     margin-top: 0.22rem;
     overflow-wrap: anywhere;
 }
+.st-key-results_scope .report-ledger,
+.st-key-method_scope .report-ledger {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.st-key-results_scope .report-ledger .report-ledger-item,
+.st-key-method_scope .report-ledger .report-ledger-item {
+    border-top: 0;
+    border-right: 1px solid var(--fde-line);
+    padding: 0.85rem;
+}
+.st-key-results_scope .report-ledger .report-ledger-item:last-child,
+.st-key-method_scope .report-ledger .report-ledger-item:last-child {
+    border-right: 0;
+}
+[class*="st-key-feedback_"] {
+    padding: 0.5rem 0 1rem;
+    border-bottom: 1px solid var(--fde-line);
+}
+[class*="st-key-feedback_"]:last-child { border-bottom: 0; }
 .report-section {
     border-top: 1px solid var(--fde-line-strong);
     margin: 2.3rem 0 0;

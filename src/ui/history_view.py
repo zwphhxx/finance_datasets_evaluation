@@ -116,12 +116,8 @@ def render_snapshot_export(store):
 def render_comparison_and_runtime(report, *, include_runtime=True):
     result = report.comparison
     if result:
-        st.markdown("**共同有效样本质量比较**")
-        st.caption(
-            "比较对象："
-            + ("同模型不同服务端点" if result.get("kind") == "service_endpoint" else "不同模型及其服务配置")
-        )
-        st.caption(f"共同有效样本：{result['common_count']} 条。各模型自身样本均分仅用于单模型观察。")
+        st.markdown("**模型对比**")
+        st.caption(f"共同有效任务 {result['common_count']} 条 · 各服务配置分别比较。")
         if result["common_count"]:
             display_rows = [dict(row, model_id=" | ".join([display_model_name(str(row["model_id"]).split(" | ")[0], source="live"), *str(row["model_id"]).split(" | ")[1:]])) for row in result["models"]]
             st.dataframe(

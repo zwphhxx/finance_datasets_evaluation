@@ -35,16 +35,20 @@ MANAGEMENT_NAV_ITEMS = [OPERATION_NAV_ITEM, ("数据维护", "samples")]
 
 
 def _render_navigation_button(label: str, page_key: str, current: str, *, key: str) -> None:
-    if st.button(
+    st.button(
         label,
         key=key,
         type="secondary" if current == page_key else "tertiary",
         use_container_width=False,
-    ):
-        st.session_state.current_page = page_key
-        st.query_params["page"] = page_key
-        request_scroll("top")
-        st.rerun()
+        on_click=_navigate,
+        args=(page_key,),
+    )
+
+
+def _navigate(page_key: str) -> None:
+    st.session_state.current_page = page_key
+    st.query_params["page"] = page_key
+    request_scroll("top")
 
 
 def render_top_navigation() -> None:
@@ -52,7 +56,7 @@ def render_top_navigation() -> None:
     current = st.session_state.get("current_page", DEFAULT_PAGE_KEY)
     brand_column, review_column, operation_column = st.columns([3.1, 2.6, 0.9], gap="medium")
     with brand_column:
-        render_html(f'<div class="top-nav-brand">{PROJECT_DISPLAY_NAME}</div>')
+        render_html('<div class="top-nav-brand">专业模型评测</div>')
     with review_column:
         with st.container(key="top_nav_review_region"):
             review_columns = st.columns(len(PRIMARY_NAV_ITEMS), gap="small")

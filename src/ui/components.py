@@ -38,6 +38,12 @@ STYLE_CSS = """
 }
 .stApp h3 { font-size: 1.18rem; line-height: 1.5; }
 .stApp [data-testid="stText"] { font-family: var(--fde-sans); overflow-wrap: anywhere; }
+.stApp [data-testid="stCaptionContainer"],
+[data-testid="stDialog"] [data-testid="stCaptionContainer"] {
+    font-size: 0.84rem;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
 .st-key-overview_task, .st-key-samples_filter_region, .st-key-workbench_filters,
 [class*="st-key-score_task_"], [class*="st-key-score_answer_"], [class*="st-key-score_review_"] { background: var(--fde-surface); border-color: var(--fde-line); }
 .stApp {

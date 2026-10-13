@@ -51,7 +51,7 @@ def overview_facts(base, report):
     )
 
 
-def overview_score_observation(report, model_name):
+def overview_score_observation(report, model_name, *, run_ids=None):
     """Quote saved feedback from the lowest scored readable formal record.
 
     This is a case observation, not a semantic classification or frequency claim.
@@ -61,6 +61,8 @@ def overview_score_observation(report, model_name):
     if scores.empty or "eval_model" not in scores:
         return None
     candidates = scores[scores["eval_model"].astype(str) == str(model_name)].copy()
+    if run_ids is not None:
+        candidates = candidates[candidates["run_id"].astype(str).isin(run_ids)]
     candidates["_score_order"] = pd.to_numeric(candidates.get("total_score"), errors="coerce")
     for field in ("case_id", "run_id"):
         candidates[f"_{field}_order"] = candidates[field].map(cc._text) if field in candidates else ""
@@ -76,6 +78,8 @@ def overview_score_observation(report, model_name):
             source = "维度评分理由"
         if text:
             return _safe(dict(case_id=cc._text(row.get("case_id")), run_id=cc._text(row.get("run_id")),
+                              model=cc._text(row.get("eval_model")),
+                              score_run_id=cc._text(row.get("score_run_id") or row.get("id")),
                               source=source, text=text))
     return None
 
@@ -178,15 +182,19 @@ def render_report_filters(report, fallback):
         return report
     with st.container(key="workbench_filters"):
         columns = st.columns([1, 1.5, 1.5])
+        saved = st.session_state.get("result_filters", {})
+        domains = ["全部", *sorted({str(t.get("domain")) for t in tasks if t.get("domain")})]
+        if st.session_state.get("comparison_domain") not in domains:
+            st.session_state["comparison_domain"] = saved.get("domain", "全部") if saved.get("domain", "全部") in domains else "全部"
         domain = columns[0].selectbox(
             "专业场景",
-            ["全部", *sorted({str(t.get("domain")) for t in tasks if t.get("domain")})],
+            domains,
             format_func=lambda x: display_label(x, DOMAIN_LABELS),
             key="comparison_domain",
         )
         state = st.session_state.get("comparison_models")
         if state is None:
-            st.session_state["comparison_models"] = model_options
+            st.session_state["comparison_models"] = [m for m in saved.get("models", model_options) if m in model_options]
         else:
             st.session_state["comparison_models"] = [m for m in state if m in model_options]
         models = columns[1].multiselect("模型", model_options,
@@ -195,8 +203,14 @@ def render_report_filters(report, fallback):
         available = {str(t["case_id"]): t for t in tasks if domain == "全部" or str(t.get("domain")) == domain}
         options = ["全部", *sorted(available)]
         if st.session_state.get("comparison_task") not in options:
-            st.session_state["comparison_task"] = "全部"
-        case = columns[2].selectbox("专业任务", options, key="comparison_task")
+            st.session_state["comparison_task"] = saved.get("case_id", "全部") if saved.get("case_id", "全部") in options else "全部"
+        from src.ui.review import case_label
+        case = columns[2].selectbox("专业任务", options,
+                                    format_func=lambda c: "全部" if c == "全部" else case_label(available[c], c),
+                                    key="comparison_task")
+        # Widget state is removed when navigating away. Preserve only these
+        # existing filter choices outside the widget lifecycle.
+        st.session_state["result_filters"] = dict(domain=domain, models=list(models), case_id=case)
     return filter_report(report, tasks, domain=domain, models=models, case_id=case)
 
 

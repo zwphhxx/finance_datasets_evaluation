@@ -421,6 +421,10 @@ MOBILE_RESPONSIVE_CSS = r"""
 
 /* Owned container keys isolate the evidence layout from unrelated controls. */
 [class*="st-key-score_detail_"] { min-width: 0; }
+[class*="st-key-score_detail_"] [data-testid="stHorizontalBlock"] {
+    flex-direction: row-reverse;
+    align-items: flex-start;
+}
 [class*="st-key-score_detail_"] [data-testid="stText"] {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -430,12 +434,13 @@ MOBILE_RESPONSIVE_CSS = r"""
 .run-stages { display: flex; gap: 0.6rem; padding: 0; margin: 1rem 0; list-style: none; }
 .run-stages li { flex: 1; border-bottom: 2px solid var(--fde-line); padding: 0.55rem 0; color: var(--fde-muted); font-size: 0.85rem; }
 .run-stages li[aria-current="step"] { color: var(--fde-accent); border-color: var(--fde-accent); font-weight: 650; }
-@media (max-width: 760px) {
+@media (max-width: 860px) {
     [class*="st-key-score_detail_"] [data-testid="stHorizontalBlock"],
     .st-key-workbench_filters [data-testid="stHorizontalBlock"],
     .st-key-review_filters [data-testid="stHorizontalBlock"] { flex-direction: column; gap: 1rem; }
     [class*="st-key-score_detail_"] [data-testid="stColumn"],
-    .st-key-workbench_filters [data-testid="stColumn"] { width: 100% !important; flex: 1 1 100% !important; min-width: 0; }
+    .st-key-workbench_filters [data-testid="stColumn"],
+    .st-key-review_filters [data-testid="stColumn"] { width: 100% !important; flex: 1 1 100% !important; min-width: 0; }
     .run-stages li { font-size: 0.78rem; overflow-wrap: anywhere; }
 }
 """

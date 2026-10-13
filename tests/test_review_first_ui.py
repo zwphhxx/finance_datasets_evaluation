@@ -83,7 +83,7 @@ def test_conclusions_use_responsive_selection_without_duplicate_chart():
     assert 'key="conclusion_desktop_judgment"' not in source
     assert 'key="conclusion_mobile_judgment"' not in source
     assert "def _render_mobile_model_cards(" not in source
-    assert "request_scroll(" not in source
+    assert 'request_scroll("top")' in source  # Public empty state routes to the task library.
     assert 'key="conclusion_model_selector_desktop"' in source
     assert 'key="conclusion_model_selector_mobile"' in source
     assert "open_case_review(" in source

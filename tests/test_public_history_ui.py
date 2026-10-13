@@ -37,7 +37,7 @@ def test_public_empty_state_and_selftest_entry_work_without_api_key(isolated_app
     at = AppTest.from_file("app.py").run(timeout=30)
     assert not at.exception
     visible = " ".join(str(x.value) for x in at.info) + " ".join(str(x.value) for x in at.caption)
-    assert "尚无正式实测结果" in visible
+    assert "暂未发布评测结果" in visible
     at.button(key="manage_samples").click().run(timeout=30)
     at.radio(key="management_section").set_value("评测结果与快照").run(timeout=30)
     assert not at.exception
