@@ -129,7 +129,7 @@ def render_comparison_and_runtime(report, *, include_runtime=True):
                     columns={"model_id": "模型", "common_count": "共同样本数", "avg_total": "共同样本均分"}
                 ),
                 column_config={
-                    "模型": st.column_config.TextColumn(width="medium"),
+                    "模型": st.column_config.TextColumn(),
                     "共同样本数": st.column_config.NumberColumn("共同样本", width="small"),
                     "共同样本均分": st.column_config.NumberColumn("共同均分", width="small", format="%.1f"),
                 },

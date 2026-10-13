@@ -3,6 +3,28 @@
 from streamlit.testing.v1 import AppTest
 
 
+def test_comparison_keeps_full_service_identity_and_content_sized_model_column():
+    import json
+
+    at = AppTest.from_string('''
+from types import SimpleNamespace
+from src.ui.history_view import render_comparison_and_runtime
+report = SimpleNamespace(comparison={
+    'common_count': 13, 'sufficient': True,
+    'models': [{'model_id': 'Qwen/Qwen3.6-35B-A3B | siliconflow | 端点未记录',
+                'common_count': 13, 'avg_total': 84.76923076923077}],
+})
+render_comparison_and_runtime(report, include_runtime=False)
+''').run()
+    assert not at.exception
+    table = at.dataframe[0]
+    assert table.value.iloc[0]['模型'] == 'Qwen3.6-35B-A3B | siliconflow | 端点未记录'
+    assert table.value.iloc[0]['共同样本均分'] == 84.76923076923077
+    config = json.loads(table.proto.columns)
+    assert config['模型'].get('width') is None, 'Fixed widths clip service identities inside the cell'
+    assert config['共同样本均分']['type_config']['format'] == '%.1f'
+
+
 def test_public_empty_state_and_selftest_entry_work_without_api_key(isolated_app_database, monkeypatch):
     monkeypatch.delenv("SILICONFLOW_API_KEY", raising=False)
     from app.models.siliconflow import SiliconFlowProvider

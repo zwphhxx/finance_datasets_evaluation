@@ -256,9 +256,10 @@ MOBILE_RESPONSIVE_CSS = r"""
         min-width: 36rem;
     }
     [data-testid="stDataFrame"] {
+        /* The native grid owns horizontal scrolling; an outer scroll container
+           adds a second bar and can clip the final column in Safari. */
         max-width: 100%;
-        overflow-x: auto;
-        overscroll-behavior-inline: contain;
+        min-width: 0;
     }
     [data-testid="stDialog"] [role="dialog"] {
         box-sizing: border-box;

@@ -260,6 +260,13 @@ class MobileResponsiveUIContracts(unittest.TestCase):
         ]:
             self.assertIn(contract, css)
 
+    def test_native_dataframe_does_not_gain_a_second_horizontal_scroll_owner(self):
+        rules = _declarations_for_selector(self._responsive_css(), '[data-testid="stDataFrame"]')
+        self.assertTrue(rules)
+        for rule in rules:
+            self.assertNotRegex(rule, r"overflow(?:-x)?\s*:\s*(?:auto|scroll)",
+                                "The native grid already owns its scrollbars")
+
     def test_mobile_sample_selector_uses_card_grid_without_forced_width(self):
         css = self._responsive_css()
         mobile_css = css.split(
