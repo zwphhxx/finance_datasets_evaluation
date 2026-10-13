@@ -453,6 +453,15 @@ MOBILE_RESPONSIVE_CSS = r"""
         flex-direction: column;
         gap: 0.75rem;
     }
+    .st-key-preview_stage [data-baseweb="radio"] {
+        flex: 1 1 0;
+        min-width: 0;
+        padding: 0.5rem 0.25rem;
+    }
+    .st-key-preview_stage [data-baseweb="radio"] p {
+        font-size: 0.875rem;
+        overflow-wrap: anywhere;
+    }
     .st-key-portfolio_home_selectors [data-testid="stColumn"] {
         width: 100% !important;
         flex: 1 1 100% !important;
@@ -472,5 +481,11 @@ MOBILE_RESPONSIVE_CSS = r"""
     .st-key-portfolio_featured h3 { font-size: 1.05rem; text-wrap: balance; }
     .st-key-portfolio_nav { padding-bottom: 0.8rem; }
     .st-key-portfolio_case [data-testid="stExpander"] { min-width: 0; }
+}
+@media (max-width: 360px) {
+    .st-key-preview_stage [data-baseweb="radio"] p {
+        /* Keep the two-word stage labels balanced instead of three + one. */
+        max-width: 2em;
+    }
 }
 """

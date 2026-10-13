@@ -112,6 +112,7 @@ def test_responsive_css_reflows_shared_views_and_styles_disabled_primary():
         assert selector not in responsive
     assert ".st-key-samples_mobile_index" not in responsive
     assert ".st-key-samples_desktop_index" not in responsive
-    assert "button[kind=\"primary\"]:disabled" in components
+    # All disabled actions share the state, including primary run buttons.
+    assert "> button:disabled {" in components
     assert ".st-key-test_run_primary_action" in responsive
     assert ".st-key-test_run_score_action" not in responsive

@@ -14,7 +14,7 @@ PROJECT_DISPLAY_NAME = "财务/法律/投行场景大模型对比评测"
 
 STYLE_CSS = """
 <style>
-/* findueval-build: homepage-score-feedback-20261013-v1 */
+/* findueval-build: coordinated-controls-20261013-v1 */
 :root {
     --fde-paper: #F8FAFC;
     --fde-surface: #FFFFFF;
@@ -25,6 +25,7 @@ STYLE_CSS = """
     --fde-line: #E2E8F0;
     --fde-line-strong: #CBD5E1;
     --fde-accent: #2563EB;
+    --fde-accent-hover: #1D4ED8;
     --fde-accent-soft: #EFF6FF;
     --fde-bg: var(--fde-paper);
     --fde-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -35,6 +36,8 @@ STYLE_CSS = """
     --fde-danger-bg: #FEF2F2;
     --fde-danger-text: #991B1B;
     --fde-radius: 8px;
+    --fde-control-radius: 6px;
+    --fde-control-height: 44px;
     --fde-max-width: 1180px;
 }
 .stApp h3 { font-size: 1.18rem; line-height: 1.5; }
@@ -59,6 +62,7 @@ STYLE_CSS = """
 }
 .st-key-portfolio_featured {
     background: var(--fde-surface);
+    border: 1px solid var(--fde-line);
     border-radius: var(--fde-radius);
     padding: 1.5rem;
     margin: 0.5rem 0 1rem;
@@ -767,37 +771,154 @@ header,
     font-size: 0.78rem;
     font-weight: 720;
 }
-.stButton > button {
-    border-radius: var(--fde-radius) !important;
+/* Shared native controls. Theme settings own base colors and table styling;
+   these rules add consistent sizing and states without changing interaction. */
+:is(.stApp, [data-testid="stDialog"]) [data-testid="stWidgetLabel"] p {
+    color: var(--fde-muted);
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1.5;
+}
+:is(.stApp, [data-testid="stDialog"]) :is(
+    [data-baseweb="select"] > div,
+    [data-baseweb="input"],
+    [data-baseweb="textarea"]
+) {
+    border-radius: var(--fde-control-radius);
+    min-height: var(--fde-control-height);
+    transition: border-color 160ms ease;
+}
+:is(.stApp, [data-testid="stDialog"]) :is(
+    [data-baseweb="select"] > div,
+    [data-baseweb="input"],
+    [data-baseweb="textarea"]
+):hover:not(:has(:disabled)):not(:focus-within) {
+    border-color: var(--fde-muted);
+}
+:is(.stApp, [data-testid="stDialog"]) :is(
+    [data-baseweb="select"] > div,
+    [data-baseweb="input"],
+    [data-baseweb="textarea"]
+):focus-within {
+    border-color: var(--fde-accent);
+    outline: 2px solid var(--fde-accent-soft);
+    outline-offset: 1px;
+}
+:is(.stApp, [data-testid="stDialog"]) :is(input, textarea) {
+    font-family: var(--fde-sans);
+    font-variant-numeric: tabular-nums;
+}
+:is(.stApp, [data-testid="stDialog"]) [data-testid="stMultiSelect"] [data-baseweb="tag"] {
+    background: var(--fde-accent-soft);
+    color: var(--fde-accent);
+    border: 1px solid var(--fde-line);
+    border-radius: 4px;
+    height: auto;
+    min-height: 32px;
+    padding: 0.2rem 0.45rem;
+}
+:is(.stApp, [data-testid="stDialog"]) [data-testid="stMultiSelect"] [data-baseweb="tag"] > span[title] {
+    max-width: none;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+}
+/* Dropdown menus are rendered in portals outside .stApp. Keep long model
+   and service names readable without changing their values or selection. */
+[data-baseweb="popover"] [role="listbox"] {
+    border: 1px solid var(--fde-line);
+    border-radius: var(--fde-control-radius);
+}
+[data-baseweb="popover"] [role="option"] {
+    min-height: var(--fde-control-height);
+    padding-top: 0.65rem;
+    padding-bottom: 0.65rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+:is(.stButton, .stDownloadButton, .stFormSubmitButton, [data-testid="stLinkButton"], [data-testid="stPopover"]) > :is(button, a) {
+    border-radius: var(--fde-control-radius) !important;
+    min-height: var(--fde-control-height);
+    padding: 0.5rem 0.9rem;
+    font-family: var(--fde-sans);
     box-shadow: none !important;
-    font-weight: 650 !important;
+    font-weight: 500 !important;
     transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
 }
-.stButton > button[kind="primary"] {
+:is(.stButton, .stDownloadButton, .stFormSubmitButton, [data-testid="stLinkButton"]) > :is(button, a)[kind="primary"] {
     background: var(--fde-accent) !important;
     border: 1px solid var(--fde-accent) !important;
     color: #ffffff !important;
 }
-.stButton > button[kind="primary"]:disabled {
-    background: var(--fde-surface-subtle) !important;
-    border-color: var(--fde-line) !important;
-    color: var(--fde-muted) !important;
-    cursor: not-allowed;
-    opacity: 0.72;
-}
-.stButton > button[kind="secondary"] {
+:is(.stButton, .stDownloadButton, .stFormSubmitButton, [data-testid="stLinkButton"]) > :is(button, a)[kind="secondary"] {
     background: var(--fde-surface) !important;
     border: 1px solid var(--fde-line-strong) !important;
     color: var(--fde-ink) !important;
 }
-.stButton > button[kind="tertiary"] {
+:is(.stButton, .stDownloadButton, .stFormSubmitButton, [data-testid="stLinkButton"]) > :is(button, a)[kind="tertiary"] {
     background: transparent !important;
     border: 1px solid transparent !important;
     color: var(--fde-muted) !important;
 }
-.stButton > button:hover {
-    border-color: var(--fde-line-strong) !important;
-    color: var(--fde-ink) !important;
+:is(.stButton, .stDownloadButton, .stFormSubmitButton, [data-testid="stLinkButton"]) > :is(button, a)[kind="primary"]:hover:not(:disabled) {
+    background: var(--fde-accent-hover) !important;
+    border-color: var(--fde-accent-hover) !important;
+    color: #ffffff !important;
+}
+:is(.stButton, .stDownloadButton, .stFormSubmitButton, [data-testid="stLinkButton"]) > :is(button, a):is([kind="secondary"], [kind="tertiary"]):hover:not(:disabled) {
+    background: var(--fde-accent-soft) !important;
+    border-color: var(--fde-accent) !important;
+    color: var(--fde-accent) !important;
+}
+:is(.stButton, .stDownloadButton, .stFormSubmitButton, [data-testid="stLinkButton"]) > :is(button, a):focus-visible {
+    outline: 2px solid var(--fde-accent);
+    outline-offset: 3px;
+}
+:is(.stButton, .stDownloadButton, .stFormSubmitButton) > button:disabled {
+    background: var(--fde-surface-subtle) !important;
+    border-color: var(--fde-line) !important;
+    color: var(--fde-muted) !important;
+    cursor: not-allowed;
+    opacity: 1;
+}
+:is(.stApp, [data-testid="stDialog"]) [data-testid="stExpander"] details {
+    background: var(--fde-surface);
+    border-color: var(--fde-line);
+    border-radius: var(--fde-control-radius);
+}
+:is(.stApp, [data-testid="stDialog"]) [data-testid="stExpander"] summary {
+    min-height: var(--fde-control-height);
+    padding: 0.65rem 0.9rem;
+    color: var(--fde-ink);
+}
+:is(.stApp, [data-testid="stDialog"]) [data-testid="stExpander"] summary:hover {
+    background: var(--fde-surface-subtle);
+}
+.st-key-preview_stage [role="radiogroup"], .st-key-preview_sample_mode [role="radiogroup"] {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    padding: 0.3rem;
+    border-radius: var(--fde-control-radius);
+    background: var(--fde-surface-subtle);
+}
+.st-key-preview_stage [data-baseweb="radio"], .st-key-preview_sample_mode [data-baseweb="radio"] {
+    flex: 1 1 auto;
+    min-height: var(--fde-control-height);
+    margin: 0;
+    padding: 0.5rem 0.65rem;
+    border: 1px solid transparent;
+    border-radius: var(--fde-control-radius);
+}
+.st-key-preview_stage [data-baseweb="radio"]:has(input:checked), .st-key-preview_sample_mode [data-baseweb="radio"]:has(input:checked) {
+    background: var(--fde-surface);
+    border-color: var(--fde-line);
+    color: var(--fde-accent);
+}
+.st-key-preview_stage [data-baseweb="radio"]:focus-within, .st-key-preview_sample_mode [data-baseweb="radio"]:focus-within {
+    outline: 2px solid var(--fde-accent);
+    outline-offset: 1px;
 }
 [data-testid="stDataFrame"] {
     border: 1px solid var(--fde-line);
