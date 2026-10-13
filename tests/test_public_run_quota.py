@@ -33,6 +33,54 @@ def test_concurrent_visitors_cannot_exceed_shared_daily_limit(tmp_path):
         assert sum(pool.map(reserve, range(12))) == 3
 
 
+def test_quota_does_not_depend_on_rowcount_after_cursor_close(tmp_path):
+    """Emulate psycopg resetting rowcount to -1 when SQLAlchemy closes INSERT cursors."""
+    import sqlite3
+
+    from app.services.public_run_quota import PublicRunLedger
+
+    class ClosingCursor:
+        def __init__(self,cursor):
+            self.cursor=cursor
+            self.closed=False
+
+        def __getattr__(self,name):
+            return getattr(self.cursor,name)
+
+        @property
+        def rowcount(self):
+            return -1 if self.closed else self.cursor.rowcount
+
+        def close(self):
+            self.closed=True
+            self.cursor.close()
+
+    class ClosingConnection:
+        def __init__(self,connection):
+            self.connection=connection
+
+        def __getattr__(self,name):
+            return getattr(self.connection,name)
+
+        def cursor(self,*args,**kwargs):
+            return ClosingCursor(self.connection.cursor(*args,**kwargs))
+
+    engine=create_engine('sqlite://',creator=lambda:ClosingConnection(
+        sqlite3.connect(str(tmp_path/'closing-cursor.db'))))
+    book=PublicRunLedger(engine,daily_tasks=2)
+    job=book.reserve('owner',2)
+    for _ in range(5):
+        book.consume_request(job['job_id'],'owner',pair=('A','model'))
+    with pytest.raises(PermissionError):
+        book.consume_request(job['job_id'],'owner',pair=('A','model'))
+    for _ in range(5):
+        book.consume_request(job['job_id'],'owner',pair=('B','model'))
+    assert book.job(job['job_id'],'owner')['requests']==10
+    with pytest.raises(PermissionError):
+        book.reserve('other',1)
+    engine.dispose()
+
+
 def test_requests_and_retries_consume_hard_job_budget(tmp_path):
     book = ledger(tmp_path)
     job = book.reserve('owner', 2)

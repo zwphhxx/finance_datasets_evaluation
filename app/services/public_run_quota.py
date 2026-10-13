@@ -61,7 +61,10 @@ class PublicRunLedger:
             set_={'tasks': budget.c.tasks + tasks, 'calls': budget.c.calls + calls},
             where=and_(budget.c.tasks + tasks <= self.daily_tasks,
                        budget.c.calls + calls <= self.daily_tasks * 5))
-        if connection.execute(statement).rowcount != 1:
+        # psycopg resets cursor.rowcount on close; INSERT may already be closed
+        # by SQLAlchemy. RETURNING distinguishes accepted writes from the cap
+        # WHERE rejecting an UPSERT, without relying on driver cursor lifetime.
+        if connection.execute(statement.returning(budget.c.day)).scalar_one_or_none() is None:
             raise PermissionError('今日全站评测额度已不足，请减少任务数量或明日再试。')
 
     def reserve(self, owner, tasks):
@@ -101,7 +104,7 @@ class PublicRunLedger:
                 statement=insert(pair_budget).values(job_id=job_id,pair_hash=pair_hash,calls=1)
                 statement=statement.on_conflict_do_update(index_elements=[pair_budget.c.job_id,pair_budget.c.pair_hash],
                     set_={'calls':pair_budget.c.calls+1},where=pair_budget.c.calls<5)
-                if connection.execute(statement).rowcount != 1:
+                if connection.execute(statement.returning(pair_budget.c.calls)).scalar_one_or_none() is None:
                     raise PermissionError('该样本与模型的请求额度已用尽，停止进一步调用。')
             self._consume_day(connection, calls=1)
 
