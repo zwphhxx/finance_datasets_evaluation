@@ -50,6 +50,10 @@ def featured_record(report, case_id):
 
 
 def _return_home():
+    if st.query_params.get("origin") == "evaluation_preview":
+        st.session_state["public_preview_record"] = tuple(st.query_params.get(f, "") for f in ("run", "model", "score", "case"))
+        if st.query_params.get("run"):
+            st.query_params["history"] = st.query_params["run"]
     for field in ROUTE_FIELDS:
         st.query_params.pop(field, None)
     if st.query_params.pop("origin", None) == "evaluation_preview":

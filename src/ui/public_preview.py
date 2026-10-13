@@ -117,6 +117,7 @@ def _go_history():
 
 def _open_record(row):
     run, model, score = _record_identity(row)
+    st.session_state['public_preview_record'] = (run, model, score, str(row['case_id']))
     open_case_review(str(row['case_id']), model, run, score)
     st.query_params['origin'] = 'evaluation_preview'
 
@@ -190,9 +191,13 @@ def _render_history(report, *, results):
         st.caption('单题历史AI评分；评分满分及证据缺失情况请进入对应案例核对，不作模型整体排名。')
         identities = {_record_identity(r)+(str(r['case_id']),):r for r in rows}
         default = next((i for i,k in enumerate(identities) if k[3] == 'FD-001'), 0)
+        saved = st.session_state.get('public_preview_record')
+        if saved in identities:
+            default = list(identities).index(saved)
         identity = st.selectbox('查看评分依据', list(identities),
             format_func=lambda k:k[3]+' · '+display_model_name(k[1],source='live')+' · '+str(identities[k].get('total_score')),
             index=default, key='preview_history_record')
+        st.session_state['public_preview_record'] = identity
         st.button('查看该案例', key='preview_review_record',type='primary',on_click=_open_record,args=(identities[identity],))
     else:
         st.info('该历史运行尚无有效评分记录，可在历史运行中查看失败或未完成状态。')

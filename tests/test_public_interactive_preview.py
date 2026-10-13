@@ -189,3 +189,21 @@ def test_stage_action_buttons_advance_without_session_state_warning(preview_app)
     at.button(key='preview_to_results').click().run()
     assert at.radio(key='preview_stage').value=='查看结果'
     assert not any('Session State API' in e.value for e in at.warning)
+
+
+@pytest.mark.parametrize('direct_link',[False,True])
+def test_return_keeps_the_exact_selected_score_not_the_default_case(preview_app,direct_link):
+    at,_=preview_app
+    identity=('test-r2','model-a','s5','TEST-1') if direct_link else ('test-r1','model-b','s4','TEST-2')
+    if direct_link:
+        at.query_params.update(page='review',case='TEST-1',run='test-r2',model='model-a',score='s5',origin='evaluation_preview')
+        at.run()
+    else:
+        at.query_params.update(page='evaluation_preview',stage='results',history='test-r1')
+        at.run()
+        at.selectbox(key='preview_history_record').set_value(identity).run()
+        at.button(key='preview_review_record').click().run()
+    assert '原始回答 '+identity[2] in visible(at)
+    at.button(key='portfolio_return_home').click().run()
+    assert not at.exception
+    assert at.selectbox(key='preview_history_record').value==identity
