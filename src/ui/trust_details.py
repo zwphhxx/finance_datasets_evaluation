@@ -109,7 +109,7 @@ def _render_check(check, raw_answer, *, summary=False):
                 st.caption(f"{title}：{check[field]}")
 
 
-def _rationale(score, dimensions, *, limit=None):
+def _rationale(score, dimensions, *, limit=None, readable=False):
     rationale = score.get("rationale")
     if not rationale:
         return
@@ -118,15 +118,20 @@ def _rationale(score, dimensions, *, limit=None):
     except (ValueError, TypeError):
         parsed = rationale
     labels = {d.get("field"): d.get("name") for d in dimensions}
+    if readable:
+        # Display aliases only: never infer saved weights or rubric definitions.
+        from app.services.conclusions import DIMENSION_LABELS
+        labels = {**DIMENSION_LABELS, **labels}
     if isinstance(parsed, dict):
         for field, reason in list(parsed.items())[:limit]:
-            text = f"{labels.get(field) or field}：{reason}"
+            text = f"{labels.get(field) or ('评价意见' if readable else field)}：{reason}"
             st.text(text[:180] + ("…" if len(text) > 180 else "") if limit else text)
     else:
-        st.text(str(parsed))
+        text = str(parsed)
+        st.text(text[:180] + ("…" if len(text) > 180 else "") if limit else text)
 
 
-def render_reference_standard(value, *, historical=True):
+def render_reference_standard(value, *, historical=True, summary=False):
     """Readable saved fields; absence never falls back to the current library."""
     from src.ui.samples import parse_gold_answer_for_display
 
@@ -147,15 +152,23 @@ def render_reference_standard(value, *, historical=True):
         ("评审提示", fields["评审提示"]),
         ("评分关注点", fields["本题评分关注点"]),
     ]
-    for label, content in sections:
-        st.markdown(f"**{label}**")
-        if not content or content == "待补充":
-            st.caption("未记录。")
-        elif isinstance(content, list):
-            for index, item in enumerate(content, 1):
-                st.text(f"{index}. {item}")
-        else:
-            st.text(str(content))
+    def render(items):
+        for label, content in items:
+            st.markdown(f"**{label}**")
+            if not content or content == "待补充":
+                st.caption("未记录。")
+            elif isinstance(content, list):
+                for index, item in enumerate(content, 1):
+                    st.text(f"{index}. {item}")
+            else:
+                st.text(str(content))
+    if summary:
+        primary = {"参考判断", "必须覆盖的要点", "不可接受错误"}
+        render([(label, value) for label, value in sections if label in primary])
+        with st.expander("依据与适用边界"):
+            render([(label, value) for label, value in sections if label not in primary])
+    else:
+        render(sections)
 
 
 def _check_priority(check):
@@ -232,7 +245,7 @@ def render_portfolio_evaluation(*, answer, score, dimensions, gold, metadata, hi
         if score.get("review_note"):
             st.text(str(score["review_note"]))
         elif score.get("rationale"):
-            _rationale(score, dimensions, limit=3)
+            _rationale(score, dimensions, limit=3, readable=True)
         elif score:
             st.caption("缺少原始评价意见。")
     with st.expander("查看完整评价依据"):

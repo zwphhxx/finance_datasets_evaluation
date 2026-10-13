@@ -14,7 +14,7 @@ PROJECT_DISPLAY_NAME = "财务/法律/投行场景大模型对比评测"
 
 STYLE_CSS = """
 <style>
-/* findueval-build: public-navigation-20261013-v1 */
+/* findueval-build: reading-order-demo-20261013-v1 */
 :root {
     --fde-paper: #F8FAFC;
     --fde-surface: #FFFFFF;
@@ -89,6 +89,14 @@ STYLE_CSS = """
     border-radius: var(--fde-radius);
     padding: 1.5rem;
     margin: 0.5rem 0 1rem;
+}
+.st-key-portfolio_featured [data-testid="stExpander"] details:has(.st-key-portfolio_home_selectors) {
+    border: 0;
+    background: transparent;
+}
+.st-key-portfolio_featured [data-testid="stExpander"]:has(.st-key-portfolio_home_selectors) summary {
+    padding-left: 0;
+    color: var(--fde-accent);
 }
 .st-key-portfolio_home [data-testid="stText"], .st-key-portfolio_case [data-testid="stText"], .st-key-portfolio_preview [data-testid="stText"] {
     font-size: 1rem;

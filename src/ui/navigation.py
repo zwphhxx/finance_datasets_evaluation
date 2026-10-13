@@ -71,7 +71,7 @@ def _navigate_public(page_key: str) -> None:
     """Preserve each page's reading route without mixing its record selection."""
     current = st.session_state.get("current_page", DEFAULT_PAGE_KEY)
     parent = _public_parent(current)
-    fields = (*ROUTE_FIELDS, "stage", "history")
+    fields = (*ROUTE_FIELDS, "stage", "history", "sample_domain", "sample_case")
     routes = dict(st.session_state.get("public_page_routes", {}))
     if parent in {key for _, key in PUBLIC_NAV_ITEMS}:
         route = {field: st.query_params[field] for field in fields if field in st.query_params}

@@ -40,7 +40,7 @@ def test_home_exposes_product_operations_without_dashboard(preview_app):
     at.button(key='public_nav_evaluation_preview').click().run()
     assert not at.exception
     assert at.query_params['page'] == ['evaluation_preview']
-    assert {'配置评测','历史运行','查看结果'} == set(at.radio(key='preview_stage').options)
+    assert {'配置示例','历史运行','查看结果'} == set(at.radio(key='preview_stage').options)
     assert not [b for b in at.button if b.key=='preview_home']
     at.button(key='public_nav_sample_preview').click().run()
     assert at.query_params['page']==['sample_preview']
@@ -106,7 +106,7 @@ def test_navigation_keeps_evaluation_config_when_visiting_library(preview_app):
     assert at.multiselect(key='preview_models').value==['model-b']
     assert at.multiselect(key='preview_cases').value==['TEST-2']
     assert at.number_input(key='preview_temperature').value==0.4
-    assert at.button(key='preview_real_start').disabled
+    assert not [b for b in at.button if b.key=='preview_real_start']
 
 
 def test_result_detail_navigation_retains_selected_score(preview_app):
@@ -130,11 +130,11 @@ def test_config_plan_changes_without_calling_model_or_saving(preview_app):
     at.multiselect(key='preview_cases').set_value(['TEST-1','TEST-2']).run()
     assert '2个样本 × 2个模型 = 4个回答任务' in visible(at)
     assert all(label.startswith(('TEST-1 · ', 'TEST-2 · ')) for label in at.multiselect(key='preview_cases').options)
-    assert at.button(key='preview_real_start').disabled
+    assert not [b for b in at.button if b.key=='preview_real_start']
     assert '不会发起模型调用' in visible(at)
     at.number_input(key='preview_temperature').set_value(0.3).run()
     at.radio(key='preview_stage').set_value('历史运行').run()
-    at.radio(key='preview_stage').set_value('配置评测').run()
+    at.radio(key='preview_stage').set_value('配置示例').run()
     assert at.multiselect(key='preview_models').value == ['model-a','model-b']
     assert at.number_input(key='preview_temperature').value == 0.3
 
@@ -165,7 +165,8 @@ def test_samples_show_current_standard_without_historical_claim(preview_app):
     assert '当前题库' in visible(at)
 
 
-def test_new_sample_form_preview_has_no_persistence(preview_app):
+def test_new_sample_form_preview_has_no_persistence(preview_app,monkeypatch):
+    monkeypatch.setenv('FINDUEVAL_MODE','admin')
     at,_=preview_app
     at.query_params['page']='sample_preview'
     at.run()

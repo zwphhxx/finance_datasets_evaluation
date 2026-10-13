@@ -11,9 +11,9 @@ def test_public_results_use_plain_copy_and_keep_exact_case_path(review_app,monke
     at,_=review_app
     at.run()
     text=visible(at)
-    for term in ['当前任务设计','历史回答节选','完整评价证据','评测方法']:
+    for term in ['当次任务材料','历史回答节选','完整评价证据','评测方法']:
         assert term in text
-    assert [e.value for e in at.title] == ['评测结果']
+    assert [e.value for e in at.title] == ['专业场景大模型评测']
     assert '管理' not in [b.label for b in at.button]
     at.button(key='portfolio_open_case').click().run()
     assert not at.exception
@@ -37,7 +37,7 @@ render_case_study_page({'base':SimpleNamespace(tasks=pd.DataFrame([{'case_id':st
     assert not at.exception
     text=visible(at)
     assert '2个专业任务' in text
-    assert text.count('**评测方法**') == 1
+    assert text.count('**评测方法与局限**') == 1
     assert '不构成模型整体能力排名' in text
     assert not at.metric and not at.selectbox and not at.dataframe
     assert '运行评测' not in [b.label for b in at.button]
@@ -63,7 +63,7 @@ def test_results_empty_state_has_public_case_entry(review_app,monkeypatch):  # n
     monkeypatch.setattr(workbench,'load_workbench_source',lambda _:workbench.cd.ConclusionSource(True,empty))
     at.run()
     assert '任务设计示例，尚无完整实测记录' in visible(at)
-    assert at.button(key='portfolio_open_case').label == '查看完整案例'
+    assert at.button(key='portfolio_open_case').label == '查看专业任务 →'
 
 
 def test_failed_history_source_still_allows_current_task_reading(review_app,monkeypatch):  # noqa: F811

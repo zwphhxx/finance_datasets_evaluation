@@ -15,14 +15,15 @@ def test_public_home_has_one_reading_path_without_dashboard(review_app):  # noqa
     at, _ = review_app
     at.run()
     assert not at.exception
-    assert '评测结果' in [e.value for e in at.title]
+    assert '专业场景大模型评测' in [e.value for e in at.title]
     assert '2个专业任务' in visible(at)
     assert not at.metric and not at.multiselect and not at.dataframe
     assert [s.label for s in at.selectbox] == ['专业案例', '模型与测试日期']
     assert not [b for b in at.button if str(b.key).startswith('top_nav_')]
-    assert [b.label for b in at.button] == ['评测结果', '评测流程', '样本库', '查看完整案例']
-    assert not at.expander
-    assert '当前任务设计' in visible(at)
+    assert [b.label for b in at.button] == ['评测结果', '评测流程', '样本库', '查看完整案例 →']
+    assert [e.label for e in at.expander] == ['切换案例']
+    assert not at.expander[0].proto.expanded
+    assert '当次任务材料' in visible(at)
     assert '历史回答节选' in visible(at)
     assert '完整评价证据' in visible(at)
 
@@ -57,7 +58,7 @@ def test_legacy_public_result_and_method_links_open_the_portfolio(review_app, pa
     at.run()
     assert not at.exception
     assert at.query_params['page'] == ['conclusions']
-    assert [e.value for e in at.title] == ['评测结果']
+    assert [e.value for e in at.title] == ['专业场景大模型评测']
     assert len(at.selectbox) == 2 and not at.metric
 
 

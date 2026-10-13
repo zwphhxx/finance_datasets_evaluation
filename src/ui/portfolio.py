@@ -146,7 +146,7 @@ def _render_home_selection(report, rows, task_map):
         default_case = "FD-001" if "FD-001" in cases else cases[0]
     if requested or "portfolio_home_case" not in st.session_state or st.session_state.portfolio_home_case not in (*cases, None):
         st.session_state.portfolio_home_case = default_case
-    with st.container(key="portfolio_home_selectors"):
+    with st.expander("切换案例"), st.container(key="portfolio_home_selectors"):
         left, right = st.columns([1, 1], gap="small")
         with left:
             case = st.selectbox("专业案例", cases, index=None, format_func=labels.get,
@@ -171,8 +171,6 @@ def _render_home_selection(report, rows, task_map):
         st.caption("请选择模型与测试日期。")
         return None, None
     st.query_params.update(case=case, run=identity[0], model=identity[1], score=identity[2])
-    # Native selectboxes may truncate long selected labels on a narrow viewport.
-    st.caption(record_labels[identity])
     return case, identities[identity]
 
 
@@ -188,22 +186,20 @@ def render_portfolio_home(data_bundle):
         rows = []
     score = None
     with st.container(key="portfolio_home"):
-        st.title("评测结果")
-        st.markdown("查看财务、法律及投行专业任务中的历史模型回答与AI评分。")
+        st.title("专业场景大模型评测")
+        st.markdown("将财务、法律及投行业务中的专业判断，转化为可检查的模型评价任务。")
         domains = list(dict.fromkeys(display_label(str(t["domain"]), DOMAIN_LABELS).removesuffix("场景")
                                     for t in tasks if t.get("domain")))
         st.caption(f"{len(tasks)}个专业任务 · {'/'.join(domains) or '领域未记录'} · AI自动评分原型")
         render_html('<div id="fde-featured-case"></div>')
         with st.container(key="portfolio_featured"):
-            if rows:
-                st.caption("选择已评分案例和模型，查看对应回答、评分反馈及完整评价依据。")
             if rows or any(st.query_params.get(f) for f in ROUTE_FIELDS):
                 case_id, score = _render_home_selection(report, rows, task_map)
             if case_id is not None:
                 _render_home_excerpt(report, source, task_map, case_id, score, responses)
         render_html('<div id="fde-method"></div>')
-        st.markdown("**评测方法**")
-        st.markdown("项目通过专业任务、参考答案及评价标准，对模型回答进行自动评分和分析。结果仅反映当前样本与测试条件，不构成模型整体能力排名。")
+        st.markdown("**评测方法与局限**")
+        st.markdown("项目以专业任务、参考答案及评价标准检查模型回答。AI自动评分需人工核对；结果仅反映当前样本与测试条件，不构成模型整体能力排名。")
         st.link_button("查看方法与技术说明", REPOSITORY_URL + "#评测边界", type="tertiary")
 
 
@@ -218,8 +214,7 @@ def _render_home_rating(raw_score, dimensions, answer):
     complete = (bool(marks) and bool(values) and set(values) == set(marks)
                 and all(pd.notna(v) for v in [*marks.values(), *values.values(), total])
                 and abs(sum(values.values()) - total) < 1e-6 and total <= sum(marks.values()))
-    st.caption(f"满分 {sum(marks.values()):g} · AI自动评分，需人工核对。" if complete
-               else "历史满分未记录 · AI自动评分，需人工核对。")
+    st.caption(f"满分 {sum(marks.values()):g}。" if complete else "历史满分未记录。")
     saved_checks = [c for c in _array(raw_score, "checks_json") if isinstance(c, dict)]
     checks = [c for c in saved_checks if c.get("status") in {"not_met", "partial"}]
     if checks:
@@ -233,53 +228,63 @@ def _render_home_rating(raw_score, dimensions, answer):
                   and values[field] < mark}
     if deductions:
         st.markdown("**关键扣分理由**")
-        _rationale(dict(score, rationale=deductions), dimensions, limit=3)
+        _rationale(dict(score, rationale=deductions), dimensions, limit=3, readable=True)
         return
-    st.markdown("**原始评分反馈**")
-    st.caption("未保存逐项扣分对应关系；以下为原始评分意见，不推算扣分。" if not complete and not saved_checks
-               else "以下为原始评分意见，不额外推算扣分；未列出问题不代表证据完整。")
+    st.caption("原始评分反馈：未保存逐项扣分对应关系，不推算扣分。" if not complete and not saved_checks
+               else "原始评分反馈；未列出问题不代表证据完整。")
     if score.get("review_note"):
         st.text(_excerpt(score["review_note"], 200))
     if score.get("rationale"):
-        _rationale(score, dimensions, limit=3)
+        _rationale(score, dimensions, limit=2 if score.get("review_note") else 3, readable=True)
     if not score.get("review_note") and not score.get("rationale"):
         st.caption("历史记录未保存评分理由，不能据此判断没有问题。")
 
 
 def _render_home_excerpt(report, source, task_map, case_id, score, responses):
     design = task_map.get(case_id, {})
-    st.subheader("收入增长，但回款是否正常？" if case_id == "FD-001" else
-                 str(_safe(design.get("title") or design.get("scenario") or (f"专业案例 · {case_id}" if case_id else "专业任务"))))
+    task, dimensions, answer = {}, [], ""
     if score is not None:
         answer = _formal_response_for_score(responses, score).get("answer_text") or ""
         task, gold, dimensions = historical_task(report, case_id, str(score["run_id"]))
-        _render_home_rating(score, dimensions, answer)
+    historical_fields = list(_task_fields(task))
+    material = task if historical_fields else design
+    st.subheader(str(_safe(task.get("title") or material.get("title") or material.get("scenario") or
+                          (f"专业案例 · {case_id}" if case_id else "专业任务"))))
+    if score is not None:
         gaps = evidence_gaps(task, gold, score, answer)
         if gaps:
             st.caption("该记录尚不具备完整评价证据：缺少" + "、".join(gaps) + "。" +
-                       ("下方当前任务设计不代表当时输入。" if design else "不使用当前题库补造历史材料。"))
-    if design:
-        st.caption(f"当前任务设计 · {case_id}")
-        fields = list(_task_fields(design))
+                       ("当前任务设计仅用于理解业务场景，不代表当时输入。" if design and not historical_fields else "不补造历史材料。"))
+    if material:
+        st.caption(f"{'当次任务材料' if historical_fields else '当前任务设计'} · {case_id}")
+        fields = list(_task_fields(material))
         background = next((v for label, v in fields if label in {"业务背景", "背景", "材料"}), "")
         question = next((v for label, v in fields if label == "任务"), "")
         if background:
             st.text(_excerpt(background, 145))
         if question:
             st.markdown("**评测目标**")
-            requirement = next((v for label, v in fields if label == "输出要求"), question)
-            st.text(_excerpt(requirement.split("。")[0] + "。", 120))
+            st.text(_excerpt(question, 180))
     if score is not None:
         model = display_model_name(str(score["eval_model"]), source="live")
-        st.markdown(f"**历史回答节选 · {str(_safe(model))}**")
-        st.text(_excerpt(answer, 120))
-        st.button("查看完整案例", key="portfolio_open_case", type="primary", on_click=_open_home_case,
+        st.markdown("**历史回答节选**")
+        case_rows, _ = _review_records(report)
+        metadata = {str(r['run_id']): r for r in report.runtime_tables.get('live_evaluation_runs', [])}
+        labels = _record_labels([r for r in case_rows if str(r['case_id']) == case_id], metadata)
+        st.caption(labels.get(_record_identity(score), str(_safe(model))))
+        if answer:
+            st.text(_excerpt(answer, 360))
+        else:
+            st.caption("历史回答未保存，无法展示回答节选。")
+        st.markdown("**专业评价**")
+        _render_home_rating(score, dimensions, answer)
+        st.button("查看完整案例 →", key="portfolio_open_case", type="primary", on_click=_open_home_case,
                   args=((case_id, *_record_identity(score)),))
     elif case_id:
         st.caption("任务设计示例，尚无完整实测记录。")
         if not source.available:
             st.caption("历史结果暂不可读取，可先查看任务与评价标准。")
-        st.button("查看完整案例", key="portfolio_open_case", type="primary", on_click=open_case_review,
+        st.button("查看专业任务 →", key="portfolio_open_case", type="primary", on_click=open_case_review,
                   args=(case_id, "", ""))
     else:
         st.caption("暂无可读取的专业任务，请稍后查看。")
@@ -317,8 +322,9 @@ def render_portfolio_case(data_bundle):
             st.caption(str(_safe(display_model_name(model, source="live"))) + " · " + str(metadata.get("created_at") or "日期未记录")[:10])
             gaps = evidence_gaps(task, gold, score, answer)
             if gaps:
-                st.caption("该记录尚不具备完整评价证据：缺少" + "、".join(gaps) + "。")
-            _render_task(task, historical=True)
+                st.caption("该记录尚不具备完整评价证据：缺少" + "、".join(gaps) + "。不使用当前题库补造历史材料。")
+            if list(_task_fields(task)):
+                _render_task(task, historical=True)
             related = {}
             for table in ("live_run_queue", "live_score_queue", "request_attempts"):
                 related[table] = [r for r in report.runtime_tables.get(table, [])

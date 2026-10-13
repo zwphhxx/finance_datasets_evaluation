@@ -4,6 +4,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from app.access import management_enabled
 from app.services import dataset_service as ds
 from app.services.comparison import runtime_counts
 from app.services.formal_records import formal_recovery_run_eligible
@@ -18,7 +19,7 @@ from src.ui.samples import PROFESSIONAL_SCENE_OPTIONS, _build_gold_answer_json, 
 from src.ui.scroll import request_scroll
 from src.ui.trust_details import render_reference_standard
 
-STAGES = {'config': '配置评测', 'history': '历史运行', 'results': '查看结果'}
+STAGES = {'config': '配置示例', 'history': '历史运行', 'results': '查看结果'}
 
 
 def _remember_config():
@@ -37,12 +38,12 @@ def _change_stage():
 def render_evaluation_preview(data_bundle):
     base = data_bundle.get('base') or data_bundle['data']
     with st.container(key='portfolio_preview'):
-        st.title('评测流程')
-        st.caption('可配置评测、查看真实历史运行和评分；公开环境不会发起模型调用或保存数据。')
+        st.title('评测流程演示')
+        st.caption('了解专业评测如何配置，并查看已保存的真实历史运行与评分结果。公开只读，不会发起模型调用或保存数据。')
         stage = st.query_params.get('stage', 'config')
         if stage not in STAGES:
             stage = 'config'
-        if 'preview_stage' not in st.session_state:
+        if st.session_state.get('preview_stage') not in STAGES.values():
             st.session_state.preview_stage = STAGES[stage]
         selected = st.radio('评测阶段', list(STAGES.values()), index=None,
                             horizontal=True, label_visibility='collapsed', key='preview_stage', on_change=_change_stage)
@@ -67,16 +68,16 @@ def _render_config(base, report):
     def model_label(model):
         label = display_model_name(model, source='live')
         return label+' · '+model if names.count(label) > 1 else label
-    chosen_models = st.multiselect('被评测模型', models,
+    chosen_models = st.multiselect('示例模型', models,
         default=[m for m in saved.get('models', models[:2]) if m in models], format_func=model_label,
         key='preview_models', on_change=_remember_config)
-    st.caption('模型选项来自正式历史记录；不查询在线服务列表，也不表示当前可调用。')
+    st.caption('模型选项来自已有正式历史测试，仅用于配置示例。')
     chosen_cases = st.multiselect('专业样本', list(cases),
         default=[c for c in saved.get('cases', ['FD-001'] if 'FD-001' in cases else list(cases)[:1]) if c in cases],
         format_func=lambda c: c+' · '+str(cases[c]['title']).split('——',1)[-1], key='preview_cases', on_change=_remember_config)
     if not cases:
         st.caption('当前没有通过既有完整度检查的样本；可在样本库查看任务与标准。')
-    st.caption('此处配置使用当前题库；下面的历史运行使用当时保存的记录，两者不会互相替换。')
+    st.caption('配置示例使用当前题库；修改配置不会生成新回答或重新计算历史评分。')
     with st.expander('生成参数与评分标准'):
         st.number_input('Temperature', min_value=0.0, max_value=2.0, value=float(saved.get('temperature',0.0)),
                         step=0.1, key='preview_temperature', on_change=_remember_config)
@@ -91,9 +92,7 @@ def _render_config(base, report):
     _remember_config()
     plan = build_run_plan_summary(chosen_models, [cases[c] for c in chosen_cases])
     st.markdown(f"**{plan['sample_count']}个样本 × {plan['model_count']}个模型 = {plan['planned_responses']}个回答任务**")
-    st.button('开始真实评测', disabled=True, key='preview_real_start', type='primary')
-    st.caption('真实调用与中断恢复仅在受控管理环境开放；这里不会生成新回答或评分。')
-    st.button('查看真实历史运行', key='preview_to_history', on_click=_go_history)
+    st.button('查看真实历史运行 →', key='preview_to_history', type='primary', on_click=_go_history)
 
 
 def _go_history():
@@ -160,8 +159,7 @@ def _render_history(report, *, results):
     rows = sorted((r for r in records if str(r['run_id']) == selected),
                   key=lambda r: (str(r['case_id']), str(r['eval_model']), _record_identity(r)[2]))
     run = by_run[selected]
-    st.caption('已保存的历史记录，未按上方配置重新运行。服务：'+str(_safe(run.get('provider') or '未记录'))+
-               ' · 端点：'+str(_safe(run.get('service_endpoint') or '未记录')))
+    st.caption('已保存的历史记录，未按配置示例重新运行。')
     if not results:
         tables = {name:[r for r in values if str(r.get('run_id')) == selected] for name,values in report.runtime_tables.items()}
         counts = runtime_counts(tables.get('live_run_queue',[]), tables.get('live_run_responses',[]), tables.get('live_run_scores',[]))
@@ -179,11 +177,11 @@ def _render_history(report, *, results):
         if failures:
             st.warning('该历史运行存在失败记录；失败项不计入评分结果。')
             st.dataframe(_safe(failures),hide_index=True,width='stretch')
-        st.caption('运行状态来自保存的队列与响应；恢复任务不会在公开环境执行。')
-        st.button('查看该批次评分', key='preview_to_results', on_click=_go_results)
+        st.button('查看该批次评分 →', key='preview_to_results', type='primary', on_click=_go_results)
     elif rows:
-        st.dataframe(_safe([{'样本':r['case_id'],'模型':display_model_name(str(r['eval_model']),source='live'),
-                            'AI评分':r.get('total_score')} for r in rows]),hide_index=True,width='stretch')
+        with st.expander('查看该批次全部评分'):
+            st.dataframe(_safe([{'样本':r['case_id'],'模型':display_model_name(str(r['eval_model']),source='live'),
+                                'AI评分':r.get('total_score')} for r in rows]),hide_index=True,width='stretch')
         st.caption('单题历史AI评分；评分满分及证据缺失情况请进入对应案例核对，不作模型整体排名。')
         identities = {_record_identity(r)+(str(r['case_id']),):r for r in rows}
         default = next((i for i,k in enumerate(identities) if k[3] == 'FD-001'), 0)
@@ -213,31 +211,75 @@ def _go_results():
     request_scroll('top')
 
 
+def _sample_domain_changed():
+    domain = st.session_state.get('preview_sample_domain')
+    if domain is not None:
+        st.query_params['sample_domain'] = domain
+    else:
+        st.query_params.pop('sample_domain', None)
+    st.query_params.pop('sample_case', None)
+    st.session_state.pop('preview_sample_case', None)
+
+
+def _sample_case_changed():
+    case = st.session_state.get('preview_sample_case')
+    if case is not None:
+        st.query_params['sample_case'] = case
+    else:
+        st.query_params.pop('sample_case', None)
+
+
 def render_sample_preview(data_bundle):
     base = data_bundle.get('base') or data_bundle['data']
     with st.container(key='portfolio_preview'):
         st.title('样本库')
         st.caption('当前题库的任务与评价标准；不作为旧运行批次的输入或评分依据。')
-        mode = st.radio('样本操作',['浏览样本','新增样本预览'],horizontal=True,key='preview_sample_mode')
-        if mode == '新增样本预览':
-            _render_draft()
-            return
+        if management_enabled():
+            mode = st.radio('样本操作',['浏览样本','新增样本预览'],horizontal=True,key='preview_sample_mode')
+            if mode == '新增样本预览':
+                _render_draft()
+                return
         tasks = _tasks(base)
         domains = list(dict.fromkeys(str(r['domain']) for r in tasks if r.get('domain')))
-        domain = st.selectbox('专业场景',['全部',*domains],format_func=lambda d:display_label(d,DOMAIN_LABELS),key='preview_sample_domain')
+        domain_options = ['全部', *domains]
+        requested = st.query_params.get('sample_domain')
+        if requested is not None:
+            st.session_state.preview_sample_domain = requested if requested in domain_options else None
+            if requested not in domain_options:
+                st.warning('链接中的专业领域不存在，请重新选择。')
+        elif st.session_state.get('preview_sample_domain') not in domain_options:
+            st.session_state.preview_sample_domain = '全部'
+        domain = st.selectbox('专业场景',domain_options,index=None,format_func=lambda d:display_label(d,DOMAIN_LABELS),
+                              key='preview_sample_domain',on_change=_sample_domain_changed)
+        if domain is None:
+            return
         filtered = [r for r in tasks if domain == '全部' or str(r.get('domain')) == domain]
         if not filtered:
-            st.info('暂无匹配的专业任务。可以查看新增样本表单，了解任务设计要求。')
+            st.info('暂无匹配的专业任务，请选择其他专业领域。')
             return
         by_case = {str(r['case_id']):r for r in filtered}
-        case = st.selectbox('专业任务',list(by_case),format_func=lambda c:str(by_case[c].get('title') or by_case[c].get('scenario') or '专业任务')+' · '+c,key='preview_sample_case')
+        requested = st.query_params.get('sample_case')
+        if requested is not None:
+            st.session_state.preview_sample_case = requested if requested in by_case else None
+            if requested not in by_case:
+                st.warning('链接中的专业任务不在当前领域，请重新选择。')
+        elif st.session_state.get('preview_sample_case') not in by_case:
+            st.session_state.preview_sample_case = next(iter(by_case))
+        case = st.selectbox('专业任务',list(by_case),index=None,
+            format_func=lambda c:str(by_case[c].get('title') or by_case[c].get('scenario') or '专业任务')+' · '+c,
+            key='preview_sample_case',on_change=_sample_case_changed)
+        if case is None:
+            return
+        st.query_params.update(sample_domain=domain,sample_case=case)
         st.subheader(str(_safe(by_case[case].get('title') or by_case[case].get('scenario') or '专业任务'))+' · '+case)
         _render_task(by_case[case],historical=False)
-        with st.expander('当前参考答案与评价标准',expanded=True):
-            render_reference_standard((getattr(base,'gold_answer_map',{}) or {}).get(case),historical=False)
+        render_reference_standard((getattr(base,'gold_answer_map',{}) or {}).get(case),historical=False,summary=True)
 
 
 def _render_draft():
+    if not management_enabled():
+        st.info('样本录入仅在受控管理环境开放。')
+        return
     st.caption('填写新增样本并预览结构。内容仅保留在本次会话，不加入正式题库。')
     with st.form('public_sample_preview_form'):
         case = st.text_input('样本编号',key='preview_draft_id')
