@@ -13,4 +13,4 @@
 - [x] Limit public library to browse mode, keep controlled management form code and all reference content behind primary/secondary reading sections.
 - [x] Run full regression, lint, raw-file and read-only runtime-table fingerprint checks: 985 passed, 7 skipped; Ruff and dataset validation passed; original fingerprints unchanged.
 - [x] Inspect actual browser at1440/768/390/320, exercise switch/model/evidence/return/refresh; disclose unsupported true200% zoom and iPhone testing in the delivery report.
-- [ ] Record accurate delivery report; commit/push code using existing authorization and verify actual deployed build. Never publish private data exports/screenshots or modify deployment credentials.
+- [x] Record accurate delivery report; baebe47 pushed and CI passed; rebooted using existing explicit authorization and verified deployed reading-order-demo-20261013-v1 with the exact case/evidence/return path. Private data exports/screenshots and deployment credentials were not published or changed.
