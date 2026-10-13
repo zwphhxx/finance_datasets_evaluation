@@ -7,6 +7,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
+from app.access import management_operation
 from app.services.scorer import score_single
 
 
@@ -49,6 +50,7 @@ def assess(case, outcomes) -> dict:
     }
 
 
+@management_operation
 def run_selftest(provider, judge_model, dimensions, *, max_calls=9, max_tokens=3072) -> dict:
     if max_calls != 9 or getattr(provider, "name", "") in {"mock", "demo"}:
         raise ValueError("裁判自测必须显式授权9次请求并配置真实服务；禁止自动调用。")

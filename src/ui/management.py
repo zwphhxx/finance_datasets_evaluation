@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from app.access import READ_ONLY_MESSAGE, management_enabled
 from app.persistence import (
     PersistenceConfigurationError,
     ResultStoreError,
@@ -22,6 +23,9 @@ from src.ui.samples import render_samples_page
 
 
 def render_management_page(data_bundle: dict) -> None:
+    if not management_enabled():
+        st.info(READ_ONLY_MESSAGE)
+        return
     section = st.radio("数据维护", ["专业样本", "评测结果与快照"], horizontal=True, key="management_section")
     if section == "专业样本":
         render_samples_page(data_bundle)

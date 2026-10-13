@@ -18,11 +18,11 @@ render_comparison_and_runtime(report, include_runtime=False)
 ''').run()
     assert not at.exception
     table = at.dataframe[0]
-    assert table.value.iloc[0]['模型'] == 'Qwen3.6-35B-A3B | siliconflow | 端点未记录'
-    assert table.value.iloc[0]['共同样本均分'] == 84.76923076923077
+    assert table.value.iloc[0]['模型及服务配置'] == 'Qwen3.6-35B-A3B | siliconflow | 端点未记录'
+    assert table.value.iloc[0]['AI平均评分'] == 84.76923076923077
     config = json.loads(table.proto.columns)
-    assert config['模型'].get('width') is None, 'Fixed widths clip service identities inside the cell'
-    assert config['共同样本均分']['type_config']['format'] == '%.1f'
+    assert config['模型及服务配置'].get('width') is None, 'Fixed widths clip service identities inside the cell'
+    assert config['AI平均评分']['type_config']['format'] == '%.1f'
 
 
 def test_public_empty_state_and_selftest_entry_work_without_api_key(isolated_app_database, monkeypatch):

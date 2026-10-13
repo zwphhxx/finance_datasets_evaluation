@@ -9,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from app.access import READ_ONLY_MESSAGE, management_enabled
 from app.services import conclusions as cc
 from app.services.comparison import comparison_for_runs, runtime_counts
 from app.services.conclusion_read_model import build_conclusion_report
@@ -61,6 +62,9 @@ def active_snapshot():
 
 
 def render_history_controls():
+    if not management_enabled():
+        st.info(READ_ONLY_MESSAGE)
+        return
     snapshot = active_snapshot()
     with st.expander("真实历史评测：只读加载与完整快照"):
         st.caption("无需API Key。加载或回放不发起模型调用、不写入数据库。上传文件的真实来源声明未经独立认证。")
@@ -92,6 +96,9 @@ def render_history_controls():
 
 
 def render_snapshot_export(store):
+    if not management_enabled():
+        st.info(READ_ONLY_MESSAGE)
+        return
     if store is None:
         st.caption("数据库不可用；仍可加载完整评测快照。")
         return
@@ -117,17 +124,17 @@ def render_comparison_and_runtime(report, *, include_runtime=True):
     result = report.comparison
     if result:
         st.markdown("**模型对比**")
-        st.caption(f"共同有效任务 {result['common_count']} 条 · 各服务配置分别比较。")
+        st.caption(f"可比任务 {result['common_count']} 条 · 相同任务范围内的AI平均评分。")
         if result["common_count"]:
             display_rows = [dict(row, model_id=" | ".join([display_model_name(str(row["model_id"]).split(" | ")[0], source="live"), *str(row["model_id"]).split(" | ")[1:]])) for row in result["models"]]
             st.dataframe(
                 pd.DataFrame(display_rows).rename(
-                    columns={"model_id": "模型", "common_count": "共同样本数", "avg_total": "共同样本均分"}
+                    columns={"model_id": "模型及服务配置", "common_count": "可比任务", "avg_total": "AI平均评分"}
                 ),
                 column_config={
-                    "模型": st.column_config.TextColumn(),
-                    "共同样本数": st.column_config.NumberColumn("共同样本", width="small"),
-                    "共同样本均分": st.column_config.NumberColumn("共同均分", width="small", format="%.1f"),
+                    "模型及服务配置": st.column_config.TextColumn(),
+                    "可比任务": st.column_config.NumberColumn("可比任务", width="small"),
+                    "AI平均评分": st.column_config.NumberColumn("AI平均评分", width="small", format="%.1f"),
                 },
                 hide_index=True,
                 use_container_width=True,
@@ -138,12 +145,12 @@ def render_comparison_and_runtime(report, *, include_runtime=True):
         render_runtime_details(report)
 
 
-def render_runtime_details(report):
+def render_runtime_details(report, *, compact=False):
     tables = report.runtime_tables
     if not tables:
         return
     counts = runtime_counts(tables.get("live_run_queue", []), tables.get("live_run_responses", []), tables.get("live_run_scores", []))
-    if counts:
+    if counts and not compact:
         st.markdown("**运行覆盖与失败记录**")
         st.caption("以下为当前来源全部运行的状态；上方筛选仅影响质量比较，失败项不参与均分。")
         st.dataframe(pd.DataFrame(counts)[["model_id", "planned", "answer_failed", "judge_failed", "unfinished"]].rename(columns={"model_id":"模型", "planned":"计划任务", "answer_failed":"回答失败", "judge_failed":"评分失败", "unfinished":"未完成"}), hide_index=True, use_container_width=True)
@@ -151,7 +158,15 @@ def render_runtime_details(report):
         if failures:
             with st.expander(f"查看失败原因 · {len(failures)} 条记录"):
                 st.dataframe(_safe(failures), hide_index=True, use_container_width=True)
-    with st.expander("运行覆盖、失败与测试配置"):
+    failures = [{"样本":r.get("case_id"), "模型":r.get("model_name") or r.get("eval_model"), "阶段":stage,
+                 "原因":r.get("error_message") or r.get("error_code") or "失败原因未记录"}
+                for stage,name,field in [("模型回答","live_run_responses","run_status"),("AI评分","live_run_scores","judge_status")]
+                for r in tables.get(name,[]) if r.get(field)=="failed"]
+    if compact and failures:
+        st.warning(f"当前来源有 {len(failures)} 条失败记录，未计入平均分。可展开查看原因。")
+    with st.expander("运行状态与测试条件" if compact else "运行覆盖、失败与测试配置"):
+        if compact and failures:
+            st.dataframe(_safe(failures), hide_index=True, use_container_width=True)
         if report.comparison.get("case_ids"):
             st.caption("共同任务：" + "、".join(report.comparison["case_ids"]))
         st.caption("此处列出所选快照批次或当前数据库全部运行；共同质量比较仅使用兼容版本组。失败记录继续保留。")
@@ -194,6 +209,9 @@ def render_runtime_details(report):
 
 
 def render_judge_selftest(dimensions):
+    if not management_enabled():
+        st.info(READ_ONLY_MESSAGE)
+        return
     with st.expander("裁判模型自测（人工构造数据，独立于正式评测）"):
         from app.models.registry import get_text_provider
         from app.services.judge_selftest import run_selftest
@@ -229,6 +247,9 @@ def render_judge_selftest(dimensions):
 
 
 def render_attempts_and_costs(report):
+    if not management_enabled():
+        st.info(READ_ONLY_MESSAGE)
+        return
     from app.services.formal_records import filter_formal_scores
     from app.services.runtime_metrics import attempt_metrics, cost_summary, expected_attempts
 

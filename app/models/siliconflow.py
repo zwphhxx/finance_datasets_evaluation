@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from app.access import management_operation
 from app.models.base import (
     ERROR_EMPTY_RESPONSE,
     ERROR_INCOMPLETE_RESPONSE,
@@ -186,6 +187,7 @@ class SiliconFlowProvider(ModelProvider):
         return float(DEFAULT_TIMEOUT_SECONDS), "default"
 
     # -- 公共接口 -------------------------------------------------------------
+    @management_operation
     def list_models(self, model_type: str = "text", sub_type: str = "chat") -> ModelListResult:
         if not self.api_key:
             return ModelListResult(
@@ -221,6 +223,7 @@ class SiliconFlowProvider(ModelProvider):
         models = tuple(self._to_model_info(item) for item in body.get("data", []) if isinstance(item, Mapping))
         return ModelListResult(self.name, STATUS_SUCCESS, models=models)
 
+    @management_operation
     def generate_response(
         self,
         model_id: str,
@@ -359,6 +362,7 @@ class SiliconFlowProvider(ModelProvider):
             **common,
         )
 
+    @management_operation
     def check_connectivity(self) -> ConnectivityResult:
         if not self.api_key:
             return ConnectivityResult(self.name, reachable=False, mode="live", message="未配置 API Key。")
@@ -419,6 +423,7 @@ class SiliconFlowProvider(ModelProvider):
         return ("connection_error", "无法连接模型服务，请检查网络或服务地址。")
 
     # -- 底层 HTTP（测试通过 monkeypatch 替换本方法，避免真实外呼） -----------
+    @management_operation
     def _send(
         self,
         method: str,

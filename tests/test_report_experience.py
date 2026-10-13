@@ -851,7 +851,7 @@ def test_conclusions_are_default_and_operation_is_secondary():
     assert DEFAULT_PAGE_KEY == "conclusions"
     assert navigation.PRIMARY_NAV_ITEMS == [
         ("评测结果", "conclusions"),
-        ("案例审阅", "review"),
+        ("案例分析", "review"),
         ("评测方法", "case_study"),
     ]
     assert navigation.OPERATION_NAV_ITEM == ("运行评测", "test_run")

@@ -22,6 +22,7 @@ from typing import Any
 
 import pandas as pd
 
+from app.access import management_operation
 from app.db import DEFAULT_DB_PATH, SCHEMA_PATH
 from app.db.repository import Repository
 from src.data_service import (
@@ -237,6 +238,7 @@ def _seed(repository: Repository, data_dir: Path, version: str) -> dict[str, int
     ]}
 
 
+@management_operation
 def initialize_database(
     db_path: str | Path | None = None,
     data_dir: str | Path | None = None,

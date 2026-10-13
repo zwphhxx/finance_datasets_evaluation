@@ -22,6 +22,8 @@ from typing import Any
 
 import pandas as pd
 
+from app.access import management_enabled, management_operation
+
 REMOVED_FROM_TEST_STATUS = "已移出测试"
 _LEGACY_REMOVED_STATUS = "已" + "归" + "档"
 _LEGACY_PENDING_STATUS = "待" + "复" + "核"
@@ -192,7 +194,8 @@ def load_samples() -> list[Sample]:
     path = _samples_path()
     if not path.exists():
         samples = seed_samples_from_tasks()
-        save_samples(samples)
+        if management_enabled():
+            save_samples(samples)
         return samples
 
     try:
@@ -206,6 +209,7 @@ def load_samples() -> list[Sample]:
     return [Sample.from_dict(item) for item in raw]
 
 
+@management_operation
 def save_samples(samples: list[Sample]) -> None:
     """保存样本列表到 JSON。"""
     path = _samples_path()
@@ -297,6 +301,7 @@ def _existing_ids() -> set[str]:
     return {s.sample_id for s in load_samples()}
 
 
+@management_operation
 def create_sample(values: dict[str, Any], *, db_path: Path | None = None) -> None:
     """新增样本。会校验必填字段与 sample_id 唯一性。"""
     errors = validate_sample(values, existing_ids=_existing_ids())
@@ -314,6 +319,7 @@ def create_sample(values: dict[str, Any], *, db_path: Path | None = None) -> Non
     save_samples(samples)
 
 
+@management_operation
 def update_sample(sample_id: str, changes: dict[str, Any], *, db_path: Path | None = None) -> None:
     """更新样本字段。sample_id 不可修改；updated_at 自动刷新。"""
     if "sample_id" in changes:
@@ -342,6 +348,7 @@ def update_sample(sample_id: str, changes: dict[str, Any], *, db_path: Path | No
     save_samples(samples)
 
 
+@management_operation
 def set_sample_status(sample_id: str, status: str, *, db_path: Path | None = None) -> None:
     """变更样本状态。"""
     status = normalize_sample_status(status)
@@ -350,6 +357,7 @@ def set_sample_status(sample_id: str, status: str, *, db_path: Path | None = Non
     update_sample(sample_id, {"status": status}, db_path=db_path)
 
 
+@management_operation
 def archive_sample(sample_id: str, *, db_path: Path | None = None) -> None:
     """移出测试（软删除）：保留历史记录，但不再进入正式评测。"""
     set_sample_status(sample_id, REMOVED_FROM_TEST_STATUS, db_path=db_path)
@@ -369,6 +377,7 @@ def export_samples_json() -> str:
     )
 
 
+@management_operation
 def import_samples(samples_data: list[dict[str, Any]], *, db_path: Path | None = None) -> list[Sample]:
     """导入样本数组，按 sample_id 合并或新增，并统一校验。
 
@@ -546,6 +555,7 @@ def sample_data_source_status(*, db_path: Path | None = None) -> dict[str, Any]:
     }
 
 
+@management_operation
 def sync_all_samples_to_formal_assets(*, db_path: Path | None = None) -> dict[str, Any]:
     """将 samples.json 管理视图批量同步到 SQLite 正式资产层。
 

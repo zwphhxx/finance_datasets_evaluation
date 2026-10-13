@@ -122,18 +122,15 @@ REPORT_STYLE_CSS = r"""
     margin-top: 0.22rem;
     overflow-wrap: anywhere;
 }
-.st-key-results_scope .report-ledger,
-.st-key-method_scope .report-ledger {
+.st-key-results_scope .report-ledger {
     grid-template-columns: repeat(3, minmax(0, 1fr));
 }
-.st-key-results_scope .report-ledger .report-ledger-item,
-.st-key-method_scope .report-ledger .report-ledger-item {
+.st-key-results_scope .report-ledger .report-ledger-item {
     border-top: 0;
     border-right: 1px solid var(--fde-line);
     padding: 0.85rem;
 }
-.st-key-results_scope .report-ledger .report-ledger-item:last-child,
-.st-key-method_scope .report-ledger .report-ledger-item:last-child {
+.st-key-results_scope .report-ledger .report-ledger-item:last-child {
     border-right: 0;
 }
 [class*="st-key-feedback_"] {

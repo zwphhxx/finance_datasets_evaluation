@@ -15,6 +15,7 @@ from html import escape
 import pandas as pd
 import streamlit as st
 
+from app.access import READ_ONLY_MESSAGE, management_enabled
 from app.services import dataset_service as ds
 from app.services import sample_repository as sr
 from src.gold_quality import field_list, field_text, field_value
@@ -960,6 +961,9 @@ def _render_samples_title_bar(config) -> None:
 
 
 def render_samples_page(data_bundle: dict) -> None:
+    if not management_enabled():
+        st.info(READ_ONLY_MESSAGE)
+        return
     data = data_bundle["data"]
     config = get_page_config("samples")
 

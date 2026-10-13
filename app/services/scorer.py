@@ -27,6 +27,7 @@ from typing import Any, Callable, Collection, Mapping, Sequence
 
 import pandas as pd
 
+from app.access import management_operation
 from app.models.base import STATUS_FAILED, STATUS_MOCK, STATUS_SUCCESS, ModelProvider
 from app.services import formal_records as formal
 from app.services import model_display as md
@@ -294,6 +295,7 @@ def parse_judge_output(text: str, dimensions: Sequence[Mapping[str, Any]]) -> _J
     return _JudgeParse(True, scores, total, rationale, review_note)
 
 
+@management_operation
 def score_single(
     provider: ModelProvider,
     judge_model_id: str,
@@ -414,6 +416,7 @@ def _with_retry_count(message: str | None, retry_count: int) -> str:
     return f"{text} {suffix}"
 
 
+@management_operation
 def score_compare(
     provider: ModelProvider,
     compare_result,
@@ -459,6 +462,7 @@ def score_compare(
     )
 
 
+@management_operation
 def persist_score_result(result: ScoreResult, db_path: Path | None = None) -> bool:
     """尽力将评分结果写入 SQLite live_run_scores；数据库不可用时静默跳过，返回是否成功。
 
@@ -491,6 +495,7 @@ def persist_score_result(result: ScoreResult, db_path: Path | None = None) -> bo
     return all(persisted)
 
 
+@management_operation
 def persist_score_outcome(
     score_run_id: str,
     run_id: str,
@@ -539,6 +544,7 @@ def persist_score_outcome(
         return False
 
 
+@management_operation
 def initialize_score_queue(
     score_run_id: str,
     run_id: str,
@@ -587,6 +593,7 @@ def initialize_score_queue(
         return False
 
 
+@management_operation
 def mark_score_queue_item_running(
     score_run_id: str,
     case_id: str,
@@ -944,6 +951,7 @@ def validate_score_import_rows(rows: Sequence[Mapping[str, Any]]) -> dict[str, A
     return {"ok": bool(normalized_rows) and not errors, "rows": normalized_rows, "errors": errors}
 
 
+@management_operation
 def import_score_rows(
     rows: Sequence[Mapping[str, Any]],
     *,

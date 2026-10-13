@@ -184,12 +184,15 @@ def render_score_detail(*, task, answer, score, dimensions, key):
         if check.get("kind") == "forbidden" and check.get("status") == "not_met":
             return 0
         return {"not_met": 1, "partial": 2, "unknown": 3, "met": 4}.get(check.get("status"), 3)
-    summary_checks = sorted(checks, key=priority)[:3]
+    ordered = sorted(checks, key=priority)
+    critical_count = sum(priority(c) == 0 for c in ordered)
+    # A recorded unacceptable error must never disappear behind the summary cap.
+    summary_checks = ordered[:max(3, critical_count)]
     with st.container(key=f"score_detail_{key}"):
         right, left = st.columns([2, 3], gap="large")
         with right:
             with st.container(key=f"score_review_{key}"):
-                st.markdown("**评分摘要**")
+                st.markdown("**评价结果**")
                 total = score.get("total_score")
                 st.metric("AI评分", "—" if total is None else str(total))
                 known_marks = [d.get("full_mark") for d in dimensions]
@@ -234,7 +237,7 @@ def render_score_detail(*, task, answer, score, dimensions, key):
             st.dataframe(rows, hide_index=True, use_container_width=True)
         else:
             st.caption("没有可读取的维度分数。")
-    with st.expander(f"全部评价点 · {len(checks)} 项"):
+    with st.expander(f"全部检查要点 · {len(checks)} 项"):
         if not checks:
             st.caption("历史记录未保存结构化要点评价与回答引文。")
         for check in checks:
@@ -245,7 +248,7 @@ def render_score_detail(*, task, answer, score, dimensions, key):
             st.text(str(score["review_note"]))
         if not score.get("rationale") and not score.get("review_note"):
             st.caption("历史记录未保存评分理由。")
-    with st.expander("详细技术信息与原始评分响应"):
+    with st.expander("原始技术记录"):
         render_score_evidence(raw_score, raw_answer, inline=True)
         st.json(score, expanded=False)
 

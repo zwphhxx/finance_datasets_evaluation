@@ -106,7 +106,7 @@ class TopNavTests(unittest.TestCase):
     def test_navigation_labels_are_grouped_by_review_and_operation(self):
         """Review destinations stay separate from the secondary operation entry."""
         labels = [label for label, _ in PRIMARY_NAV_ITEMS]
-        expected = ["评测结果", "案例审阅", "评测方法"]
+        expected = ["评测结果", "案例分析", "评测方法"]
         self.assertEqual(labels, expected)
         self.assertEqual(("运行评测", "test_run"), OPERATION_NAV_ITEM)
         self.assertNotIn("评分" + "确认", labels)

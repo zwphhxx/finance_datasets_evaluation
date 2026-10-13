@@ -15,7 +15,7 @@ class CaseStudyPresentationTests(unittest.TestCase):
 
     def test_case_study_source_keeps_three_main_sections(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
-        for section in ("项目定位", "评测流程", "数据边界"):
+        for section in ("专业样本设计", "模型评测流程", "方法局限"):
             self.assertIn(section, source)
         self.assertNotIn("04\", \"进入操作", source)
 
@@ -23,8 +23,8 @@ class CaseStudyPresentationTests(unittest.TestCase):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         self.assertIn("render_report_masthead(", source)
         self.assertIn("评测方法", source)
-        self.assertIn("专业任务中的回答质量", source)
-        self.assertIn("识别模型的主要问题和使用边界", source)
+        self.assertIn("具体场景中的回答质量", source)
+        self.assertIn("结果的使用边界", source)
         self.assertNotIn("subtitle=", source)
         self.assertNotIn("overview_facts(base, report)", source)
         self.assertNotIn("_build_home_stats", source)
@@ -34,10 +34,10 @@ class CaseStudyPresentationTests(unittest.TestCase):
     def test_case_study_reads_as_professional_brief(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         self.assertNotIn("本项目不判断哪个模型最好", source)
-        self.assertIn("本项目评估大模型在财务、法律、投行等专业任务中的回答质量", source)
-        self.assertIn("财务核查、法律合规、投行尽调", source)
-        self.assertIn("当前样本库包含 13 条人工整理的专业任务样本及专业标准答案", source)
-        self.assertIn("主要问题", source)
+        self.assertIn("项目结合财务、法律及投行业务经验", source)
+        self.assertIn("参考判断、关键评价要点和不可接受错误", source)
+        self.assertIn("当前样本库包含 13 条专业任务", source)
+        self.assertIn("判断偏差", source)
         self.assertIn("使用边界", source)
         self.assertIn("被测模型只看到任务题、业务背景和输出要求", source)
         self.assertIn("被测模型不会看到专业标准答案、必须覆盖点、不可接受错误或评分标准", source)
@@ -52,15 +52,15 @@ class CaseStudyPresentationTests(unittest.TestCase):
         self.assertIn("CASE_STUDY_SECTIONS", source)
         self.assertIn("report_section_html", source)
         for number, title, lead in [
-            ("01", "项目定位", "评估模型在财务、法律、投行场景中的回答质量。"),
-            ("02", "评测流程", "从专业样本到 AI 评分后的评测结论。"),
-            ("03", "数据边界", "结论只代表当前样本范围，不做脱离样本的泛化排名。"),
+            ("01", "专业样本设计", ""),
+            ("02", "模型评测流程", ""),
+            ("03", "方法局限", ""),
         ]:
             self.assertIn(f'"number": "{number}"', source)
             self.assertIn(f'"title": "{title}"', source)
             self.assertIn(f'"lead": "{lead}"', source)
         self.assertNotIn("render_numbered_section", source)
-        self.assertIn("研究局限", source)
+        self.assertIn("方法局限", source)
 
     def test_case_study_keeps_process_line_only_in_flow_section(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
@@ -69,10 +69,10 @@ class CaseStudyPresentationTests(unittest.TestCase):
         self.assertNotIn("render_process_line(PROCESS_STEPS)", source)
         self.assertEqual(1, source.count("_process_steps_html(PROCESS_STEPS)"))
         self.assertIn(
-            'PROCESS_STEPS = ["人工录入样本库", "开始评测", "模型回答与 AI 评分", "进入评测结果"]',
+            'PROCESS_STEPS = ["专业任务", "模型回答", "AI评分", "结果分析"]',
             source,
         )
-        self.assertIn('"title": "评测流程"', source)
+        self.assertIn('"title": "模型评测流程"', source)
 
     def test_brief_and_section_title_styles_follow_report_system(self):
         css = Path("src/ui/report_styles.py").read_text(encoding="utf-8")

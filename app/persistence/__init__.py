@@ -7,6 +7,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Iterator
 
+from app.access import management_enabled
+
 from .config import (
     PersistenceConfigurationError,
     ResultStoreSettings,
@@ -44,9 +46,10 @@ def current_result_store_failure() -> ResultStoreUnavailableError | None:
 
 
 @lru_cache(maxsize=8)
-def _store_for_url(url: str) -> ResultStore:
+def _store_for_url(url: str, management: bool = False) -> ResultStore:
     store = ResultStore(url)
-    store.ensure_schema()
+    if management:
+        store.ensure_schema()
     return store
 
 
@@ -70,7 +73,7 @@ def get_result_store(
             secrets = None
     settings = resolve_result_store_settings(db_path, secrets=secrets)
     try:
-        return _store_for_url(settings.url)
+        return _store_for_url(settings.url, management_enabled())
     except ResultStoreUnavailableError:
         raise
     except Exception as exc:

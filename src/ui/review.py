@@ -107,12 +107,11 @@ def render_review_page(data_bundle: dict) -> None:
     from src.ui.workbench import load_workbench_source
 
     base = data_bundle.get("base") or data_bundle["data"]
-    render_report_masthead("案例审阅", "选择案例和模型记录，核对回答与评分依据。")
+    render_report_masthead("案例分析", "从任务、模型回答到评价依据，查看一次专业判断的形成与局限。")
     source = load_workbench_source(base)
     if not source.available:
         st.warning(source.message)
-        return
-    report = source.report
+    report = source.report if source.available else None
     rows, responses = _review_records(report)
     tasks = getattr(base, "tasks", pd.DataFrame())
     current_tasks = {str(t["case_id"]): t for t in tasks.to_dict("records")} if isinstance(tasks, pd.DataFrame) else {}
@@ -184,9 +183,9 @@ def render_review_page(data_bundle: dict) -> None:
     task, gold, dimensions = historical_task(report, case_id, selected[0])
     response = _formal_response_for_score(responses, score)
     render_score_detail(task=task, answer=response.get("answer_text") or "", score=score, dimensions=dimensions, key="review")
-    with st.expander("专业参考标准 · 运行时记录"):
+    with st.expander("参考答案与评价标准"):
         render_reference_standard(gold)
-    with st.expander("运行与评分记录信息"):
+    with st.expander("技术与溯源信息"):
         st.json(_safe(dict(run=metadata.get(selected[0], {}), case_id=case_id,
                            model=selected[1], score_run_id=selected[2], reference_standard=gold)), expanded=False)
     if st.button("打开完整记录", key="review_full_record", type="tertiary"):

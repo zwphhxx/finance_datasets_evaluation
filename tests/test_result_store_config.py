@@ -146,7 +146,7 @@ def test_mock_provider_can_use_sqlite_without_opt_in(tmp_path: Path):
 def test_store_failure_is_memoized_inside_request_scope(monkeypatch):
     attempts = 0
 
-    def fail(_url):
+    def fail(_url, _management):
         nonlocal attempts
         attempts += 1
         raise RuntimeError("database unavailable")
@@ -165,7 +165,7 @@ def test_store_failure_is_memoized_inside_request_scope(monkeypatch):
 def test_new_request_scope_retries_after_previous_store_failure(monkeypatch):
     attempts = 0
 
-    def fail(_url):
+    def fail(_url, _management):
         nonlocal attempts
         attempts += 1
         raise RuntimeError("database unavailable")
@@ -183,7 +183,7 @@ def test_new_request_scope_retries_after_previous_store_failure(monkeypatch):
 def test_request_scope_exposes_current_failure_without_retrying(monkeypatch):
     attempts = 0
 
-    def fail(_url):
+    def fail(_url, _management):
         nonlocal attempts
         attempts += 1
         raise RuntimeError("database unavailable")

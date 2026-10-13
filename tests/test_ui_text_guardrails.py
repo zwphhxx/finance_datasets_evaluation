@@ -18,7 +18,7 @@ PROJECT_NAME = "财务/法律/投行场景大模型对比评测"
 MAIN_PAGE_KEYS = ["conclusions", "review", "case_study", "samples", "test_run"]
 PAGE_CONFIG_KEYS = ["review", "conclusions", "case_study", "samples", "test_run"]
 MAIN_NAV_PAGE_KEYS = ["conclusions", "review", "case_study"]
-MAIN_NAV_LABELS = ["评测结果", "案例审阅", "评测方法"]
+MAIN_NAV_LABELS = ["评测结果", "案例分析", "评测方法"]
 VISIBLE_UI_FILES = [
     Path("src/ui/case_study.py"),
     Path("src/ui/samples.py"),
@@ -477,9 +477,9 @@ class ReadmeCurrentFlowTests(unittest.TestCase):
         self.assertIn(f"# {PROJECT_NAME}", text)
         self.assertIn("## 主流程", text)
         for line in [
-            "1. **样本库**",
-            "2. **发起评测**",
-            "3. **评测结论**",
+            "1. **评测结果**",
+            "2. **案例分析**",
+            "3. **评测方法**",
         ]:
             self.assertIn(line, text)
 

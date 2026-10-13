@@ -162,7 +162,7 @@ from src.ui.conclusions import render_conclusions_page
 render_conclusions_page({'base':SimpleNamespace(tasks=pd.DataFrame([{'case_id':'x','domain':'finance'}]))})
 """).run()
     assert not at.exception
-    assert "比较模型 / 配置</dt><dd>—" in " ".join(m.value for m in at.markdown)
+    assert "本次比较对象</dt><dd>—" in " ".join(m.value for m in at.markdown)
     assert not any("尚无正式实测结果" in i.value for i in at.info)
 
 

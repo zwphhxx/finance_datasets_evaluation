@@ -60,7 +60,7 @@ def test_homepage_shows_saved_lowest_feedback_not_first_positive_note(monkeypatc
     assert "TEST-1" in text
     assert "遗漏了合同履行条件，结论过于绝对" in text
     assert "当前样本内未见突出问题" not in text
-    assert any("未保存结构化引文" in c.value for c in app.caption)
+    assert any("不代表模型整体表现" in c.value for c in app.caption)
     assert any("单题反馈" in c.value for c in app.caption)
 
 

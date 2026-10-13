@@ -11,52 +11,34 @@ from src.ui.report_components import (
     report_section_html,
 )
 
-BRIEF_NOTE = (
-    "本项目评估大模型在财务、法律、投行等专业任务中的回答质量，"
-    "并在当前样本范围内识别模型的主要问题和使用边界。"
-)
-DEFAULT_SAMPLE_SCOPE_TEXT = (
-    "样本来自财务场景、法律场景和投行场景，"
-    "不包含真实公司、真实交易或敏感数据。"
-)
+BRIEF_NOTE = "样本怎样建立、模型怎样评价，以及结果的使用边界。"
+DEFAULT_SAMPLE_SCOPE_TEXT = "样本来自财务场景、法律场景和投行场景，不包含真实公司、真实交易或敏感数据。"
 _SAMPLE_SCOPE_TOKEN = "{sample_scope}"
 
 CASE_STUDY_SECTIONS = (
     {
-        "number": "01",
-        "anchor": "fde-project-positioning",
-        "title": "项目定位",
-        "lead": "评估模型在财务、法律、投行场景中的回答质量。",
+        "number": "01", "anchor": "fde-project-positioning", "title": "专业样本设计", "lead": "",
         "body": (
-            "本项目围绕财务核查、法律合规、投行尽调等专业任务，评估大模型回答是否具备业务参考价值。评测重点不是通用问答能力，而是模型在具体专业场景中的结论准确性、依据充分性、推理完整性、风险识别和专业表达。",
-            "当前样本库包含 13 条人工整理的专业任务样本及专业标准答案，覆盖财务场景、法律场景和投行场景。评测时，将不同模型的回答与专业标准答案、必须覆盖点、不可接受错误和评分标准进行对照，用于观察模型在当前样本范围内的质量差异。",
+            "项目结合财务、法律及投行业务经验，将典型任务整理为结构化专业样本，设置参考判断、关键评价要点和不可接受错误，用于检查具体场景中的回答质量。",
+            "当前样本库包含 13 条专业任务。" + _SAMPLE_SCOPE_TOKEN,
         ),
     },
     {
-        "number": "02",
-        "anchor": "fde-evaluation-method",
-        "title": "评测流程",
-        "lead": "从专业样本到 AI 评分后的评测结论。",
+        "number": "02", "anchor": "fde-evaluation-method", "title": "模型评测流程", "lead": "",
         "body": (
-            "评测流程从人工整理的专业样本开始，到模型回答、AI 评分和评测结论形成闭环。",
-            "样本库包括任务题、业务背景、专业标准答案、必须覆盖点、不可接受错误和评分标准。发起评测时，被测模型只看到任务题、业务背景和输出要求，不会看到专业标准答案或评分标准。模型生成回答后，AI 评分链路根据专业标准答案和评分标准生成维度分、评分依据和评分说明。",
-            "评测结论只汇总成功 AI 评分，用于展示当前样本下不同模型的质量表现、主要问题和使用边界。",
+            "被测模型只看到任务题、业务背景和输出要求。评分模型结合模型回答、专业标准答案和评分标准，形成各维度评分及评分说明。被测模型不会看到专业标准答案、必须覆盖点、不可接受错误或评分标准。",
         ),
     },
     {
-        "number": "03",
-        "anchor": "fde-data-boundary",
-        "title": "数据边界",
-        "lead": "结论只代表当前样本范围，不做脱离样本的泛化排名。",
+        "number": "03", "anchor": "fde-data-boundary", "title": "方法局限", "lead": "",
         "body": (
-            _SAMPLE_SCOPE_TOKEN + "当前结论只反映成功 AI 评分覆盖的样本范围，不代表模型在全部财务、法律或投行业务中的稳定表现。",
-            "被测模型不会看到专业标准答案、必须覆盖点、不可接受错误或评分标准。上述材料仅用于 AI 评分。",
-            "评测结论由真实运行结果和 AI 评分共同形成。失败评分、演示数据或示例评价均不进入评测结论。",
+            "专业样本数量有限，AI自动评分可能存在判断偏差。结果仅用于观察当前样本范围和特定测试条件下的模型表现，不代表模型整体能力，也不构成商业采购建议。",
+            "比较使用兼容版本的共同有效任务；失败评分、演示数据或示例评价均不进入评测结论。历史材料与证据缺失会明确提示，引文匹配仅核对原文是否存在，不能代替专业判断。",
         ),
     },
 )
 
-PROCESS_STEPS = ["人工录入样本库", "开始评测", "模型回答与 AI 评分", "进入评测结果"]
+PROCESS_STEPS = ["专业任务", "模型回答", "AI评分", "结果分析"]
 
 
 def professional_copy_snapshot() -> str:
@@ -135,10 +117,6 @@ def _section_body_html(section: dict, base) -> str:
     scope = _build_sample_scope_text(base)
     sample_count = len(getattr(base, "tasks", ())) if getattr(base, "tasks", ()) is not None else 0
     body = section["body"]
-    if section["number"] == "02":
-        body = body[1:2]
-    elif section["number"] == "03":
-        body = (body[0], body[2])
     paragraphs = "".join(
         "<p>" + escape(str(paragraph).replace(_SAMPLE_SCOPE_TOKEN, scope).replace("当前样本库包含 13 条", f"当前样本库包含 {sample_count} 条")) + "</p>"
         for paragraph in body
@@ -152,16 +130,9 @@ def render_case_study_page(data_bundle: dict) -> None:
     import streamlit as st
 
     base = data_bundle.get("base") or data_bundle["data"]
-    from src.ui.report_components import render_scope_ledger
-
     render_report_masthead("评测方法", BRIEF_NOTE)
-    with st.container(key="method_scope"):
-        render_scope_ledger(build_home_facts(base))
-    st.caption("以上为当前题库与评分配置；历史评测以运行时保存的材料和标准为准。")
     for section in CASE_STUDY_SECTIONS:
         render_html(report_section_html("", "", str(section["title"]),
                                        _section_body_html(section, base), anchor_id=str(section["anchor"])))
-    st.subheader("研究局限")
-    st.text("人工样本数量有限；自动裁判可能存在判断偏差。比较只使用相同版本的共同有效任务，不外推模型整体能力。")
-    st.text("历史任务、专业标准或引文未保存时明确标记缺失；引文匹配只能证明引用存在，不能代替专业判断。")
-    st.markdown("[GitHub 源码与复现说明](https://github.com/zwphhxx/finance_datasets_evaluation)")
+    st.caption("当前题库与历史运行分别保留；案例中的参考标准以历史记录为准。")
+    st.markdown("[GitHub 源码与进一步阅读](https://github.com/zwphhxx/finance_datasets_evaluation)")

@@ -73,19 +73,19 @@ def test_result_statistics_follow_filters_and_exclude_library_total(review_app):
     at, _ = review_app
     at.run()
     text = visible(at)
-    assert '共同有效任务</dt><dd>1' in text
-    assert '有效评分记录</dt><dd>5' in text
+    assert '可比任务</dt><dd>1' in text
+    assert '有效AI评分记录</dt><dd>5' in text
     assert '题库总量' not in text
     at.selectbox(key='comparison_task').set_value('TEST-2').run()
     text = visible(at)
-    assert '有效评分记录</dt><dd>2' in text
+    assert '有效AI评分记录</dt><dd>2' in text
     assert '当前筛选' in text
 
 
 def test_each_feedback_targets_exact_run_model_case_and_score(review_app):
     at, _ = review_app
     at.run()
-    assert '低分案例反馈' in visible(at)
+    assert '低分案例与评价依据' in visible(at)
     links = [b for b in at.button if b.label == '查看该案例']
     assert len(links) == 3  # model-a at two endpoints, model-b at one endpoint
     for button in links:
@@ -164,7 +164,7 @@ render_score_detail(task={{'title':'案例','task':'任务','business_background
     assert at.metric[0].label == 'AI评分'
     assert any('重大专业错误' in w.value for w in at.warning)
     assert any('引用不在' in w.value for w in at.warning)
-    assert any('全部评价点' in e.label for e in at.expander)
+    assert any('全部检查要点' in e.label for e in at.expander)
     assert all(not e.proto.expanded for e in at.expander)
     assert '完整评分理由' in visible(at)
 
@@ -176,7 +176,7 @@ def test_result_filter_survives_review_round_trip(review_app):
     at.button(key='results_review_case').click().run()
     at.button(key='top_nav_conclusions').click().run()
     assert at.selectbox(key='comparison_task').value == 'TEST-2'
-    assert '有效评分记录</dt><dd>2' in visible(at)
+    assert '有效AI评分记录</dt><dd>2' in visible(at)
 
 
 def test_very_long_answer_retained_in_normal_expander():

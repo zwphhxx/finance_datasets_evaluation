@@ -15,6 +15,7 @@ from hashlib import sha256
 import pandas as pd
 import streamlit as st
 
+from app.access import READ_ONLY_MESSAGE, management_enabled
 from app.services import scorer as sc
 from app.services.conclusion_read_model import ConclusionReport
 from app.services.evidence_index import EvidenceItem
@@ -59,23 +60,19 @@ def render_conclusions_page(data_bundle: dict) -> None:
     from src.ui.workbench import load_workbench_source, overview_facts
 
     base = data_bundle.get("base") or data_bundle["data"]
-    render_report_masthead("评测结果", "财务 / 法律 / 投行场景大模型对比评测。查看共同任务中的结果，再核对具体案例。")
+    render_report_masthead("专业场景大模型评测", "通过财务、法律及投行专业任务，观察大模型在事实提取、逻辑推理、风险识别和专业表达方面的表现。")
     source = load_workbench_source(base)
     full_report = source.report
     readonly = bool(st.session_state.get("readonly_evaluation_snapshot"))
     if not source.available:
         with st.container(key="results_scope"):
-            render_scope_ledger([("比较模型 / 配置", "—"), ("共同有效任务", "—"), ("有效评分记录", "—")])
+            render_scope_ledger([("本次比较对象", "—"), ("可比任务", "—"), ("有效AI评分记录", "—")])
         render_persistence_status(source.message)
+        _render_public_case_entry()
         return
     if full_report is None or not full_report.scope.formal_score_count:
-        st.info("暂未发布评测结果。可以先查看专业任务与评价标准。")
-        if st.button("查看任务", key="results_view_tasks", type="primary"):
-            st.query_params["page"] = "review"
-            for field in ("case", "model", "run", "score"):
-                st.query_params.pop(field, None)
-            request_scroll("top")
-            st.rerun()
+        st.info("暂未发布评测结果。可以先查看专业任务与评价标准，了解本项目的评测方法。")
+        _render_public_case_entry()
         return
     tasks = getattr(base, "tasks", pd.DataFrame())
     records = tasks.to_dict("records") if isinstance(tasks, pd.DataFrame) else []
@@ -83,24 +80,33 @@ def render_conclusions_page(data_bundle: dict) -> None:
         report = render_report_filters(full_report, records)
     with st.container(key="results_scope"):
         render_scope_ledger([
-            ("比较模型 / 配置", str(len(report.comparison.get("models", [])))),
-            ("共同有效任务", str(report.comparison.get("common_count", 0))),
-            ("有效评分记录", str(report.scope.formal_score_count)),
+            ("本次比较对象", str(len(report.comparison.get("models", [])))),
+            ("可比任务", str(report.comparison.get("common_count", 0))),
+            ("有效AI评分记录", str(report.scope.formal_score_count)),
         ])
     facts = overview_facts(base, full_report)
-    st.caption("范围：当前筛选；模型与服务配置分别比较。有效评分记录包含各自任务，均分仅使用共同有效任务。")
-    st.caption("最近运行（当前来源）：" + str(facts["latest"] or "时间未记录")
-               + " · 来源：" + ("只读历史快照（来源声明未经独立认证）" if readonly else "已保存的实测记录"))
+    st.caption("当前筛选范围；不同服务配置分别比较。评分记录包含各自任务，平均分只使用共同有效任务。")
+    st.caption("最近测试：" + str(facts["latest"] or "时间未记录")
+               + " · " + ("只读历史快照（来源声明未经独立认证）" if readonly else "已保存的实测记录"))
     if not report.scope.formal_score_count:
-        st.info("当前筛选没有有效评分记录。请调整筛选条件。")
+        st.info("当前筛选没有有效AI评分记录，请调整条件。")
     render_comparison_and_runtime(report, include_runtime=False)
     if report.scope.formal_score_count:
-        st.subheader("低分案例反馈")
+        st.subheader("低分案例与评价依据")
         render_saved_observations(report)
         with st.expander("维度比较与使用边界"):
             render_common_dimensions(report, historical_dimensions(report))
-            st.caption("小样本差异仅供观察，不代表模型整体能力。失败记录不参与均分。")
-    render_runtime_details(report)
+            st.caption("小样本差异仅供观察；失败记录不参与平均分。")
+    render_runtime_details(report, compact=True)
+
+
+def _render_public_case_entry():
+    if st.button("查看专业案例", key="results_view_tasks", type="primary"):
+        st.query_params["page"] = "review"
+        for field in ("case", "model", "run", "score"):
+            st.query_params.pop(field, None)
+        request_scroll("top")
+        st.rerun()
 
 
 def render_saved_observations(report) -> None:
@@ -111,7 +117,7 @@ def render_saved_observations(report) -> None:
         open_case_review(str(row["case_id"]), str(row["eval_model"]), str(row["run_id"]),
                          str(row.get("score_run_id") or row.get("id") or ""))
 
-    st.caption("每个模型及服务配置摘录最低分的可读单题反馈，不代表整体表现。未保存结构化引文时，反馈仍需核对回答。")
+    st.caption("摘录各比较对象的低分单题反馈，不代表模型整体表现。")
     metadata = {str(r["run_id"]): r for r in report.runtime_tables.get("live_evaluation_runs", [])}
     groups = {}
     for row in report.formal_scores.to_dict("records"):
@@ -173,6 +179,9 @@ def render_score_io_message() -> None:
 
 
 def _render_score_data_maintenance_controls(result_store=None) -> None:
+    if not management_enabled():
+        st.info(READ_ONLY_MESSAGE)
+        return
     st.markdown("**导出**")
     st.caption("导出当前已生成的正式评分结果；仅纳入正式评分。")
     payload = sc.export_score_payload(include_pending=False)

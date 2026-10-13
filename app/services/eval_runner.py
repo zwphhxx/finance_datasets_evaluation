@@ -20,6 +20,7 @@ from typing import Any, Callable, Collection, Mapping, Sequence
 
 import pandas as pd
 
+from app.access import management_operation
 from app.models.base import (
     ERROR_EMPTY_RESPONSE,
     ERROR_INCOMPLETE_RESPONSE,
@@ -191,6 +192,7 @@ def build_messages(task: Mapping[str, Any], *, compact: bool = False) -> list[di
     ]
 
 
+@management_operation
 def run_single(
     provider: ModelProvider,
     model_id: str,
@@ -403,6 +405,7 @@ def _available_model_ids(provider: ModelProvider) -> set[str] | None:
     return ids
 
 
+@management_operation
 def run_evaluation(
     provider: ModelProvider,
     model_id: str,
@@ -434,6 +437,7 @@ def run_evaluation(
     )
 
 
+@management_operation
 def run_models(
     provider: ModelProvider,
     model_ids: Sequence[str],
@@ -539,6 +543,7 @@ def _positive_float(value: Any) -> float | None:
     return number if number > 0 else None
 
 
+@management_operation
 def persist_run_result(result, db_path: Path | None = None) -> bool:
     """尽力将运行结果写入 SQLite live_run_responses；数据库不可用时静默跳过。
 
@@ -579,11 +584,13 @@ def persist_run_result(result, db_path: Path | None = None) -> bool:
         return False
 
 
+@management_operation
 def persist_compare_result(result: CompareRunResult, db_path: Path | None = None) -> bool:
     """多模型对比结果落库（与 persist_run_result 同实现，命名上更直观）。"""
     return persist_run_result(result, db_path=db_path)
 
 
+@management_operation
 def initialize_run_queue(
     run_id: str,
     provider: str,
@@ -629,6 +636,7 @@ def initialize_run_queue(
         return False
 
 
+@management_operation
 def mark_run_queue_item_running(
     run_id: str,
     case_id: str,
@@ -649,6 +657,7 @@ def mark_run_queue_item_running(
         return False
 
 
+@management_operation
 def persist_run_outcome(
     run_id: str,
     mode: str,

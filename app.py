@@ -2,6 +2,7 @@ import os
 
 import streamlit as st
 
+from app.access import management_enabled
 from app.persistence import result_store_request_scope
 from app.services import dataset_service as ds
 from app.services.data_resolver import resolve_active_data
@@ -21,7 +22,7 @@ def _auto_init_db_enabled() -> bool:
 
 def _ensure_deploy_database() -> None:
     """Initialize local SQLite from seed data when deployment cannot run CLI setup."""
-    if not _auto_init_db_enabled():
+    if not management_enabled() or not _auto_init_db_enabled():
         return
     db_path = ds.get_db_path()
     if ds.database_ready(db_path):
@@ -60,6 +61,6 @@ def _render_app() -> None:
     render_pending_scroll()
 
 
-st.set_page_config(page_title="模型评测及数据优化", layout="wide")
+st.set_page_config(page_title="专业场景大模型评测", layout="wide")
 with result_store_request_scope():
     _render_app()

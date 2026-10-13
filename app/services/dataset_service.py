@@ -30,6 +30,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from app.access import management_operation
 from app.db import DEFAULT_DB_PATH
 from app.db.init_db import initialize_database
 from app.db.repository import Repository
@@ -95,6 +96,7 @@ def database_ready(db_path: Path | None = None) -> bool:
         return False
 
 
+@management_operation
 def ensure_recoverable_queue_tables(db_path: Path | None = None) -> bool:
     """为既有运行期 SQLite 补齐可恢复队列表，不重建或删除任何已有数据。"""
     path = db_path or get_db_path()

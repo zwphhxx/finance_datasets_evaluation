@@ -11,7 +11,7 @@ class PageConfig:
 
 
 PAGE_CONFIGS = [
-    PageConfig("review", "案例审阅", "核对一条专业任务的模型回答、评分理由与已保存证据。"),
+    PageConfig("review", "案例分析", "核对专业任务、模型回答及评价依据。"),
     PageConfig(
         page_key="conclusions",
         title="评测结果",

@@ -40,7 +40,7 @@ PAGES[page]({'base':base, 'data':base})
 def test_three_public_destinations_and_separate_management():
     from src.ui.navigation import PRIMARY_NAV_ITEMS
     from src.ui.page_config import DEFAULT_PAGE_KEY
-    assert PRIMARY_NAV_ITEMS == [('评测结果','conclusions'), ('案例审阅','review'), ('评测方法','case_study')]
+    assert PRIMARY_NAV_ITEMS == [('评测结果','conclusions'), ('案例分析','review'), ('评测方法','case_study')]
     assert DEFAULT_PAGE_KEY == 'conclusions'
 
 

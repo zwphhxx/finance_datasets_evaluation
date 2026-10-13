@@ -16,6 +16,8 @@ from typing import Any, Iterable
 
 import pandas as pd
 
+from app.access import management_enabled, management_operation
+
 # 各表主键列名。无单列业务主键的表使用自增 id。
 TABLE_PRIMARY_KEYS: dict[str, str] = {
     "task_cases": "case_id",
@@ -52,7 +54,8 @@ class Repository:
     def connect(self):
         if not self.db_path.exists():
             raise RepositoryError(f"数据库文件不存在：{self.db_path}。请先运行 app/db/init_db.py 初始化。")
-        connection = sqlite3.connect(str(self.db_path))
+        connection = (sqlite3.connect(str(self.db_path)) if management_enabled()
+                      else sqlite3.connect(self.db_path.resolve().as_uri() + "?mode=ro", uri=True))
         connection.row_factory = sqlite3.Row
         try:
             connection.execute("PRAGMA foreign_keys = ON;")
@@ -88,6 +91,7 @@ class Repository:
             return dict(row) if row is not None else None
 
     # -- 写入 -----------------------------------------------------------------
+    @management_operation
     def insert(self, table: str, values: dict[str, Any]) -> int:
         """插入一行，返回新行的 rowid。created_at/updated_at 缺省由数据库填充。"""
         self._ensure_known_table(table)
@@ -103,6 +107,7 @@ class Repository:
             )
             return int(cursor.lastrowid)
 
+    @management_operation
     def bulk_insert(self, table: str, rows: Iterable[dict[str, Any]]) -> int:
         """批量插入，返回插入行数。所有行需具有一致的列集合。"""
         self._ensure_known_table(table)
@@ -120,6 +125,7 @@ class Repository:
             )
         return len(payload)
 
+    @management_operation
     def update(self, table: str, key: Any, changes: dict[str, Any], *, key_column: str | None = None) -> int:
         """按主键更新若干字段，自动刷新 updated_at，返回受影响行数。"""
         self._ensure_known_table(table)
@@ -136,6 +142,7 @@ class Repository:
             )
             return cursor.rowcount
 
+    @management_operation
     def delete(self, table: str, key: Any, *, key_column: str | None = None) -> int:
         self._ensure_known_table(table)
         column = key_column or TABLE_PRIMARY_KEYS[table]

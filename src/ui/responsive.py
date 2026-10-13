@@ -389,6 +389,9 @@ MOBILE_RESPONSIVE_CSS = r"""
 }
 
 @media (max-width: 480px) {
+    .st-key-results_scope .report-ledger dt {
+        min-height: 2.8em;
+    }
     .block-container {
         padding-left: 0.75rem;
         padding-right: 0.75rem;

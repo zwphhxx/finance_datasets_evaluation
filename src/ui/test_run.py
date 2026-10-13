@@ -5,6 +5,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from app.access import READ_ONLY_MESSAGE, management_enabled
 from app.models import siliconflow as sf
 from app.models.registry import get_text_provider
 from app.persistence import (
@@ -116,6 +117,9 @@ def render_test_run_page(
     preflight=None,
 ) -> None:
     """Render one durable answer-and-score pipeline from database state."""
+    if not management_enabled():
+        st.info(READ_ONLY_MESSAGE)
+        return
     base = data_bundle["base"]
     config = get_page_config("test_run")
     render_page_heading(config.title, config.question)

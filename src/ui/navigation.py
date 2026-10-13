@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from app.access import management_enabled
 from src.ui.case_study import render_case_study_page
 from src.ui.components import render_html
 from src.ui.conclusions import render_conclusions_page
@@ -27,7 +28,7 @@ PAGES = {
 # sits in a separate, lower-emphasis operation entry.
 PRIMARY_NAV_ITEMS = [
     ("评测结果", "conclusions"),
-    ("案例审阅", "review"),
+    ("案例分析", "review"),
     ("评测方法", "case_study"),
 ]
 OPERATION_NAV_ITEM = ("运行评测", "test_run")
@@ -54,7 +55,9 @@ def _navigate(page_key: str) -> None:
 def render_top_navigation() -> None:
     """Render review navigation separately from the evaluation operation."""
     current = st.session_state.get("current_page", DEFAULT_PAGE_KEY)
-    brand_column, review_column, operation_column = st.columns([3.1, 2.6, 0.9], gap="medium")
+    admin = management_enabled()
+    columns = st.columns([3.1, 2.6, 0.9] if admin else [1.4, 2.6], gap="medium")
+    brand_column, review_column = columns[:2]
     with brand_column:
         render_html('<div class="top-nav-brand">专业模型评测</div>')
     with review_column:
@@ -68,11 +71,12 @@ def render_top_navigation() -> None:
                         current,
                         key=f"top_nav_{page_key}",
                     )
-    with operation_column:
-        with st.container(key="top_nav_operation_region"):
-            with st.popover("管理", type="tertiary", width="content"):
-                for label, page_key in MANAGEMENT_NAV_ITEMS:
-                    _render_navigation_button(label, page_key, current, key=f"manage_{page_key}")
+    if admin:
+        with columns[2]:
+            with st.container(key="top_nav_operation_region"):
+                with st.popover("管理", type="tertiary", width="content"):
+                    for label, page_key in MANAGEMENT_NAV_ITEMS:
+                        _render_navigation_button(label, page_key, current, key=f"manage_{page_key}")
 
 
 def render_sidebar_navigation() -> str:

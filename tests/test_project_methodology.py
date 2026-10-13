@@ -36,8 +36,8 @@ class RegistrationTests(unittest.TestCase):
     def test_source_uses_current_shared_components_only(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         self.assertIn("render_report_masthead", source)
-        self.assertIn("render_scope_ledger(build_home_facts(base))", source)
-        self.assertIn("研究局限", source)
+        self.assertIn("sample_count = len", source)
+        self.assertIn("方法局限", source)
         self.assertIn("report_section_html", source)
         self.assertIn("_process_steps_html(PROCESS_STEPS)", source)
         for legacy_name in (
@@ -54,14 +54,14 @@ class RegistrationTests(unittest.TestCase):
 
     def test_page_follows_project_explanation_sections(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
-        for section in ("项目定位", "评测流程", "数据边界"):
+        for section in ("专业样本设计", "模型评测流程", "方法局限"):
             self.assertIn(section, source, section)
         self.assertNotIn('render_numbered_section("04", "进入操作")', source)
         self.assertNotIn("查看样本库", source)
         self.assertIn("当前样本范围", source)
         self.assertIn("使用边界", source)
         self.assertIn("回答质量", source)
-        self.assertIn("主要问题", source)
+        self.assertIn("判断偏差", source)
         self.assertNotIn("本项目不判断哪个模型最好", source)
         self.assertIn("被测模型不会看到专业标准答案、必须覆盖点、不可接受错误或评分标准", source)
         self.assertIn("失败评分、演示数据或示例评价均不进入评测结论", source)
