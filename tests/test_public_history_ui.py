@@ -16,7 +16,8 @@ def test_public_empty_state_and_selftest_entry_work_without_api_key(isolated_app
     assert not at.exception
     visible = " ".join(str(x.value) for x in at.info) + " ".join(str(x.value) for x in at.caption)
     assert "尚无正式实测结果" in visible
-    at.button(key="top_nav_conclusions").click().run(timeout=30)
+    at.button(key="manage_samples").click().run(timeout=30)
+    at.radio(key="management_section").set_value("评测结果与快照").run(timeout=30)
     assert not at.exception
     assert any("自测" in e.label for e in at.expander)
     assert any("完整评测快照" in e.label for e in at.get("file_uploader"))
@@ -59,16 +60,20 @@ def prohibited(*a,**k):
     raise AssertionError('snapshot replay contacted live database or provider')
 with ExitStack() as stack:
     stack.enter_context(patch.object(ui.cd,'load_conclusion_source',prohibited))
-    stack.enter_context(patch.object(ui,'get_result_store',prohibited))
+    stack.enter_context(patch('app.persistence.get_result_store',prohibited))
     stack.enter_context(patch.object(ui.sc,'export_score_payload',prohibited))
     stack.enter_context(patch.object(SiliconFlowProvider,'generate_response',prohibited))
-    ui.render_conclusions_page({{'base':SimpleNamespace(tasks=pd.DataFrame(),gold_answer_map={{}})}})
+    from src.ui.review import render_review_page
+    if st.query_params.get('page') == 'review':
+        render_review_page({{'base':SimpleNamespace(tasks=pd.DataFrame(),gold_answer_map={{}})}})
+    else:
+        ui.render_conclusions_page({{'base':SimpleNamespace(tasks=pd.DataFrame(),gold_answer_map={{}})}})
 
 """
     at = AppTest.from_string(script).run(timeout=30)
     assert not at.exception
     assert any("只读历史快照" in str(c.value) for c in at.caption)
-    button = next(b for b in at.button if str(b.key).startswith("conclusion_all_records_open_"))
+    button = at.button(key="results_review_case")
     button.click().run(timeout=30)
     assert not at.exception
-    assert any("历史任务正文未保存" in str(c.value) for c in at.caption)
+    assert any("历史任务正文未保存" in str(t.value) for t in at.text)

@@ -122,7 +122,7 @@ def render_test_run_page(
 
     stage_placeholder = st.empty()
     if not sf.is_configured():
-        st.caption("未配置模型服务密钥：真实调用已禁用；仍可在评测结论中查看历史结果。")
+        st.caption("未配置模型服务密钥：真实调用已禁用；仍可在评测结果中查看历史记录。")
 
     tasks_df = base.tasks
     if tasks_df is None or tasks_df.empty:
@@ -317,7 +317,7 @@ def render_test_run_page(
             status,
         )
     else:
-        st.caption("当前批次暂无结果。历史评测可从顶部评测结论入口查看。")
+        st.caption("当前批次暂无结果。历史评测可从顶部评测结果入口查看。")
 
     _render_evaluation_maintenance(result_store if store_available else None, status)
     dialog_name = ec.pending_dialog_name()
@@ -404,6 +404,13 @@ def _render_persisted_evaluation_records_entry(
     store,
     status: EvaluationRunStatus,
 ) -> None:
+    if st.button("进入评测结果", key="test_run_open_results", type="secondary"):
+        from src.ui.scroll import request_scroll
+
+        st.session_state.current_page = "conclusions"
+        st.query_params["page"] = "conclusions"
+        request_scroll("top")
+        st.rerun()
     record_count = max(0, int(status.succeeded) + int(status.failed))
     if st.button(
         f"查看本批次记录（{record_count}）",
@@ -492,11 +499,13 @@ def _render_evaluation_maintenance(store=None, status: EvaluationRunStatus | Non
 
         st.markdown("**样本维护**")
         if st.button(
-            "前往样本库",
+            "前往样本维护",
             key="test_run_maintenance_open_samples",
             type="tertiary",
         ):
             st.session_state.current_page = "samples"
+            st.query_params["page"] = "samples"
+            st.session_state["management_section"] = "专业样本"
             request_scroll("top")
             st.rerun()
 

@@ -13,6 +13,7 @@ from app.services import dataset_service as ds
 from app.services.comparison import comparison_for_runs
 from app.services.conclusion_read_model import ReportScope
 from app.services.evidence_index import build_evidence_index
+from app.services.model_display import display_model_name
 from app.services.snapshot import _safe, restore_context
 from src.ui import conclusions_data as cd
 from src.ui.history_view import active_snapshot, snapshot_report
@@ -175,7 +176,7 @@ def render_report_filters(report, fallback):
     )
     if not model_options:
         return report
-    with st.container(key="workbench_filters", border=True):
+    with st.container(key="workbench_filters"):
         columns = st.columns([1, 1.5, 1.5])
         domain = columns[0].selectbox(
             "专业场景",
@@ -188,7 +189,9 @@ def render_report_filters(report, fallback):
             st.session_state["comparison_models"] = model_options
         else:
             st.session_state["comparison_models"] = [m for m in state if m in model_options]
-        models = columns[1].multiselect("模型", model_options, key="comparison_models")
+        models = columns[1].multiselect("模型", model_options,
+                                        format_func=lambda m: display_model_name(m, source="live"),
+                                        key="comparison_models")
         available = {str(t["case_id"]): t for t in tasks if domain == "全部" or str(t.get("domain")) == domain}
         options = ["全部", *sorted(available)]
         if st.session_state.get("comparison_task") not in options:

@@ -77,10 +77,10 @@ class UIUXAuditFixesTests(unittest.TestCase):
 
     def test_top_navigation_has_four_items_and_no_duplicate_html_buttons(self):
         import src.ui.components as components
-        from src.ui.navigation import OPERATION_NAV_ITEM, PAGES, PRIMARY_NAV_ITEMS
+        from src.ui.navigation import MANAGEMENT_NAV_ITEMS, PAGES, PRIMARY_NAV_ITEMS
 
         self.assertEqual(3, len(PRIMARY_NAV_ITEMS))
-        nav_items = [*PRIMARY_NAV_ITEMS, OPERATION_NAV_ITEM]
+        nav_items = [*PRIMARY_NAV_ITEMS, *MANAGEMENT_NAV_ITEMS]
         self.assertEqual(sorted([key for _, key in nav_items]), sorted(PAGES.keys()))
         self.assertIn(".top-nav-brand", components.STYLE_CSS)
 
@@ -251,9 +251,9 @@ class UIUXAuditFixesTests(unittest.TestCase):
         components_source = Path("src/ui/components.py").read_text(encoding="utf-8")
         page_config_source = Path("src/ui/page_config.py").read_text(encoding="utf-8")
 
-        self.assertIn('render_numbered_section("01", "查询与筛选")', samples_source)
-        self.assertIn('render_numbered_section("02", "样本列表")', samples_source)
-        self.assertIn('render_numbered_section("03", "当前样本")', samples_source)
+        self.assertIn('st.subheader("查询与筛选")', samples_source)
+        self.assertIn('st.subheader("样本列表")', samples_source)
+        self.assertIn('st.subheader("当前样本")', samples_source)
         self.assertNotIn('render_numbered_section("04", "样本操作"', samples_source)
         self.assertNotIn("展示当前查询结果。", samples_source)
         self.assertNotIn("选择一个样本，查看评测资产结构。", samples_source)
@@ -304,10 +304,10 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertIn("detail-panel-toolbar-title", components_source)
 
     def test_review_page_is_not_in_primary_navigation(self):
-        from src.ui.navigation import OPERATION_NAV_ITEM, PAGES, PRIMARY_NAV_ITEMS
+        from src.ui.navigation import MANAGEMENT_NAV_ITEMS, PAGES, PRIMARY_NAV_ITEMS
 
-        self.assertNotIn("review", PAGES)
-        labels = [label for label, _ in [*PRIMARY_NAV_ITEMS, OPERATION_NAV_ITEM]]
+        self.assertIn("review", PAGES)
+        labels = [label for label, _ in [*PRIMARY_NAV_ITEMS, *MANAGEMENT_NAV_ITEMS]]
         self.assertNotIn("评分" + "确认", labels)
 
     def test_conclusions_does_not_render_card_classes(self):
@@ -318,7 +318,7 @@ class UIUXAuditFixesTests(unittest.TestCase):
         self.assertNotIn("status-badge", source)
         self.assertNotIn("review-risk-note", source)
         self.assertNotIn("render_evidence_panel", source)
-        self.assertEqual(4, source.count("st.expander("))
+        self.assertEqual(6, source.count("st.expander("))
         self.assertIn('st.expander("运行时任务与材料"', source)
         self.assertIn('st.expander("运行时任务、版本与配置"', source)
         self.assertIn('st.expander("查看全部评测记录"', source)

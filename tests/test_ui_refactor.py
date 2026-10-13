@@ -10,7 +10,7 @@ def test_conclusion_page_uses_only_the_current_compatible_cohort():
         source.index("# --------------------------------------------------------------------------- #")
     ]
 
-    assert "cd.load_conclusion_source(" in render_body
-    assert "_render_evidence_review(report, model_summaries)" in render_body
-    assert "_render_all_records(report)" in render_body
+    assert "load_workbench_source(" in render_body
+    assert "render_saved_observations(report)" in render_body
+    assert "open_case_review(" in render_body
     assert "cc.load_live_scores()" not in render_body

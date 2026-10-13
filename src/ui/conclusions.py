@@ -15,13 +15,6 @@ from hashlib import sha256
 import pandas as pd
 import streamlit as st
 
-from app.persistence import (
-    PersistenceConfigurationError,
-    ResultStoreError,
-    ResultStoreUnavailableError,
-    get_result_store,
-)
-from app.services import dataset_service as ds
 from app.services import scorer as sc
 from app.services.conclusion_read_model import ConclusionReport
 from app.services.evidence_index import EvidenceItem
@@ -38,13 +31,9 @@ from src.ui.components import (
     render_trusted_markdown_html,
 )
 from src.ui.history_view import (
-    render_attempts_and_costs,
     render_comparison_and_runtime,
-    render_history_controls,
-    render_judge_selftest,
-    render_snapshot_export,
+    render_runtime_details,
 )
-from src.ui.page_config import get_page_config
 from src.ui.report_components import (
     evidence_model_context_html,
     evidence_selection_reason_label,
@@ -67,86 +56,66 @@ _STREAMLIT_MARKDOWN_PUNCTUATION_RE = re.compile(
 
 
 def render_conclusions_page(data_bundle: dict) -> None:
+    from src.ui.review import open_case_review
+    from src.ui.workbench import load_workbench_source, overview_facts
+
     base = data_bundle.get("base") or data_bundle["data"]
-    tasks = getattr(base, "tasks", None)
-    allowed_case_ids = tuple(
-        sorted(
-            {
-                str(case_id).strip()
-                for case_id in (
-                    tasks["case_id"].tolist()
-                    if isinstance(tasks, pd.DataFrame) and "case_id" in tasks.columns
-                    else []
-                )
-                if str(case_id).strip()
-            }
-        )
-    )
-    task_records = tuple(tasks.to_dict("records")) if isinstance(tasks, pd.DataFrame) else ()
-    gold_map = getattr(base, "gold_answer_map", {})
-    gold_records = tuple(sorted(
-        ((str(case_id), record) for case_id, record in gold_map.items()),
-        key=lambda item: item[0],
-    )) if isinstance(gold_map, Mapping) else ()
-    dimensions = tuple(ds.get_rubric_dimensions())
-
-    config = get_page_config("conclusions")
-    render_report_masthead(config.title, config.question)
-    st.caption(f"用可复核的专业标准观察财务、法律、投行任务的模型回答质量；当前题库 {len(task_records)} 条。历史记录可只读查看，无需API Key；评分证据仅展示已保存内容。")
-    replay_report = render_history_controls()
-    source = cd.ConclusionSource(True, replay_report) if replay_report is not None else cd.load_conclusion_source(
-        allowed_case_ids,
-        task_records,
-        gold_records,
-        dimensions,
-    )
-
+    render_report_masthead("评测结果", "财务、法律、投行场景的模型比较；从结果进入案例，核对回答与评分依据。")
+    source = load_workbench_source(base)
+    full_report = source.report
+    facts = overview_facts(base, full_report)
+    render_scope_ledger([
+        ("评测样本", str(facts["samples"])), ("专业领域", str(facts["domains"])),
+        ("已评测模型", str(facts["models"]) if source.available else "—"),
+        ("有效评分", str(facts["scores"]) if source.available else "—"),
+    ])
+    readonly = bool(st.session_state.get("readonly_evaluation_snapshot"))
+    st.caption("最新实际测试时间：" + str(facts["latest"] or ("暂无实际测试记录" if source.available else "当前不可读取"))
+               + " ｜ 来源：" + ("只读历史快照（来源声明未经独立认证）" if readonly else "当前数据库真实运行"))
     if not source.available:
         render_persistence_status(source.message)
         return
-    report = replay_report or source.report
-    if report is None:
-        render_persistence_status(source.message)
+    if full_report is None or not full_report.scope.formal_score_count:
+        st.info("尚无正式实测结果。可在案例审阅中查看专业任务，或在管理中只读加载完整历史快照。")
         return
-    full_report = report
-    report = render_report_filters(report, task_records)
-    st.session_state["conclusion_historical_dimensions"] = historical_dimensions(report)
-    st.session_state["conclusion_multiple_endpoints"] = has_multiple_endpoints(report)
-    model_summaries = report.model_summaries
+    tasks = getattr(base, "tasks", pd.DataFrame())
+    records = tasks.to_dict("records") if isinstance(tasks, pd.DataFrame) else []
+    with st.expander("筛选专业场景、模型与任务"):
+        report = render_report_filters(full_report, records)
+    if not report.scope.formal_score_count:
+        st.info("当前筛选条件下没有有效正式评分。请调整专业场景、模型或任务。")
+    render_comparison_and_runtime(report, include_runtime=False)
+    if report.scope.formal_score_count:
+        first = report.formal_scores.iloc[0]
+        if st.button("审阅一条案例及评分依据", key="results_review_case", type="primary"):
+            open_case_review(str(first["case_id"]), str(first["eval_model"]), str(first["run_id"]))
+        st.subheader("主要发现")
+        render_saved_observations(report)
+        with st.expander("维度比较与使用边界"):
+            render_common_dimensions(report, historical_dimensions(report))
+            if not has_multiple_endpoints(report):
+                _render_model_recommendations(report.model_summaries)
+            else:
+                st.caption("同一模型包含多个服务配置；请按独立配置核对，不合并模型均分。")
 
-    render_scope_ledger(
-        [
-            ("样本范围", f"{report.scope.sample_count} 个专业任务样本"),
-            ("比较范围", f"{report.scope.model_count} 个模型"),
-            ("证据记录", f"{report.scope.formal_score_count} 条正式评分"),
-            ("数据口径", report.scope.data_basis),
-        ]
-    )
-    _render_executive_conclusion(model_summaries)
-    render_comparison_and_runtime(report)
-    render_common_dimensions(report, historical_dimensions(report))
-    if not has_multiple_endpoints(report):
-        _render_model_recommendations(model_summaries)
-    else:
-        st.caption("同一模型包含多个服务配置；模型自身均分与综合判断不合并展示，请按上方独立服务配置核对。")
-    _render_evidence_review(report, model_summaries)
-    _render_all_records(report)
-    render_attempts_and_costs(report)
-    try:
-        result_store = None if replay_report is not None else get_result_store()
-    except (PersistenceConfigurationError, ResultStoreUnavailableError, ResultStoreError):
-        result_store = None
-    if not model_summaries:
-        if full_report.scope.formal_score_count:
-            st.info("当前筛选条件下没有有效正式评分。请调整专业场景、模型或任务筛选。")
+    render_runtime_details(report)
+
+
+def render_saved_observations(report) -> None:
+    from src.ui.workbench import overview_score_observation
+
+    if has_multiple_endpoints(report):
+        st.caption("同一模型包含多个服务配置；请进入案例审阅，按具体运行核对评分说明。")
+        return
+    st.caption("每个模型摘录有评分说明的最低分样本；这是单题反馈，不代表问题频率或模型整体能力。")
+    for summary in report.model_summaries:
+        name = str(summary.get("display_name") or summary.get("model_name"))
+        observation = overview_score_observation(report, summary.get("model_name"))
+        if observation:
+            st.text(f"{name}｜{observation['case_id']}｜{observation['source']}：{observation['text']}")
         else:
-            st.info("当前没有真实历史评测结果可供展示。可加载真实完整快照；人工自测及示例评分不进入正式结论。")
-    if replay_report is None:
-        _render_data_source_notice(report.scope, result_store)
-    else:
-        st.caption("当前来源：只读历史快照；上传文件的来源声明未经独立认证。")
-    render_snapshot_export(result_store)
-    render_judge_selftest(dimensions)
+            st.text(name + "：当前评分未形成稳定的问题归纳。未保存可展示的评分说明或维度理由，不能据此判断没有问题。")
+    st.caption("上述为自动评分记录的归纳；未保存结构化引文的历史记录仍需核对原始证据，不能作为已验证专业结论。")
 
 
 def _render_executive_conclusion(model_summaries: Sequence[Mapping[str, object]]) -> None:
@@ -165,6 +134,10 @@ def _render_data_source_notice(scope, result_store=None) -> None:
     with st.container(key="conclusion_maintenance_entry"):
         with st.popover("数据维护", type="tertiary", width="stretch"):
             _render_score_data_maintenance_controls(result_store)
+    render_score_io_message()
+
+
+def render_score_io_message() -> None:
     message = st.session_state.get("conclusion_score_io_message")
     if isinstance(message, dict) and message.get("text"):
         level = str(message.get("level") or "info")

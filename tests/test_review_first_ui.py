@@ -13,11 +13,11 @@ def test_primary_navigation_prioritizes_overview_without_marker_spacer():
     from src.ui.navigation import OPERATION_NAV_ITEM, PRIMARY_NAV_ITEMS
 
     assert [page_key for _, page_key in PRIMARY_NAV_ITEMS] == [
-        "case_study",
         "conclusions",
-        "samples",
+        "review",
+        "case_study",
     ]
-    assert OPERATION_NAV_ITEM == ("发起评测", "test_run")
+    assert OPERATION_NAV_ITEM == ("运行评测", "test_run")
     navigation = _source("src/ui/navigation.py")
     components = _source("src/ui/components.py")
     assert "top-nav-current-marker" not in navigation
@@ -86,7 +86,7 @@ def test_conclusions_use_responsive_selection_without_duplicate_chart():
     assert "request_scroll(" not in source
     assert 'key="conclusion_model_selector_desktop"' in source
     assert 'key="conclusion_model_selector_mobile"' in source
-    assert "_render_evidence_review(report, model_summaries)" in source
+    assert "open_case_review(" in source
     assert 'st.popover("数据维护"' in source
 
 

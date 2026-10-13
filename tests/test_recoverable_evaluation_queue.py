@@ -147,10 +147,11 @@ class PageRemovalTests(unittest.TestCase):
     def test_kept_pages_are_the_evaluation_loop_pages(self):
         self.assertEqual(
             [
+                "conclusions",
+                "review",
                 "case_study",
                 "samples",
                 "test_run",
-                "conclusions",
             ],
             list(PAGES.keys()),
         )

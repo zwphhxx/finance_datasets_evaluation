@@ -33,7 +33,6 @@ def test_project_method_sections_do_not_repeat_the_page_level_appendix_label(mon
 
     rendered: list[str] = []
     monkeypatch.setattr(case_study, "render_report_masthead", lambda *args: None)
-    monkeypatch.setattr(case_study, "render_scope_ledger", lambda *args: None)
     monkeypatch.setattr(case_study, "render_html", rendered.append)
     monkeypatch.setattr(case_study, "_section_body_html", lambda *args: "<p>正文</p>")
     from src.ui import workbench
@@ -423,10 +422,10 @@ def test_conclusion_page_is_report_first_and_never_surfaces_excluded_count():
     ]
 
     assert page.index("render_report_masthead") < page.index("render_scope_ledger")
-    assert page.index("render_scope_ledger") < page.index("_render_executive_conclusion")
-    assert page.index("_render_executive_conclusion") < page.index("_render_model_recommendations")
-    assert page.index("_render_model_recommendations") < page.index("_render_evidence_review")
-    assert page.index("_render_evidence_review") < page.index("_render_all_records")
+    assert page.index("render_scope_ledger") < page.index("render_comparison_and_runtime(report, include_runtime=False)")
+    assert page.index("render_comparison_and_runtime(report, include_runtime=False)") < page.index("render_saved_observations(report)")
+    assert "_render_evidence_review(report," not in page
+    assert "_render_all_records(report)" not in page
     assert "排除项" not in source
     assert "_render_mobile_model_cards" not in source
 
@@ -443,8 +442,7 @@ def test_available_conclusion_report_renders_one_ordered_review_flow(monkeypatch
         evidence_by_model={},
     )
     events: list[str] = []
-    monkeypatch.setattr(ui.cd, "load_conclusion_source", lambda *_args: ConclusionSource(True, report))
-    monkeypatch.setattr(ui.ds, "get_rubric_dimensions", lambda: [])
+    monkeypatch.setattr(__import__("src.ui.workbench", fromlist=["load_workbench_source"]), "load_workbench_source", lambda *_args: ConclusionSource(True, report))
     monkeypatch.setattr(ui, "render_report_masthead", lambda *_args: events.append("masthead"))
     monkeypatch.setattr(ui, "render_scope_ledger", lambda *_args: events.append("scope"))
     monkeypatch.setattr(ui, "_render_executive_conclusion", lambda *_args: events.append("executive"))
@@ -457,7 +455,7 @@ def test_available_conclusion_report_renders_one_ordered_review_flow(monkeypatch
         "base": SimpleNamespace(tasks=pd.DataFrame(), gold_answer_map={}),
     })
 
-    assert events == ["masthead", "scope", "executive", "models", "evidence", "records"]
+    assert events == ["masthead", "scope"]
 
 
 def test_unavailable_conclusion_source_does_not_render_empty_database_state(monkeypatch):
@@ -465,8 +463,7 @@ def test_unavailable_conclusion_source_does_not_render_empty_database_state(monk
     from src.ui.conclusions_data import ConclusionSource
 
     events: list[str] = []
-    monkeypatch.setattr(ui.cd, "load_conclusion_source", lambda *_args: ConclusionSource(False, None, "offline"))
-    monkeypatch.setattr(ui.ds, "get_rubric_dimensions", lambda: [])
+    monkeypatch.setattr(__import__("src.ui.workbench", fromlist=["load_workbench_source"]), "load_workbench_source", lambda *_args: ConclusionSource(False, None, "offline"))
     monkeypatch.setattr(ui, "render_report_masthead", lambda *_args: events.append("masthead"))
     monkeypatch.setattr(ui, "render_persistence_status", lambda message: events.append(f"unavailable:{message}"))
     monkeypatch.setattr(ui, "_render_model_recommendations", lambda *_args: events.append("empty"))
@@ -851,14 +848,14 @@ class _SessionState(dict):
 
 
 def test_conclusions_are_default_and_operation_is_secondary():
-    assert DEFAULT_PAGE_KEY == "case_study"
+    assert DEFAULT_PAGE_KEY == "conclusions"
     assert navigation.PRIMARY_NAV_ITEMS == [
-        ("评测概览", "case_study"),
-        ("评测结论", "conclusions"),
-        ("样本库", "samples"),
+        ("评测结果", "conclusions"),
+        ("案例审阅", "review"),
+        ("评测方法", "case_study"),
     ]
-    assert navigation.OPERATION_NAV_ITEM == ("发起评测", "test_run")
-    assert set(navigation.PAGES) == {"conclusions", "case_study", "samples", "test_run"}
+    assert navigation.OPERATION_NAV_ITEM == ("运行评测", "test_run")
+    assert set(navigation.PAGES) == {"conclusions", "review", "case_study", "samples", "test_run"}
 
 
 def test_navigation_click_uses_stable_key_and_queues_top_scroll():
@@ -874,16 +871,18 @@ def test_navigation_click_uses_stable_key_and_queues_top_scroll():
         patch.object(navigation.st, "session_state", session_state),
         patch.object(navigation.st, "columns", side_effect=lambda *_args, **_kwargs: [nullcontext()] * 3),
         patch.object(navigation.st, "button", side_effect=button),
+        patch.object(navigation.st, "popover", side_effect=lambda *_args, **_kwargs: nullcontext()),
         patch.object(navigation.st, "rerun") as rerun,
         patch.object(navigation, "request_scroll", side_effect=scroll_targets.append),
     ):
         navigation.render_top_navigation()
 
     assert button_keys == [
-        "top_nav_case_study",
         "top_nav_conclusions",
-        "top_nav_samples",
-        "top_nav_operation",
+        "top_nav_review",
+        "top_nav_case_study",
+        "manage_test_run",
+        "manage_samples",
     ]
     assert session_state["current_page"] == "conclusions"
     assert scroll_targets == ["top"]
@@ -906,6 +905,6 @@ def test_mobile_navigation_keeps_operation_secondary_and_right_aligned():
     assert "grid-template-columns: repeat(3, minmax(0, 1fr))" in mobile
     assert ".st-key-top_nav_operation_region .stButton" in mobile
     operation_button_rule = mobile.split(
-        ".st-key-top_nav_operation_region .stButton > button {", 1
+        '.st-key-top_nav_operation_region [data-testid="stPopover"] > button {', 1
     )[1].split("}", 1)[0]
     assert "width: auto !important;" in operation_button_rule

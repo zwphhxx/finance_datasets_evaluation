@@ -11,19 +11,20 @@ class PageConfig:
 
 
 PAGE_CONFIGS = [
+    PageConfig("review", "案例审阅", "核对一条专业任务的模型回答、评分理由与已保存证据。"),
     PageConfig(
         page_key="conclusions",
-        title="评测结论",
-        question="基于当前样本、模型回答和 AI 评分生成评测结论。",
+        title="评测结果",
+        question="比较共同有效样本中的模型表现，并追溯到逐题评分依据。",
     ),
     PageConfig(
         page_key="case_study",
-        title="评测概览",
-        question="评估模型在财务、法律、投行等专业场景中的回答质量、主要问题和使用边界。",
+        title="评测方法",
+        question="了解专业样本、评分流程与结论的适用范围。",
     ),
     PageConfig(
         page_key="samples",
-        title="样本库",
+        title="样本维护",
         question="维护正式评测样本。完整且已入库的样本可以在发起评测中使用。",
     ),
     PageConfig(
@@ -34,7 +35,7 @@ PAGE_CONFIGS = [
 ]
 
 PAGE_CONFIG_BY_KEY = {config.page_key: config for config in PAGE_CONFIGS}
-DEFAULT_PAGE_KEY = "case_study"
+DEFAULT_PAGE_KEY = "conclusions"
 
 
 def get_page_config(page_key: str) -> PageConfig:

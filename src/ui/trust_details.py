@@ -18,11 +18,11 @@ def _array(row, key):
         return []
 
 
-def render_score_evidence(score, answer):
+def render_score_evidence(score, answer, *, inline=False):
     raw_answer = str(answer or "")
     raw_checks = _array(score, "checks_json")
     score, answer = _safe(dict(score)), _safe(answer)
-    with st.expander("评分依据详情：要点、引文与数值核查"):
+    with st.container() if inline else st.expander("评分依据详情：要点、引文与数值核查"):
         checks = _array(score, "checks_json")
         if not checks:
             st.caption("历史记录未保存结构化证据；评分理由未经引文验证，不能包装为可靠证据。")
@@ -55,7 +55,8 @@ def render_score_evidence(score, answer):
             st.markdown("**程序数值核查**")
             st.dataframe(numeric, hide_index=True, use_container_width=True)
             st.caption("仅覆盖预设且材料哈希一致的公式。unknown表示未找到明确单一数值，不等于错误；不自动改变权重。")
-    with st.expander("原始裁判响应（含失败尝试）"):
+    with st.container() if inline else st.expander("原始裁判响应（含失败尝试）"):
+        st.markdown("**原始裁判响应（含失败尝试）**")
         responses = _array(score, "raw_responses_json")
         if not responses:
             st.caption("旧记录未保存原始响应，不补造历史证据。")
@@ -76,7 +77,7 @@ def render_score_detail(*, task, answer, score, dimensions, key):
     with st.container(key=f"score_detail_{key}"):
         left, right = st.columns([1.1, 1], gap="large")
         with left:
-            with st.container(border=True, key=f"score_task_{key}"):
+            with st.container(key=f"score_task_{key}"):
                 st.markdown("**专业任务与背景**")
                 shown = set()
                 for field, label in [
@@ -98,7 +99,7 @@ def render_score_detail(*, task, answer, score, dimensions, key):
                         shown.add(str(value))
                 if not shown:
                     st.caption("历史记录未保存任务正文；不使用当前题库补造运行时材料。")
-            with st.container(border=True, key=f"score_answer_{key}"):
+            with st.container(key=f"score_answer_{key}"):
                 st.markdown("**被评测模型回答**")
                 if answer:
                     # Plain native text wraps long responses and never interprets model HTML.
@@ -106,7 +107,7 @@ def render_score_detail(*, task, answer, score, dimensions, key):
                 else:
                     st.caption("没有成功回答可供核对。")
         with right:
-            with st.container(border=True, key=f"score_review_{key}"):
+            with st.container(key=f"score_review_{key}"):
                 st.markdown("**评分与依据**")
                 total = score.get("total_score")
                 st.metric("综合评分", "—" if total is None else str(total))
@@ -184,7 +185,7 @@ def render_score_detail(*, task, answer, score, dimensions, key):
                 if score.get("review_note"):
                     st.text(f"审阅备注：{score['review_note']}")
     with st.expander("详细技术信息与原始评分响应"):
-        render_score_evidence(raw_score, raw_answer)
+        render_score_evidence(raw_score, raw_answer, inline=True)
         st.json(score, expanded=False)
 
 

@@ -10,7 +10,6 @@ import pandas as pd
 from app.services.conclusion_read_model import ConclusionReport, ReportScope
 from app.services.evidence_index import EvidenceItem
 from src.ui import conclusions as ui
-from src.ui.conclusions_data import ConclusionSource
 
 
 def evidence(run_id, case_id, model_id, reason, score):
@@ -56,26 +55,7 @@ report = ConclusionReport(
     model_summaries=summaries,
     evidence_by_model={"vendor/a": model_a, "vendor/b": model_b},
 )
-originals = {
-    "source": ui.cd.load_conclusion_source,
-    "rubric": ui.ds.get_rubric_dimensions,
-    "store": ui.get_result_store,
-    "records": ui._render_all_records,
-    "notice": ui._render_data_source_notice,
-}
-ui.cd.load_conclusion_source = lambda *_args: ConclusionSource(True, report)
-ui.ds.get_rubric_dimensions = lambda: []
-ui.get_result_store = lambda: None
-ui._render_all_records = lambda *_args: None
-ui._render_data_source_notice = lambda *_args: None
-try:
-    ui.render_conclusions_page({"base": type("Base", (), {"tasks": pd.DataFrame(), "gold_answer_map": {}})()})
-finally:
-    ui.cd.load_conclusion_source = originals["source"]
-    ui.ds.get_rubric_dimensions = originals["rubric"]
-    ui.get_result_store = originals["store"]
-    ui._render_all_records = originals["records"]
-    ui._render_data_source_notice = originals["notice"]
+ui._render_evidence_review(report, summaries)
 '''
 
 

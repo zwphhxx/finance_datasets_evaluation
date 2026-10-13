@@ -22,11 +22,11 @@ class CaseStudyPresentationTests(unittest.TestCase):
     def test_case_study_intro_keeps_title_and_adds_derived_facts(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         self.assertIn("render_report_masthead(", source)
-        self.assertIn("PROJECT_DISPLAY_NAME", source)
+        self.assertIn("评测方法", source)
         self.assertIn("专业任务中的回答质量", source)
         self.assertIn("识别模型的主要问题和使用边界", source)
         self.assertNotIn("subtitle=", source)
-        self.assertIn("overview_facts(base, report)", source)
+        self.assertNotIn("overview_facts(base, report)", source)
         self.assertNotIn("_build_home_stats", source)
         self.assertNotIn("当前样本 13 个", source)
         self.assertNotIn("覆盖专业场景", source)
@@ -60,7 +60,7 @@ class CaseStudyPresentationTests(unittest.TestCase):
             self.assertIn(f'"title": "{title}"', source)
             self.assertIn(f'"lead": "{lead}"', source)
         self.assertNotIn("render_numbered_section", source)
-        self.assertIn("查看完整评测方法与数据范围", source)
+        self.assertIn("研究局限", source)
 
     def test_case_study_keeps_process_line_only_in_flow_section(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
@@ -69,7 +69,7 @@ class CaseStudyPresentationTests(unittest.TestCase):
         self.assertNotIn("render_process_line(PROCESS_STEPS)", source)
         self.assertEqual(1, source.count("_process_steps_html(PROCESS_STEPS)"))
         self.assertIn(
-            'PROCESS_STEPS = ["人工录入样本库", "开始评测", "模型回答与 AI 评分", "进入评测结论"]',
+            'PROCESS_STEPS = ["人工录入样本库", "开始评测", "模型回答与 AI 评分", "进入评测结果"]',
             source,
         )
         self.assertIn('"title": "评测流程"', source)

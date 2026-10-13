@@ -89,7 +89,7 @@ class RegistrationTests(unittest.TestCase):
     def test_page_registered_with_config(self):
         self.assertIn("conclusions", PAGES)
         self.assertIn("conclusions", PAGE_CONFIG_BY_KEY)
-        self.assertEqual("评测结论", PAGE_CONFIG_BY_KEY["conclusions"].title)
+        self.assertEqual("评测结果", PAGE_CONFIG_BY_KEY["conclusions"].title)
 
     def test_positioning_not_a_leaderboard(self):
         # The formal-conclusion positioning lives in case_study (project intro).
@@ -483,7 +483,7 @@ class AnswerDetailJoinTests(unittest.TestCase):
         ]
         detail_source = source[source.index("def _render_all_records"):]
 
-        self.assertIn("cd.load_conclusion_source(", render_source)
+        self.assertIn("load_workbench_source(", render_source)
         self.assertIn("report.formal_responses", detail_source)
         self.assertIn("report.formal_scores", detail_source)
         self.assertIn('"查看全部评测记录"', detail_source)
@@ -599,18 +599,10 @@ class RenderTests(unittest.TestCase):
             source.index("# --------------------------------------------------------------------------- #")
         ]
 
-        self.assertLess(
-            page_source.index("_render_executive_conclusion"),
-            page_source.index("_render_model_recommendations"),
-        )
-        self.assertLess(
-            page_source.index("_render_model_recommendations"),
-            page_source.index("_render_evidence_review"),
-        )
-        self.assertLess(
-            page_source.index("_render_evidence_review"),
-            page_source.index("_render_all_records"),
-        )
+        self.assertLess(page_source.index("render_comparison_and_runtime(report, include_runtime=False)"),
+                        page_source.index("render_saved_observations(report)"))
+        self.assertNotIn("_render_evidence_review(report,", page_source)
+        self.assertNotIn("_render_all_records(report)", page_source)
 
     def test_executive_conclusion_does_not_choose_first_model_as_best(self):
         from src.ui import conclusions as ui

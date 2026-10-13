@@ -34,8 +34,9 @@ def render_overview(monkeypatch, frame):
     app = AppTest.from_string("""
 from types import SimpleNamespace
 import pandas as pd
-from src.ui.case_study import render_case_study_page
-render_case_study_page({'base':SimpleNamespace(tasks=pd.DataFrame())})
+from src.ui.conclusions import render_saved_observations
+from src.ui.workbench import load_workbench_source
+render_saved_observations(load_workbench_source(None).report)
 """).run()
     assert not app.exception
     pd.testing.assert_frame_equal(frame, before)

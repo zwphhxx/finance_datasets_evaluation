@@ -24,7 +24,6 @@ from src.ui.components import (
     render_field_section,
     render_html,
     render_long_text_section,
-    render_numbered_section,
     render_page_heading,
 )
 from src.ui.labels import (
@@ -975,8 +974,8 @@ def render_samples_page(data_bundle: dict) -> None:
     task_records, gold_map, rubric_dimensions = _page_readiness_inputs(data, samples)
     readiness_map = build_sample_readiness_map(samples, task_records, gold_map, rubric_dimensions)
 
-    with st.container(key="samples_filter_region", border=True):
-        render_numbered_section("01", "查询与筛选")
+    with st.container(key="samples_filter_region"):
+        st.subheader("查询与筛选")
         keyword, domain, test_status, completeness = _render_filters(samples, task_records, readiness_map)
         filtered = _filter_samples_for_index(
             samples,
@@ -989,7 +988,7 @@ def render_samples_page(data_bundle: dict) -> None:
         )
 
     with st.container(key="samples_list_region"):
-        render_numbered_section("02", "样本列表")
+        st.subheader("样本列表")
         if not filtered:
             render_empty_state("没有符合当前条件的样本。")
         else:
@@ -998,7 +997,7 @@ def render_samples_page(data_bundle: dict) -> None:
 
     with st.container(key="samples_detail_region"):
         render_html('<a id="fde-current-sample"></a>')
-        render_numbered_section("03", "当前样本")
+        st.subheader("当前样本")
         _render_sample_detail(filtered, readiness_map, task_records, gold_map, rubric_dimensions)
         _render_test_run_availability_note(samples, readiness_map)
 

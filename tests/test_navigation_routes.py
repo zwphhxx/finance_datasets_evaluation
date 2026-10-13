@@ -36,13 +36,13 @@ from src.ui.page_config import PAGE_CONFIG_BY_KEY
 class PagesDictTests(unittest.TestCase):
     def test_pages_has_exactly_four_keys(self):
         """PAGES dict must expose exactly 4 user-facing entries."""
-        self.assertEqual(4, len(PAGES))
+        self.assertEqual(5, len(PAGES))
 
     def test_pages_keys_are_expected(self):
         """PAGES keys must match the simplified evaluation workflow."""
-        expected = ["case_study", "samples", "test_run", "conclusions"]
+        expected = ["conclusions", "review", "case_study", "samples", "test_run"]
         self.assertEqual(sorted(expected), sorted(PAGES.keys()))
-        self.assertNotIn("review", PAGES)
+        self.assertIn("review", PAGES)
 
     def test_pages_does_not_contain_old_keys(self):
         """Old page keys must not be in PAGES."""
@@ -86,7 +86,7 @@ class PagesDictTests(unittest.TestCase):
 class PageConfigTests(unittest.TestCase):
     def test_page_config_has_exactly_four_entries(self):
         """PAGE_CONFIG_BY_KEY must have exactly 4 user-facing entries."""
-        self.assertEqual(4, len(PAGE_CONFIG_BY_KEY))
+        self.assertEqual(5, len(PAGE_CONFIG_BY_KEY))
 
     def test_page_config_keys_match_pages(self):
         """PAGE_CONFIG_BY_KEY keys must match PAGES keys."""
@@ -94,8 +94,8 @@ class PageConfigTests(unittest.TestCase):
 
     def test_default_page_key_is_overview(self):
         """Default page must be overview."""
-        self.assertEqual("case_study", DEFAULT_PAGE_KEY)
-        self.assertEqual("case_study", PC_DEFAULT_PAGE_KEY)
+        self.assertEqual("conclusions", DEFAULT_PAGE_KEY)
+        self.assertEqual("conclusions", PC_DEFAULT_PAGE_KEY)
 
 
 class TopNavTests(unittest.TestCase):
@@ -106,15 +106,15 @@ class TopNavTests(unittest.TestCase):
     def test_navigation_labels_are_grouped_by_review_and_operation(self):
         """Review destinations stay separate from the secondary operation entry."""
         labels = [label for label, _ in PRIMARY_NAV_ITEMS]
-        expected = ["评测概览", "评测结论", "样本库"]
+        expected = ["评测结果", "案例审阅", "评测方法"]
         self.assertEqual(labels, expected)
-        self.assertEqual(("发起评测", "test_run"), OPERATION_NAV_ITEM)
+        self.assertEqual(("运行评测", "test_run"), OPERATION_NAV_ITEM)
         self.assertNotIn("评分" + "确认", labels)
 
     def test_navigation_route_keys_match_pages(self):
         """Primary and operation navigation together cover the four routes."""
         nav_keys = {key for _, key in PRIMARY_NAV_ITEMS}
-        nav_keys.add(OPERATION_NAV_ITEM[1])
+        nav_keys.update({OPERATION_NAV_ITEM[1], "samples"})
         self.assertEqual(nav_keys, set(PAGES.keys()))
 
     def test_get_primary_nav_items_returns_only_review_items(self):
@@ -140,7 +140,7 @@ class SidebarTests(unittest.TestCase):
 
     def test_all_page_configs_are_four_pages(self):
         """All page configs must be one of the 4 core pages."""
-        expected_keys = {"case_study", "samples", "test_run", "conclusions"}
+        expected_keys = {"case_study", "review", "samples", "test_run", "conclusions"}
         self.assertEqual(expected_keys, set(PAGE_CONFIG_BY_KEY.keys()))
 
 

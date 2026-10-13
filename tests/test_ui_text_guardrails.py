@@ -15,10 +15,10 @@ from src.ui.navigation import PROJECT_DISPLAY_NAME as NAV_PROJECT_NAME
 from src.ui.page_config import PAGE_CONFIG_BY_KEY, PAGE_CONFIGS
 
 PROJECT_NAME = "财务/法律/投行场景大模型对比评测"
-MAIN_PAGE_KEYS = ["case_study", "samples", "test_run", "conclusions"]
-PAGE_CONFIG_KEYS = ["conclusions", "case_study", "samples", "test_run"]
-MAIN_NAV_PAGE_KEYS = ["case_study", "conclusions", "samples"]
-MAIN_NAV_LABELS = ["评测概览", "评测结论", "样本库"]
+MAIN_PAGE_KEYS = ["conclusions", "review", "case_study", "samples", "test_run"]
+PAGE_CONFIG_KEYS = ["review", "conclusions", "case_study", "samples", "test_run"]
+MAIN_NAV_PAGE_KEYS = ["conclusions", "review", "case_study"]
+MAIN_NAV_LABELS = ["评测结果", "案例审阅", "评测方法"]
 VISIBLE_UI_FILES = [
     Path("src/ui/case_study.py"),
     Path("src/ui/samples.py"),
@@ -537,7 +537,7 @@ class NavigationAndPageConfigGuardrailTests(unittest.TestCase):
     def test_navigation_only_exposes_current_four_pages(self):
         self.assertEqual(MAIN_PAGE_KEYS, list(PAGES.keys()))
         self.assertEqual(list(zip(MAIN_NAV_LABELS, MAIN_NAV_PAGE_KEYS)), PRIMARY_NAV_ITEMS)
-        self.assertEqual(("发起评测", "test_run"), OPERATION_NAV_ITEM)
+        self.assertEqual(("运行评测", "test_run"), OPERATION_NAV_ITEM)
 
     def test_page_config_only_contains_current_four_pages(self):
         self.assertEqual(PAGE_CONFIG_KEYS, [config.page_key for config in PAGE_CONFIGS])

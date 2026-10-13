@@ -127,6 +127,12 @@ REPORT_STYLE_CSS = r"""
     margin: 2.3rem 0 0;
     padding: 1.25rem 0 0;
 }
+.report-section-heading:has(.report-section-index:empty) {
+    grid-template-columns: minmax(0, 1fr);
+}
+.report-section-index:empty { display: none; }
+.report-section:has(.report-section-index:empty) { margin-top: 1rem; padding-top: 1rem; }
+.report-section:has(.report-section-index:empty) .report-section-body { margin-left: 0; }
 .report-section-heading {
     display: grid !important;
     gap: 1rem;

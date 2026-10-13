@@ -12,6 +12,7 @@ import streamlit as st
 from app.services import conclusions as cc
 from app.services.comparison import comparison_for_runs, runtime_counts
 from app.services.conclusion_read_model import build_conclusion_report
+from app.services.model_display import display_model_name
 from app.services.snapshot import _safe, export_snapshot, load_snapshot, restore_context
 
 PUBLIC_SNAPSHOT = Path(__file__).resolve().parents[2] / "public" / "evaluation_snapshot.json"
@@ -112,7 +113,7 @@ def render_snapshot_export(store):
     )
 
 
-def render_comparison_and_runtime(report):
+def render_comparison_and_runtime(report, *, include_runtime=True):
     result = report.comparison
     if result:
         st.markdown("**共同有效样本质量比较**")
@@ -122,16 +123,26 @@ def render_comparison_and_runtime(report):
         )
         st.caption(f"共同有效样本：{result['common_count']} 条。各模型自身样本均分仅用于单模型观察。")
         if result["common_count"]:
+            display_rows = [dict(row, model_id=" | ".join([display_model_name(str(row["model_id"]).split(" | ")[0], source="live"), *str(row["model_id"]).split(" | ")[1:]])) for row in result["models"]]
             st.dataframe(
-                pd.DataFrame(result["models"]).rename(
+                pd.DataFrame(display_rows).rename(
                     columns={"model_id": "模型", "common_count": "共同样本数", "avg_total": "共同样本均分"}
                 ),
+                column_config={
+                    "模型": st.column_config.TextColumn(width="medium"),
+                    "共同样本数": st.column_config.NumberColumn("共同样本", width="small"),
+                    "共同样本均分": st.column_config.NumberColumn("共同均分", width="small", format="%.1f"),
+                },
                 hide_index=True,
                 use_container_width=True,
             )
-            st.caption("共同任务：" + "、".join(result["case_ids"]))
         if not result["sufficient"]:
             st.info("数据不足以形成模型优劣比较。" + result["reason"])
+    if include_runtime:
+        render_runtime_details(report)
+
+
+def render_runtime_details(report):
     tables = report.runtime_tables
     if not tables:
         return
@@ -145,6 +156,8 @@ def render_comparison_and_runtime(report):
             with st.expander(f"查看失败原因 · {len(failures)} 条记录"):
                 st.dataframe(_safe(failures), hide_index=True, use_container_width=True)
     with st.expander("运行覆盖、失败与测试配置"):
+        if report.comparison.get("case_ids"):
+            st.caption("共同任务：" + "、".join(report.comparison["case_ids"]))
         st.caption("此处列出所选快照批次或当前数据库全部运行；共同质量比较仅使用兼容版本组。失败记录继续保留。")
         counts = runtime_counts(
             tables.get("live_run_queue", []), tables.get("live_run_responses", []), tables.get("live_run_scores", [])

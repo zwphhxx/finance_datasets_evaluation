@@ -17,14 +17,14 @@ BANNED_PHRASES = ["AI赋能", "智能洞察", "一键优化", "专家级", "秒�
 class RegistrationTests(unittest.TestCase):
     def test_page_is_registered_and_first(self):
         self.assertIn("case_study", PAGES)
-        self.assertEqual("case_study", list(PAGES.keys())[0])
+        self.assertEqual("conclusions", list(PAGES.keys())[0])
         self.assertIn("case_study", PAGE_CONFIG_BY_KEY)
 
     def test_conclusions_are_default_landing_page(self):
-        self.assertEqual("case_study", DEFAULT_PAGE_KEY)
+        self.assertEqual("conclusions", DEFAULT_PAGE_KEY)
 
     def test_first_nav_item_is_conclusions(self):
-        self.assertEqual("case_study", PRIMARY_NAV_ITEMS[0][1])
+        self.assertEqual("conclusions", PRIMARY_NAV_ITEMS[0][1])
 
     def test_page_context_is_complete_and_clean(self):
         config = PAGE_CONFIG_BY_KEY["case_study"]
@@ -36,8 +36,8 @@ class RegistrationTests(unittest.TestCase):
     def test_source_uses_current_shared_components_only(self):
         source = Path("src/ui/case_study.py").read_text(encoding="utf-8")
         self.assertIn("render_report_masthead", source)
-        self.assertIn("render_scope_ledger", source)
-        self.assertIn("查看完整评测方法与数据范围", source)
+        self.assertNotIn("render_scope_ledger", source)
+        self.assertIn("研究局限", source)
         self.assertIn("report_section_html", source)
         self.assertIn("_process_steps_html(PROCESS_STEPS)", source)
         for legacy_name in (

@@ -16,7 +16,7 @@ class TaskBrowserTests(unittest.TestCase):
         self.rows = samples.build_case_overview_rows(self.data)
 
     def test_title_is_task_sample(self):
-        self.assertEqual("样本库", get_page_config("samples").title)
+        self.assertEqual("样本维护", get_page_config("samples").title)
 
     def test_one_row_per_task_with_expected_columns(self):
         self.assertEqual(len(self.data.tasks), len(self.rows))

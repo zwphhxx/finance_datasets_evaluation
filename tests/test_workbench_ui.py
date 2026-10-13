@@ -89,8 +89,8 @@ def test_default_page_and_query_route_are_overview():
     from src.ui.navigation import PRIMARY_NAV_ITEMS
     from src.ui.page_config import DEFAULT_PAGE_KEY
 
-    assert DEFAULT_PAGE_KEY == "case_study"
-    assert PRIMARY_NAV_ITEMS[0] == ("评测概览", "case_study")
+    assert DEFAULT_PAGE_KEY == "conclusions"
+    assert PRIMARY_NAV_ITEMS[0] == ("评测结果", "conclusions")
 
 
 def test_no_real_result_empty_state_and_no_provider_calls(monkeypatch):
@@ -158,8 +158,8 @@ def test_unavailable_results_are_unknown_in_overview(monkeypatch):
     at = AppTest.from_string("""
 from types import SimpleNamespace
 import pandas as pd
-from src.ui.case_study import render_case_study_page
-render_case_study_page({'base':SimpleNamespace(tasks=pd.DataFrame([{'case_id':'x','domain':'finance'}]))})
+from src.ui.conclusions import render_conclusions_page
+render_conclusions_page({'base':SimpleNamespace(tasks=pd.DataFrame([{'case_id':'x','domain':'finance'}]))})
 """).run()
     assert not at.exception
     assert "已评测模型</dt><dd>—" in " ".join(m.value for m in at.markdown)
@@ -176,7 +176,7 @@ def test_page_route_survives_refresh_and_invalid_route_falls_back(isolated_app_d
     at.query_params["page"] = "invalid"
     at.run(timeout=30)
     assert not at.exception
-    assert at.session_state["current_page"] == "case_study"
+    assert at.session_state["current_page"] == "conclusions"
 
 
 def test_legacy_dimension_scores_do_not_invent_full_marks():
