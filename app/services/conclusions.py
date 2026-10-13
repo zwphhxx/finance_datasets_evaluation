@@ -754,7 +754,8 @@ def _main_issues_for_model(
     if int(boundary.get("high_risk_issue_count") or 0) > 0:
         issues.append("高风险任务表现不足")
     if not issues:
-        issues.append("当前样本内未见突出问题")
+        # Missing labels or threshold hits do not establish that feedback is clean.
+        issues.append("当前评分未形成稳定的问题归纳；需核对逐题评分理由。")
     return _dedupe(issues)[:4]
 
 

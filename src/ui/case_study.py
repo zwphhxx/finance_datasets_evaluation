@@ -151,7 +151,13 @@ def render_case_study_page(data_bundle: dict) -> None:
     from src.ui.history_view import render_comparison_and_runtime, render_history_controls
     from src.ui.labels import DOMAIN_LABELS, display_label
     from src.ui.trust_details import render_score_detail
-    from src.ui.workbench import has_multiple_endpoints, historical_dimensions, load_workbench_source, overview_facts
+    from src.ui.workbench import (
+        has_multiple_endpoints,
+        historical_dimensions,
+        load_workbench_source,
+        overview_facts,
+        overview_score_observation,
+    )
 
     base = data_bundle.get("base") or data_bundle["data"]
     render_report_masthead(PROJECT_DISPLAY_NAME, BRIEF_NOTE, "评测概览")
@@ -172,10 +178,17 @@ def render_case_study_page(data_bundle: dict) -> None:
     st.subheader("主要发现与模型比较")
     if report and report.model_summaries:
         st.caption("当前兼容批次；自动评分仅代表样本内观察，需要结合下方原始证据复核。")
+        st.caption("每个模型摘录有评分说明的最低分样本；这是单题反馈，不代表问题频率或模型整体能力。")
         for summary in report.model_summaries:
             if not has_multiple_endpoints(report):
-                issues = summary.get("main_issues") or []
-                st.text(str(summary.get("display_name") or summary.get("model_name")) + "：" + ("；".join(str(i) for i in issues) if issues else "当前评分未形成稳定的问题归纳。"))
+                name = str(summary.get("display_name") or summary.get("model_name"))
+                observation = overview_score_observation(report, summary.get("model_name"))
+                if observation:
+                    st.text(f"{name}｜{observation['case_id']}｜{observation['source']}：{observation['text']}")
+                else:
+                    issues = summary.get("main_issues") or []
+                    st.text(name + "：" + ("；".join(str(i) for i in issues) if issues else "当前评分未形成稳定的问题归纳。")
+                            + " 未保存可展示的评分说明或维度理由，不能据此判断没有问题。")
         st.caption("上述为自动评分记录的归纳；未保存结构化引文的历史记录仍需核对原始证据，不能作为已验证专业结论。")
         render_comparison_and_runtime(report)
     elif source.available:

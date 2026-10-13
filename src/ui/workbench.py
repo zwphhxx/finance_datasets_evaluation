@@ -13,7 +13,7 @@ from app.services import dataset_service as ds
 from app.services.comparison import comparison_for_runs
 from app.services.conclusion_read_model import ReportScope
 from app.services.evidence_index import build_evidence_index
-from app.services.snapshot import restore_context
+from app.services.snapshot import _safe, restore_context
 from src.ui import conclusions_data as cd
 from src.ui.history_view import active_snapshot, snapshot_report
 from src.ui.labels import DOMAIN_LABELS, display_label
@@ -48,6 +48,35 @@ def overview_facts(base, report):
         scores=report.scope.formal_score_count if report else 0,
         latest=latest,
     )
+
+
+def overview_score_observation(report, model_name):
+    """Quote saved feedback from the lowest scored readable formal record.
+
+    This is a case observation, not a semantic classification or frequency claim.
+    Missing legacy checkpoints must not be interpreted as evidence of no errors.
+    """
+    scores = report.formal_scores
+    if scores.empty or "eval_model" not in scores:
+        return None
+    candidates = scores[scores["eval_model"].astype(str) == str(model_name)].copy()
+    candidates["_score_order"] = pd.to_numeric(candidates.get("total_score"), errors="coerce")
+    for field in ("case_id", "run_id"):
+        candidates[f"_{field}_order"] = candidates[field].map(cc._text) if field in candidates else ""
+    candidates = candidates.sort_values(
+        ["_score_order", "_case_id_order", "_run_id_order"], kind="mergesort", na_position="last"
+    )
+    for row in candidates.to_dict("records"):
+        text = cc._text(row.get("review_note"))
+        source = "评分说明"
+        if not text:
+            reasons = cc._parse_rationale(row.get("rationale"))
+            text = "；".join(f"{field}：{reason}" for field, reason in reasons.items())
+            source = "维度评分理由"
+        if text:
+            return _safe(dict(case_id=cc._text(row.get("case_id")), run_id=cc._text(row.get("run_id")),
+                              source=source, text=text))
+    return None
 
 
 def report_tasks(report, fallback):
