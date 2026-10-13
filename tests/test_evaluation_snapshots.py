@@ -143,3 +143,45 @@ def test_declared_verified_quotes_require_complete_reason_and_score_fields():
     row["evidence_status"] = "verified_quotes"
     with pytest.raises(ValueError):
         sp.load_snapshot(json.dumps(payload).encode())
+
+
+def test_export_excludes_mock_judges_and_their_dependents_but_preserves_live_failures():
+    raw = records()
+    raw['live_run_scores'].append(dict(raw['live_run_scores'][0], score_run_id='mock-score', judge_mode='mock', judge_provider='mock'))
+    raw['live_run_scores'].append(dict(raw['live_run_scores'][0], score_run_id='failed-score', judge_status='error', error_code='timeout'))
+    raw['live_score_queue'] = [
+        dict(run_id='r',score_run_id='mock-score',case_id='c',eval_model='m',judge_provider='vendor',status='success'),
+        dict(run_id='r',score_run_id='failed-score',case_id='c',eval_model='m',judge_provider='vendor',status='error'),
+    ]
+    raw['request_attempts'] = [
+        dict(attempt_id='mock-a',run_id='r',score_run_id='mock-score',case_id='c',eval_model='m',provider='vendor',phase='judge'),
+        dict(attempt_id='failed-a',run_id='r',score_run_id='failed-score',case_id='c',eval_model='m',provider='vendor',phase='judge'),
+    ]
+    before=copy.deepcopy(raw)
+
+    class Store:
+        def list_rows(self,table):return raw[table]
+
+    exported=sp.export_snapshot(Store())
+    assert {r['score_run_id'] for r in exported['tables']['live_run_scores']} == {'s','failed-score'}
+    assert [r['score_run_id'] for r in exported['tables']['live_score_queue']] == ['failed-score']
+    assert [r['attempt_id'] for r in exported['tables']['request_attempts']] == ['failed-a']
+    assert raw == before
+    restored=sp.load_snapshot(json.dumps(exported,ensure_ascii=False))
+    assert restored['tables']['live_run_scores'][-1]['error_code'] == 'timeout'
+
+
+@pytest.mark.parametrize('mode',['MOCK','selftest','synthetic','synthetic_judge_selftest','demo'])
+def test_snapshot_export_and_loader_share_non_formal_record_policy(mode):
+    raw=records()
+    raw['live_run_scores'][0]['judge_mode']=mode
+
+    class Store:
+        def list_rows(self,table):return raw[table]
+
+    exported=sp.export_snapshot(Store())
+    assert not exported['tables']['live_run_scores']
+    sp.load_snapshot(json.dumps(exported))
+    exported['tables']['live_run_scores']=raw['live_run_scores']
+    with pytest.raises(ValueError,match='模拟或裁判自测'):
+        sp.load_snapshot(json.dumps(exported))

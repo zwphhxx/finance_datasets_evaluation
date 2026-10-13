@@ -14,6 +14,7 @@ PROJECT_DISPLAY_NAME = "财务/法律/投行场景大模型对比评测"
 
 STYLE_CSS = """
 <style>
+/* findueval-build: public-final-acceptance-20261013-v1 */
 :root {
     --fde-paper: #F8FAFC;
     --fde-surface: #FFFFFF;

@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 import pandas as pd
 
 from app.persistence.schema import RUNTIME_TABLES
-from app.services.formal_records import filter_formal_responses
+from app.services.formal_records import filter_formal_responses, is_non_formal_runtime_record
 from app.services.score_evidence import validate_checks
 from src.metrics import SCORE_DIMENSION_FULL_MARKS
 
@@ -50,9 +50,20 @@ def export_snapshot(store) -> dict:
     for name, table in RUNTIME_TABLES.items():
         tables[name] = [{k: v for k, v in r.items() if k in table.c} for r in store.list_rows(name)]
     # Export full live runs, including failed/pending records; never promote mock runs.
-    run_ids = {r["run_id"] for r in tables["live_evaluation_runs"] if r.get("provider") not in {"mock", "demo"}}
+    run_ids = {r["run_id"] for r in tables["live_evaluation_runs"] if not is_non_formal_runtime_record(r)}
+    # A real answer batch may also contain earlier mock judge batches. Exclude
+    # their exact score identities and dependents, without deleting live failures.
+    def score_identity(row):
+        return (row.get("run_id"), row.get("score_run_id"), row.get("case_id"), row.get("eval_model"))
+    excluded_scores = {
+        score_identity(r) for r in tables["live_run_scores"] if is_non_formal_runtime_record(r)
+    }
     for name in tables:
-        tables[name] = [r for r in tables[name] if r.get("run_id") in run_ids]
+        tables[name] = [
+            r for r in tables[name]
+            if r.get("run_id") in run_ids and not is_non_formal_runtime_record(r)
+            and not (name in {"live_score_queue", "request_attempts"} and score_identity(r) in excluded_scores)
+        ]
     safe_tables = _safe(tables)
     return {
         "export_type": EXPORT_TYPE,
@@ -142,10 +153,7 @@ def load_snapshot(content: bytes | str) -> dict:
         for row in rows:
             if row.get("run_id") not in runs:
                 raise ValueError("记录缺少对应运行批次。")
-            if any(
-                str(row.get(k) or "").lower() in {"mock", "demo", "selftest", "synthetic"}
-                for k in ("run_mode", "judge_mode", "provider", "judge_provider")
-            ):
+            if is_non_formal_runtime_record(row):
                 raise ValueError("模拟或裁判自测数据不能作为正式历史快照。")
     answers = filter_formal_responses(pd.DataFrame(tables["live_run_responses"]))
     answer_map = {(r["run_id"], r["case_id"], r["model_name"]): r["answer_text"] for r in answers.to_dict("records")}

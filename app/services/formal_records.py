@@ -14,6 +14,14 @@ from src.metrics import SCORE_DIMENSION_FULL_MARKS
 _NON_FORMAL_MODES = {"mock", "demo", "selftest", "synthetic", "synthetic_judge_selftest"}
 
 
+def is_non_formal_runtime_record(row: dict[str, Any]) -> bool:
+    """Shared snapshot policy, including queues that have provider but no mode."""
+    return any(
+        _text(row.get(field)).lower() in _NON_FORMAL_MODES
+        for field in ("run_mode", "judge_mode", "provider", "judge_provider")
+    )
+
+
 def filter_formal_responses(
     responses: pd.DataFrame,
     allowed_case_ids: Collection[str] | None = None,
