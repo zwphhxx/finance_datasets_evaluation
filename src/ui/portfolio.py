@@ -96,6 +96,37 @@ def _reset_home_selection():
         st.session_state.pop(key, None)
 
 
+def _return_from_deleted_score():
+    _reset_home_selection()
+    st.session_state.pop("public_preview_record", None)
+    st.query_params["page"] = "conclusions"
+    st.session_state.current_page = "conclusions"
+    request_scroll("#fde-featured-case")
+
+
+def _is_deleted_score(report, route, responses):
+    """Recognize a removed outcome from its retained, exact failed checkpoint.
+
+    A missing URL alone is not proof of deletion. Saving a failed outcome and
+    marking its queue failed is atomic; require that checkpoint and its saved
+    successful answer, and never reinterpret an existing score as deleted.
+    """
+    if report is None or not all(route):
+        return False
+
+    def identity(row):
+        return tuple(str(row.get(field) or "") for field in ("case_id", "run_id", "eval_model", "score_run_id"))
+
+    if any(identity(row) == route for row in report.runtime_tables.get("live_run_scores", [])):
+        return False
+    checkpoints = [row for row in report.runtime_tables.get("live_score_queue", []) if identity(row) == route]
+    return (
+        len(checkpoints) == 1
+        and checkpoints[0].get("status") == "failed"
+        and bool(_formal_response_for_score(responses, checkpoints[0]))
+    )
+
+
 def _home_case_changed():
     if st.session_state.portfolio_home_case:
         st.query_params["case"] = st.session_state.portfolio_home_case
@@ -375,17 +406,21 @@ def _render_home_excerpt(report, source, task_map, case_id, score, responses):
 def render_portfolio_case(data_bundle):
     base = data_bundle.get("base") or data_bundle["data"]
     with st.container(key="portfolio_case"):
+        source = workbench.load_workbench_source(base)
+        report = source.report if source.available else None
+        rows, responses = _review_records(report)
+        route = tuple(st.query_params.get(field, "") for field in ROUTE_FIELDS)
+        if _is_deleted_score(report, route, responses):
+            st.info("该评分记录已删除")
+            st.button("返回案例展示", key="portfolio_deleted_return_home", on_click=_return_from_deleted_score)
+            return
         st.button(
             "← 返回在线评测" if st.query_params.get("origin") == "evaluation_preview" else "← 返回案例展示",
             key="portfolio_return_home",
             type="tertiary",
             on_click=_return_home,
         )
-        source = workbench.load_workbench_source(base)
-        report = source.report if source.available else None
-        rows, responses = _review_records(report)
         task_map = {str(t["case_id"]): t for t in _tasks(base)}
-        route = tuple(st.query_params.get(field, "") for field in ROUTE_FIELDS)
         case_id, run_id, model, score_id = route
         if not any(route):
             case_id = "FD-001" if "FD-001" in task_map else next(iter(sorted(task_map)), "")
