@@ -10,6 +10,8 @@ from app.services.model_display import display_model_name
 def failure_label(row, *, phase="judge"):
     code = str(row.get("error_code") or "")
     stage = "AI评分" if phase == "judge" else "模型回答"
+    if code == "judge_parse_error" and "引文" in str(row.get("error_message") or ""):
+        return stage + "引用证据校验失败"
     labels = {
         "timeout": "超时",
         "gateway_timeout": "网关超时",

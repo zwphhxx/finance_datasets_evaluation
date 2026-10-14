@@ -257,3 +257,19 @@ def test_nonthinking_trial_rejects_oversized_input_before_writes_or_requests(fai
         )
     assert len(f["sent"]) == 4
     assert not linked_retry_runs(f["store"], f["job"]["run_id"])
+
+
+def test_quote_rejection_is_presented_as_evidence_failure_not_json_format_error():
+    from src.ui.evaluation_feedback import pair_rows
+
+    answer = {"case_id": "FD-001", "model_name": "m1", "run_status": "success"}
+    score = {
+        "case_id": "FD-001", "eval_model": "m1", "judge_status": "failed",
+        "error_code": "judge_parse_error", "error_message": "must:2 引文不在被测回答原文中。",
+        "total_score": None,
+    }
+    record = pair_rows([answer], [score])[0]
+    assert "证据" in record["评分状态"] and "格式" not in record["评分状态"]
+    assert record["_score"]["total_score"] is None
+    malformed = dict(score, error_message="未返回完整JSON对象。")
+    assert "格式" in pair_rows([answer], [malformed])[0]["评分状态"]
