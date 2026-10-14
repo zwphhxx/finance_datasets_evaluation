@@ -501,7 +501,7 @@ def _phase_request_parameters(parameters):
     if parameters.get('timeout_seconds') is not None:
         result['request_timeout_seconds']=parameters['timeout_seconds']
         result['request_timeout_source']=parameters.get('timeout_source','saved_configuration')
-    for field in ('retry_delays','response_format'):
+    for field in ('retry_delays','response_format','enable_thinking'):
         if field in parameters:
             result[field]=parameters[field]
     return result

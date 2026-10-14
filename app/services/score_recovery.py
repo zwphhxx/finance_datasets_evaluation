@@ -74,7 +74,7 @@ def saved_config(store, run_id):
     return run, config
 
 
-def _prepare(store, book, job_id, owner, pair):
+def _prepare(store, book, job_id, owner, pair, *, nonthinking_trial=False):
     job = book.job(job_id, owner)
     run, config = saved_config(store, job["run_id"])
     pair = tuple(map(str, pair))
@@ -142,6 +142,26 @@ def _prepare(store, book, job_id, owner, pair):
         saved_source = config.generation_parameters.get("reused_answer") or {}
         if saved_source.get("run_id") != job["run_id"] or saved_source.get("answer_sha256") != digest:
             raise PermissionError("原回答与重评分检查点不一致，停止恢复。")
+        if nonthinking_trial and config.judge_parameters.get("validation_trial") != "authorized-nonthinking-single-request":
+            raise PermissionError("已有重评分配置不同，不能改变其推理模式。")
+    elif nonthinking_trial:
+        messages = scorer.build_judge_messages(item["task"], answer["answer_text"], config.gold_map[pair[0]], config.dimensions)
+        if len(messages) != 2 or sum(len(m["content"].encode("utf-8")) for m in messages) > 16000:
+            raise ValueError("评分输入超出本次费用验证范围，未发起请求。")
+        config = replace(
+            config,
+            judge_parameters=dict(
+                config.judge_parameters,
+                enable_thinking=False,
+                max_tokens=3072,
+                retry_delays=[],
+                validation_trial="authorized-nonthinking-single-request",
+                validation_cost_bound_cny=0.466944,
+                validation_input_token_bound=32768,
+                validation_price_as_of="2026-10-14",
+                validation_price_cny_per_million={"input": 12, "output": 24},
+            ),
+        )
     return job, config, answer, remaining, pending_run
 
 
@@ -179,7 +199,13 @@ def retry_options(job_id, owner, *, url=None):
         store.engine.dispose()
 
 
-def run_score_retry(job_id, owner, pair, *, url=None, provider_factory=None, on_event=None, on_created=None):
+def run_score_retry(
+    job_id, owner, pair, *, url=None, provider_factory=None, on_event=None, on_created=None,
+    nonthinking_trial=False,
+):
+    # Explicit opt-in for the separately authorized validation; public callers keep defaults.
+    if not isinstance(nonthinking_trial, bool):
+        raise ValueError("评分验证模式必须显式指定。")
     if not public_run.enabled() or not sf.is_configured():
         raise PermissionError("当前真实评分不可用。")
     settings = (
@@ -188,7 +214,10 @@ def run_score_retry(job_id, owner, pair, *, url=None, provider_factory=None, on_
     require_durable_live_store("siliconflow", settings)
     read = ResultStore(settings.url)
     try:
-        _prepare(read, PublicRunLedger(read.engine, daily_tasks=public_run.daily_limit()), job_id, owner, pair)
+        _prepare(
+            read, PublicRunLedger(read.engine, daily_tasks=public_run.daily_limit()), job_id, owner, pair,
+            nonthinking_trial=nonthinking_trial,
+        )
     finally:
         read.engine.dispose()
     engine = create_engine(settings.url, pool_pre_ping=True)
@@ -200,7 +229,9 @@ def run_score_retry(job_id, owner, pair, *, url=None, provider_factory=None, on_
         acquired = True
         check = ResultStore(settings.url)
         try:
-            job, config, answer, remaining, pending = _prepare(check, book, job_id, owner, pair)
+            job, config, answer, remaining, pending = _prepare(
+                check, book, job_id, owner, pair, nonthinking_trial=nonthinking_trial,
+            )
         finally:
             check.engine.dispose()
         digest = hashlib.sha256(answer["answer_text"].encode()).hexdigest()
@@ -217,7 +248,8 @@ def run_score_retry(job_id, owner, pair, *, url=None, provider_factory=None, on_
             grant.on_event = on_event
             provider = (provider_factory or sf.SiliconFlowProvider)()
             workflow = EvaluationWorkflow(runtime, provider, provider)
-            workflow.judge_attempt_limit = min(3, remaining)
+            trial = config.judge_parameters.get("validation_trial") == "authorized-nonthinking-single-request"
+            workflow.judge_attempt_limit = 1 if trial else min(3, remaining)
             if pending:
                 from app.services.evaluation_workflow import EvaluationRunRef
 

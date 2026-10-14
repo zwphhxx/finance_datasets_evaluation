@@ -191,3 +191,69 @@ def test_active_parent_lease_rejects_duplicate_without_a_model_call(failed_batch
         assert len(f["sent"]) == 8
     finally:
         book.release(f["job"]["job_id"], "owner")
+
+
+@pytest.mark.parametrize("failed_batch", ["bad_request"], indirect=True)
+def test_authorized_nonthinking_trial_is_single_request_and_records_configuration(failed_batch):
+    from app.services.score_recovery import run_score_retry
+
+    f = failed_batch
+    f["state"]["fail"] = False
+    ref, status = run_score_retry(
+        f["job"]["job_id"], "owner", ("FD-001", "m1"),
+        url=f["url"], provider_factory=lambda: f["provider"], nonthinking_trial=True,
+    )
+    assert status.succeeded == 1
+    assert len(f["sent"]) == 5
+    assert f["sent"][-1]["enable_thinking"] is False
+    assert f["sent"][-1]["max_tokens"] == 3072
+    metadata = f["store"].list_rows("live_evaluation_runs", run_id=ref.run_id)[0]
+    judge = json.loads(metadata["judge_parameters_json"])
+    assert judge["validation_trial"] == "authorized-nonthinking-single-request"
+    assert judge["retry_delays"] == []
+    assert all(f["baseline"][t] == f["store"].list_rows(t, run_id=f["job"]["run_id"]) for t in f["baseline"])
+
+
+@pytest.mark.parametrize("failed_batch", ["bad_request"], indirect=True)
+def test_authorized_nonthinking_trial_never_retries_timeout(failed_batch, monkeypatch):
+    from app.services.score_recovery import run_score_retry
+
+    f = failed_batch
+    from app.models.siliconflow import _HttpResponse
+
+    def timeout(method, path, data=None, **kwargs):
+        assert method == "POST"
+        f["sent"].append(data)
+        return _HttpResponse(None, {}, "", error="timeout")
+
+    monkeypatch.setattr(f["provider"], "_send", timeout)
+    ref, status = run_score_retry(
+        f["job"]["job_id"], "owner", ("FD-001", "m1"),
+        url=f["url"], provider_factory=lambda: f["provider"], nonthinking_trial=True,
+    )
+    assert status.failed == 1
+    assert len(f["sent"]) == 5
+    assert f["sent"][-1]["enable_thinking"] is False
+
+
+@pytest.mark.parametrize("failed_batch", ["bad_request"], indirect=True)
+def test_nonthinking_trial_rejects_oversized_input_before_writes_or_requests(failed_batch, monkeypatch):
+    from app.services import scorer
+    from app.services.score_recovery import linked_retry_runs, run_score_retry
+
+    f = failed_batch
+    original = scorer.build_judge_messages
+
+    def oversized(*args):
+        messages = original(*args)
+        messages[-1]["content"] += "x" * 16000
+        return messages
+
+    monkeypatch.setattr(scorer, "build_judge_messages", oversized)
+    with pytest.raises(ValueError, match="费用"):
+        run_score_retry(
+            f["job"]["job_id"], "owner", ("FD-001", "m1"),
+            url=f["url"], provider_factory=lambda: f["provider"], nonthinking_trial=True,
+        )
+    assert len(f["sent"]) == 4
+    assert not linked_retry_runs(f["store"], f["job"]["run_id"])
