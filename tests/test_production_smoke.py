@@ -120,6 +120,13 @@ def test_scored_home_and_detail_are_read_inside_iframe(smoke):
     assert page.clicks == ["查看完整案例 →"]
 
 
+def test_legacy_case_with_missing_task_notice_and_saved_answer_and_score_passes(smoke):
+    page = FakePage(detail="历史案例 · FD-001\n模型回答\n专业评价\n缺少当时任务、参考标准及引文。")
+    inspect(smoke, page)
+    assert page.clicks == ["查看完整案例 →"]
+    assert "缺少当时任务" in page.states["detail"]["text"]
+
+
 def test_sleeping_app_is_woken_once_then_checked(smoke):
     page = FakePage(initial="sleep")
     inspect(smoke, page)

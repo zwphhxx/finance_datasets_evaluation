@@ -145,7 +145,7 @@ def inspect_public_page(page, *, timeout=180, poll_interval=1, clock=time.monoto
         raise ProbeFailure("public homepage did not render a saved scored case")
     while clock() < deadline:
         for frame, text in _frame_states(page):
-            if not all(marker in text for marker in ("任务与业务背景", "模型回答", "专业评价")):
+            if not all(marker in text for marker in ("模型回答", "专业评价")):
                 continue
             if "尚无可读取的模型回答" in text or "本次没有有效评分" in text:
                 continue
