@@ -12,6 +12,7 @@ from app.persistence.result_store import ResultStore, ResultStoreError
 from app.persistence.schema import RUNTIME_TABLES
 from app.services import dataset_service as ds
 from app.services import formal_records, scorer
+from app.services.evaluation_policy import resolve_phase_timeout
 from app.services.evaluation_workflow import EvaluationWorkflow
 from app.services.public_execution import execution_scope
 from app.services.public_run_quota import PublicRunLedger
@@ -92,11 +93,21 @@ def run_public_evaluation(base,case_ids,model_ids,*,owner,job_id=None,url=None,
             if count>daily_limit():
                 raise PermissionError(f'本次共{count}个任务，超过每日{daily_limit()}个任务上限。')
             config=build_evaluation_config(base,[tasks[c] for c in case_ids],model_ids)
+            answer_timeout,answer_source=resolve_phase_timeout('answer')
+            judge_timeout,judge_source=resolve_phase_timeout('judge')
             config=replace(config,generation_parameters=dict(config.generation_parameters,max_tokens=max_tokens,
-                                                             temperature=temperature),
-                           judge_parameters=dict(config.judge_parameters,max_tokens=3072))
+                                                             temperature=temperature,timeout_seconds=answer_timeout,timeout_source=answer_source),
+                           judge_parameters=dict(config.judge_parameters,max_tokens=3072,timeout_seconds=judge_timeout,
+                                                 timeout_source=judge_source,response_format={'type':'json_object'}))
     finally:
         readonly.engine.dispose()
+    provider=(provider_factory or sf.SiliconFlowProvider)()
+    if not job_id:
+        from app.services.public_preflight import check_run_configuration
+        checked=check_run_configuration(base,case_ids,model_ids,temperature=temperature,max_tokens=max_tokens,
+                                        check_catalogue=True,url=settings.url,provider_factory=lambda:provider)
+        if not checked['ready']:
+            raise PermissionError('；'.join(checked['errors']))
     engine=create_engine(settings.url,pool_pre_ping=True)
     book=PublicRunLedger(engine,daily_tasks=daily_limit())
     pairs={(str(q['case_id']),str(q['model_id'])) for q in config.queue_items}
@@ -112,7 +123,6 @@ def run_public_evaluation(base,case_ids,model_ids,*,owner,job_id=None,url=None,
             runtime=ResultStore(settings.url,evaluation_writable=True)
             grant.store=runtime
             grant.on_event=on_event
-            provider=(provider_factory or sf.SiliconFlowProvider)()
             workflow=EvaluationWorkflow(runtime,provider,provider)
             if job_id:
                 workflow.continue_evaluation(job['run_id'],config)

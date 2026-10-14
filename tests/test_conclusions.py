@@ -89,7 +89,7 @@ class RegistrationTests(unittest.TestCase):
     def test_page_registered_with_config(self):
         self.assertIn("conclusions", PAGES)
         self.assertIn("conclusions", PAGE_CONFIG_BY_KEY)
-        self.assertEqual("评测结果", PAGE_CONFIG_BY_KEY["conclusions"].title)
+        self.assertEqual("案例展示", PAGE_CONFIG_BY_KEY["conclusions"].title)
 
     def test_positioning_not_a_leaderboard(self):
         # The formal-conclusion positioning lives in case_study (project intro).

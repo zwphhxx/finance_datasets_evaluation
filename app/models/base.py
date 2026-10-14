@@ -82,6 +82,8 @@ class GenerationResult:
     incomplete_reason: str | None = None
     timeout_seconds: float | None = None
     timeout_source: str | None = None
+    error_stage: str | None = None
+    input_chars: int | None = None
 
     @property
     def ok(self) -> bool:

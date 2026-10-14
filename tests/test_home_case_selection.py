@@ -232,8 +232,18 @@ def test_legacy_rating_shows_original_feedback_without_inventing_deductions():
     text=visible(at)
     assert 'AI评分：93' in text and '历史满分未记录' in text
     assert '原始评分反馈' in text and '未保存逐项扣分对应关系' in text
-    assert '遗漏独立财务顾问核查' in text and '未提及详式权益变动报告书' in text
+    assert '遗漏独立财务顾问核查' in text and '初步结论表述过于绝对' in text
+    assert '未提及详式权益变动报告书' not in text  # Two original opinions in the home summary.
     assert '扣7分' not in text and '未见突出问题' not in text
+    detail = AppTest.from_string('''
+from src.ui.trust_details import render_portfolio_evaluation
+render_portfolio_evaluation(answer='原文', score={'total_score':93,
+ 'review_note':'结论方向正确，但遗漏独立财务顾问核查。',
+ 'rationale':{'reasoning_score':'初步结论表述过于绝对。','coverage_score':'未提及详式权益变动报告书。'}},
+ dimensions=[], gold=None, metadata={})
+''').run()
+    assert not detail.exception
+    assert '未提及详式权益变动报告书' in visible(detail)
 
 
 @pytest.mark.parametrize('rationale',[None,'裁判原始文本：遗漏核查时间边界。'])

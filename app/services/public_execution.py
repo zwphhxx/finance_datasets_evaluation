@@ -8,6 +8,7 @@ from dataclasses import dataclass
 _execution = ContextVar('public_execution', default=None)
 _generating = ContextVar('public_generating', default=False)
 _pair = ContextVar('public_execution_pair', default=None)
+_catalogue = ContextVar('provider_catalogue_read', default=False)
 
 
 @dataclass
@@ -21,6 +22,7 @@ class PublicExecution:
     score_run_id: str | None
     store: object = None
     on_event: object = None
+    retry_source: dict | None = None
 
     def pair(self, case, model):
         if (str(case), str(model)) not in self.pairs:
@@ -46,6 +48,9 @@ class PublicExecution:
     def store_operation(self, function, args):
         if args[0] is not self.store:
             raise PermissionError('结果存储未授权。')
+        # Renew with the acquired lease generation before any guarded write.
+        # A late worker cannot release, spend, or write after another recovery.
+        self.ledger.refresh_lease(self.job_id, self.owner)
         name = function.__name__
         if name == 'initialize_evaluation':
             run, answers, scores = args[1:4]
@@ -61,7 +66,8 @@ class PublicExecution:
             self.run_id, self.score_run_id = run['run_id'], next(iter(score_ids))
             if self.store.list_rows('live_run_scores', score_run_id=self.score_run_id):
                 raise PermissionError('不能覆盖已有评分。')
-            self.ledger.bind_run(self.job_id,self.owner,self.run_id,self.score_run_id)
+            if self.retry_source is None:
+                self.ledger.bind_run(self.job_id,self.owner,self.run_id,self.score_run_id)
         elif name in {'claim_run','mark_run_stopped'}:
             self.run(args[1])
         elif name == 'mark_run_item_running':
@@ -76,6 +82,11 @@ class PublicExecution:
             self.pair(row.get('case_id'),row.get('model_name') or row.get('eval_model'))
             if row.get('score_run_id'):
                 self.score(row['score_run_id'])
+            if self.retry_source is not None and name=='save_run_outcome':
+                import hashlib
+                expected=self.retry_source['answer_hashes'].get((str(row.get('case_id')),str(row.get('model_name'))))
+                if not expected or hashlib.sha256(str(row.get('answer_text') or '').encode()).hexdigest()!=expected:
+                    raise PermissionError('重评分不能生成或改写已保存回答。')
         else:
             raise PermissionError('此操作不属于公开评测。')
 
@@ -85,8 +96,31 @@ def current_execution():
 
 
 @contextmanager
+def catalogue_scope():
+    """Service-owned free catalogue GET; cannot authorize a completion or write."""
+    token=_catalogue.set(True)
+    try:
+        yield
+    finally:
+        _catalogue.reset(token)
+
+
+@contextmanager
+def score_retry_scope(ledger,job_id,owner,pairs,*,judge,source):
+    ledger.job(job_id,owner)
+    ledger.refresh_lease(job_id, owner)
+    grant=PublicExecution(ledger,job_id,owner,pairs,judge,None,None,retry_source=source)
+    token=_execution.set(grant)
+    try:
+        yield grant
+    finally:
+        _execution.reset(token)
+
+
+@contextmanager
 def execution_scope(ledger, job_id, owner, pairs, *, judge='deepseek-ai/DeepSeek-V4-Pro'):
     row = ledger.job(job_id, owner)
+    ledger.refresh_lease(job_id, owner)
     if len(pairs) != row['tasks']:
         raise PermissionError('预占额度与任务数量不一致。')
     grant = PublicExecution(ledger,job_id,owner,pairs,judge,row.get('run_id'),row.get('score_run_id'))
@@ -99,10 +133,15 @@ def execution_scope(ledger, job_id, owner, pairs, *, judge='deepseek-ai/DeepSeek
 
 @contextmanager
 def authorized_operation(function, args, kwargs):
+    module, name = function.__module__, function.__name__
+    if _catalogue.get() and module=='app.models.siliconflow':
+        if name=='list_models' or (name=='_send' and args[1]=='GET' and args[2].split('?')[0]=='/models'):
+            yield
+            return
+        raise PermissionError('模型目录预检查不能触发付费请求。')
     grant = current_execution()
     if grant is None:
         raise PermissionError('模型调用仅可由明确启动且已预占额度的任务执行。')
-    module, name = function.__module__, function.__name__
     token = None
     pair_token = None
     if module == 'app.persistence.result_store':
@@ -110,6 +149,8 @@ def authorized_operation(function, args, kwargs):
     elif module == 'app.services.evaluation_workflow':
         if name == 'start_evaluation':
             grant.config(args[1])
+            if bool(kwargs.get('reused_answers')) != bool(grant.retry_source):
+                raise PermissionError('回答复用与已授权操作不一致。')
         elif name == 'continue_evaluation':
             grant.run(args[1])
             grant.config(args[2])
@@ -120,6 +161,8 @@ def authorized_operation(function, args, kwargs):
         else:
             raise PermissionError('工作流操作未授权。')
     elif module == 'app.services.eval_runner' and name == 'run_single':
+        if grant.retry_source is not None:
+            raise PermissionError('重评分不得重新生成模型回答。')
         grant.pair(args[2].get('case_id'),args[1])
         pair_token=_pair.set((str(args[2]['case_id']),str(args[1]),'answer'))
     elif module == 'app.services.scorer' and name == 'score_single':
@@ -135,6 +178,8 @@ def authorized_operation(function, args, kwargs):
             model = args[1] if len(args)>1 else kwargs.get('model_id')
             if model not in {m for _,m in grant.pairs} | {grant.judge}:
                 raise PermissionError('模型未授权。')
+            if grant.retry_source is not None and model!=grant.judge:
+                raise PermissionError('重评分仅允许调用裁判。')
             if not 1 <= kwargs.get('max_tokens',1024) <= 4096:
                 raise PermissionError('输出长度超出限制。')
             active_pair=_pair.get()

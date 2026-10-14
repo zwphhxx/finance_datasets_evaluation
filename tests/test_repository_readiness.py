@@ -123,12 +123,12 @@ def test_readme_documents_only_the_real_durable_evaluation_flow() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
     for phrase in [
-        "点击一次“开始评测”",
+        "点击“确认并开始评测”",
         "模型回答和评分都会增量保存",
-        "点击“继续评测”恢复剩余任务",
+        "点击“继续本次评测”恢复剩余任务",
         "数据库不可用时",
         "不会调用模型服务",
-        "开始评测按钮保持禁用",
+        "运行前检查按钮保持禁用",
         "真实模型密钥",
         "只导入评分行",
         "目标环境已存在相同运行批次、样本和模型的正式回答",

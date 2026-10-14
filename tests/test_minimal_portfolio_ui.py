@@ -20,10 +20,10 @@ def test_public_home_has_one_reading_path_without_dashboard(review_app):  # noqa
     assert not at.metric and not at.multiselect and not at.dataframe
     assert [s.label for s in at.selectbox] == ['专业案例', '模型与测试日期']
     assert not [b for b in at.button if str(b.key).startswith('top_nav_')]
-    assert [b.label for b in at.button] == ['评测结果', '评测流程', '样本库', '查看完整案例 →']
+    assert [b.label for b in at.button] == ['案例展示', '在线评测', '样本与标准', '查看完整案例 →']
     assert [e.label for e in at.expander] == ['切换案例']
     assert not at.expander[0].proto.expanded
-    assert '当次任务材料' in visible(at)
+    assert '已存历史运行输入' in visible(at)
     assert '历史回答节选' in visible(at)
     assert '完整评价证据' in visible(at)
 
@@ -71,7 +71,7 @@ def test_invalid_legacy_case_link_has_no_unrelated_answer(review_app, change):  
     assert not at.exception
     assert any('无法定位' in e.value for e in at.error)
     assert '原始回答' not in visible(at)
-    assert at.button(key='portfolio_return_home').label == '← 返回评测结果'
+    assert at.button(key='portfolio_return_home').label == '← 返回案例展示'
 
 
 def test_ambiguous_case_only_link_requires_exact_record(review_app):  # noqa: F811
@@ -102,8 +102,50 @@ render_portfolio_evaluation(answer={'原文' * 1800!r}, score={{'total_score': 1
     assert '原文' * 1800 in visible(at)
     for i in range(4):
         assert sum(f'重大错误{i}' in e.value for e in at.warning) >= 2
-    assert [e.label for e in at.expander] == ['展开完整回答', '查看完整评价依据', '原始技术记录']
+    assert [e.label for e in at.expander] == ['查看完整评价依据', '原始技术记录']
     assert '满分 30' in visible(at)
+
+
+def test_home_shows_business_inputs_then_answer_and_same_record_rating(review_app):  # noqa: F811
+    at, _ = review_app
+    at.run()
+    phrases = ('已存历史运行输入', '历史背景', '原始回答 s1', 'AI评分：80')
+    positions = {}
+    for index, node in enumerate(at.main):
+        value = str(getattr(node, 'value', ''))
+        for phrase in phrases:
+            if phrase in value:
+                positions.setdefault(phrase, index)
+    assert list(positions) == list(phrases)
+    assert positions[phrases[0]] < positions[phrases[1]] < positions[phrases[2]] < positions[phrases[3]]
+    assert sum('尚不具备完整评价证据' in c.value for c in at.caption) == 1
+
+
+def test_detail_shows_full_answer_before_professional_rating():
+    answer = '原始回答保持完整。' * 400 + '尾部材料'
+    at = AppTest.from_string(f'''
+from src.ui.trust_details import render_portfolio_evaluation
+render_portfolio_evaluation(answer={answer!r}, score={{'total_score':42}},
+ dimensions=[], gold=None, metadata={{}})
+''').run()
+    assert not at.exception
+    nodes = list(at.main)
+    answer_position = next(i for i, node in enumerate(nodes) if getattr(node, 'value', None) == answer)
+    rating_position = next(i for i, node in enumerate(nodes) if getattr(node, 'label', None) == 'AI评分')
+    assert answer_position < rating_position
+    assert [e.label for e in at.expander] == ['查看完整评价依据', '原始技术记录']
+
+
+def test_quote_mismatch_outside_rating_summary_is_still_visible():
+    checks = [dict(status='not_met', kind='must', requirement=f'遗漏{i}') for i in range(3)]
+    checks.append(dict(status='met', kind='must', requirement='引文异常', quote='不存在'))
+    at = AppTest.from_string(f'''
+from src.ui.trust_details import render_portfolio_evaluation
+render_portfolio_evaluation(answer='原始回答', score={{'total_score':42,'checks_json':{json.dumps(checks)!r}}},
+ dimensions=[], gold=None, metadata={{}})
+''').run()
+    assert not at.exception
+    assert any('部分引用不在模型回答原文中' in w.value for w in at.warning)
 
 
 def test_selected_case_keeps_its_original_queue_and_excludes_other_records(review_app):  # noqa: F811

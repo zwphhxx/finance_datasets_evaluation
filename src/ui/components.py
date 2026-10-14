@@ -14,7 +14,31 @@ PROJECT_DISPLAY_NAME = "财务/法律/投行场景大模型对比评测"
 
 STYLE_CSS = """
 <style>
-/* findueval-build: public-limited-evaluation-20261014-v2 */
+/* findueval-build: reference-ui-judge-recovery-20261014-v1 */
+.evaluation-flow {
+    display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 24px;
+    color: #64748B; font-size: 13px;
+}
+.evaluation-flow span { padding: 7px 10px; background: #F1F5F9; border-radius: 7px; }
+.st-key-public_run_selection, .st-key-public_run_rules { background: #FFFFFF; }
+/* BaseWeb's selected value otherwise ellipsizes names on narrow screens.
+   Keep the native select and its keyboard interaction; allow its value to wrap. */
+[data-testid="stSelectbox"] [data-baseweb="select"] div[value] {
+    height: auto !important;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    line-height: 1.5;
+}
+[data-testid="stSelectbox"] [data-baseweb="select"] > div,
+[data-testid="stSelectbox"] [data-baseweb="select"] div:has(> div[value]) {
+    height: auto !important;
+    min-height: 44px;
+}
+@media (max-width: 820px) {
+    .st-key-public_run_config [data-testid="stHorizontalBlock"] { flex-direction: column; }
+    .st-key-public_run_config [data-testid="stColumn"] { width: 100% !important; min-width: 0 !important; }
+}
 :root {
     --fde-paper: #F8FAFC;
     --fde-surface: #FFFFFF;
@@ -38,36 +62,38 @@ STYLE_CSS = """
     --fde-radius: 8px;
     --fde-control-radius: 6px;
     --fde-control-height: 44px;
-    --fde-max-width: 1180px;
+    --fde-max-width: 1032px;
 }
 .stApp h3 { font-size: 1.18rem; line-height: 1.5; }
 .st-key-portfolio_nav, .st-key-portfolio_home, .st-key-portfolio_case, .st-key-portfolio_preview {
-    max-width: 840px;
+    max-width: 1032px;
     margin-left: auto;
     margin-right: auto;
     min-width: 0;
 }
-.st-key-portfolio_nav { padding: 1rem 0 1.25rem; }
+.st-key-portfolio_nav {
+    padding: 1.1rem 0;
+    margin-bottom: 2rem;
+    border-bottom: 1px solid var(--fde-line);
+    background: var(--fde-surface);
+}
 .st-key-portfolio_nav [data-testid="stHorizontalBlock"] { flex-wrap: nowrap; }
 .st-key-portfolio_nav [data-testid="stColumn"] { min-width: 0; }
 .st-key-portfolio_nav [data-testid="stColumn"]:last-child { text-align: right; }
 .st-key-portfolio_nav [data-testid="stLinkButton"] { display: flex; justify-content: flex-end; }
 .st-key-portfolio_public_links {
-    margin-top: 0.65rem;
-    border-bottom: 1px solid var(--fde-line);
+    margin-top: 0;
 }
 .st-key-portfolio_public_links [data-testid="stButton"] > button[kind] {
     border: 0 !important;
-    border-bottom: 2px solid transparent !important;
-    border-radius: 0 !important;
+    border-radius: 7px !important;
     background: transparent !important;
     color: var(--fde-muted) !important;
     padding: 0.6rem 0.35rem;
 }
 .st-key-portfolio_public_links [data-testid="stButton"] > button[kind="secondary"],
 .st-key-portfolio_public_links [data-testid="stButton"] > button[kind="secondary"]:hover {
-    background: transparent !important;
-    border-bottom-color: var(--fde-accent) !important;
+    background: var(--fde-accent-soft) !important;
     color: var(--fde-accent) !important;
     font-weight: 650 !important;
 }
@@ -76,20 +102,37 @@ STYLE_CSS = """
     color: var(--fde-accent) !important;
 }
 .portfolio-brand { font-size: 1rem; font-weight: 650; color: var(--fde-ink); }
+.portfolio-brand-note { font-size: 0.72rem; line-height: 1.5; color: var(--fde-muted); margin-top: 0.2rem; }
 .st-key-portfolio_home h1, .st-key-portfolio_case h1, .st-key-portfolio_preview h1 {
-    font-size: clamp(1.6rem, 3vw, 2rem);
-    line-height: 1.4;
+    font-size: clamp(1.8rem, 3vw, 2.65rem);
+    line-height: 1.3;
     overflow-wrap: anywhere;
     text-wrap: balance;
-    padding-top: 0.25rem;
+    padding-top: 0.5rem;
+    letter-spacing: -0.035em;
+    margin-bottom: 0.8rem;
 }
 .st-key-portfolio_featured {
     background: var(--fde-surface);
     border: 1px solid var(--fde-line);
-    border-radius: var(--fde-radius);
-    padding: 1.5rem;
-    margin: 0.5rem 0 1rem;
+    border-radius: 12px;
+    padding: 1.75rem;
+    margin: 0.5rem 0 1.5rem;
 }
+.st-key-portfolio_featured_result { margin: 1rem 0; }
+.st-key-portfolio_featured_answer, .st-key-portfolio_featured_rating,
+.st-key-portfolio_case_task, .st-key-portfolio_case_answer, .st-key-portfolio_case_rating {
+    background: var(--fde-surface);
+    border: 1px solid var(--fde-line);
+    border-radius: 10px;
+    padding: 1.25rem;
+    min-width: 0;
+}
+.st-key-portfolio_case_task { margin: 0.75rem 0; }
+.st-key-portfolio_case_result { margin: 0.75rem 0 1rem; }
+.st-key-portfolio_case_rating [data-testid="stMetricValue"] { font-size: 1.8rem; }
+.st-key-portfolio_featured h3 { font-size: 1.4rem; line-height: 1.4; }
+.st-key-portfolio_home > [data-testid="stVerticalBlock"] { gap: 1.1rem; }
 .st-key-portfolio_featured [data-testid="stExpander"] details:has(.st-key-portfolio_home_selectors) {
     border: 0;
     background: transparent;
@@ -130,8 +173,11 @@ header,
     height: 0 !important;
 }
 .block-container {
+    box-sizing: border-box;
     max-width: var(--fde-max-width);
     margin: 0 auto;
+    padding-left: 1.75rem;
+    padding-right: 1.75rem;
     padding-top: 0;
     padding-bottom: 3rem;
 }

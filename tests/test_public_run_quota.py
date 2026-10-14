@@ -69,6 +69,7 @@ def test_quota_does_not_depend_on_rowcount_after_cursor_close(tmp_path):
         sqlite3.connect(str(tmp_path/'closing-cursor.db'))))
     book=PublicRunLedger(engine,daily_tasks=2)
     job=book.reserve('owner',2)
+    book.acquire(job['job_id'],'owner')
     for _ in range(5):
         book.consume_request(job['job_id'],'owner',pair=('A','model'))
     with pytest.raises(PermissionError):
@@ -84,6 +85,7 @@ def test_quota_does_not_depend_on_rowcount_after_cursor_close(tmp_path):
 def test_requests_and_retries_consume_hard_job_budget(tmp_path):
     book = ledger(tmp_path)
     job = book.reserve('owner', 2)
+    book.acquire(job['job_id'],'owner')
     for _ in range(10):
         book.consume_request(job['job_id'], 'owner')
     with pytest.raises(PermissionError, match='请求'):
@@ -93,6 +95,7 @@ def test_requests_and_retries_consume_hard_job_budget(tmp_path):
 def test_one_pair_cannot_spend_another_pairs_request_budget(tmp_path):
     book=ledger(tmp_path)
     job=book.reserve('owner',2)
+    book.acquire(job['job_id'],'owner')
     for _ in range(5):
         book.consume_request(job['job_id'],'owner',pair=('A','model'))
     with pytest.raises(PermissionError):
@@ -127,6 +130,31 @@ def test_lease_prevents_duplicate_execution_and_run_binding_is_immutable(tmp_pat
         book.bind_run(job['job_id'], 'owner', 'old-history', 'old-score')
     book.release(job['job_id'], 'owner')
     book.acquire(job['job_id'], 'owner')
+
+
+def test_expired_holder_cannot_release_or_spend_successor_lease(tmp_path,monkeypatch):
+    from datetime import datetime, timedelta
+
+    from app.services import public_run_quota as quota
+    now=datetime(2026,10,14,1)
+    monkeypatch.setattr(quota,'_now',lambda:now)
+    old=ledger(tmp_path)
+    job=old.reserve('owner',1)
+    old.acquire(job['job_id'],'owner')
+    now+=timedelta(minutes=31)
+    successor=ledger(tmp_path)
+    successor.acquire(job['job_id'],'owner')
+    with pytest.raises(PermissionError):
+        old.consume_request(job['job_id'],'owner',pair=('A','model'))
+    with pytest.raises(PermissionError):
+        old.refresh_lease(job['job_id'],'owner')
+    old.release(job['job_id'],'owner')
+    with pytest.raises(PermissionError):
+        ledger(tmp_path).acquire(job['job_id'],'owner')
+    successor.consume_request(job['job_id'],'owner',pair=('A','model'))
+    assert successor.job(job['job_id'],'owner')['requests']==1
+    successor.release(job['job_id'],'owner')
+    ledger(tmp_path).acquire(job['job_id'],'owner')
 
 
 @pytest.mark.parametrize('size', [0, -1, 11, 1.5, True])

@@ -1,0 +1,193 @@
+"""Append-only real-workflow recovery in isolated databases; no paid requests."""
+
+import json
+
+import pytest
+
+
+@pytest.fixture
+def failed_batch(monkeypatch, tmp_path, request):
+    from app.models.siliconflow import SiliconFlowProvider, _HttpResponse
+    from app.persistence.result_store import ResultStore
+    from app.services import dataset_service as ds
+    from app.services import public_run, scorer
+    from app.services.score_evidence import checkpoints
+
+    monkeypatch.setenv("FINDUEVAL_MODE", "admin")
+    url = f"sqlite:///{tmp_path / 'history.db'}"
+    store = ResultStore(url)
+    store.ensure_schema()
+    base = ds.load_evaluation_data()
+    dims = ds.get_rubric_dimensions()
+    provider = SiliconFlowProvider(api_key="isolated-test-only")
+    sent = []
+    failure_code = getattr(request, "param", "timeout")
+    state = {"fail": True}
+    payload = {
+        "scores": {d["field"]: 0 for d in dims},
+        "rationale": {d["field"]: "隔离回归，不是真实评分。" for d in dims},
+        "review_note": "隔离测试",
+        "checks": [
+            dict(
+                point_id=p["point_id"],
+                status="unknown",
+                quote="",
+                error_type="uncertain",
+                dimension=dims[0]["field"],
+                reason="隔离测试",
+            )
+            for p in checkpoints(base.gold_answer_map["FD-001"])
+        ],
+    }
+
+    def send(method, path, data=None, **kwargs):
+        if method == "GET":
+            return _HttpResponse(
+                200, {}, json.dumps({"data": [{"id": m} for m in ["m1", "m2", scorer.DEFAULT_JUDGE_MODEL]]})
+            )
+        sent.append(data)
+        if data["model"] == scorer.DEFAULT_JUDGE_MODEL:
+            if state["fail"]:
+                if failure_code == "bad_request":
+                    return _HttpResponse(400, {}, '{"error":{"message":"isolated invalid request"}}')
+                return _HttpResponse(None, {}, "", error="timeout")
+            content = json.dumps(payload, ensure_ascii=False)
+        else:
+            content = "隔离测试的完整原始回答，不得用于展示。"
+        return _HttpResponse(
+            200, {}, json.dumps({"choices": [{"message": {"content": content}, "finish_reason": "stop"}]})
+        )
+
+    monkeypatch.setattr(provider, "_send", send)
+    monkeypatch.setattr(scorer.time, "sleep", lambda _: None)
+    monkeypatch.setenv("FINDUEVAL_MODE", "public")
+    monkeypatch.setenv("FINDUEVAL_ALLOW_SQLITE_LIVE", "true")
+    monkeypatch.setattr(public_run.sf, "is_configured", lambda: True)
+    monkeypatch.setattr(public_run, "configured_models", lambda _: ["m1", "m2"])
+    job, status = public_run.run_public_evaluation(
+        base, ["FD-001"], ["m1", "m2"], owner="owner", url=url, provider_factory=lambda: provider
+    )
+    assert status.failed == 2 and len(sent) == (8 if failure_code == "timeout" else 4)
+    baseline = {
+        t: store.list_rows(t, run_id=job["run_id"])
+        for t in [
+            "live_evaluation_runs",
+            "live_run_responses",
+            "live_run_scores",
+            "live_run_queue",
+            "live_score_queue",
+            "request_attempts",
+        ]
+    }
+    return locals()
+
+
+def test_retry_only_scores_saved_answer_and_appends_without_overwriting(failed_batch):
+    from app.services.score_recovery import run_score_retry
+
+    f = failed_batch
+    f["state"]["fail"] = False
+    ref, status = run_score_retry(
+        f["job"]["job_id"], "owner", ("FD-001", "m1"), url=f["url"], provider_factory=lambda: f["provider"]
+    )
+    assert status.succeeded == 1 and status.failed == 0 and len(f["sent"]) == 9
+    assert f["sent"][-1]["model"] == f["scorer"].DEFAULT_JUDGE_MODEL
+    assert all(f["baseline"][t] == f["store"].list_rows(t, run_id=f["job"]["run_id"]) for t in f["baseline"])
+    copied = f["store"].list_rows("live_run_responses", run_id=ref.run_id)[0]
+    assert copied["answer_text"] == f["baseline"]["live_run_responses"][0]["answer_text"]
+    metadata = f["store"].list_rows("live_evaluation_runs", run_id=ref.run_id)[0]
+    provenance = json.loads(metadata["generation_parameters_json"])["reused_answer"]
+    assert provenance["run_id"] == f["job"]["run_id"] and provenance["score_run_id"] == f["job"]["score_run_id"]
+    with pytest.raises(PermissionError):
+        run_score_retry(
+            f["job"]["job_id"], "owner", ("FD-001", "m1"), url=f["url"], provider_factory=lambda: f["provider"]
+        )
+    assert len(f["sent"]) == 9
+
+
+def test_retry_rejects_wrong_owner_or_missing_original_context(failed_batch, monkeypatch):
+    from sqlalchemy import text
+
+    from app.services.score_recovery import run_score_retry
+
+    f = failed_batch
+    with pytest.raises(PermissionError):
+        run_score_retry(
+            f["job"]["job_id"], "other", ("FD-001", "m1"), url=f["url"], provider_factory=lambda: f["provider"]
+        )
+    monkeypatch.setenv("FINDUEVAL_MODE", "admin")
+    with f["store"].engine.begin() as c:
+        c.execute(
+            text("UPDATE live_evaluation_runs SET evaluation_context_json=NULL WHERE run_id=:run"),
+            {"run": f["job"]["run_id"]},
+        )
+    monkeypatch.setenv("FINDUEVAL_MODE", "public")
+    with pytest.raises((PermissionError, ValueError)):
+        run_score_retry(
+            f["job"]["job_id"], "owner", ("FD-001", "m1"), url=f["url"], provider_factory=lambda: f["provider"]
+        )
+    assert len(f["sent"]) == 8
+
+
+def test_retry_has_only_one_remaining_attempt_and_does_not_reset_budget(failed_batch):
+    from app.services.public_run_quota import PublicRunLedger
+    from app.services.score_recovery import run_score_retry
+
+    f = failed_batch
+    ref, status = run_score_retry(
+        f["job"]["job_id"], "owner", ("FD-001", "m1"), url=f["url"], provider_factory=lambda: f["provider"]
+    )
+    assert status.failed == 1 and len(f["sent"]) == 9
+    assert PublicRunLedger(f["store"].engine).job(f["job"]["job_id"], "owner")["requests"] == 9
+    with pytest.raises(PermissionError):
+        run_score_retry(
+            f["job"]["job_id"], "owner", ("FD-001", "m1"), url=f["url"], provider_factory=lambda: f["provider"]
+        )
+    assert len(f["sent"]) == 9
+
+
+@pytest.mark.parametrize("failed_batch", ["bad_request"], indirect=True)
+def test_interrupted_score_only_run_resumes_same_checkpoint_without_generating(failed_batch, monkeypatch):
+    from app.services.evaluation_workflow import WorkflowStopped
+    from app.services.score_recovery import linked_retry_runs, run_score_retry
+
+    f = failed_batch
+    f["state"]["fail"] = False
+    original_send = f["provider"]._send
+
+    def interrupted(method, path, *args, **kwargs):
+        if method == "POST":
+            raise RuntimeError("isolated interruption")
+        return original_send(method, path, *args, **kwargs)
+
+    monkeypatch.setattr(f["provider"], "_send", interrupted)
+    with pytest.raises(WorkflowStopped):
+        run_score_retry(
+            f["job"]["job_id"], "owner", ("FD-001", "m1"), url=f["url"], provider_factory=lambda: f["provider"]
+        )
+    children = linked_retry_runs(f["store"], f["job"]["run_id"])
+    assert len(children) == 1
+    monkeypatch.setattr(f["provider"], "_send", original_send)
+    ref, status = run_score_retry(
+        f["job"]["job_id"], "owner", ("FD-001", "m1"), url=f["url"], provider_factory=lambda: f["provider"]
+    )
+    assert ref.run_id == children[0]["run_id"] and status.succeeded == 1
+    assert len(f["sent"]) == 5 and f["sent"][-1]["model"] == f["scorer"].DEFAULT_JUDGE_MODEL
+    assert all(f["baseline"][t] == f["store"].list_rows(t, run_id=f["job"]["run_id"]) for t in f["baseline"])
+
+
+def test_active_parent_lease_rejects_duplicate_without_a_model_call(failed_batch):
+    from app.services.public_run_quota import PublicRunLedger
+    from app.services.score_recovery import run_score_retry
+
+    f = failed_batch
+    book = PublicRunLedger(f["store"].engine)
+    book.acquire(f["job"]["job_id"], "owner")
+    try:
+        with pytest.raises(PermissionError, match="正在运行"):
+            run_score_retry(
+                f["job"]["job_id"], "owner", ("FD-001", "m1"), url=f["url"], provider_factory=lambda: f["provider"]
+            )
+        assert len(f["sent"]) == 8
+    finally:
+        book.release(f["job"]["job_id"], "owner")

@@ -3,11 +3,22 @@
 from __future__ import annotations
 
 import json
+import math
 
 import streamlit as st
 
 from app.services.score_evidence import STATUSES
 from app.services.snapshot import _safe
+
+
+def _score_value(score):
+    value = score.get("total_score")
+    if score.get("judge_status") == "failed" or value is None:
+        return "—"
+    try:
+        return str(value) if math.isfinite(float(value)) else "—"
+    except (ValueError, TypeError):
+        return "—"
 
 
 def _array(row, key):
@@ -68,10 +79,16 @@ def render_score_evidence(score, answer, *, inline=False):
 def _task_fields(task):
     shown = set()
     for field, label in [
-        ("task", "任务"), ("question", "任务"), ("task_prompt", "任务"),
-        ("business_background", "业务背景"), ("business_context", "业务背景"),
-        ("background", "背景"), ("context", "材料"), ("material", "材料"),
-        ("output_requirements", "输出要求"), ("expected_capability", "输出要求"),
+        ("task", "任务"),
+        ("question", "任务"),
+        ("task_prompt", "任务"),
+        ("business_background", "业务背景"),
+        ("business_context", "业务背景"),
+        ("background", "背景"),
+        ("context", "材料"),
+        ("material", "材料"),
+        ("output_requirements", "输出要求"),
+        ("expected_capability", "输出要求"),
         ("output_requirement", "输出要求"),
     ]:
         value = task.get(field)
@@ -121,6 +138,7 @@ def _rationale(score, dimensions, *, limit=None, readable=False):
     if readable:
         # Display aliases only: never infer saved weights or rubric definitions.
         from app.services.conclusions import DIMENSION_LABELS
+
         labels = {**DIMENSION_LABELS, **labels}
     if isinstance(parsed, dict):
         for field, reason in list(parsed.items())[:limit]:
@@ -136,7 +154,11 @@ def render_reference_standard(value, *, historical=True, summary=False):
     from src.ui.samples import parse_gold_answer_for_display
 
     if not value:
-        st.caption("历史记录未保存运行时专业标准答案；不使用当前题库补造评分依据。" if historical else "当前任务未保存专业评价要求。")
+        st.caption(
+            "历史记录未保存运行时专业标准答案；不使用当前题库补造评分依据。"
+            if historical
+            else "当前任务未保存专业评价要求。"
+        )
         return
     parsed = parse_gold_answer_for_display(_safe(value))
     if not parsed["parsed"]:
@@ -152,6 +174,7 @@ def render_reference_standard(value, *, historical=True, summary=False):
         ("评审提示", fields["评审提示"]),
         ("评分关注点", fields["本题评分关注点"]),
     ]
+
     def render(items):
         for label, content in items:
             st.markdown(f"**{label}**")
@@ -162,6 +185,7 @@ def render_reference_standard(value, *, historical=True, summary=False):
                     st.text(f"{index}. {item}")
             else:
                 st.text(str(content))
+
     if summary:
         primary = {"参考判断", "必须覆盖的要点", "不可接受错误"}
         render([(label, value) for label, value in sections if label in primary])
@@ -177,17 +201,26 @@ def _check_priority(check):
     return {"not_met": 1, "partial": 2, "unknown": 3, "met": 4}.get(check.get("status"), 3)
 
 
-def _summary_checks(checks):
+def _summary_checks(checks, *, limit=3):
     ordered = sorted(checks, key=_check_priority)
-    return ordered[:max(3, sum(_check_priority(c) == 0 for c in ordered))]
+    return ordered[: max(limit, sum(_check_priority(c) == 0 for c in ordered))]
 
 
 def _render_dimensions(score, dimensions):
-    rows = [{"维度": d.get("name", d.get("field")), "分数": score.get(d.get("field")),
-             "满分": d.get("full_mark") if d.get("full_mark") is not None else "未记录"} for d in dimensions]
+    rows = [
+        {
+            "维度": d.get("name", d.get("field")),
+            "分数": score.get(d.get("field")),
+            "满分": d.get("full_mark") if d.get("full_mark") is not None else "未记录",
+        }
+        for d in dimensions
+    ]
     if not dimensions:
-        rows = [{"维度字段": field, "分数": value, "满分": "未记录"}
-                for field, value in score.items() if field.endswith("_score") and field != "total_score"]
+        rows = [
+            {"维度字段": field, "分数": value, "满分": "未记录"}
+            for field, value in score.items()
+            if field.endswith("_score") and field != "total_score"
+        ]
         if rows:
             st.caption("历史维度定义未保存；满分未知，仅展示原始字段与分数。")
     if rows:
@@ -216,38 +249,46 @@ def evidence_gaps(task, gold, score, answer):
 
 
 def render_portfolio_evaluation(*, answer, score, dimensions, gold, metadata, historical=True):
-    """One-column reading with one evidence entry and one technical entry."""
+    """Answer then professional review; all original evidence remains inspectable."""
     raw_answer, raw_score = str(answer or ""), dict(score or {})
     answer, score = str(_safe(raw_answer)), _safe(raw_score)
-    st.subheader("模型回答")
-    if answer:
-        if len(answer) > 3000:
-            st.text(answer[:1200] + "…")
-            with st.expander("展开完整回答"):
-                st.text(answer)
-        else:
-            st.text(answer)
-    else:
-        st.caption("尚无可读取的模型回答。")
-    st.subheader("专业评价")
-    if score:
-        st.metric("AI评分", "—" if score.get("total_score") is None else str(score["total_score"]))
-        marks = [d.get("full_mark") for d in dimensions]
-        st.caption(f"满分 {sum(marks):g} · AI自动评分，需人工核对。" if marks and all(isinstance(v, (int, float)) for v in marks)
-                   else "历史满分未记录 · AI自动评分，需人工核对。")
-    else:
-        st.caption("任务设计示例，尚无评分记录。")
     checks = [c for c in _array(raw_score, "checks_json") if isinstance(c, dict)]
     summaries = _summary_checks(checks)
-    for check in summaries:
-        _render_check(check, raw_answer, summary=True)
-    if not summaries:
-        if score.get("review_note"):
-            st.text(str(score["review_note"]))
-        elif score.get("rationale"):
-            _rationale(score, dimensions, limit=3, readable=True)
-        elif score:
-            st.caption("缺少原始评价意见。")
+    with st.container(key="portfolio_case_result"):
+        left, right = st.columns([3, 2], gap="medium")
+        with left, st.container(key="portfolio_case_answer"):
+            st.subheader("模型回答")
+            if answer:
+                st.text(answer)
+            else:
+                st.caption("尚无可读取的模型回答。")
+        with right, st.container(key="portfolio_case_rating"):
+            st.subheader("专业评价")
+            if score.get("judge_status") == "failed":
+                from src.ui.evaluation_feedback import failure_label
+
+                st.warning(failure_label(score) + "：模型回答已保存，本次没有有效评分。")
+            if score:
+                st.metric("AI评分", _score_value(score))
+                marks = [d.get("full_mark") for d in dimensions]
+                st.caption(
+                    f"满分 {sum(marks):g} · AI自动评分，需人工核对。"
+                    if marks and all(isinstance(v, (int, float)) for v in marks)
+                    else "历史满分未记录 · AI自动评分，需人工核对。"
+                )
+            else:
+                st.caption("任务设计示例，尚无评分记录。")
+            for check in summaries:
+                _render_check(check, raw_answer, summary=True)
+            if any(
+                c.get("quote") and not quote_matches(c.get("quote"), raw_answer) for c in checks if c not in summaries
+            ):
+                st.warning("部分引用不在模型回答原文中，不能作为可靠证据；详见完整评价依据。")
+            if not summaries:
+                if score.get("review_note"):
+                    st.text(str(score["review_note"]))
+                elif score.get("rationale"):
+                    _rationale(score, dimensions, limit=2, readable=True)
     with st.expander("查看完整评价依据"):
         if score:
             st.markdown("**各维度评分**")
@@ -282,6 +323,7 @@ def render_score_detail(*, task, answer, score, dimensions, key):
         st.subheader(str(title))
         if task.get("domain"):
             from src.ui.labels import DOMAIN_LABELS, display_label
+
             st.caption(display_label(str(task["domain"]), DOMAIN_LABELS))
         fields = list(_task_fields(task))
         if fields:
@@ -303,8 +345,7 @@ def render_score_detail(*, task, answer, score, dimensions, key):
         with right:
             with st.container(key=f"score_review_{key}"):
                 st.markdown("**评价结果**")
-                total = score.get("total_score")
-                st.metric("AI评分", "—" if total is None else str(total))
+                st.metric("AI评分", _score_value(score))
                 known_marks = [d.get("full_mark") for d in dimensions]
                 if known_marks and all(isinstance(v, (int, float)) for v in known_marks):
                     st.caption(f"满分 {sum(known_marks):g} · 自动评分，需人工核对。")

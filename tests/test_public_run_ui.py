@@ -12,8 +12,9 @@ def test_run_button_is_primary_and_no_key_browse_does_not_execute(preview_app,mo
     at.query_params['page']='evaluation_preview'
     at.run()
     assert not at.exception
-    assert at.button(key='public_start_evaluation').disabled
-    assert at.button(key='public_start_evaluation').proto.type=='primary'
+    assert at.button(key='public_prepare_evaluation').disabled
+    assert at.button(key='public_prepare_evaluation').proto.type=='primary'
+    assert not [b for b in at.button if b.key=='public_start_evaluation']
     at.multiselect(key='preview_cases').set_value(['TEST-1','TEST-2']).run()
     assert not calls
 
@@ -34,6 +35,9 @@ def test_explicit_click_submits_multiple_samples_and_models_once(preview_app,mon
     at.number_input(key='preview_temperature').set_value(0.4).run()
     at.number_input(key='preview_max_tokens').set_value(2048).run()
     assert not calls
+    at.button(key='public_prepare_evaluation').click().run()
+    assert not calls
+    assert at.button(key='public_start_evaluation').label=='确认并开始评测'
     at.button(key='public_start_evaluation').click().run()
     assert not at.exception
     assert calls==[(['TEST-1','TEST-2'],['model-a','model-b'],0.4,2048)]
@@ -49,6 +53,27 @@ def test_forged_job_ticket_never_executes(monkeypatch):
     assert not at.exception
     assert any('不属于' in e.value for e in at.warning)
     assert not [b for b in at.button if b.key=='public_continue_evaluation']
+
+
+def test_confirmation_cancel_and_refresh_never_execute(preview_app,monkeypatch):  # noqa: F811
+    from app.services import public_run
+    monkeypatch.setattr(public_run.sf,'is_configured',lambda:True)
+    calls=[]
+    monkeypatch.setattr(public_run,'run_public_evaluation',lambda *a,**k:calls.append(a))
+    at,_=preview_app
+    at.query_params['page']='evaluation_preview'
+    at.run()
+    at.button(key='public_prepare_evaluation').click().run()
+    at.run()
+    assert not calls
+    at.button(key='public_cancel_confirmation').click().run()
+    at.run()
+    assert not calls and not at.exception
+    assert not [b for b in at.button if b.key=='public_start_evaluation']
+    at.button(key='public_prepare_evaluation').click().run()
+    at.number_input(key='preview_temperature').set_value(0.2).run()
+    assert not calls and not at.exception
+    assert not [b for b in at.button if b.key=='public_start_evaluation']
 
 
 def test_legacy_preview_token_limit_migrates_without_execution(preview_app,monkeypatch):  # noqa: F811

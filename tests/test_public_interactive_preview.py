@@ -10,6 +10,10 @@ from test_final_review_ux import review_app, visible  # noqa: F401
 def preview_app(review_app, monkeypatch):  # noqa: F811
     _, report = review_app
     monkeypatch.delenv('FINDUEVAL_MODE', raising=False)
+    from app.services import scorer
+    monkeypatch.setattr('src.ui.public_run.check_run_configuration',lambda base,cases,models,**kwargs:
+        dict(ready=True,errors=[],task_count=len(cases)*len(models),judge=scorer.DEFAULT_JUDGE_MODEL,
+             judge_timeout=180,quota={'tasks_remaining':10,'calls_remaining':50}))
     monkeypatch.setattr('app.services.dataset_service.get_testable_rubric_dimensions',lambda: [
         dict(field='accuracy_score',name='准确性',full_mark=30,full_mark_standard='判断准确',deduction_rules='错误扣分')])
     def forbidden(*a, **k):
@@ -34,13 +38,14 @@ def test_home_exposes_product_operations_without_dashboard(preview_app):
     at,_=preview_app
     at.run()
     assert not at.exception
-    assert {'评测结果','评测流程','样本库'} <= {b.label for b in at.button}
+    assert {'案例展示','在线评测','样本与标准'} <= {b.label for b in at.button}
     assert not {'体验评测流程','查看样本库'} & {b.label for b in at.button}
     assert not at.metric and not at.dataframe
     at.button(key='public_nav_evaluation_preview').click().run()
     assert not at.exception
     assert at.query_params['page'] == ['evaluation_preview']
-    assert {'配置评测','历史运行','查看结果'} == set(at.radio(key='preview_stage').options)
+    assert not [r for r in at.radio if r.key=='preview_stage']
+    assert at.button(key='public_prepare_evaluation').label=='检查并查看运行前确认 →'
     assert not [b for b in at.button if b.key=='preview_home']
     at.button(key='public_nav_sample_preview').click().run()
     assert at.query_params['page']==['sample_preview']
@@ -53,7 +58,8 @@ def test_public_navigation_preserves_each_pages_record_and_refresh(preview_app):
     at.selectbox(key='portfolio_home_case').set_value('TEST-2').run()
     at.selectbox(key='portfolio_home_record').set_value(('test-r1','model-b','s4')).run()
     at.button(key='public_nav_evaluation_preview').click().run()
-    at.radio(key='preview_stage').set_value('查看结果').run()
+    at.button(key='preview_to_history').click().run()
+    at.button(key='preview_to_results').click().run()
     at.selectbox(key='preview_history_run').set_value('test-r2').run()
     at.selectbox(key='preview_history_record').set_value(('test-r2','model-a','s5','TEST-1')).run()
     at.button(key='public_nav_sample_preview').click().run()
@@ -66,7 +72,7 @@ def test_public_navigation_preserves_each_pages_record_and_refresh(preview_app):
     fresh.run()
     assert '原始回答 s4' in visible(fresh)
     at.button(key='public_nav_evaluation_preview').click().run()
-    assert at.radio(key='preview_stage').value=='查看结果'
+    assert at.session_state['preview_stage']=='查看结果'
     assert at.selectbox(key='preview_history_run').value=='test-r2'
     assert at.selectbox(key='preview_history_record').value==('test-r2','model-a','s5','TEST-1')
 
@@ -133,8 +139,8 @@ def test_config_plan_changes_without_calling_model_or_saving(preview_app):
     assert not [b for b in at.button if b.key=='preview_real_start']
     assert '修改配置不会重算历史结果' in visible(at)
     at.number_input(key='preview_temperature').set_value(0.3).run()
-    at.radio(key='preview_stage').set_value('历史运行').run()
-    at.radio(key='preview_stage').set_value('配置评测').run()
+    at.button(key='preview_to_history').click().run()
+    at.button(key='preview_to_config').click().run()
     assert at.multiselect(key='preview_models').value == ['model-a','model-b']
     assert at.number_input(key='preview_temperature').value == 0.3
 
@@ -216,7 +222,7 @@ def test_failed_only_formal_run_is_visible_and_mock_run_is_excluded(preview_app)
         assert all('2026-10-03' not in label for label in at.selectbox(key='preview_history_run').options)
         at.selectbox(key='preview_history_run').set_value('failed-run').run()
         assert any('失败' in e.value for e in at.warning)
-        at.radio(key='preview_stage').set_value('查看结果').run()
+        at.button(key='preview_to_results').click().run()
         assert not at.exception
         assert '尚无有效评分记录' in visible(at)
         assert not [b for b in at.button if b.key=='preview_review_record']
@@ -231,12 +237,12 @@ def test_history_case_returns_to_the_selected_run(preview_app):
     at.run()
     at.selectbox(key='preview_history_run').set_value('test-r2').run()
     at.button(key='preview_review_record').click().run()
-    assert at.button(key='portfolio_return_home').label=='← 返回评测流程'
+    assert at.button(key='portfolio_return_home').label=='← 返回在线评测'
     at.button(key='portfolio_return_home').click().run()
     assert not at.exception
     assert at.query_params['page']==['evaluation_preview']
     assert at.selectbox(key='preview_history_run').value=='test-r2'
-    assert at.radio(key='preview_stage').value=='查看结果'
+    assert at.session_state['preview_stage']=='查看结果'
 
 
 def test_history_url_preserves_selected_batch_without_session_state(preview_app):
@@ -264,10 +270,10 @@ def test_stage_action_buttons_advance_without_session_state_warning(preview_app)
     at.run()
     at.button(key='preview_to_history').click().run()
     assert not at.exception
-    assert at.radio(key='preview_stage').value=='历史运行'
+    assert at.session_state['preview_stage']=='历史运行'
     assert not any('Session State API' in e.value for e in at.warning)
     at.button(key='preview_to_results').click().run()
-    assert at.radio(key='preview_stage').value=='查看结果'
+    assert at.session_state['preview_stage']=='查看结果'
     assert not any('Session State API' in e.value for e in at.warning)
 
 

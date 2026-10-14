@@ -11,7 +11,7 @@ def test_public_results_use_plain_copy_and_keep_exact_case_path(review_app,monke
     at,_=review_app
     at.run()
     text=visible(at)
-    for term in ['当次任务材料','历史回答节选','完整评价证据','评测方法']:
+    for term in ['已存历史运行输入','历史回答节选','完整评价证据','评测方法']:
         assert term in text
     assert [e.value for e in at.title] == ['专业场景大模型评测']
     assert '管理' not in [b.label for b in at.button]

@@ -14,6 +14,7 @@ def test_grant_does_not_enable_management_or_historical_writes(monkeypatch, tmp_
     monkeypatch.setenv('FINDUEVAL_MODE', 'public')
     book = PublicRunLedger(create_engine(url))
     job = book.reserve('owner', 1)
+    book.acquire(job['job_id'], 'owner')
     with execution_scope(book, job['job_id'], 'owner', {('TEST', 'model')}) as grant:
         writable = ResultStore(url,evaluation_writable=True)
         grant.store = writable
@@ -38,6 +39,7 @@ def test_provider_guard_meters_every_generation_and_rejects_unselected_models(mo
     monkeypatch.setenv('FINDUEVAL_MODE', 'public')
     book = PublicRunLedger(create_engine(f'sqlite:///{tmp_path / "quota.db"}'))
     job = book.reserve('owner', 1)
+    book.acquire(job['job_id'], 'owner')
     provider = SiliconFlowProvider(api_key='test-only')
     sent = []
     from app.models.siliconflow import _HttpResponse
@@ -73,6 +75,7 @@ def test_factory_never_caches_a_writable_public_engine_inside_run(monkeypatch,tm
     monkeypatch.setenv('FINDUEVAL_MODE','public')
     book=PublicRunLedger(admin.engine)
     job=book.reserve('owner',1)
+    book.acquire(job['job_id'], 'owner')
     _store_for_url.cache_clear()
     try:
         with execution_scope(book,job['job_id'],'owner',{('TEST','m')}):

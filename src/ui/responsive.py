@@ -448,6 +448,33 @@ MOBILE_RESPONSIVE_CSS = r"""
 }
 
 /* Public reading view uses its own stable container keys, not dashboard nav. */
+@media (max-width: 820px) {
+    .st-key-portfolio_featured_result [data-testid="stHorizontalBlock"],
+    .st-key-portfolio_case_result [data-testid="stHorizontalBlock"] {
+        flex-direction: column;
+        gap: 1rem;
+    }
+    .st-key-portfolio_featured_result [data-testid="stHorizontalBlock"] > [data-testid="stColumn"],
+    .st-key-portfolio_case_result [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        width: 100% !important;
+        flex: 1 1 100% !important;
+        min-width: 0;
+    }
+    .st-key-portfolio_nav [data-testid="stHorizontalBlock"]:has(.portfolio-brand) {
+        display: grid;
+        grid-template-columns: 1fr max-content;
+        gap: 0.5rem;
+    }
+    .st-key-portfolio_nav [data-testid="stHorizontalBlock"]:has(.portfolio-brand) > [data-testid="stColumn"]:nth-child(2) {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        width: 100% !important;
+    }
+    .st-key-portfolio_nav [data-testid="stHorizontalBlock"]:has(.portfolio-brand) > [data-testid="stColumn"]:nth-child(3) {
+        grid-column: 2;
+        grid-row: 1;
+    }
+}
 @media (max-width: 760px) {
     .st-key-portfolio_home_selectors [data-testid="stHorizontalBlock"] {
         flex-direction: column;
@@ -467,7 +494,7 @@ MOBILE_RESPONSIVE_CSS = r"""
         flex: 1 1 100% !important;
         min-width: 0;
     }
-    .st-key-portfolio_nav [data-testid="stHorizontalBlock"] {
+    .st-key-portfolio_public_links [data-testid="stHorizontalBlock"] {
         flex-direction: row !important;
         flex-wrap: nowrap !important;
         gap: 0.4rem;
@@ -485,8 +512,10 @@ MOBILE_RESPONSIVE_CSS = r"""
         white-space: nowrap;
     }
     .st-key-portfolio_featured { padding: 1rem; }
-    .st-key-portfolio_featured h3 { font-size: 1.05rem; text-wrap: balance; }
-    .st-key-portfolio_nav { padding-bottom: 0.8rem; }
+    .st-key-portfolio_featured h3 { font-size: 1.2rem; text-wrap: balance; }
+    .st-key-portfolio_featured_answer, .st-key-portfolio_featured_rating,
+    .st-key-portfolio_case_task, .st-key-portfolio_case_answer, .st-key-portfolio_case_rating { padding: 1rem; }
+    .st-key-portfolio_nav { padding-bottom: 0.8rem; margin-bottom: 1.25rem; }
     .st-key-portfolio_case [data-testid="stExpander"] { min-width: 0; }
 }
 @media (max-width: 360px) {

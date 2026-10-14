@@ -17,7 +17,7 @@ def test_home_problem_then_answer_then_rating_and_collapsed_selection(home_app):
     positions={}
     for i,node in enumerate(at.main):
         value=str(getattr(node,'value',''))
-        for key,phrase in [('task','当次任务材料'),('answer','原始回答 s1'),('rating','AI评分：80')]:
+        for key,phrase in [('task','已存历史运行输入'),('answer','原始回答 s1'),('rating','AI评分：80')]:
             if phrase in value:
                 positions.setdefault(key,i)
     assert positions['task']<positions['answer']<positions['rating']
@@ -31,15 +31,15 @@ def test_flow_has_explicit_run_and_secondary_history_action(preview_app):  # noq
     at.session_state['preview_stage']='配置示例'  # old bookmarked session
     at.run()
     assert not at.exception
-    assert at.title[0].value=='评测流程'
-    assert at.radio(key='preview_stage').value=='配置评测'
+    assert at.title[0].value=='在线评测'
+    assert at.session_state['preview_stage']=='配置评测'
     assert not [b for b in at.button if b.key=='preview_real_start']
     assert at.button(key='preview_to_history').proto.type=='secondary'
-    assert at.button(key='public_start_evaluation').proto.type=='primary'
+    assert at.button(key='public_prepare_evaluation').proto.type=='primary'
     assert '修改配置不会重算历史结果' in visible(at)
     at.number_input(key='preview_temperature').set_value(0.4).run()
     at.button(key='preview_to_history').click().run()
-    assert at.radio(key='preview_stage').value=='历史运行'
+    assert at.session_state['preview_stage']=='历史运行'
 
 
 def test_public_library_no_draft_and_secondary_standard_collapsed(preview_app):  # noqa: F811

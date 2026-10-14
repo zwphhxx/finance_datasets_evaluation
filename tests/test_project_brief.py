@@ -66,7 +66,7 @@ class WorkflowNavTests(unittest.TestCase):
         )
         self.assertEqual("样本维护", PAGE_CONFIG_BY_KEY["samples"].title)
         self.assertEqual("发起评测", PAGE_CONFIG_BY_KEY["test_run"].title)
-        self.assertEqual("评测结果", PAGE_CONFIG_BY_KEY["conclusions"].title)
+        self.assertEqual("案例展示", PAGE_CONFIG_BY_KEY["conclusions"].title)
 
     def test_navigation_groups_three_review_items_and_one_operation(self):
         self.assertEqual(3, len(PRIMARY_NAV_ITEMS))

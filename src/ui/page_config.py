@@ -14,7 +14,7 @@ PAGE_CONFIGS = [
     PageConfig("review", "案例分析", "核对专业任务、模型回答及评价依据。"),
     PageConfig(
         page_key="conclusions",
-        title="评测结果",
+        title="案例展示",
         question="从一个专业任务，查看模型回答及评价依据。",
     ),
     PageConfig(
@@ -32,8 +32,8 @@ PAGE_CONFIGS = [
         title="发起评测",
         question="选择样本和模型，运行评测并自动完成评分。",
     ),
-    PageConfig("evaluation_preview", "评测流程", "选择专业样本及模型，限额运行或查看历史结果。"),
-    PageConfig("sample_preview", "样本库", "查看专业任务与评价标准，预览新增样本。"),
+    PageConfig("evaluation_preview", "在线评测", "选择专业任务及模型，确认后限额运行或查看历史结果。"),
+    PageConfig("sample_preview", "样本与标准", "查看当前题库的专业任务、参考判断与评价标准。"),
 ]
 
 PAGE_CONFIG_BY_KEY = {config.page_key: config for config in PAGE_CONFIGS}

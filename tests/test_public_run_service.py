@@ -41,7 +41,7 @@ def test_multi_sample_multi_model_uses_existing_workflow_and_preserves_old_rows(
     def send(method,path,payload=None,**kwargs):
         calls.append((method,path))
         if method=='GET':
-            return _HttpResponse(200,{},json.dumps({'data':[{'id':'m1'},{'id':'m2'}]}))
+            return _HttpResponse(200,{},json.dumps({'data':[{'id':'m1'},{'id':'m2'},{'id':sc.DEFAULT_JUDGE_MODEL}]}))
         return _HttpResponse(200,{},json.dumps({'choices':[{'message':{'content':'这是隔离回归中的完整模型回答。'},'finish_reason':'stop'}]}))
     monkeypatch.setattr(provider,'_send',send)
     scores=[]
@@ -111,7 +111,7 @@ def test_answer_and_actual_judge_parser_persist_complete_new_evidence(monkeypatc
     sent=[]
     def send(method,path,data=None,**kwargs):
         if method=='GET':
-            return _HttpResponse(200,{},'{"data":[{"id":"m1"}]}')
+            return _HttpResponse(200,{},json.dumps({'data':[{'id':'m1'},{'id':'deepseek-ai/DeepSeek-V4-Pro'}]}))
         sent.append(data)
         content=json.dumps(payload,ensure_ascii=False) if data['model']==scorer.DEFAULT_JUDGE_MODEL else '这是隔离测试中的完整回答。'
         return _HttpResponse(200,{},json.dumps({'choices':[{'message':{'content':content},'finish_reason':'stop'}]}))
@@ -148,7 +148,7 @@ def test_resume_own_interrupted_batch_skips_finished_pairs(monkeypatch,tmp_path)
     sent=[]
     def send(method,path,payload=None,**kwargs):
         if method=='GET':
-            return _HttpResponse(200,{},'{"data":[{"id":"m1"}]}')
+            return _HttpResponse(200,{},json.dumps({'data':[{'id':'m1'},{'id':'deepseek-ai/DeepSeek-V4-Pro'}]}))
         sent.append(payload['model'])
         if len(sent)==2:
             raise RuntimeError('isolated interruption')

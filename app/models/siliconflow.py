@@ -15,12 +15,14 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from http.client import HTTPException
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -81,7 +83,7 @@ _HTTP_ERROR_MESSAGES: dict[int, tuple[str, str]] = {
 class _HttpResponse:
     """底层 HTTP 调用的归一化结果。
 
-    status 为 None 表示传输层失败（超时 / 连接错误）；此时 error 非空。
+    status 为 None 表示尚未收到响应头；正文读取失败时仍保留已收到的状态码。
     headers 仅保留响应头（不含我们发送的认证头）。
     """
 
@@ -89,6 +91,7 @@ class _HttpResponse:
     headers: Mapping[str, str]
     text: str
     error: str | None = None
+    error_stage: str | None = None
 
 
 @dataclass(frozen=True)
@@ -179,11 +182,9 @@ class SiliconFlowProvider(ModelProvider):
     @staticmethod
     def _resolve_timeout() -> tuple[float, str]:
         raw, source = _read_config_value_with_source(_TIMEOUT_KEY)
-        if raw:
-            try:
-                return float(raw), str(source or "default")
-            except ValueError:
-                pass
+        seconds = _as_positive_float(raw)
+        if seconds is not None:
+            return seconds, str(source or "default")
         return float(DEFAULT_TIMEOUT_SECONDS), "default"
 
     # -- 公共接口 -------------------------------------------------------------
@@ -251,10 +252,12 @@ class SiliconFlowProvider(ModelProvider):
                 self.name, model_id, STATUS_FAILED, error_code="bad_request", error_message=str(exc)
             )
         request_timeout = _as_positive_float(kwargs.pop("request_timeout_seconds", None))
+        request_timeout_source = kwargs.pop("request_timeout_source", None)
         effective_timeout = request_timeout if request_timeout is not None else self.timeout_seconds
         timeout_meta = {
             "timeout_seconds": effective_timeout,
-            "timeout_source": self.timeout_source,
+            "timeout_source": (request_timeout_source or "argument") if request_timeout is not None else self.timeout_source,
+            "input_chars": sum(len(str(message["content"])) for message in normalized),
         }
 
         payload: dict[str, Any] = {
@@ -272,15 +275,20 @@ class SiliconFlowProvider(ModelProvider):
         started = time.perf_counter()
         response = self._send("POST", "/chat/completions", payload, timeout_seconds=effective_timeout)
         latency_ms = int((time.perf_counter() - started) * 1000)
+        trace_id = _safe_trace_id(response.headers.get(_TRACE_HEADER) or response.headers.get(_TRACE_HEADER.title()))
 
         if response.error is not None:
-            code, message = self._describe_transport_error(response.error)
+            if response.status is not None and response.status != 200:
+                # A known 400/401 remains non-retryable even if its error body times out.
+                code, message = self._describe_http_error(response.status, response.text)
+            else:
+                code, message = self._describe_transport_error(response.error)
             return GenerationResult(
                 self.name, model_id, STATUS_FAILED, latency_ms=latency_ms,
+                http_status=response.status, trace_id=trace_id, error_stage=response.error_stage,
                 error_code=code, error_message=message, **timeout_meta,
             )
 
-        trace_id = response.headers.get(_TRACE_HEADER) or response.headers.get(_TRACE_HEADER.title())
         if response.status != 200:
             details = self._describe_http_error_details(response.status, response.text)
             return GenerationResult(
@@ -441,21 +449,38 @@ class SiliconFlowProvider(ModelProvider):
         }
         request = urllib.request.Request(url, data=data, headers=headers, method=method)
         effective_timeout = timeout_seconds if timeout_seconds is not None else self.timeout_seconds
+        status = None
+        response_headers: Mapping[str, str] = {}
+        error_stage = "connect_or_headers"
         try:
             with urllib.request.urlopen(request, timeout=effective_timeout) as resp:
+                status = resp.status
+                response_headers = _header_map(resp.headers)
+                error_stage = "response_body"
                 body = resp.read().decode("utf-8", errors="replace")
-                return _HttpResponse(resp.status, _header_map(resp.headers), body)
+                return _HttpResponse(status, response_headers, body)
         except urllib.error.HTTPError as exc:  # 4xx / 5xx：仍带状态码与响应体。
             body = ""
             try:
                 body = exc.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = ""
+            except (TimeoutError, urllib.error.URLError, OSError, HTTPException) as read_exc:
+                return _HttpResponse(exc.code, _header_map(getattr(exc, "headers", {})), "",
+                                     error=_transport_error_kind(read_exc), error_stage="response_body")
             return _HttpResponse(exc.code, _header_map(getattr(exc, "headers", {})), body)
-        except (TimeoutError, urllib.error.URLError) as exc:
-            reason = getattr(exc, "reason", exc)
-            is_timeout = isinstance(reason, TimeoutError) or "timed out" in str(reason).lower()
-            return _HttpResponse(None, {}, "", error="timeout" if is_timeout else "connection")
+        except (TimeoutError, urllib.error.URLError, OSError, HTTPException) as exc:
+            # urllib cannot distinguish connect/TLS wait from response-header wait.
+            # Once urlopen returns, retain status/trace even if reading the body fails.
+            return _HttpResponse(status, response_headers, "", error=_transport_error_kind(exc), error_stage=error_stage)
+
+
+def _transport_error_kind(exc: Exception) -> str:
+    reason = getattr(exc, "reason", exc)
+    return "timeout" if isinstance(reason, TimeoutError) or "timed out" in str(reason).lower() else "connection"
+
+
+def _safe_trace_id(value: Any) -> str | None:
+    text = str(value or "")
+    return text if re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", text) else None
 
 
 def _header_map(headers: Any) -> dict[str, str]:
@@ -486,7 +511,7 @@ def _as_positive_float(value: Any) -> float | None:
         number = float(value)
     except (TypeError, ValueError):
         return None
-    return number if number > 0 else None
+    return number if math.isfinite(number) and number > 0 else None
 
 
 def _extract_provider_error(body: str) -> tuple[str | None, str | None]:

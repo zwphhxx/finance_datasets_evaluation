@@ -192,12 +192,13 @@ request_attempts = Table(
     Column("status", String), Column("error_code", String), Column("latency_ms", Integer),
     Column("input_tokens", Integer), Column("output_tokens", Integer),
     Column("temperature", Float), Column("max_tokens", Integer),
+    Column("diagnostics_json", Text),
     Column("created_at", DateTime, server_default=func.now()),
 )
 
 # Additive, nullable columns only: old rows remain readable and unverified.
 ADDITIVE_COLUMNS = {
-    "request_attempts": ("service_endpoint",),
+    "request_attempts": ("service_endpoint", "diagnostics_json"),
     "live_evaluation_runs": ("service_endpoint", "evaluation_context_json", "prompt_payload_json"),
     "live_run_scores": ("checks_json", "numeric_checks_json", "evidence_status", "raw_responses_json"),
 }

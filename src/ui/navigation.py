@@ -29,9 +29,9 @@ PAGES = {
 
 # Public product destinations; case review remains a child of its source page.
 PUBLIC_NAV_ITEMS = [
-    ("评测结果", "conclusions"),
-    ("评测流程", "evaluation_preview"),
-    ("样本库", "sample_preview"),
+    ("案例展示", "conclusions"),
+    ("在线评测", "evaluation_preview"),
+    ("样本与标准", "sample_preview"),
 ]
 
 # Retained administration destinations.
@@ -98,18 +98,19 @@ def render_top_navigation() -> None:
     admin = management_enabled()
     if not admin:
         with st.container(key="portfolio_nav"):
-            brand, source = st.columns([2, 1], gap="small", vertical_alignment="center")
+            brand, links, source = st.columns([1.25, 2.25, 1], gap="small", vertical_alignment="center")
             with brand:
-                render_html('<div class="portfolio-brand">专业模型评测</div>')
+                render_html('<div class="portfolio-brand">FinDueEval</div><div class="portfolio-brand-note">专业场景模型评测</div>')
+            with links:
+                with st.container(key="portfolio_public_links"):
+                    for column, (label, page_key) in zip(st.columns(3, gap="small"), PUBLIC_NAV_ITEMS):
+                        with column:
+                            st.button(label, key=f"public_nav_{page_key}",
+                                      type="secondary" if _public_parent(current) == page_key else "tertiary",
+                                      width="stretch", on_click=_navigate_public, args=(page_key,))
             with source:
                 with st.container(horizontal=True, horizontal_alignment="right"):
                     st.link_button("GitHub 源码", "https://github.com/zwphhxx/finance_datasets_evaluation", type="tertiary")
-            with st.container(key="portfolio_public_links"):
-                for column, (label, page_key) in zip(st.columns(3, gap="small"), PUBLIC_NAV_ITEMS):
-                    with column:
-                        st.button(label, key=f"public_nav_{page_key}",
-                                  type="secondary" if _public_parent(current) == page_key else "tertiary",
-                                  width="stretch", on_click=_navigate_public, args=(page_key,))
         return
     columns = st.columns([3.1, 2.6, 0.9] if admin else [1.4, 2.6], gap="medium")
     brand_column, review_column = columns[:2]

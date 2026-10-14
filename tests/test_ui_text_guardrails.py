@@ -476,7 +476,7 @@ class ReadmeCurrentFlowTests(unittest.TestCase):
 
         self.assertIn(f"# {PROJECT_NAME}", text)
         self.assertIn("## 主流程", text)
-        self.assertIn("**评测结果 → 查看完整案例 → 查看完整评价依据 → 返回评测结果。**", text)
+        self.assertIn("**案例展示 → 查看完整案例 → 查看完整评价依据 → 返回案例展示。**", text)
         self.assertIn("旧案例链接继续使用case/model/run/score精确定位", text)
         self.assertIn("独立受控管理环境", text)
 
@@ -512,12 +512,12 @@ class ReadmeCurrentFlowTests(unittest.TestCase):
             "FINDUEVAL_EVAL_TEMPERATURE",
             "## 运行与恢复",
             "外部模型服务可能受网络、限流、模型响应时间和输出长度影响",
-            "点击一次“开始评测”",
+            "点击“确认并开始评测”",
             "模型回答和评分都会增量保存",
-            "点击“继续评测”恢复剩余任务",
+            "点击“继续本次评测”恢复剩余任务",
             "数据库不可用时",
             "不会调用模型服务",
-            "开始评测按钮保持禁用",
+            "运行前检查按钮保持禁用",
             "真实模型密钥",
         ]:
             self.assertIn(phrase, text)
@@ -597,7 +597,6 @@ class VisibleTextGuardrailTests(unittest.TestCase):
     def test_visible_ui_and_readme_text_do_not_use_retired_or_promotional_terms(self):
         paths = [Path("README.md"), *VISIBLE_UI_FILES]
         banned_terms = [
-            "Fin" + "DueEval",
             "Fin" + "DueEval " + "M" + "VP",
             "尽调评测工作台",
             "工作台",

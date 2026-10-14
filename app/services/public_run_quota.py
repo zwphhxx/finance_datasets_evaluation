@@ -9,7 +9,7 @@ import hashlib
 import secrets
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import Column, DateTime, Integer, MetaData, String, Table, and_, or_, select, update
+from sqlalchemy import Column, DateTime, Integer, MetaData, String, Table, and_, inspect, or_, select, update
 
 metadata = MetaData()
 budget = Table('public_evaluation_budget', metadata,
@@ -41,6 +41,44 @@ class PublicRunLedger:
             raise ValueError('public daily limit must be 1..10')
         self.engine = engine
         self.daily_tasks = daily_tasks
+        self._leases = {}
+
+    def _lease_condition(self, job_id, owner):
+        deadline = self._leases.get(job_id)
+        if deadline is None:
+            raise PermissionError('当前执行没有有效任务租约，已停止。')
+        return and_(jobs.c.job_id == job_id, jobs.c.owner_hash == _owner(owner),
+                    jobs.c.active_until == deadline, jobs.c.active_until > _now())
+
+    def _next_deadline(self, job_id):
+        return max(_now() + timedelta(minutes=30),
+                   self._leases.get(job_id, _now()) + timedelta(microseconds=1))
+
+    def refresh_lease(self, job_id, owner):
+        deadline = self._next_deadline(job_id)
+        with self.engine.begin() as connection:
+            accepted = connection.execute(update(jobs).where(self._lease_condition(job_id, owner))
+                .values(active_until=deadline).returning(jobs.c.job_id)).scalar_one_or_none()
+            if accepted is None:
+                raise PermissionError('任务租约已过期或已被恢复，当前执行已停止。')
+        self._leases[job_id] = deadline
+
+    def usage(self):
+        """A read-only snapshot; never initialize tables on page view."""
+        day=_now().date().isoformat()
+        with self.engine.connect() as connection:
+            row=connection.execute(select(budget).where(budget.c.day==day)).mappings().first() if inspect(connection).has_table(budget.name) else None
+        tasks,calls=(int(row['tasks']),int(row['calls'])) if row else (0,0)
+        return dict(day=day,tasks_used=tasks,calls_used=calls,tasks_remaining=max(0,self.daily_tasks-tasks),
+                    calls_remaining=max(0,self.daily_tasks*5-calls),daily_tasks=self.daily_tasks)
+
+    def pair_remaining(self,job_id,owner,pair):
+        import json
+        job=self.job(job_id,owner)
+        digest=hashlib.sha256(json.dumps(pair,ensure_ascii=False).encode()).hexdigest()
+        with self.engine.connect() as connection:
+            used=connection.execute(select(pair_budget.c.calls).where(pair_budget.c.job_id==job_id,pair_budget.c.pair_hash==digest)).scalar_one_or_none()
+        return max(0,min(5-int(used or 0),int(job['tasks'])*5-int(job['requests']),self.usage()['calls_remaining']))
 
     def prepare(self):
         # Avoid concurrent PostgreSQL CREATE TABLE check/create races.
@@ -88,12 +126,13 @@ class PublicRunLedger:
         return dict(row)
 
     def consume_request(self, job_id, owner, *, pair=None):
+        deadline = self._next_deadline(job_id)
         with self.engine.begin() as connection:
-            statement = update(jobs).where(jobs.c.job_id == job_id,
-                jobs.c.owner_hash == _owner(owner), jobs.c.requests < jobs.c.tasks * 5
-            ).values(requests=jobs.c.requests + 1,active_until=_now()+timedelta(minutes=30))
-            if connection.execute(statement).rowcount != 1:
-                raise PermissionError('本次任务请求额度已用尽，停止模型调用。')
+            statement = update(jobs).where(self._lease_condition(job_id, owner),
+                jobs.c.requests < jobs.c.tasks * 5
+            ).values(requests=jobs.c.requests + 1,active_until=deadline)
+            if connection.execute(statement.returning(jobs.c.job_id)).scalar_one_or_none() is None:
+                raise PermissionError('本次任务请求额度已用尽或租约已失效，停止模型调用。')
             if pair is not None:
                 if self.engine.dialect.name == 'postgresql':
                     from sqlalchemy.dialects.postgresql import insert
@@ -107,26 +146,31 @@ class PublicRunLedger:
                 if connection.execute(statement.returning(pair_budget.c.calls)).scalar_one_or_none() is None:
                     raise PermissionError('该样本与模型的请求额度已用尽，停止进一步调用。')
             self._consume_day(connection, calls=1)
+        self._leases[job_id] = deadline
 
     def acquire(self, job_id, owner):
         now = _now()
+        deadline = self._next_deadline(job_id)
         with self.engine.begin() as connection:
             result = connection.execute(update(jobs).where(jobs.c.job_id == job_id,
                 jobs.c.owner_hash == _owner(owner),
                 or_(jobs.c.active_until.is_(None), jobs.c.active_until <= now)
-            ).values(active_until=now + timedelta(minutes=30)))
-        if result.rowcount != 1:
+            ).values(active_until=deadline).returning(jobs.c.job_id)).scalar_one_or_none()
+        if result is None:
             raise PermissionError('任务正在运行，请勿重复启动；中断后等待30分钟可恢复。')
+        self._leases[job_id] = deadline
 
     def release(self, job_id, owner):
+        deadline = self._leases.pop(job_id, None)
+        if deadline is None:
+            return
         with self.engine.begin() as connection:
             connection.execute(update(jobs).where(jobs.c.job_id == job_id,
-                jobs.c.owner_hash == _owner(owner)).values(active_until=None))
+                jobs.c.owner_hash == _owner(owner), jobs.c.active_until == deadline).values(active_until=None))
 
     def bind_run(self, job_id, owner, run_id, score_run_id):
         with self.engine.begin() as connection:
-            result = connection.execute(update(jobs).where(jobs.c.job_id == job_id,
-                jobs.c.owner_hash == _owner(owner), jobs.c.run_id.is_(None)
-            ).values(run_id=run_id, score_run_id=score_run_id))
-        if result.rowcount != 1:
+            result = connection.execute(update(jobs).where(self._lease_condition(job_id, owner), jobs.c.run_id.is_(None)
+            ).values(run_id=run_id, score_run_id=score_run_id).returning(jobs.c.job_id)).scalar_one_or_none()
+        if result is None:
             raise PermissionError('已有任务批次不能替换。')

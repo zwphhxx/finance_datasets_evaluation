@@ -334,6 +334,8 @@ def score_single(
         )
 
     messages = build_judge_messages(task, answer_text, gold, dimensions)
+    if getattr(provider, "name", "") == "siliconflow":
+        kwargs.setdefault("response_format", {"type": "json_object"})
     delays = tuple(DEFAULT_JUDGE_RETRY_DELAYS if retry_delays is None else retry_delays)
     sleeper = sleep_fn or time.sleep
     retry_count = 0

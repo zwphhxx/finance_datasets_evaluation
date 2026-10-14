@@ -192,9 +192,10 @@ class EvaluationWorkflow:
         self.now = now
         self._session_stopped_run_ids: set[str] = set()
         self._owned_run_ids: set[str] = set()
+        self.judge_attempt_limit: int | None = None
 
     @evaluation_operation
-    def start_evaluation(self, config: EvaluationConfig) -> EvaluationRunRef:
+    def start_evaluation(self, config: EvaluationConfig, *, reused_answers=None) -> EvaluationRunRef:
         judge_model = self._validate_config(config)
         run_id = er.generate_run_id()
         score_run_id = sc.generate_score_run_id()
@@ -227,6 +228,11 @@ class EvaluationWorkflow:
                     for item in config.queue_items
                 ],
             )
+            if reused_answers is not None:
+                for answer in reused_answers:
+                    row={key:value for key,value in answer.items() if key not in {'id','created_at','updated_at'}}
+                    row['run_id']=run_id
+                    self.store.save_run_outcome(row,queue_status='success',combined=True)
         except Exception as exc:
             self._stop(run_id, "could not initialize evaluation queues", exc)
         self._owned_run_ids.add(run_id)
@@ -382,6 +388,7 @@ class EvaluationWorkflow:
                 task,
                 temperature=_number(config.generation_parameters.get("temperature"), 0.2),
                 max_tokens=_integer(config.generation_parameters.get("max_tokens"), 1024),
+                **_phase_request_parameters(config.generation_parameters),
                 attempt_callback=lambda attempt: self.store.save_request_attempt(
                     {**attempt, "run_id": ref.run_id, "case_id": case_id, "eval_model": model_id}),
             )
@@ -399,6 +406,9 @@ class EvaluationWorkflow:
             return
 
         self.store.mark_score_item_running(ref.score_run_id, case_id, model_id)
+        judge_parameters=_phase_request_parameters(config.judge_parameters)
+        if self.judge_attempt_limit is not None:
+            judge_parameters['retry_delays']=list(sc.DEFAULT_JUDGE_RETRY_DELAYS[:max(0,self.judge_attempt_limit-1)])
         score = sc.score_single(
             self.judge_provider,
             judge_model,
@@ -409,6 +419,7 @@ class EvaluationWorkflow:
             eval_model=model_id,
             temperature=_number(config.judge_parameters.get("temperature"), 0.0),
             max_tokens=_integer(config.judge_parameters.get("max_tokens"), 1024),
+            **judge_parameters,
             attempt_callback=lambda attempt: self.store.save_request_attempt(
                 {**attempt, "run_id": ref.run_id, "score_run_id": ref.score_run_id,
                  "case_id": case_id, "eval_model": model_id}),
@@ -483,6 +494,17 @@ def _task(item: Mapping[str, Any]) -> Mapping[str, Any]:
     if not isinstance(task, Mapping):
         raise ValueError("evaluation queue item has no task")
     return task
+
+
+def _phase_request_parameters(parameters):
+    result={}
+    if parameters.get('timeout_seconds') is not None:
+        result['request_timeout_seconds']=parameters['timeout_seconds']
+        result['request_timeout_source']=parameters.get('timeout_source','saved_configuration')
+    for field in ('retry_delays','response_format'):
+        if field in parameters:
+            result[field]=parameters[field]
+    return result
 
 
 def _required_text(value: Any, name: str) -> str:
