@@ -131,6 +131,12 @@ def test_answer_and_actual_judge_parser_persist_complete_new_evidence(monkeypatc
     assert PublicRunLedger(store.engine).job(job['job_id'],'owner')['requests']==2
     assert sent[0]['temperature']==0.4 and sent[0]['max_tokens']==2048
     assert json.loads(run['generation_parameters_json'])['max_tokens']==2048
+    judge_parameters = json.loads(run['judge_parameters_json'])
+    assert judge_parameters['enable_thinking'] is False
+    assert judge_parameters['judge_prompt_version'] == 'answer-quotes-v2'
+    assert sent[1]['enable_thinking'] is False and sent[1]['max_tokens'] == 3072
+    assert 'judge_prompt_version' not in sent[1]
+    assert json.loads(sent[1]['messages'][1]['content'])['evaluated_answer']['answer_text'] == '这是隔离测试中的完整回答。'
 
 
 def test_resume_own_interrupted_batch_skips_finished_pairs(monkeypatch,tmp_path):

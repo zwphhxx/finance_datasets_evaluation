@@ -419,6 +419,7 @@ class EvaluationWorkflow:
             eval_model=model_id,
             temperature=_number(config.judge_parameters.get("temperature"), 0.0),
             max_tokens=_integer(config.judge_parameters.get("max_tokens"), 1024),
+            judge_prompt_version=config.judge_parameters.get("judge_prompt_version", sc.LEGACY_JUDGE_PROMPT_VERSION),
             **judge_parameters,
             attempt_callback=lambda attempt: self.store.save_request_attempt(
                 {**attempt, "run_id": ref.run_id, "score_run_id": ref.score_run_id,
@@ -464,6 +465,10 @@ class EvaluationWorkflow:
         self._validate_providers(config)
         _required_text(config.provider_name, "provider name")
         _required_text(getattr(self.judge_provider, "name", ""), "judge provider")
+        if config.judge_parameters.get("judge_prompt_version", sc.LEGACY_JUDGE_PROMPT_VERSION) not in (
+            sc.LEGACY_JUDGE_PROMPT_VERSION, sc.CURRENT_JUDGE_PROMPT_VERSION,
+        ):
+            raise WorkflowCheckpointError("不支持的评分提示词版本，未发起请求。")
         if not config.queue_items:
             raise ValueError("evaluation configuration requires queue items")
         for item in config.queue_items:

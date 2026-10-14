@@ -14,7 +14,7 @@ PROJECT_DISPLAY_NAME = "财务/法律/投行场景大模型对比评测"
 
 STYLE_CSS = """
 <style>
-/* findueval-build: deleted-score-empty-state-20261014-v1 */
+/* findueval-build: judge-quotes-smoke-20261014-v1 */
 .evaluation-flow {
     display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 24px;
     color: #64748B; font-size: 13px;

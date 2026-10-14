@@ -95,7 +95,7 @@ def _confirmation_dialog(base, cases, models, report):
     st.caption(
         f"全站今日剩余{quota.get('tasks_remaining', '未知')}个任务、{quota.get('calls_remaining', '未知')}次请求；每对最多5次请求，评分最多3次尝试。"
     )
-    st.caption(f"评分单次等待上限{report.get('judge_timeout', '未知')}秒。新评测使用当前题库及标准。")
+    st.caption(f"评分采用非思考模式，单次等待上限{report.get('judge_timeout', '未知')}秒。新评测使用当前题库及标准。")
     st.warning("确认后将使用网站密钥生成回答并进行AI评分，可能产生费用。重试也占用额度；不估算未经确认的金额。")
     if st.button("确认并开始评测", key="public_start_evaluation", type="primary", width="stretch"):
         st.session_state.pop("public_run_pending_confirmation", None)

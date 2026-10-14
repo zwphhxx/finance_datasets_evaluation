@@ -19,6 +19,7 @@ from app.services import eval_runner as er
 from app.services import formal_records as formal
 from app.services import sample_repository as sr
 from app.services import scorer as sc
+from app.services.evaluation_policy import resolve_phase_timeout
 from app.services.evaluation_workflow import (
     COMPLETED,
     FAILED,
@@ -385,6 +386,7 @@ def build_evaluation_config(
         }
         for item in queue_items
     )
+    judge_timeout, judge_timeout_source = resolve_phase_timeout("judge")
     return EvaluationConfig(
         provider_name=sf.PROVIDER_NAME,
         model_ids=tuple(_dedupe(model_ids)),
@@ -397,6 +399,10 @@ def build_evaluation_config(
             "temperature": _JUDGE_TEMPERATURE,
             "max_tokens": _JUDGE_MAX_TOKENS,
             "judge_model": sc.DEFAULT_JUDGE_MODEL,
+            "enable_thinking": False,
+            "judge_prompt_version": sc.CURRENT_JUDGE_PROMPT_VERSION,
+            "timeout_seconds": judge_timeout,
+            "timeout_source": judge_timeout_source,
         },
         dataset_version=dataset_version,
         prompt_payload=prompt_payload,

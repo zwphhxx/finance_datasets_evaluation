@@ -158,7 +158,7 @@ def _render_config_fields(base, report):
         else:
             st.caption("当前评分维度未配置。")
         st.caption("模型作答后由裁判按专业标准评分，再核对评价点与原文证据。")
-        st.caption("回答最多4096 Token；裁判最多3072 Token。")
+        st.caption("回答最多4096 Token；裁判采用非思考模式，最多3072 Token。")
     _remember_config()
     plan = build_run_plan_summary(chosen_models, [cases[c] for c in chosen_cases])
     st.markdown(

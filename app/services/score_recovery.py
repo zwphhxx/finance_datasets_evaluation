@@ -145,7 +145,10 @@ def _prepare(store, book, job_id, owner, pair, *, nonthinking_trial=False):
         if nonthinking_trial and config.judge_parameters.get("validation_trial") != "authorized-nonthinking-single-request":
             raise PermissionError("已有重评分配置不同，不能改变其推理模式。")
     elif nonthinking_trial:
-        messages = scorer.build_judge_messages(item["task"], answer["answer_text"], config.gold_map[pair[0]], config.dimensions)
+        messages = scorer.build_judge_messages(
+            item["task"], answer["answer_text"], config.gold_map[pair[0]], config.dimensions,
+            judge_prompt_version=config.judge_parameters.get("judge_prompt_version", scorer.LEGACY_JUDGE_PROMPT_VERSION),
+        )
         if len(messages) != 2 or sum(len(m["content"].encode("utf-8")) for m in messages) > 16000:
             raise ValueError("评分输入超出本次费用验证范围，未发起请求。")
         config = replace(

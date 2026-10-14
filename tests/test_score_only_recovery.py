@@ -244,8 +244,8 @@ def test_nonthinking_trial_rejects_oversized_input_before_writes_or_requests(fai
     f = failed_batch
     original = scorer.build_judge_messages
 
-    def oversized(*args):
-        messages = original(*args)
+    def oversized(*args, **kwargs):
+        messages = original(*args, **kwargs)
         messages[-1]["content"] += "x" * 16000
         return messages
 

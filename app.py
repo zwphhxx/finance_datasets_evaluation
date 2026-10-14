@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import streamlit as st
 
@@ -61,6 +62,6 @@ def _render_app() -> None:
     render_pending_scroll()
 
 
-st.set_page_config(page_title="专业场景大模型评测", layout="wide")
+st.set_page_config(page_title="专业场景大模型评测", page_icon=str(Path(__file__).parent / "assets" / "favicon.png"), layout="wide")
 with result_store_request_scope():
     _render_app()
