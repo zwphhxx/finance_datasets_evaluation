@@ -16,6 +16,7 @@ DATABASE_SECRET = "FINDUEVAL_HEALTHCHECK_DATABASE_URL"
 ALLOWED_CLICKS = frozenset({"Yes, get this app back up!", "查看完整案例 →"})
 READ_QUERY = "SELECT run_id FROM public.live_evaluation_runs LIMIT 1"
 SCORE_PATTERN = re.compile(r"AI评分[：:\s]*([0-9]+(?:\.[0-9]+)?)(?![\w.])")
+SAFE_BROWSER_REASONS = frozenset({"public_homepage_not_ready", "public_case_detail_not_ready", "public_browser_error"})
 
 
 class ConfigurationFailure(Exception):
@@ -24,6 +25,10 @@ class ConfigurationFailure(Exception):
 
 class ProbeFailure(Exception):
     """A generic operational failure safe to print in a public CI log."""
+
+    def __init__(self, message: str, *, reason="public_browser_error"):
+        super().__init__(message)
+        self.reason = reason if reason in SAFE_BROWSER_REASONS else "public_browser_error"
 
 
 def validate_public_url(value: str) -> str:
@@ -110,7 +115,9 @@ def _frame_states(page):
             if frame.locator('[data-testid="stException"]').count():
                 continue
             body = frame.locator("body")
-            if body.count() and body.is_visible():
+            # Streamlit positions the visible app outside a zero-height body.
+            # Check actual controls/answer/metric visibility in the caller.
+            if body.count():
                 yield frame, body.inner_text(timeout=1500)
         except Exception:
             # Streamlit reruns can detach an iframe during an ordinary read.
@@ -142,7 +149,7 @@ def inspect_public_page(page, *, timeout=180, poll_interval=1, clock=time.monoto
             break
         page.wait_for_timeout(poll_interval * 1000)
     if not opened:
-        raise ProbeFailure("public homepage did not render a saved scored case")
+        raise ProbeFailure("public homepage did not render a saved scored case", reason="public_homepage_not_ready")
     while clock() < deadline:
         for frame, text in _frame_states(page):
             if not all(marker in text for marker in ("模型回答", "专业评价")):
@@ -156,7 +163,8 @@ def inspect_public_page(page, *, timeout=180, poll_interval=1, clock=time.monoto
             if metric.count() and metric.first.is_visible() and SCORE_PATTERN.search(metric.inner_text(timeout=1500)):
                 return
         page.wait_for_timeout(poll_interval * 1000)
-    raise ProbeFailure("public case detail did not render a saved answer and numeric score")
+    raise ProbeFailure("public case detail did not render a saved answer and numeric score",
+                       reason="public_case_detail_not_ready")
 
 
 def _save_failure_screenshot(page) -> None:
@@ -185,6 +193,9 @@ def probe_browser(public_url: str) -> None:
                 # A 200 response is never treated as health; inspect actual rendered UI.
                 page.goto(public_url, wait_until="domcontentloaded", timeout=45000)
                 inspect_public_page(page)
+            except ProbeFailure:
+                _save_failure_screenshot(page)
+                raise
             except Exception:
                 _save_failure_screenshot(page)
                 raise ProbeFailure("public browser check failed") from None
@@ -214,7 +225,7 @@ def main(argv=None, *, environ=None, database_probe=probe_database, browser_prob
         database_probe(database_url)
         stage = "public browser"
         browser_probe(public_url)
-    except Exception:
+    except Exception as failure:
         # Never stringify backend/browser exceptions: they can contain DSNs or data.
         guidance = (
             " Check Supabase project status; if paused, use manual Resume."
@@ -222,7 +233,12 @@ def main(argv=None, *, environ=None, database_probe=probe_database, browser_prob
             if stage == "database"
             else ""
         )
-        print(f"SMOKE FAILED: {stage} check failed.{guidance} duration={time.monotonic() - started:.1f}s",
+        reason = failure.reason if isinstance(failure, ProbeFailure) else "public_browser_error"
+        if reason not in SAFE_BROWSER_REASONS:
+            reason = "public_browser_error"
+        diagnostic = "database_read_failed" if stage == "database" else reason
+        print(f"SMOKE FAILED: {stage} check failed.{guidance} reason={diagnostic}"
+              f" duration={time.monotonic() - started:.1f}s",
               file=sys.stderr)
         return 1
     print("SMOKE PASSED: SELECT-only database, public homepage, and saved scored case detail"

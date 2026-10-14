@@ -46,6 +46,8 @@ class FakeLocator:
         return 1
 
     def is_visible(self, **kwargs):
+        if self.kind == "body" and self.frame.state.get("body_hidden", False):
+            return False
         if self.kind == "answer" and self.frame.state.get("answer_hidden", False):
             return False
         return bool(self.count())
@@ -116,6 +118,14 @@ def inspect(smoke, page):
 
 def test_scored_home_and_detail_are_read_inside_iframe(smoke):
     page = FakePage()
+    inspect(smoke, page)
+    assert page.clicks == ["查看完整案例 →"]
+
+
+def test_zero_height_body_does_not_hide_visible_streamlit_controls(smoke):
+    page = FakePage()
+    page.states["home"]["body_hidden"] = True
+    page.states["detail"]["body_hidden"] = True
     inspect(smoke, page)
     assert page.clicks == ["查看完整案例 →"]
 
@@ -310,6 +320,32 @@ def test_database_failure_tells_operator_to_check_status_and_manually_resume(smo
     assert "never resumes projects automatically" in output
     assert "duration=" in output
     assert "private" not in output
+
+
+@pytest.mark.parametrize(("page", "reason"), [
+    (FakePage(initial="loading"), "public_homepage_not_ready"),
+    (FakePage(answer=""), "public_case_detail_not_ready"),
+])
+def test_main_reports_only_safe_homepage_or_detail_failure_reason(smoke, capsys, page, reason):
+    code = smoke.main([], environ={"FINDUEVAL_HEALTHCHECK_DATABASE_URL": DATABASE_URL},
+                      database_probe=lambda url: None, browser_probe=lambda url: inspect(smoke, page))
+    assert code == 1
+    output = capsys.readouterr().err
+    assert f"reason={reason}" in output
+    if page.states["detail"]["answer"]:
+        assert page.states["detail"]["answer"] not in output
+
+
+def test_unapproved_exception_reason_is_not_printed(smoke, capsys):
+    def fail(url):
+        failure = RuntimeError("LEAKED_SECRET")
+        failure.reason = "LEAKED_SECRET"
+        raise failure
+
+    code = smoke.main([], environ={"FINDUEVAL_HEALTHCHECK_DATABASE_URL": DATABASE_URL},
+                      database_probe=lambda url: None, browser_probe=fail)
+    assert code == 1
+    assert "LEAKED" not in capsys.readouterr().err
 
 
 def test_probe_has_no_application_import_or_initialization(smoke):
